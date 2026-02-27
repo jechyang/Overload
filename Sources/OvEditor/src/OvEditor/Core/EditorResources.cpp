@@ -168,11 +168,13 @@ OvRendering::Resources::Texture* OvEditor::Core::EditorResources::GetFileIcon(co
 
 	const PathParser::EFileType fileType = PathParser::GetFileType(p_filename);
 
-	return GetTexture(
-		fileType == PathParser::EFileType::UNKNOWN ?
-		"File" : // If the file type is unknown, we return the "File" icon
-		PathParser::FileTypeToString(fileType) // Otherwise we return the icon corresponding to the file type
-	);
+	if (fileType != PathParser::EFileType::UNKNOWN)
+	{
+		if (auto* texture = GetTexture(PathParser::FileTypeToString(fileType)))
+			return texture;
+	}
+
+	return GetTexture("File");
 }
 
 OvRendering::Resources::Texture* OvEditor::Core::EditorResources::GetTexture(const std::string& p_id)

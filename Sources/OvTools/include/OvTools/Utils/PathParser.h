@@ -28,7 +28,8 @@ namespace OvTools::Utils
 			SOUND,
 			SCENE,
 			SCRIPT,
-			FONT
+			FONT,
+			PARTICLE
 		};
 
 		/**

@@ -9,6 +9,7 @@
 
 #include <OvCore/ECS/Components/CModelRenderer.h>
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
+#include <OvCore/ParticleSystem/CParticleSystem.h>
 #include <OvCore/Global/ServiceLocator.h>
 #include <OvCore/Rendering/EngineBufferRenderFeature.h>
 #include <OvCore/Rendering/EngineDrawableDescriptor.h>
@@ -207,9 +208,19 @@ void OvCore::Rendering::SceneRenderer::BeginFrame(const OvRendering::Data::Frame
 
 	OvRendering::Core::CompositeRenderer::BeginFrame(p_frameDescriptor);
 
+	// Extract camera right/up vectors from the view matrix for billboard particles.
+	// View matrix row 0 = right, row 1 = up (world-space, negated for view space).
+	const auto& viewMatrix = p_frameDescriptor.camera.value().GetViewMatrix();
+	const auto rightRow = OvMaths::FMatrix4::GetRow(viewMatrix, 0);
+	const auto upRow    = OvMaths::FMatrix4::GetRow(viewMatrix, 1);
+	const OvMaths::FVector3 cameraRight{ rightRow.x, rightRow.y, rightRow.z };
+	const OvMaths::FVector3 cameraUp   { upRow.x,    upRow.y,    upRow.z    };
+
 	AddDescriptor<SceneDrawablesDescriptor>({
 		ParseScene(SceneParsingInput{
-			.scene = sceneDescriptor.scene
+			.scene       = sceneDescriptor.scene,
+			.cameraRight = cameraRight,
+			.cameraUp    = cameraUp
 		})
 	});
 
@@ -315,6 +326,36 @@ SceneRenderer::SceneDrawablesDescriptor OvCore::Rendering::SceneRenderer::ParseS
 
 			result.drawables.push_back(drawable);
 		}
+	}
+
+	// Particle systems
+	for (auto particleSystem : scene.GetFastAccessComponents().particleSystems)
+	{
+		auto& owner = particleSystem->owner;
+		if (!owner.IsActive()) continue;
+		if (!particleSystem->material || !particleSystem->material->IsValid()) continue;
+		if (particleSystem->GetParticleCount() == 0) continue;
+
+		particleSystem->RebuildMesh(p_input.cameraRight, p_input.cameraUp);
+
+		OvRendering::Entities::Drawable drawable{
+			.mesh      = particleSystem->GetMesh(),
+			.material  = *particleSystem->material,
+			.stateMask = particleSystem->material->GenerateStateMask(),
+		};
+
+		drawable.AddDescriptor<SceneDrawableDescriptor>({
+			.actor          = owner,
+			.visibilityFlags = EVisibilityFlags::GEOMETRY,
+			.bounds          = std::nullopt,
+		});
+
+		drawable.AddDescriptor<EngineDrawableDescriptor>({
+			OvMaths::FMatrix4::Identity,
+			OvMaths::FMatrix4::Identity
+		});
+
+		result.drawables.push_back(drawable);
 	}
 
 	return result;

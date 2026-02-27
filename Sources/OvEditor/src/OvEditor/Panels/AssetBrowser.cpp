@@ -21,10 +21,14 @@
 
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Core/EditorResources.h>
+#include <OvCore/ParticleSystem/ParticleSystemLoader.h>
+#include <OvCore/ParticleSystem/CParticleSystem.h>
+
 #include <OvEditor/Panels/AssetBrowser.h>
 #include <OvEditor/Panels/AssetProperties.h>
 #include <OvEditor/Panels/AssetView.h>
 #include <OvEditor/Panels/MaterialEditor.h>
+#include <OvEditor/Panels/ParticleEditor.h>
 
 #include <OvTools/Utils/PathParser.h>
 #include <OvTools/Utils/String.h>
@@ -72,6 +76,14 @@ namespace
 		materialEditor.SetTarget(p_resource);
 		materialEditor.Open();
 		materialEditor.Focus();
+	}
+
+	void OpenInParticleEditor(const std::string& p_path)
+	{
+		auto& particleEditor = EDITOR_PANEL(OvEditor::Panels::ParticleEditor, "Particle Editor");
+		particleEditor.Open();
+		particleEditor.Focus();
+		particleEditor.LoadFromFile(p_path);
 	}
 
 	std::filesystem::path GetAssociatedMetaFile(const std::filesystem::path& p_assetPath)
@@ -373,6 +385,7 @@ namespace
 				auto& createSceneMenu = createMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Scene");
 				auto& createShaderMenu = createMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Shader");
 				auto& createMaterialMenu = createMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Material");
+				auto& createParticleMenu = createMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Particle System");
 
 				auto& createEmptyShaderMenu = createShaderMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Empty");
 				auto& createPartialShaderMenu = createShaderMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Partial");
@@ -389,6 +402,7 @@ namespace
 
 				auto& createFolder = createFolderMenu.CreateWidget<OvUI::Widgets::InputFields::InputText>("");
 				auto& createScene = createSceneMenu.CreateWidget<OvUI::Widgets::InputFields::InputText>("");
+				auto& createParticle = createParticleMenu.CreateWidget<OvUI::Widgets::InputFields::InputText>("");
 
 				auto& createEmptyMaterial = createEmptyMaterialMenu.CreateWidget<OvUI::Widgets::InputFields::InputText>("");
 				auto& createStandardMaterial = createStandardMaterialMenu.CreateWidget<OvUI::Widgets::InputFields::InputText>("");
@@ -405,6 +419,7 @@ namespace
 
 				createFolderMenu.ClickedEvent += [&createFolder] { createFolder.content = ""; };
 				createSceneMenu.ClickedEvent += [&createScene] { createScene.content = ""; };
+				createParticleMenu.ClickedEvent += [&createParticle] { createParticle.content = ""; };
 				createStandardShaderMenu.ClickedEvent += [&createStandardShader] { createStandardShader.content = ""; };
 				createUnlitShaderMenu.ClickedEvent += [&createUnlitShader] { createUnlitShader.content = ""; };
 				createSkysphereShaderMenu.ClickedEvent += [&createSkysphereShader] { createSkysphereShader.content = ""; };
@@ -433,6 +448,13 @@ namespace
 
 					EDITOR_EXEC(SaveSceneToDisk(emptyScene, finalPath.string()));
 
+					ItemAddedEvent.Invoke(finalPath);
+					Close();
+				};
+
+				createParticle.EnterPressedEvent += [this](std::string newName) {
+					const auto finalPath = FindAvailableFilePath(filePath / (newName + ".ovpart"));
+					OvCore::ParticleSystem::ParticleSystemLoader::CreateDefault(finalPath.string());
 					ItemAddedEvent.Invoke(finalPath);
 					Close();
 				};
@@ -1268,6 +1290,13 @@ void OvEditor::Panels::AssetBrowser::ConsiderItem(OvUI::Widgets::Layout::TreeNod
 		{
 			clickableText.DoubleClickedEvent += [&contextMenu] {
 				EDITOR_EXEC(LoadSceneFromDisk(EDITOR_EXEC(GetResourcePath(contextMenu.filePath.string()))));
+			};
+		}
+
+		if (fileType == OvTools::Utils::PathParser::EFileType::PARTICLE)
+		{
+			clickableText.DoubleClickedEvent += [&contextMenu] {
+				OpenInParticleEditor(contextMenu.filePath.string());
 			};
 		}
 	}

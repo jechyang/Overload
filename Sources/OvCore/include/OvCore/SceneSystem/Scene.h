@@ -14,6 +14,7 @@
 #include <OvCore/ECS/Components/CModelRenderer.h>
 #include <OvCore/ECS/Components/CPostProcessStack.h>
 #include <OvCore/ECS/Components/CReflectionProbe.h>
+#include <OvCore/ParticleSystem/CParticleSystem.h>
 
 namespace OvCore::SceneSystem
 {
@@ -34,6 +35,7 @@ namespace OvCore::SceneSystem
 			std::vector<ECS::Components::CLight*> lights;
 			std::vector<ECS::Components::CPostProcessStack*> postProcessStacks;
 			std::vector<ECS::Components::CReflectionProbe*> reflectionProbes;
+			std::vector<ECS::Components::CParticleSystem*> particleSystems;
 		};
 
 		/**

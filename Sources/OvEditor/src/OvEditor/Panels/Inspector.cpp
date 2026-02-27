@@ -22,6 +22,7 @@
 #include <OvCore/ECS/Components/CPostProcessStack.h>
 #include <OvCore/ECS/Components/CReflectionProbe.h>
 #include <OvCore/ECS/Components/CSpotLight.h>
+#include <OvCore/ParticleSystem/CParticleSystem.h>
 #include <OvCore/ECS/Components/CTransform.h>
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Panels/Inspector.h>
@@ -95,6 +96,7 @@ namespace
 		CreateComponentInfo<CAudioListener>("Audio Listener"),
 		CreateComponentInfo<CPostProcessStack>("Post Process Stack"),
 		CreateComponentInfo<CReflectionProbe>("Reflection Probe"),
+		CreateComponentInfo<CParticleSystem>("Particle System"),
 	});
 
 	OvTools::Utils::OptRef<IComponentInfo> GetComponentInfo(size_t p_index)

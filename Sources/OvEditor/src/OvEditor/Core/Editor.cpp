@@ -17,6 +17,8 @@
 #include <OvEditor/Panels/Hierarchy.h>
 #include <OvEditor/Panels/Inspector.h>
 #include <OvEditor/Panels/MaterialEditor.h>
+#include <OvEditor/Panels/ParticleEditor.h>
+#include <OvCore/ParticleSystem/CParticleSystem.h>
 #include <OvEditor/Panels/MenuBar.h>
 #include <OvEditor/Panels/ProjectSettings.h>
 #include <OvEditor/Panels/SceneView.h>
@@ -65,12 +67,20 @@ void OvEditor::Core::Editor::SetupUI()
 	m_panelsManager.CreatePanel<Panels::GameView>("Game View", true, settings);
 	m_panelsManager.CreatePanel<Panels::Toolbar>("Toolbar", true, settings);
 	m_panelsManager.CreatePanel<Panels::MaterialEditor>("Material Editor", false, settings);
+	m_panelsManager.CreatePanel<Panels::ParticleEditor>("Particle Editor", false, settings);
 	m_panelsManager.CreatePanel<Panels::ProjectSettings>("Project Settings", false, settings);
 	m_panelsManager.CreatePanel<Panels::AssetProperties>("Asset Properties", false, settings);
 	m_panelsManager.CreatePanel<Panels::TextureDebugger>("Texture Debugger", false, settings);
 
 	// Needs to be called after all panels got created, because some settings in this menu depend on other panels
 	m_panelsManager.GetPanelAs<Panels::MenuBar>("Menu Bar").InitializeSettingsMenu();
+
+	OvCore::ECS::Components::CParticleSystem::OpenInEditorRequestEvent += [this](OvCore::ECS::Components::CParticleSystem& p_system) {
+		auto& editor = m_panelsManager.GetPanelAs<Panels::ParticleEditor>("Particle Editor");
+		editor.SetTarget(p_system);
+		editor.Open();
+		editor.Focus();
+	};
 
 	m_canvas.MakeDockspace(true);
 	m_context.uiManager->SetCanvas(m_canvas);
@@ -245,6 +255,17 @@ void OvEditor::Core::Editor::RenderViews(float p_deltaTime)
 	{
 		ZoneScopedN("Scene View Rendering");
 		sceneView.Render();
+	}
+
+	auto& particleEditor = m_panelsManager.GetPanelAs<OvEditor::Panels::ParticleEditor>("Particle Editor");
+	if (particleEditor.IsOpened())
+	{
+		particleEditor.Update(p_deltaTime);
+	}
+	if (particleEditor.IsOpened() && particleEditor.IsVisible())
+	{
+		ZoneScopedN("Particle Editor Rendering");
+		particleEditor.Render();
 	}
 }
 

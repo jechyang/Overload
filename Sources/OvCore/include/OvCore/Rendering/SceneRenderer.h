@@ -83,6 +83,8 @@ namespace OvCore::Rendering
 		struct SceneParsingInput
 		{
 			OvCore::SceneSystem::Scene& scene;
+			OvMaths::FVector3 cameraRight = { 1.0f, 0.0f, 0.0f };
+			OvMaths::FVector3 cameraUp    = { 0.0f, 1.0f, 0.0f };
 		};
 
 		/**

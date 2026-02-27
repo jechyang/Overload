@@ -94,8 +94,10 @@ std::string OvTools::Utils::PathParser::FileTypeToString(EFileType p_fileType)
 	case OvTools::Utils::PathParser::EFileType::SCENE:		return "Scene";
 	case OvTools::Utils::PathParser::EFileType::SCRIPT:		return "Script";
 	case OvTools::Utils::PathParser::EFileType::FONT:		return "Font";
-	default:												return "Unknown";
+	case OvTools::Utils::PathParser::EFileType::PARTICLE:	return "Particle";
 	}
+
+	return "Unknown";
 }
 
 OvTools::Utils::PathParser::EFileType OvTools::Utils::PathParser::GetFileType(const std::string & p_path)
@@ -112,6 +114,7 @@ OvTools::Utils::PathParser::EFileType OvTools::Utils::PathParser::GetFileType(co
 	else if (ext == "ovscene") return EFileType::SCENE;
 	else if (ext == "lua" || ext == "ovscript") return EFileType::SCRIPT;
 	else if (ext == "ttf") return EFileType::FONT;
+	else if (ext == "ovpart") return EFileType::PARTICLE;
 
 	return EFileType::UNKNOWN;
 }

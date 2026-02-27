@@ -292,6 +292,9 @@ void OvCore::SceneSystem::Scene::OnComponentAdded(ECS::Components::AComponent& p
 
 	if (auto result = dynamic_cast<ECS::Components::CReflectionProbe*>(&p_compononent))
 		m_fastAccessComponents.reflectionProbes.push_back(result);
+
+	if (auto result = dynamic_cast<ECS::Components::CParticleSystem*>(&p_compononent))
+		m_fastAccessComponents.particleSystems.push_back(result);
 }
 
 void OvCore::SceneSystem::Scene::OnComponentRemoved(ECS::Components::AComponent& p_compononent)
@@ -310,6 +313,9 @@ void OvCore::SceneSystem::Scene::OnComponentRemoved(ECS::Components::AComponent&
 
 	if (auto result = dynamic_cast<ECS::Components::CReflectionProbe*>(&p_compononent))
 		m_fastAccessComponents.reflectionProbes.erase(std::remove(m_fastAccessComponents.reflectionProbes.begin(), m_fastAccessComponents.reflectionProbes.end(), result), m_fastAccessComponents.reflectionProbes.end());
+
+	if (auto result = dynamic_cast<ECS::Components::CParticleSystem*>(&p_compononent))
+		m_fastAccessComponents.particleSystems.erase(std::remove(m_fastAccessComponents.particleSystems.begin(), m_fastAccessComponents.particleSystems.end(), result), m_fastAccessComponents.particleSystems.end());
 }
 
 std::vector<OvCore::ECS::Actor*>& OvCore::SceneSystem::Scene::GetActors()

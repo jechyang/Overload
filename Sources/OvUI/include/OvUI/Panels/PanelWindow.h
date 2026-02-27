@@ -125,10 +125,12 @@ namespace OvUI::Panels
 		OvTools::Eventing::Event<> OpenEvent;
 		OvTools::Eventing::Event<> CloseEvent;
 
-	private:
-		bool m_opened = false;
+	protected:
 		bool m_hovered = false;
 		bool m_focused = false;
+
+	private:
+		bool m_opened = false;
         bool m_mustScrollToBottom = false;
         bool m_mustScrollToTop = false;
         bool m_scrolledToBottom = false;

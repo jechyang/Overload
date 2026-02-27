@@ -1,0 +1,15 @@
+<root>
+    <Emitter type="Point">
+        <emissionRate>20</emissionRate>
+        <lifetime>2</lifetime>
+        <initialSpeed>2</initialSpeed>
+        <size>0.2</size>
+        <spread>0.4</spread>
+    </Emitter>
+    <Affectors>
+        <Affector type="Gravity">
+            <gravity>4</gravity>
+        </Affector>
+    </Affectors>
+    <material>:Materials\Particle.ovmat</material>
+</root>
