@@ -107,7 +107,7 @@ namespace OvRendering::Features
 			bool p_depthTest = true
 		);
 
-	protected:
+	public:
 		virtual void OnBeginFrame(const Data::FrameDescriptor& p_frameDescriptor) override;
 
 	private:

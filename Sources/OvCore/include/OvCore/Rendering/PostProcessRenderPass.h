@@ -25,7 +25,7 @@ namespace OvCore::Rendering
 		*/
 		PostProcessRenderPass(OvRendering::Core::CompositeRenderer& p_renderer);
 
-	protected:
+	public:
 		virtual void Draw(OvRendering::Data::PipelineState p_pso) override;
 
 	private:

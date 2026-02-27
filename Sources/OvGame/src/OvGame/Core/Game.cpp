@@ -30,10 +30,10 @@ OvGame::Core::Game::Game(Context & p_context) :
 	#ifdef _DEBUG
 	m_canvas.AddPanel(m_driverInfo);
 	m_canvas.AddPanel(m_frameInfo);
-	m_sceneRenderer.AddFeature<
-		OvRendering::Features::FrameInfoRenderFeature,
+	m_frameInfoFeature = std::make_unique<OvRendering::Features::FrameInfoRenderFeature>(
+		m_sceneRenderer,
 		OvRendering::Features::EFeatureExecutionPolicy::ALWAYS
-	>();
+	);
 	#endif
 
 	std::string startupScenePath = m_context.projectSettings.Get<std::string>("start_scene");
@@ -135,8 +135,7 @@ void OvGame::Core::Game::Update(float p_deltaTime)
 	{
 		m_fpsCounter.Update(p_deltaTime);
 		#ifdef _DEBUG
-		auto& frameInfoRenderFeature = m_sceneRenderer.GetFeature<OvRendering::Features::FrameInfoRenderFeature>();
-		auto& frameInfo = frameInfoRenderFeature.GetFrameInfo();
+		auto& frameInfo = m_frameInfoFeature->GetFrameInfo();
 		m_frameInfo.Update(frameInfo);
 		#endif
 		m_context.uiManager->Render();

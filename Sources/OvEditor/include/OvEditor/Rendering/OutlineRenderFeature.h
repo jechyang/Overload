@@ -12,6 +12,7 @@
 
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/SceneSystem/SceneManager.h>
+#include <OvCore/ECS/Components/CMaterialRenderer.h>
 #include <OvCore/ECS/Components/CModelRenderer.h>
 #include <OvCore/Resources/Material.h>
 #include <OvCore/ECS/Components/CAmbientBoxLight.h>

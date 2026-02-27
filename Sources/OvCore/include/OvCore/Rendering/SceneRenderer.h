@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <map>
 
 #include <OvRendering/Core/CompositeRenderer.h>
@@ -18,6 +19,7 @@
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/ECS/Components/CCamera.h>
 #include <OvCore/Rendering/EVisibilityFlags.h>
+#include <OvCore/Rendering/PostProcessRenderPass.h>
 #include <OvCore/Resources/Material.h>
 #include <OvCore/SceneSystem/Scene.h>
 
@@ -41,37 +43,22 @@ namespace OvCore::Rendering
 			const int order;
 			const float distance;
 
-			/**
-			* Determines the order of the drawables.
-			* Current order is: order -> distance
-			* @param p_other
-			*/
 			bool operator<(const DrawOrder& p_other) const
 			{
 				if (order == p_other.order)
 				{
 					if constexpr (OrderingMode == EOrderingMode::BACK_TO_FRONT)
-					{
 						return distance > p_other.distance;
-					}
 					else
-					{
 						return distance < p_other.distance;
-					}
 				}
-				else
-				{
-					return order < p_other.order;
-				}
+				return order < p_other.order;
 			}
 		};
 
 		template<EOrderingMode OrderingMode>
 		using DrawableMap = std::multimap<DrawOrder<OrderingMode>, OvRendering::Entities::Drawable>;
 
-		/**
-		* Input data for the scene renderer.
-		*/
 		struct SceneDescriptor
 		{
 			OvCore::SceneSystem::Scene& scene;
@@ -87,17 +74,11 @@ namespace OvCore::Rendering
 			OvMaths::FVector3 cameraUp    = { 0.0f, 1.0f, 0.0f };
 		};
 
-		/**
-		* Result of the scene parsing, containing the drawables to be rendered.
-		*/
 		struct SceneDrawablesDescriptor
 		{
 			std::vector<OvRendering::Entities::Drawable> drawables;
 		};
 
-		/**
-		* Additional information for a drawable computed by the scene renderer.
-		*/
 		struct SceneDrawableDescriptor
 		{
 			OvCore::ECS::Actor& actor;
@@ -105,9 +86,6 @@ namespace OvCore::Rendering
 			std::optional<OvRendering::Geometry::BoundingSphere> bounds;
 		};
 
-		/**
-		* Filtered drawables for the scene, categorized by their render pass, and sorted by their draw order.
-		*/
 		struct SceneFilteredDrawablesDescriptor
 		{
 			DrawableMap<EOrderingMode::FRONT_TO_BACK> opaques;
@@ -122,30 +100,26 @@ namespace OvCore::Rendering
 			OvTools::Utils::OptRef<OvRendering::Data::Material> overrideMaterial;
 			OvTools::Utils::OptRef<OvRendering::Data::Material> fallbackMaterial;
 			EVisibilityFlags requiredVisibilityFlags = EVisibilityFlags::NONE;
-			bool includeUI = true; // Whether to include UI drawables in the filtering
-			bool includeTransparent = true; // Whether to include transparent drawables in the filtering
-			bool includeOpaque = true; // Whether to include opaque drawables in the filtering
+			bool includeUI = true;
+			bool includeTransparent = true;
+			bool includeOpaque = true;
 		};
 
 		/**
-		* Constructor of the Renderer
+		* Constructor
 		* @param p_driver
-		* @param p_stencilWrite (if set to true, also write all the scene geometry to the stencil buffer)
+		* @param p_stencilWrite
 		*/
 		SceneRenderer(OvRendering::Context::Driver& p_driver, bool p_stencilWrite = false);
 
 		/**
-		* Begin Frame
+		* Begin Frame — parses scene and sets up descriptors.
 		* @param p_frameDescriptor
 		*/
 		virtual void BeginFrame(const OvRendering::Data::FrameDescriptor& p_frameDescriptor) override;
 
 		/**
 		* Draw a model with a single material
-		* @param p_pso
-		* @param p_model
-		* @param p_material
-		* @param p_modelMatrix
 		*/
 		virtual void DrawModelWithSingleMaterial(
 			OvRendering::Data::PipelineState p_pso,
@@ -155,23 +129,50 @@ namespace OvCore::Rendering
 		);
 
 		/**
-		* Parse the scene (as defined in the SceneDescriptor) to find the drawables to render.
-		* @param p_sceneDescriptor
-		* @param p_options
+		* Parse the scene to find drawables.
 		*/
-		SceneDrawablesDescriptor ParseScene(
-			const SceneParsingInput& p_input
-		);
+		SceneDrawablesDescriptor ParseScene(const SceneParsingInput& p_input);
 
 		/**
-		* Filter and prepare drawables based on the given context.
-		* This is where culling and sorting happens.
-		* @param p_drawables
-		* @param p_filteringInput
+		* Filter and sort drawables.
 		*/
 		SceneFilteredDrawablesDescriptor FilterDrawables(
 			const SceneDrawablesDescriptor& p_drawables,
 			const SceneDrawablesFilteringInput& p_filteringInput
 		);
+
+		// Rebind the light SSBO at binding point 0 (used by debug passes to restore after fake lights)
+		void _BindLightBuffer();
+
+	protected:
+		/**
+		* Registers all FrameGraph passes for a scene frame.
+		*/
+		virtual void BuildFrameGraph(OvRendering::FrameGraph::FrameGraph& p_fg) override;
+
+		// Per-draw shadow uniform binding (called inside scene passes)
+		void _BindShadowUniforms(OvRendering::Data::Material& p_material);
+
+		// Per-draw reflection uniform binding (called inside scene passes)
+		void _BindReflectionUniforms(
+			OvRendering::Data::Material& p_material,
+			const OvRendering::Entities::Drawable& p_drawable
+		);
+
+		// Upload camera matrices to the engine UBO
+		void _SetCameraUBO(const OvRendering::Entities::Camera& p_camera);
+
+	private:
+		bool m_stencilWrite = false;
+
+		// Engine uniform buffer (model/view/proj/camera/time/user matrices)
+		std::unique_ptr<OvRendering::HAL::UniformBuffer> m_engineBuffer;
+		std::chrono::time_point<std::chrono::high_resolution_clock> m_startTime;
+
+		// Light shader storage buffer
+		std::unique_ptr<OvRendering::HAL::ShaderStorageBuffer> m_lightBuffer;
+
+		// Cached post-process pass (owns ping-pong buffers and effects)
+		std::unique_ptr<PostProcessRenderPass> m_postProcessPass;
 	};
 }

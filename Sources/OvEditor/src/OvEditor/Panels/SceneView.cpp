@@ -117,7 +117,7 @@ void OvEditor::Panels::SceneView::InitFrame()
 		m_highlightedGizmoDirection
 	});
 
-	auto& pickingPass = m_renderer->GetPass<OvEditor::Rendering::PickingRenderPass>("Picking");
+	auto& pickingPass = static_cast<OvEditor::Rendering::DebugSceneRenderer&>(*m_renderer).GetPickingPass();
 
 	// Enable picking pass only when the scene view is hovered, not picking, and not operating the camera
 	pickingPass.SetEnabled(
@@ -130,6 +130,11 @@ void OvEditor::Panels::SceneView::InitFrame()
 OvCore::SceneSystem::Scene* OvEditor::Panels::SceneView::GetScene()
 {
 	return m_sceneManager.GetCurrentScene();
+}
+
+const OvRendering::Data::FrameInfo& OvEditor::Panels::SceneView::GetFrameInfo() const
+{
+	return static_cast<const OvEditor::Rendering::DebugSceneRenderer&>(*m_renderer).GetFrameInfo();
 }
 
 void OvEditor::Panels::SceneView::SetGizmoOperation(OvEditor::Core::EGizmoOperation p_operation)
@@ -264,7 +269,7 @@ OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Panels::SceneVie
 
 	auto& scene = *GetScene();
 
-	auto& actorPickingFeature = m_renderer->GetPass<OvEditor::Rendering::PickingRenderPass>("Picking");
+	auto& actorPickingFeature = static_cast<OvEditor::Rendering::DebugSceneRenderer&>(*m_renderer).GetPickingPass();
 
 	return actorPickingFeature.ReadbackPickingResult(
 		scene,

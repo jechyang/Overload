@@ -18,6 +18,7 @@
 #include <OvCore/Rendering/SceneRenderer.h>
 
 #include "OvEditor/Core/Context.h"
+#include "OvEditor/Rendering/DebugModelRenderFeature.h"
 
 namespace OvEditor::Rendering
 {
@@ -31,10 +32,12 @@ namespace OvEditor::Rendering
 		* Constructor
 		* @param p_renderer
 		* @param p_executionPolicy
+		* @param p_debugModelFeature
 		*/
 		GizmoRenderFeature(
 			OvRendering::Core::CompositeRenderer& p_renderer,
-			OvRendering::Features::EFeatureExecutionPolicy p_executionPolicy
+			OvRendering::Features::EFeatureExecutionPolicy p_executionPolicy,
+			DebugModelRenderFeature& p_debugModelFeature
 		);
 
 		/**
@@ -54,6 +57,7 @@ namespace OvEditor::Rendering
 		);
 
 	private:
+		DebugModelRenderFeature& m_debugModelFeature;
 		OvCore::Resources::Material m_gizmoArrowMaterial;
 		OvCore::Resources::Material m_gizmoBallMaterial;
 	};

@@ -44,6 +44,11 @@ namespace OvEditor::Panels
 		virtual OvCore::SceneSystem::Scene* GetScene() override;
 
 		/**
+		* Returns the frame info from the last rendered frame
+		*/
+		virtual const OvRendering::Data::FrameInfo& GetFrameInfo() const override;
+
+		/**
 		* Set the gizmo operation
 		* @param p_operation
 		*/

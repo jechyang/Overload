@@ -14,6 +14,7 @@
 #ifdef _DEBUG
 #include <OvGame/Debug/DriverInfo.h>
 #include <OvGame/Debug/FrameInfo.h>
+#include <OvRendering/Features/FrameInfoRenderFeature.h>
 #endif
 
 #include <OvGame/Utils/FPSCounter.h>
@@ -67,6 +68,7 @@ namespace OvGame::Core
 		#ifdef _DEBUG
 		OvGame::Debug::DriverInfo	m_driverInfo;
 		OvGame::Debug::FrameInfo	m_frameInfo;
+		std::unique_ptr<OvRendering::Features::FrameInfoRenderFeature> m_frameInfoFeature;
 		#endif
 
 		#ifdef _DEBUG

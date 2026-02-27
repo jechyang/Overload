@@ -18,6 +18,7 @@
 #include <OvCore/Rendering/SceneRenderer.h>
 
 #include "OvEditor/Core/Context.h"
+#include "OvEditor/Rendering/DebugModelRenderFeature.h"
 
 namespace OvEditor::Rendering
 {
@@ -36,13 +37,21 @@ namespace OvEditor::Rendering
 		/**
 		* Constructor
 		* @param p_renderer
+		* @param p_debugShapeFeature
+		* @param p_debugModelFeature
 		*/
-		GridRenderPass(OvRendering::Core::CompositeRenderer& p_renderer);
+		GridRenderPass(
+			OvRendering::Core::CompositeRenderer& p_renderer,
+			OvRendering::Features::DebugShapeRenderFeature& p_debugShapeFeature,
+			DebugModelRenderFeature& p_debugModelFeature
+		);
 
 	protected:
 		virtual void Draw(OvRendering::Data::PipelineState p_pso) override;
 
 	private:
+		OvRendering::Features::DebugShapeRenderFeature& m_debugShapeFeature;
+		DebugModelRenderFeature& m_debugModelFeature;
 		OvCore::Resources::Material m_gridMaterial;
 	};
 }

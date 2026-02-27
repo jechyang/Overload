@@ -55,7 +55,7 @@ void OvCore::ParticleSystem::PointParticleEmitter::InitParticle(ParticleSystemPa
 }
 
 void OvCore::ParticleSystem::PointParticleEmitter::Emit(
-	std::vector<ParticleSystemParticle>& p_outParticles,
+	ParticlePool& p_pool,
 	float p_deltaTime
 )
 {
@@ -63,9 +63,8 @@ void OvCore::ParticleSystem::PointParticleEmitter::Emit(
 
 	while (m_accumulator >= 1.0f)
 	{
-		ParticleSystemParticle p{};
-		InitParticle(p);
-		p_outParticles.push_back(p);
+		if (auto* slot = p_pool.Acquire())
+			InitParticle(*slot);
 		m_accumulator -= 1.0f;
 	}
 }

@@ -6,11 +6,10 @@
 
 #pragma once
 
-#include <vector>
-
 #include <OvMaths/FVector3.h>
 
 #include "OvCore/ParticleSystem/ParticleSystemParticle.h"
+#include "OvCore/ParticleSystem/ParticlePool.h"
 
 namespace OvCore::ParticleSystem
 {
@@ -30,11 +29,11 @@ namespace OvCore::ParticleSystem
 		virtual void InitParticle(ParticleSystemParticle& p_particle) = 0;
 
 		/**
-		* Accumulate emission time and push newly spawned particles into p_outParticles.
-		* @param p_outParticles  Target list to append new particles to
-		* @param p_deltaTime     Frame delta time in seconds
+		* Accumulate emission time and acquire slots from the pool for newly spawned particles.
+		* @param p_pool       Particle pool to acquire slots from
+		* @param p_deltaTime  Frame delta time in seconds
 		*/
-		virtual void Emit(std::vector<ParticleSystemParticle>& p_outParticles, float p_deltaTime) = 0;
+		virtual void Emit(ParticlePool& p_pool, float p_deltaTime) = 0;
 	};
 
 	/**
@@ -59,7 +58,7 @@ namespace OvCore::ParticleSystem
 		);
 
 		virtual void InitParticle(ParticleSystemParticle& p_particle) override;
-		virtual void Emit(std::vector<ParticleSystemParticle>& p_outParticles, float p_deltaTime) override;
+		virtual void Emit(ParticlePool& p_pool, float p_deltaTime) override;
 
 	public:
 		float emissionRate;

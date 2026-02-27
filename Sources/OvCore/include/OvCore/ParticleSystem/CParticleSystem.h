@@ -15,7 +15,7 @@
 #include "OvCore/ECS/Components/AComponent.h"
 #include "OvCore/ParticleSystem/AParticleSystemEmitter.h"
 #include "OvCore/ParticleSystem/ParticleSystemAffector.h"
-#include "OvCore/ParticleSystem/ParticleSystemParticle.h"
+#include "OvCore/ParticleSystem/ParticlePool.h"
 #include "OvCore/ParticleSystem/ParticleMesh.h"
 #include "OvCore/Resources/Material.h"
 
@@ -108,7 +108,7 @@ namespace OvCore::ECS::Components
 	private:
 		std::unique_ptr<ParticleSystem::AParticleEmitter>              m_emitter;
 		std::vector<std::unique_ptr<ParticleSystem::AParticleAffector>> m_affectors;
-		std::vector<ParticleSystem::ParticleSystemParticle>             m_particles;
+		ParticleSystem::ParticlePool                                    m_pool;
 		ParticleSystem::ParticleMesh                                    m_mesh;
 	};
 

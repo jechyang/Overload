@@ -17,7 +17,7 @@ namespace OvCore::ECS { class Actor; }
 namespace OvCore::Rendering
 {
 	class ReflectionRenderPass;
-	class ReflectionRenderFeature;
+	class SceneRenderer;
 }
 
 namespace OvCore::ECS::Components
@@ -184,17 +184,19 @@ namespace OvCore::ECS::Components
 		*/
 		virtual void OnInspector(OvUI::Internal::WidgetContainer& p_root) override;
 
+	public:
+		void _PrepareUBO();
+		OvRendering::HAL::UniformBuffer& _GetUniformBuffer() const;
+
 	private:
 		void _NotifyCubemapComplete();
 		void _AllocateResources();
-		void _PrepareUBO();
 		std::vector<uint32_t> _GetCaptureFaceIndices();
 		OvRendering::HAL::Framebuffer& _GetTargetFramebuffer() const;
-		OvRendering::HAL::UniformBuffer& _GetUniformBuffer() const;
 		bool _IsDoubleBuffered() const;
 
 		friend class OvCore::Rendering::ReflectionRenderPass;
-		friend class OvCore::Rendering::ReflectionRenderFeature;
+		friend class OvCore::Rendering::SceneRenderer;
 
 	private:
 		struct CaptureRequestDesc

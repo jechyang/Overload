@@ -28,9 +28,11 @@
 
 OvEditor::Rendering::GizmoRenderFeature::GizmoRenderFeature(
 	OvRendering::Core::CompositeRenderer& p_renderer,
-	OvRendering::Features::EFeatureExecutionPolicy p_executionPolicy
+	OvRendering::Features::EFeatureExecutionPolicy p_executionPolicy,
+	DebugModelRenderFeature& p_debugModelFeature
 ) :
-	OvRendering::Features::ARenderFeature(p_renderer, p_executionPolicy)
+	OvRendering::Features::ARenderFeature(p_renderer, p_executionPolicy),
+	m_debugModelFeature(p_debugModelFeature)
 {
 	/* Gizmo Arrow Material */
 	m_gizmoArrowMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Gizmo"));
@@ -80,7 +82,7 @@ void OvEditor::Rendering::GizmoRenderFeature::DrawGizmo(
 	{
 		auto sphereModelMatrix = modelMatrix * OvMaths::FMatrix4::Scaling({ 0.1f, 0.1f, 0.1f });
 
-		m_renderer.GetFeature<DebugModelRenderFeature>()
+		m_debugModelFeature
 		.DrawModelWithSingleMaterial(
 			pso,
 			*sphereModel,
@@ -96,7 +98,7 @@ void OvEditor::Rendering::GizmoRenderFeature::DrawGizmo(
 		const auto axisIndex = GetAxisIndexFromDirection(p_highlightedDirection);
 		m_gizmoArrowMaterial.SetProperty("u_HighlightedAxis", axisIndex);
 
-		m_renderer.GetFeature<DebugModelRenderFeature>()
+		m_debugModelFeature
 		.DrawModelWithSingleMaterial(
 			pso,
 			*arrowModel,

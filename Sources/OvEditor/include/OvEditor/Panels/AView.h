@@ -7,6 +7,7 @@
 #pragma once
 
 #include <OvCore/Rendering/SceneRenderer.h>
+#include <OvRendering/Data/FrameInfo.h>
 #include <OvRendering/HAL/UniformBuffer.h>
 #include <OvRendering/Entities/Camera.h>
 #include <OvRendering/Core/CompositeRenderer.h>
@@ -80,6 +81,11 @@ namespace OvEditor::Panels
 		* Returns the renderer used by this view
 		*/
 		const OvCore::Rendering::SceneRenderer& GetRenderer() const;
+
+		/**
+		* Returns the frame info from the last rendered frame
+		*/
+		virtual const OvRendering::Data::FrameInfo& GetFrameInfo() const;
 
 	protected:
 		virtual OvCore::Rendering::SceneRenderer::SceneDescriptor CreateSceneDescriptor();

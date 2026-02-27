@@ -28,6 +28,7 @@ workspace "Overload"
 	-- Set toolset based on operating system
 	filter {"system:windows"}
 		toolset("msc")
+		buildoptions { "/utf-8" }
 	filter {"system:linux"}
 		toolset("clang") -- Use Clang on Linux (sol2 doesn't work well with GCC)
 	filter {}

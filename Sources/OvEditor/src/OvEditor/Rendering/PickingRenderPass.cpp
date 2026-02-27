@@ -39,8 +39,12 @@ namespace
 	}
 }
 
-OvEditor::Rendering::PickingRenderPass::PickingRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) :
+OvEditor::Rendering::PickingRenderPass::PickingRenderPass(
+	OvRendering::Core::CompositeRenderer& p_renderer,
+	DebugModelRenderFeature& p_debugModelFeature
+) :
 	OvRendering::Core::ARenderPass(p_renderer),
+	m_debugModelFeature(p_debugModelFeature),
 	m_actorPickingFramebuffer("ActorPicking")
 {
 	OvCore::Rendering::FramebufferUtil::SetupFramebuffer(
@@ -212,7 +216,7 @@ void OvEditor::Rendering::PickingRenderPass::DrawPickableCameras(
 			auto rotation = OvMaths::FQuaternion::ToMatrix4(actor.transform.GetWorldRotation());
 			auto modelMatrix = translation * rotation;
 
-			m_renderer.GetFeature<DebugModelRenderFeature>()
+			m_debugModelFeature
 				.DrawModelWithSingleMaterial(p_pso, cameraModel, m_actorPickingFallbackMaterial, modelMatrix);
 		}
 	}
@@ -238,7 +242,7 @@ void OvEditor::Rendering::PickingRenderPass::DrawPickableReflectionProbes(OvRend
 			);
 			auto modelMatrix = translation * rotation * scaling;
 
-			m_renderer.GetFeature<DebugModelRenderFeature>()
+			m_debugModelFeature
 				.DrawModelWithSingleMaterial(p_pso, reflectionProbeModel, m_reflectionProbeMaterial, modelMatrix);
 		}
 	}
@@ -265,7 +269,7 @@ void OvEditor::Rendering::PickingRenderPass::DrawPickableLights(
 				auto& lightModel = *EDITOR_CONTEXT(editorResources)->GetModel("Vertical_Plane");
 				auto modelMatrix = OvMaths::FMatrix4::Translation(actor.transform.GetWorldPosition());
 
-				m_renderer.GetFeature<DebugModelRenderFeature>()
+				m_debugModelFeature
 					.DrawModelWithSingleMaterial(p_pso, lightModel, m_lightMaterial, modelMatrix);
 			}
 		}
@@ -285,6 +289,6 @@ void OvEditor::Rendering::PickingRenderPass::DrawPickableGizmo(
 
 	auto arrowModel = EDITOR_CONTEXT(editorResources)->GetModel("Arrow_Picking");
 
-	m_renderer.GetFeature<DebugModelRenderFeature>()
+	m_debugModelFeature
 		.DrawModelWithSingleMaterial(p_pso, *arrowModel, m_gizmoPickingMaterial, modelMatrix);
 }

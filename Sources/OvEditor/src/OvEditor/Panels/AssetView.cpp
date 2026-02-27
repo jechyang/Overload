@@ -13,9 +13,65 @@
 #include <OvEditor/Panels/AssetView.h>
 #include <OvEditor/Rendering/GridRenderPass.h>
 #include <OvEditor/Rendering/DebugModelRenderFeature.h>
+#include <OvRendering/Features/DebugShapeRenderFeature.h>
 #include <OvRendering/Features/FrameInfoRenderFeature.h>
+#include <OvRendering/FrameGraph/FrameGraph.h>
+#include <OvRendering/FrameGraph/FrameGraphBuilder.h>
+#include <OvRendering/FrameGraph/FrameGraphResources.h>
 #include <OvTools/Utils/PathParser.h>
 #include <OvUI/Plugins/DDTarget.h>
+
+namespace
+{
+	class AssetViewRenderer : public OvCore::Rendering::SceneRenderer
+	{
+	public:
+		AssetViewRenderer(OvRendering::Context::Driver& p_driver)
+			: OvCore::Rendering::SceneRenderer(p_driver)
+		{
+			using namespace OvRendering::Features;
+			using enum EFeatureExecutionPolicy;
+
+			m_debugModelFeature = std::make_unique<OvEditor::Rendering::DebugModelRenderFeature>(*this, NEVER);
+			m_debugShapeFeature = std::make_unique<DebugShapeRenderFeature>(*this, NEVER);
+			m_frameInfoFeature  = std::make_unique<FrameInfoRenderFeature>(*this, ALWAYS);
+			m_gridPass = std::make_unique<OvEditor::Rendering::GridRenderPass>(*this, *m_debugShapeFeature, *m_debugModelFeature);
+		}
+
+		const OvRendering::Data::FrameInfo& GetFrameInfo() const
+		{
+			return m_frameInfoFeature->GetFrameInfo();
+		}
+
+		void EndFrame() override
+		{
+			m_frameInfoFeature->OnEndFrame();
+			OvCore::Rendering::SceneRenderer::EndFrame();
+		}
+
+	protected:
+		void BuildFrameGraph(OvRendering::FrameGraph::FrameGraph& p_fg) override
+		{
+			m_frameInfoFeature->OnBeginFrame(m_frameDescriptor);
+			SceneRenderer::BuildFrameGraph(p_fg);
+
+			struct GridPassData {};
+			p_fg.AddPass<GridPassData>("Grid",
+				[](OvRendering::FrameGraph::FrameGraphBuilder& b, GridPassData&) { b.SetAsOutput({}); },
+				[this](const OvRendering::FrameGraph::FrameGraphResources&, const GridPassData&) {
+					auto pso = CreatePipelineState();
+					m_gridPass->Draw(pso);
+				}
+			);
+		}
+
+	private:
+		std::unique_ptr<OvEditor::Rendering::DebugModelRenderFeature> m_debugModelFeature;
+		std::unique_ptr<OvRendering::Features::DebugShapeRenderFeature> m_debugShapeFeature;
+		std::unique_ptr<OvRendering::Features::FrameInfoRenderFeature> m_frameInfoFeature;
+		std::unique_ptr<OvRendering::Core::ARenderPass> m_gridPass;
+	};
+}
 
 OvEditor::Panels::AssetView::AssetView
 (
@@ -24,18 +80,7 @@ OvEditor::Panels::AssetView::AssetView
 	const OvUI::Settings::PanelWindowSettings& p_windowSettings
 ) : AViewControllable(p_title, p_opened, p_windowSettings)
 {
-	using namespace OvRendering::Features;
-	using namespace OvEditor::Rendering;
-	using namespace OvRendering::Settings;
-	using enum OvRendering::Features::EFeatureExecutionPolicy;
-
-	m_renderer = std::make_unique<OvCore::Rendering::SceneRenderer>(*EDITOR_CONTEXT(driver));
-
-	m_renderer->AddFeature<DebugModelRenderFeature, NEVER>();
-	m_renderer->AddFeature<DebugShapeRenderFeature, NEVER>();
-	m_renderer->AddFeature<FrameInfoRenderFeature, ALWAYS>();
-
-	m_renderer->AddPass<OvEditor::Rendering::GridRenderPass>("Grid", OvRendering::Settings::ERenderPassOrder::Debug);
+	m_renderer = std::make_unique<AssetViewRenderer>(*EDITOR_CONTEXT(driver));
 
 	m_camera.SetFar(5000.0f);
 
@@ -154,4 +199,9 @@ void OvEditor::Panels::AssetView::SetMaterial(OvCore::Resources::Material& p_mat
 const OvEditor::Panels::AssetView::ViewableResource& OvEditor::Panels::AssetView::GetResource() const
 {
 	return m_resource;
+}
+
+const OvRendering::Data::FrameInfo& OvEditor::Panels::AssetView::GetFrameInfo() const
+{
+	return static_cast<const AssetViewRenderer&>(*m_renderer).GetFrameInfo();
 }

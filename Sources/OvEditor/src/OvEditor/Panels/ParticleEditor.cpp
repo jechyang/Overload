@@ -23,6 +23,61 @@
 #include <OvEditor/Rendering/GridRenderPass.h>
 #include <OvRendering/Features/DebugShapeRenderFeature.h>
 #include <OvEditor/Rendering/DebugModelRenderFeature.h>
+#include <OvRendering/FrameGraph/FrameGraph.h>
+#include <OvRendering/FrameGraph/FrameGraphBuilder.h>
+#include <OvRendering/FrameGraph/FrameGraphResources.h>
+
+namespace
+{
+	class ParticleEditorRenderer : public OvCore::Rendering::SceneRenderer
+	{
+	public:
+		ParticleEditorRenderer(OvRendering::Context::Driver& p_driver)
+			: OvCore::Rendering::SceneRenderer(p_driver)
+		{
+			using namespace OvRendering::Features;
+			using enum EFeatureExecutionPolicy;
+
+			m_debugModelFeature = std::make_unique<OvEditor::Rendering::DebugModelRenderFeature>(*this, NEVER);
+			m_debugShapeFeature = std::make_unique<DebugShapeRenderFeature>(*this, NEVER);
+			m_frameInfoFeature  = std::make_unique<FrameInfoRenderFeature>(*this, ALWAYS);
+			m_gridPass = std::make_unique<OvEditor::Rendering::GridRenderPass>(*this, *m_debugShapeFeature, *m_debugModelFeature);
+		}
+
+		const OvRendering::Data::FrameInfo& GetFrameInfo() const
+		{
+			return m_frameInfoFeature->GetFrameInfo();
+		}
+
+		void EndFrame() override
+		{
+			m_frameInfoFeature->OnEndFrame();
+			OvCore::Rendering::SceneRenderer::EndFrame();
+		}
+
+	protected:
+		void BuildFrameGraph(OvRendering::FrameGraph::FrameGraph& p_fg) override
+		{
+			m_frameInfoFeature->OnBeginFrame(m_frameDescriptor);
+			SceneRenderer::BuildFrameGraph(p_fg);
+
+			struct GridPassData {};
+			p_fg.AddPass<GridPassData>("Grid",
+				[](OvRendering::FrameGraph::FrameGraphBuilder& b, GridPassData&) { b.SetAsOutput({}); },
+				[this](const OvRendering::FrameGraph::FrameGraphResources&, const GridPassData&) {
+					auto pso = CreatePipelineState();
+					m_gridPass->Draw(pso);
+				}
+			);
+		}
+
+	private:
+		std::unique_ptr<OvEditor::Rendering::DebugModelRenderFeature> m_debugModelFeature;
+		std::unique_ptr<OvRendering::Features::DebugShapeRenderFeature> m_debugShapeFeature;
+		std::unique_ptr<OvRendering::Features::FrameInfoRenderFeature> m_frameInfoFeature;
+		std::unique_ptr<OvRendering::Core::ARenderPass> m_gridPass;
+	};
+}
 
 using namespace OvEditor::Panels;
 using namespace OvCore::ParticleSystem;
@@ -33,15 +88,7 @@ OvEditor::Panels::ParticleEditor::ParticleEditor(
 	const OvUI::Settings::PanelWindowSettings& p_windowSettings
 ) : AViewControllable(p_title, p_opened, p_windowSettings)
 {
-	using namespace OvRendering::Features;
-	using namespace OvEditor::Rendering;
-	using enum OvRendering::Features::EFeatureExecutionPolicy;
-
-	m_renderer = std::make_unique<OvCore::Rendering::SceneRenderer>(*EDITOR_CONTEXT(driver));
-	m_renderer->AddFeature<Rendering::DebugModelRenderFeature, NEVER>();
-	m_renderer->AddFeature<OvRendering::Features::DebugShapeRenderFeature, NEVER>();
-	m_renderer->AddFeature<FrameInfoRenderFeature, ALWAYS>();
-	m_renderer->AddPass<OvEditor::Rendering::GridRenderPass>("Grid", OvRendering::Settings::ERenderPassOrder::Debug);
+	m_renderer = std::make_unique<ParticleEditorRenderer>(*EDITOR_CONTEXT(driver));
 
 	m_camera.SetFar(5000.0f);
 
@@ -77,6 +124,11 @@ OvEditor::Panels::ParticleEditor::ParticleEditor(
 OvCore::SceneSystem::Scene* OvEditor::Panels::ParticleEditor::GetScene()
 {
 	return &m_scene;
+}
+
+const OvRendering::Data::FrameInfo& OvEditor::Panels::ParticleEditor::GetFrameInfo() const
+{
+	return static_cast<const ParticleEditorRenderer&>(*m_renderer).GetFrameInfo();
 }
 
 void OvEditor::Panels::ParticleEditor::SetTarget(OvCore::ECS::Components::CParticleSystem& p_system)

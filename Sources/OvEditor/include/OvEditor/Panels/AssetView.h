@@ -75,6 +75,8 @@ namespace OvEditor::Panels
 		*/
 		const ViewableResource& GetResource() const;
 
+		virtual const OvRendering::Data::FrameInfo& GetFrameInfo() const override;
+
 	private:
 		OvCore::Resources::Material m_defaultMaterial;
 		OvCore::Resources::Material m_textureMaterial;

@@ -16,6 +16,7 @@
 
 #include <OvEditor/Core/Context.h>
 #include <OvEditor/Core/GizmoBehaviour.h>
+#include <OvEditor/Rendering/DebugModelRenderFeature.h>
 
 #include <OvRendering/Entities/Camera.h>
 #include <OvRendering/Features/DebugShapeRenderFeature.h>
@@ -37,8 +38,12 @@ namespace OvEditor::Rendering
 		/**
 		* Constructor
 		* @param p_renderer
+		* @param p_debugModelFeature
 		*/
-		PickingRenderPass(OvRendering::Core::CompositeRenderer& p_renderer);
+		PickingRenderPass(
+			OvRendering::Core::CompositeRenderer& p_renderer,
+			DebugModelRenderFeature& p_debugModelFeature
+		);
 
 		/**
 		* Return the picking result at the given position
@@ -52,7 +57,7 @@ namespace OvEditor::Rendering
 			uint32_t p_y
 		);
 
-	private:
+	public:
 		virtual void Draw(OvRendering::Data::PipelineState p_pso) override;
 		void DrawPickableModels(OvRendering::Data::PipelineState p_pso, OvCore::SceneSystem::Scene& p_scene);
 		void DrawPickableCameras(OvRendering::Data::PipelineState p_pso, OvCore::SceneSystem::Scene& p_scene);
@@ -66,6 +71,7 @@ namespace OvEditor::Rendering
 		);
 
 	private:
+		DebugModelRenderFeature& m_debugModelFeature;
 		OvRendering::HAL::Framebuffer m_actorPickingFramebuffer;
 		OvCore::Resources::Material m_actorPickingFallbackMaterial;
 		OvCore::Resources::Material m_reflectionProbeMaterial;

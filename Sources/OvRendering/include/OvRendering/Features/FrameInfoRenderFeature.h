@@ -36,9 +36,11 @@ namespace OvRendering::Features
 		*/
 		const OvRendering::Data::FrameInfo& GetFrameInfo() const;
 
-	protected:
+	public:
 		virtual void OnBeginFrame(const Data::FrameDescriptor& p_frameDescriptor) override;
 		virtual void OnEndFrame() override;
+
+	protected:
 		virtual void OnAfterDraw(const OvRendering::Entities::Drawable& p_drawable) override;
 
 	private:

@@ -15,8 +15,14 @@
 #include <OvRendering/Features/DebugShapeRenderFeature.h>
 #include <OvRendering/HAL/Profiling.h>
 
-OvEditor::Rendering::GridRenderPass::GridRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) :
-	OvRendering::Core::ARenderPass(p_renderer)
+OvEditor::Rendering::GridRenderPass::GridRenderPass(
+	OvRendering::Core::CompositeRenderer& p_renderer,
+	OvRendering::Features::DebugShapeRenderFeature& p_debugShapeFeature,
+	DebugModelRenderFeature& p_debugModelFeature
+) :
+	OvRendering::Core::ARenderPass(p_renderer),
+	m_debugShapeFeature(p_debugShapeFeature),
+	m_debugModelFeature(p_debugModelFeature)
 {
 	/* Grid Material */
 	m_gridMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Grid"));
@@ -32,11 +38,8 @@ void OvEditor::Rendering::GridRenderPass::Draw(OvRendering::Data::PipelineState 
 	TracyGpuZone("GridRenderPass");
 
 	OVASSERT(m_renderer.HasDescriptor<GridDescriptor>(), "Cannot find GridDescriptor attached to this renderer");
-	OVASSERT(m_renderer.HasFeature<OvRendering::Features::DebugShapeRenderFeature>(), "Cannot find DebugShapeRenderFeature attached to this renderer");
-	OVASSERT(m_renderer.HasFeature<OvEditor::Rendering::DebugModelRenderFeature>(), "Cannot find DebugModelRenderFeature attached to this renderer");
 
 	auto& gridDescriptor = m_renderer.GetDescriptor<GridDescriptor>();
-	auto& debugShapeRenderer = m_renderer.GetFeature<OvRendering::Features::DebugShapeRenderFeature>();
 
 	auto pso = m_renderer.CreatePipelineState();
 
@@ -48,12 +51,12 @@ void OvEditor::Rendering::GridRenderPass::Draw(OvRendering::Data::PipelineState 
 
 	m_gridMaterial.SetProperty("u_Color", gridDescriptor.gridColor);
 
-	m_renderer.GetFeature<DebugModelRenderFeature>()
+	m_debugModelFeature
 		.DrawModelWithSingleMaterial(pso, *EDITOR_CONTEXT(editorResources)->GetModel("Plane"), m_gridMaterial, model);
 
 	constexpr float kLineWidth = 1.0f;
 
-	debugShapeRenderer.DrawLine(pso, OvMaths::FVector3(-gridSize + gridDescriptor.viewPosition.x, 0.0f, 0.0f), OvMaths::FVector3(gridSize + gridDescriptor.viewPosition.x, 0.0f, 0.0f), OvMaths::FVector3::Right, kLineWidth);
-	debugShapeRenderer.DrawLine(pso, OvMaths::FVector3(0.0f, -gridSize + gridDescriptor.viewPosition.y, 0.0f), OvMaths::FVector3(0.0f, gridSize + gridDescriptor.viewPosition.y, 0.0f), OvMaths::FVector3::Up, kLineWidth);
-	debugShapeRenderer.DrawLine(pso, OvMaths::FVector3(0.0f, 0.0f, -gridSize + gridDescriptor.viewPosition.z), OvMaths::FVector3(0.0f, 0.0f, gridSize + gridDescriptor.viewPosition.z), OvMaths::FVector3::Forward, kLineWidth);
+	m_debugShapeFeature.DrawLine(pso, OvMaths::FVector3(-gridSize + gridDescriptor.viewPosition.x, 0.0f, 0.0f), OvMaths::FVector3(gridSize + gridDescriptor.viewPosition.x, 0.0f, 0.0f), OvMaths::FVector3::Right, kLineWidth);
+	m_debugShapeFeature.DrawLine(pso, OvMaths::FVector3(0.0f, -gridSize + gridDescriptor.viewPosition.y, 0.0f), OvMaths::FVector3(0.0f, gridSize + gridDescriptor.viewPosition.y, 0.0f), OvMaths::FVector3::Up, kLineWidth);
+	m_debugShapeFeature.DrawLine(pso, OvMaths::FVector3(0.0f, 0.0f, -gridSize + gridDescriptor.viewPosition.z), OvMaths::FVector3(0.0f, 0.0f, gridSize + gridDescriptor.viewPosition.z), OvMaths::FVector3::Forward, kLineWidth);
 }

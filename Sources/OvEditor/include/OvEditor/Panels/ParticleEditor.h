@@ -38,6 +38,7 @@ namespace OvEditor::Panels
 
 		virtual OvCore::SceneSystem::Scene* GetScene() override;
 		virtual void Update(float p_deltaTime) override;
+		virtual const OvRendering::Data::FrameInfo& GetFrameInfo() const override;
 		void Render();
 		virtual void _Draw_Impl() override;
 

@@ -4,7 +4,6 @@
 * @licence: MIT
 */
 
-#include <algorithm>
 #include <vector>
 
 #include <tinyxml2.h>
@@ -45,13 +44,14 @@ void OvCore::ECS::Components::CParticleSystem::OnUpdate(float p_deltaTime)
 
 	// Emit new particles
 	if (m_emitter)
-		m_emitter->Emit(m_particles, p_deltaTime);
+		m_emitter->Emit(m_pool, p_deltaTime);
 
-	// Update live particles
-	const OvMaths::FVector3 worldPos = owner.transform.GetWorldPosition();
-
-	for (auto& p : m_particles)
+	// Update live particles and release dead ones
+	for (auto& p : m_pool.GetSlots())
 	{
+		if (!p.active)
+			continue;
+
 		// Apply affectors
 		for (auto& affector : m_affectors)
 			affector->Apply(p, p_deltaTime);
@@ -64,14 +64,10 @@ void OvCore::ECS::Components::CParticleSystem::OnUpdate(float p_deltaTime)
 		p.color.w = lifeRatio;
 
 		p.timeToLive -= p_deltaTime;
-	}
 
-	// Remove dead particles
-	m_particles.erase(
-		std::remove_if(m_particles.begin(), m_particles.end(),
-			[](const ParticleSystem::ParticleSystemParticle& p) { return p.timeToLive <= 0.0f; }),
-		m_particles.end()
-	);
+		if (p.timeToLive <= 0.0f)
+			m_pool.Release(p);
+	}
 }
 
 void OvCore::ECS::Components::CParticleSystem::SetEmitter(
@@ -90,7 +86,7 @@ void OvCore::ECS::Components::CParticleSystem::Reset()
 {
 	m_emitter = std::make_unique<ParticleSystem::PointParticleEmitter>();
 	m_affectors.clear();
-	m_particles.clear();
+	m_pool.Clear();
 	material = nullptr;
 }
 
@@ -98,18 +94,21 @@ void OvCore::ECS::Components::CParticleSystem::RebuildMesh(
 	const OvMaths::FVector3& p_cameraRight,
 	const OvMaths::FVector3& p_cameraUp)
 {
-	if (m_particles.empty())
+	if (m_pool.GetActiveCount() == 0)
 		return;
 
 	const OvMaths::FVector3 worldPos = owner.transform.GetWorldPosition();
 
 	std::vector<OvRendering::Geometry::Vertex> vertices;
 	std::vector<uint32_t> indices;
-	vertices.reserve(m_particles.size() * 4);
-	indices.reserve(m_particles.size() * 6);
+	vertices.reserve(m_pool.GetActiveCount() * 4);
+	indices.reserve(m_pool.GetActiveCount() * 6);
 
-	for (const auto& p : m_particles)
+	for (const auto& p : m_pool.GetSlots())
 	{
+		if (!p.active)
+			continue;
+
 		const OvMaths::FVector3 center = worldPos + p.position;
 		const float half = p.size * 0.5f;
 
@@ -148,7 +147,7 @@ OvCore::ParticleSystem::ParticleMesh& OvCore::ECS::Components::CParticleSystem::
 
 uint32_t OvCore::ECS::Components::CParticleSystem::GetParticleCount() const
 {
-	return static_cast<uint32_t>(m_particles.size());
+	return m_pool.GetActiveCount();
 }
 
 void OvCore::ECS::Components::CParticleSystem::OnSerialize(

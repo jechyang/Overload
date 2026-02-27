@@ -105,6 +105,7 @@ namespace OvRendering::Features
 		*/
 		ARenderFeature(Core::CompositeRenderer& p_renderer, EFeatureExecutionPolicy p_executionPolicy);
 
+	public:
 		/**
 		* Invoked when the BeginFrame is called on the associated base renderer
 		* @note Won't be called if the feature execution policy is set to NEVER.
@@ -118,6 +119,7 @@ namespace OvRendering::Features
 		*/
 		virtual void OnEndFrame();
 
+	protected:
 		/**
 		* Invoked before drawing a drawable entity
 		* @note Won't be called if the feature execution policy is set to NEVER.

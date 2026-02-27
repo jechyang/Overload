@@ -44,6 +44,12 @@ namespace OvRendering::Core
 		*/
 		bool IsEnabled() const;
 
+		/**
+		* Performs the rendering for the pass using the specified PipelineState.
+		* @param p_pso
+		*/
+		virtual void Draw(OvRendering::Data::PipelineState p_pso) = 0;
+
 	protected:
 		/**
 		* Invoked when BeginFrame is called on the associated renderer
@@ -55,12 +61,6 @@ namespace OvRendering::Core
 		* Invoked when EndFrame is called on the associated renderer
 		*/
 		virtual void OnEndFrame();
-
-		/**
-		* Performs the rendering for the pass using the specified PipelineState.
-		* @param p_pso
-		*/
-		virtual void Draw(OvRendering::Data::PipelineState p_pso) = 0;
 
 	protected:
 		Core::CompositeRenderer& m_renderer;

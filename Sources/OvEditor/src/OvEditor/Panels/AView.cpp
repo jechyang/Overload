@@ -100,6 +100,12 @@ const OvCore::Rendering::SceneRenderer& OvEditor::Panels::AView::GetRenderer() c
 	return *m_renderer.get();
 }
 
+const OvRendering::Data::FrameInfo& OvEditor::Panels::AView::GetFrameInfo() const
+{
+	static constexpr OvRendering::Data::FrameInfo kEmpty{};
+	return kEmpty;
+}
+
 OvCore::Rendering::SceneRenderer::SceneDescriptor OvEditor::Panels::AView::CreateSceneDescriptor()
 {
 	auto scene = GetScene();

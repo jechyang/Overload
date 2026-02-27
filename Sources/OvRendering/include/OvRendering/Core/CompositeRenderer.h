@@ -6,20 +6,15 @@
 
 #pragma once
 
-#include <typeindex>
-#include <memory>
-
 #include <OvRendering/Core/ABaseRenderer.h>
-#include <OvRendering/Core/ARenderPass.h>
 #include <OvRendering/Data/Describable.h>
-#include <OvRendering/Features/ARenderFeature.h>
-#include <OvRendering/Types/RenderFeatureType.h>
-#include <OvRendering/Types/RenderPassType.h>
+#include <OvRendering/FrameGraph/FrameGraph.h>
 
 namespace OvRendering::Core
 {
 	/**
-	* A renderer relying on composition to define rendering logic.
+	* A renderer driven by a FrameGraph. Subclasses implement BuildFrameGraph()
+	* to declare passes and resource dependencies each frame.
 	*/
 	class CompositeRenderer : public ABaseRenderer, public Data::Describable
 	{
@@ -28,7 +23,7 @@ namespace OvRendering::Core
 		OvTools::Eventing::Event<const Entities::Drawable&> postDrawEntityEvent;
 
 		/**
-		* Constructor of the base renderer
+		* Constructor
 		* @param p_driver
 		*/
 		CompositeRenderer(Context::Driver& p_driver);
@@ -40,8 +35,7 @@ namespace OvRendering::Core
 		virtual void BeginFrame(const Data::FrameDescriptor& p_frameDescriptor) override;
 
 		/**
-		* Handle the drawing logic of render pass, invoking DrawPass on the renderer and its
-		* associated render features.
+		* Resets the FrameGraph, calls BuildFrameGraph, compiles and executes.
 		*/
 		virtual void DrawFrame() final;
 
@@ -51,7 +45,7 @@ namespace OvRendering::Core
 		virtual void EndFrame() override;
 
 		/**
-		* Draw a drawable entity
+		* Draw a drawable entity, firing pre/post draw events.
 		* @param p_pso
 		* @param p_drawable
 		*/
@@ -60,55 +54,13 @@ namespace OvRendering::Core
 			const Entities::Drawable& p_drawable
 		) override;
 
-		/**
-		* Add a render feature to the renderer
-		* @param p_args (Parameter pack forwared to the render feature constructor)
-		*/
-		template<Types::RenderFeatureType T, Features::EFeatureExecutionPolicy Policy, typename ... Args>
-		T& AddFeature(Args&&... p_args);
-
-		/**
-		* Remove the given render feature
-		*/
-		template<Types::RenderFeatureType T>
-		bool RemoveFeature();
-
-		/**
-		* Retrieve the render feature matching the given type
-		* @note Fails if the feature doesn't exist
-		*/
-		template<Types::RenderFeatureType T>
-		T& GetFeature() const;
-
-		/**
-		* Return true if the a feature matching the given type has been found
-		*/
-		template<Types::RenderFeatureType T>
-		bool HasFeature() const;
-
-		/**
-		* Add a render pass to the renderer
-		* @param p_name
-		* @param p_order
-		* @param p_args (Parameter pack forwared to the render pass constructor)
-		*/
-		template<Types::RenderPassType T, typename ... Args>
-		T& AddPass(const std::string& p_name, uint32_t p_order, Args&&... p_args);
-
-		/**
-		* Retrieve the render passing matching the given pass name
-		* @param p_name
-		*/
-		template<Types::RenderPassType T>
-		T& GetPass(const std::string& p_name) const;
-
 	protected:
-		std::unordered_map<std::type_index, std::unique_ptr<Features::ARenderFeature>> m_features;
-		std::multimap<uint32_t, std::pair<std::string, std::unique_ptr<Core::ARenderPass>>> m_passes;
+		/**
+		* Subclasses implement this to register FrameGraph passes each frame.
+		* Called between Reset() and Compile() inside DrawFrame().
+		*/
+		virtual void BuildFrameGraph(FrameGraph::FrameGraph& p_fg) = 0;
 
-	private:
-		OvTools::Utils::OptRef<Core::ARenderPass> m_currentPass;
+		FrameGraph::FrameGraph m_frameGraph;
 	};
 }
-
-#include "OvRendering/Core/CompositeRenderer.inl"

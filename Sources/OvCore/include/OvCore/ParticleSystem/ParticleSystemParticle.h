@@ -22,5 +22,6 @@ namespace OvCore::ParticleSystem
 		float size;
 		float timeToLive;
 		float totalTimeToLive;
+		bool  active = false;
 	};
 }

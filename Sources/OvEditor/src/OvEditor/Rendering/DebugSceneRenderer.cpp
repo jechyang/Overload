@@ -12,8 +12,9 @@
 #include <OvCore/ECS/Components/CPhysicalSphere.h>
 #include <OvCore/ECS/Components/CPointLight.h>
 #include <OvCore/ECS/Components/CSpotLight.h>
+#include <OvCore/ECS/Components/CReflectionProbe.h>
 #include <OvCore/Rendering/EngineDrawableDescriptor.h>
-#include <OvCore/Rendering/ReflectionRenderFeature.h>
+#include <OvCore/Rendering/SceneRenderer.h>
 
 #include <OvDebug/Assertion.h>
 
@@ -44,9 +45,6 @@ namespace
 	const OvMaths::FVector3 kLightVolumeColor = { 1.0f, 1.0f, 0.0f };
 	const OvMaths::FVector3 kColliderColor = { 0.0f, 1.0f, 0.0f };
 	const OvMaths::FVector3 kFrustumColor = { 1.0f, 1.0f, 1.0f };
-
-	const OvMaths::FVector4 kHoveredOutlineColor{ 1.0f, 1.0f, 0.0f, 1.0f };
-	const OvMaths::FVector4 kSelectedOutlineColor{ 1.0f, 0.7f, 0.0f, 1.0f };
 
 	constexpr float kHoveredOutlineWidth = 2.5f;
 	constexpr float kSelectedOutlineWidth = 5.0f;
@@ -111,10 +109,18 @@ namespace
 	}
 }
 
+// ============================================================
+// DebugCamerasRenderPass
+// ============================================================
+
 class DebugCamerasRenderPass : public OvRendering::Core::ARenderPass
 {
 public:
-	DebugCamerasRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) : OvRendering::Core::ARenderPass(p_renderer)
+	DebugCamerasRenderPass(
+		OvRendering::Core::CompositeRenderer& p_renderer,
+		OvEditor::Rendering::DebugModelRenderFeature& p_debugModelFeature
+	) : OvRendering::Core::ARenderPass(p_renderer),
+		m_debugModelFeature(p_debugModelFeature)
 	{
 		m_fakeLightsBuffer = CreateDebugLightBuffer();
 
@@ -126,26 +132,13 @@ public:
 		m_cameraMaterial.SetProperty("u_BuiltInToneMapping", true);
 	}
 
-protected:
 	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
 	{
 		ZoneScoped;
 		TracyGpuZone("DebugCamerasRenderPass");
 
-		using namespace OvRendering::Features;
-
-		const auto lightingRenderFeature = OvTools::Utils::OptRef<LightingRenderFeature>{
-			m_renderer.HasFeature<LightingRenderFeature>() ?
-			m_renderer.GetFeature<LightingRenderFeature>() :
-			OvTools::Utils::OptRef<LightingRenderFeature>{std::nullopt}
-		};
-
 		// Override the light buffer with fake lights
-		m_fakeLightsBuffer->Bind(
-			lightingRenderFeature ?
-			lightingRenderFeature->GetBufferBindingPoint() :
-			0
-		);
+		m_fakeLightsBuffer->Bind(0);
 
 		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
 
@@ -158,27 +151,32 @@ protected:
 				auto& model = *EDITOR_CONTEXT(editorResources)->GetModel("Camera");
 				auto modelMatrix = CalculateUnscaledModelMatrix(actor);
 
-				m_renderer.GetFeature<OvEditor::Rendering::DebugModelRenderFeature>()
-					.DrawModelWithSingleMaterial(p_pso, model, m_cameraMaterial, modelMatrix);
+				m_debugModelFeature.DrawModelWithSingleMaterial(p_pso, model, m_cameraMaterial, modelMatrix);
 			}
 		}
 
-		if (lightingRenderFeature)
-		{
-			// Bind back the original light buffer
-			lightingRenderFeature->Bind();
-		}
+		// Restore the original light buffer
+		static_cast<OvCore::Rendering::SceneRenderer&>(m_renderer)._BindLightBuffer();
 	}
 
 private:
+	OvEditor::Rendering::DebugModelRenderFeature& m_debugModelFeature;
 	OvCore::Resources::Material m_cameraMaterial;
 	std::unique_ptr<OvRendering::HAL::ShaderStorageBuffer> m_fakeLightsBuffer;
 };
 
+// ============================================================
+// DebugReflectionProbesRenderPass
+// ============================================================
+
 class DebugReflectionProbesRenderPass : public OvRendering::Core::ARenderPass
 {
 public:
-	DebugReflectionProbesRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) : OvRendering::Core::ARenderPass(p_renderer)
+	DebugReflectionProbesRenderPass(
+		OvRendering::Core::CompositeRenderer& p_renderer,
+		OvEditor::Rendering::DebugModelRenderFeature& p_debugModelFeature
+	) : OvRendering::Core::ARenderPass(p_renderer),
+		m_debugModelFeature(p_debugModelFeature)
 	{
 		m_fakeLightsBuffer = CreateDebugLightBuffer();
 
@@ -191,29 +189,15 @@ public:
 		m_reflectiveMaterial.SetProperty("u_BuiltInToneMapping", true);
 	}
 
-protected:
 	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
 	{
 		ZoneScoped;
 		TracyGpuZone("DebugReflectionProbesRenderPass");
 
-		using namespace OvRendering::Features;
-
-		const auto lightingRenderFeature = OvTools::Utils::OptRef<LightingRenderFeature>{
-			m_renderer.HasFeature<LightingRenderFeature>() ?
-			m_renderer.GetFeature<LightingRenderFeature>() :
-			OvTools::Utils::OptRef<LightingRenderFeature>{std::nullopt}
-		};
-
 		// Override the light buffer with fake lights
-		m_fakeLightsBuffer->Bind(
-			lightingRenderFeature ?
-			lightingRenderFeature->GetBufferBindingPoint() :
-			0
-		);
+		m_fakeLightsBuffer->Bind(0);
 
 		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
-		auto& reflectionRenderFeature = m_renderer.GetFeature<OvCore::Rendering::ReflectionRenderFeature>();
 
 		for (auto reflectionProbe : sceneDescriptor.scene.GetFastAccessComponents().reflectionProbes)
 		{
@@ -231,31 +215,41 @@ protected:
 						OvMaths::FVector3::One * OvEditor::Settings::EditorSettings::ReflectionProbeScale
 					);
 
-				reflectionRenderFeature.PrepareProbe(*reflectionProbe);
-				reflectionRenderFeature.SendProbeData(m_reflectiveMaterial, *reflectionProbe);
-				reflectionRenderFeature.BindProbe(*reflectionProbe);
+				// Inline ReflectionRenderFeature::PrepareProbe / SendProbeData / BindProbe
+				reflectionProbe->_PrepareUBO();
+				m_reflectiveMaterial.SetProperty(
+					"_EnvironmentMap",
+					reflectionProbe->GetCubemap().get(),
+					true
+				);
+				reflectionProbe->_GetUniformBuffer().Bind(1);
 
-				m_renderer.GetFeature<OvEditor::Rendering::DebugModelRenderFeature>()
-					.DrawModelWithSingleMaterial(p_pso, model, m_reflectiveMaterial, modelMatrix);
+				m_debugModelFeature.DrawModelWithSingleMaterial(p_pso, model, m_reflectiveMaterial, modelMatrix);
 			}
 		}
 
-		if (lightingRenderFeature)
-		{
-			// Bind back the original light buffer
-			lightingRenderFeature->Bind();
-		}
+		// Restore the original light buffer
+		static_cast<OvCore::Rendering::SceneRenderer&>(m_renderer)._BindLightBuffer();
 	}
 
 private:
+	OvEditor::Rendering::DebugModelRenderFeature& m_debugModelFeature;
 	OvCore::Resources::Material m_reflectiveMaterial;
 	std::unique_ptr<OvRendering::HAL::ShaderStorageBuffer> m_fakeLightsBuffer;
 };
 
+// ============================================================
+// DebugLightsRenderPass
+// ============================================================
+
 class DebugLightsRenderPass : public OvRendering::Core::ARenderPass
 {
 public:
-	DebugLightsRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) : OvRendering::Core::ARenderPass(p_renderer)
+	DebugLightsRenderPass(
+		OvRendering::Core::CompositeRenderer& p_renderer,
+		OvEditor::Rendering::DebugModelRenderFeature& p_debugModelFeature
+	) : OvRendering::Core::ARenderPass(p_renderer),
+		m_debugModelFeature(p_debugModelFeature)
 	{
 		m_lightMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Billboard"));
 		m_lightMaterial.SetProperty("u_Diffuse", FVector4{ 1.f, 1.f, 0.5f, 0.5f });
@@ -264,505 +258,377 @@ public:
 		m_lightMaterial.SetDepthTest(false);
 	}
 
-protected:
 	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
 	{
 		ZoneScoped;
 		TracyGpuZone("DebugLightsRenderPass");
 
 		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
-
 		m_lightMaterial.SetProperty("u_Scale", OvEditor::Settings::EditorSettings::LightBillboardScale * 0.1f);
 
 		for (auto light : sceneDescriptor.scene.GetFastAccessComponents().lights)
 		{
 			auto& actor = light->owner;
+			if (!actor.IsActive()) continue;
 
-			if (actor.IsActive())
-			{
-				auto& model = *EDITOR_CONTEXT(editorResources)->GetModel("Vertical_Plane");
-				auto modelMatrix = OvMaths::FMatrix4::Translation(actor.transform.GetWorldPosition());
-
-				auto lightTypeTextureName = GetLightTypeTextureName(light->GetData().type);
-
-				auto lightTexture =
-					lightTypeTextureName ?
-					EDITOR_CONTEXT(editorResources)->GetTexture(lightTypeTextureName.value()) :
-					nullptr;
-
-				const auto& lightColor = light->GetColor();
-				m_lightMaterial.SetProperty("u_DiffuseMap", lightTexture);
-				m_lightMaterial.SetProperty("u_Diffuse", OvMaths::FVector4(lightColor.x, lightColor.y, lightColor.z, 0.75f));
-
-				m_renderer.GetFeature<OvEditor::Rendering::DebugModelRenderFeature>()
-					.DrawModelWithSingleMaterial(p_pso, model, m_lightMaterial, modelMatrix);
-			}
+			auto& model = *EDITOR_CONTEXT(editorResources)->GetModel("Vertical_Plane");
+			auto modelMatrix = OvMaths::FMatrix4::Translation(actor.transform.GetWorldPosition());
+			auto lightTypeTextureName = GetLightTypeTextureName(light->GetData().type);
+			auto lightTexture = lightTypeTextureName ?
+				EDITOR_CONTEXT(editorResources)->GetTexture(lightTypeTextureName.value()) : nullptr;
+			const auto& lightColor = light->GetColor();
+			m_lightMaterial.SetProperty("u_DiffuseMap", lightTexture);
+			m_lightMaterial.SetProperty("u_Diffuse", OvMaths::FVector4(lightColor.x, lightColor.y, lightColor.z, 0.75f));
+			m_debugModelFeature.DrawModelWithSingleMaterial(p_pso, model, m_lightMaterial, modelMatrix);
 		}
 	}
 
 private:
+	OvEditor::Rendering::DebugModelRenderFeature& m_debugModelFeature;
 	OvCore::Resources::Material m_lightMaterial;
 };
+
+// ============================================================
+// DebugActorRenderPass
+// ============================================================
 
 class DebugActorRenderPass : public OvRendering::Core::ARenderPass
 {
 public:
-	DebugActorRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) : OvRendering::Core::ARenderPass(p_renderer),
-		m_debugShapeFeature(m_renderer.GetFeature<OvRendering::Features::DebugShapeRenderFeature>())
-	{
-		
-	}
-
-protected:
-	OvRendering::Features::DebugShapeRenderFeature& m_debugShapeFeature;
+	DebugActorRenderPass(
+		OvRendering::Core::CompositeRenderer& p_renderer,
+		OvRendering::Features::DebugShapeRenderFeature& p_debugShapeFeature,
+		OvEditor::Rendering::OutlineRenderFeature& p_outlineFeature,
+		OvEditor::Rendering::GizmoRenderFeature& p_gizmoFeature
+	) : OvRendering::Core::ARenderPass(p_renderer),
+		m_debugShapeFeature(p_debugShapeFeature),
+		m_outlineFeature(p_outlineFeature),
+		m_gizmoFeature(p_gizmoFeature)
+	{}
 
 	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
 	{
 		ZoneScoped;
 		TracyGpuZone("DebugActorRenderPass");
 
-		// Clear stencil buffer for outline rendering
 		m_renderer.Clear(false, false, true);
 
-		auto& debugSceneDescriptor = m_renderer.GetDescriptor<OvEditor::Rendering::DebugSceneRenderer::DebugSceneDescriptor>();
+		auto& desc = m_renderer.GetDescriptor<OvEditor::Rendering::DebugSceneRenderer::DebugSceneDescriptor>();
 
-		if (debugSceneDescriptor.selectedActor)
+		if (desc.selectedActor)
 		{
-			auto& selectedActor = debugSceneDescriptor.selectedActor.value();
-			const bool isActorHovered = debugSceneDescriptor.highlightedActor && debugSceneDescriptor.highlightedActor->GetID() == selectedActor.GetID();
-
-			DrawActorDebugElements(selectedActor);
-			m_renderer.GetFeature<OvEditor::Rendering::OutlineRenderFeature>().DrawOutline(
-				selectedActor,
-				isActorHovered ?
-				kHoveredOutlineColor :
-				kSelectedOutlineColor,
-				kSelectedOutlineWidth
-			);
+			auto& selected = desc.selectedActor.value();
+			const bool isHovered = desc.highlightedActor && desc.highlightedActor->GetID() == selected.GetID();
+			DrawActorDebugElements(selected);
+			m_outlineFeature.DrawOutline(selected,
+				isHovered ? kHoveredOutlineColor : kSelectedOutlineColor, kSelectedOutlineWidth);
 			m_renderer.Clear(false, true, false, OvMaths::FVector3::Zero);
-			m_renderer.GetFeature<OvEditor::Rendering::GizmoRenderFeature>().DrawGizmo(
-				selectedActor.transform.GetWorldPosition(),
-				selectedActor.transform.GetWorldRotation(),
-				debugSceneDescriptor.gizmoOperation,
-				false,
-				debugSceneDescriptor.highlightedGizmoDirection
-			);
+			m_gizmoFeature.DrawGizmo(
+				selected.transform.GetWorldPosition(),
+				selected.transform.GetWorldRotation(),
+				desc.gizmoOperation, false,
+				desc.highlightedGizmoDirection);
 		}
-		
-		if (debugSceneDescriptor.highlightedActor)
-		{
-			auto& highlightedActor = debugSceneDescriptor.highlightedActor.value();
 
-			// Render the outline only if the actor is not already selected (as its outline render should have been handled already).
-			if (!debugSceneDescriptor.selectedActor || highlightedActor.GetID() != debugSceneDescriptor.selectedActor->GetID())
-			{
-				m_renderer.GetFeature<OvEditor::Rendering::OutlineRenderFeature>().DrawOutline(highlightedActor, kHoveredOutlineColor, kHoveredOutlineWidth);
-			}
+		if (desc.highlightedActor)
+		{
+			auto& highlighted = desc.highlightedActor.value();
+			if (!desc.selectedActor || highlighted.GetID() != desc.selectedActor->GetID())
+				m_outlineFeature.DrawOutline(highlighted, kHoveredOutlineColor, kHoveredOutlineWidth);
 		}
 	}
+
+private:
+	OvRendering::Features::DebugShapeRenderFeature& m_debugShapeFeature;
+	OvEditor::Rendering::OutlineRenderFeature& m_outlineFeature;
+	OvEditor::Rendering::GizmoRenderFeature& m_gizmoFeature;
+
+	const OvMaths::FVector4 kHoveredOutlineColor{ 1.0f, 1.0f, 0.0f, 1.0f };
+	const OvMaths::FVector4 kSelectedOutlineColor{ 1.0f, 0.7f, 0.0f, 1.0f };
 
 	void DrawActorDebugElements(OvCore::ECS::Actor& p_actor)
 	{
-		if (p_actor.IsActive())
+		if (!p_actor.IsActive()) return;
+		if (OvEditor::Settings::EditorSettings::ShowGeometryBounds)
 		{
-			/* Render static mesh outline and bounding spheres */
-			if (OvEditor::Settings::EditorSettings::ShowGeometryBounds)
-			{
-				auto modelRenderer = p_actor.GetComponent<OvCore::ECS::Components::CModelRenderer>();
-
-				if (modelRenderer && modelRenderer->GetModel())
-				{
-					DrawBoundingSpheres(*modelRenderer);
-				}
-			}
-
-			/* Render camera component frustum */
-			if (auto cameraComponent = p_actor.GetComponent<OvCore::ECS::Components::CCamera>(); cameraComponent)
-			{
-				DrawCameraFrustum(*cameraComponent);
-			}
-
-			/* Render camera component frustum */
-			if (auto reflectionProbeComponent = p_actor.GetComponent<OvCore::ECS::Components::CReflectionProbe>(); reflectionProbeComponent)
-			{
-				if (reflectionProbeComponent->GetInfluencePolicy() == OvCore::ECS::Components::CReflectionProbe::EInfluencePolicy::LOCAL)
-				{
-					DrawReflectionProbeInfluenceVolume(*reflectionProbeComponent);
-				}
-			}
-
-			/* Render the actor collider */
-			if (p_actor.GetComponent<OvCore::ECS::Components::CPhysicalObject>())
-			{
-				DrawActorCollider(p_actor);
-			}
-
-			/* Render the actor ambient light */
-			if (auto ambientBoxComp = p_actor.GetComponent<OvCore::ECS::Components::CAmbientBoxLight>())
-			{
-				DrawAmbientBoxVolume(*ambientBoxComp);
-			}
-
-			if (auto ambientSphereComp = p_actor.GetComponent<OvCore::ECS::Components::CAmbientSphereLight>())
-			{
-				DrawAmbientSphereVolume(*ambientSphereComp);
-			}
-
-			if (OvEditor::Settings::EditorSettings::ShowLightBounds)
-			{
-				if (auto light = p_actor.GetComponent<OvCore::ECS::Components::CLight>())
-				{
-					DrawLightBounds(*light);
-				}
-			}
-
-			for (auto& child : p_actor.GetChildren())
-			{
-				DrawActorDebugElements(*child);
-			}
+			auto mr = p_actor.GetComponent<OvCore::ECS::Components::CModelRenderer>();
+			if (mr && mr->GetModel()) DrawBoundingSpheres(*mr);
 		}
+		if (auto cam = p_actor.GetComponent<OvCore::ECS::Components::CCamera>()) DrawCameraFrustum(*cam);
+		if (auto probe = p_actor.GetComponent<OvCore::ECS::Components::CReflectionProbe>())
+			if (probe->GetInfluencePolicy() == OvCore::ECS::Components::CReflectionProbe::EInfluencePolicy::LOCAL)
+				DrawReflectionProbeInfluenceVolume(*probe);
+		if (p_actor.GetComponent<OvCore::ECS::Components::CPhysicalObject>()) DrawActorCollider(p_actor);
+		if (auto ab = p_actor.GetComponent<OvCore::ECS::Components::CAmbientBoxLight>()) DrawAmbientBoxVolume(*ab);
+		if (auto as = p_actor.GetComponent<OvCore::ECS::Components::CAmbientSphereLight>()) DrawAmbientSphereVolume(*as);
+		if (OvEditor::Settings::EditorSettings::ShowLightBounds)
+			if (auto light = p_actor.GetComponent<OvCore::ECS::Components::CLight>()) DrawLightBounds(*light);
+		for (auto& child : p_actor.GetChildren()) DrawActorDebugElements(*child);
 	}
 
-	void DrawFrustumLines(
-		const OvMaths::FVector3& pos,
-		const OvMaths::FVector3& forward,
-		float near,
-		const float far,
-		const OvMaths::FVector3& a,
-		const OvMaths::FVector3& b,
-		const OvMaths::FVector3& c,
-		const OvMaths::FVector3& d,
-		const OvMaths::FVector3& e,
-		const OvMaths::FVector3& f,
-		const OvMaths::FVector3& g,
-		const OvMaths::FVector3& h
-	)
+	void DrawFrustumLines(const OvMaths::FVector3& pos, const OvMaths::FVector3& forward,
+		float near, float far,
+		const OvMaths::FVector3& a, const OvMaths::FVector3& b,
+		const OvMaths::FVector3& c, const OvMaths::FVector3& d,
+		const OvMaths::FVector3& e, const OvMaths::FVector3& f,
+		const OvMaths::FVector3& g, const OvMaths::FVector3& h)
 	{
 		auto pso = m_renderer.CreatePipelineState();
-
-		// Convenient lambda to draw a frustum line
-		auto draw = [&](const FVector3& p_start, const FVector3& p_end, const float planeDistance) {
-			auto offset = pos + forward * planeDistance;
-			auto start = offset + p_start;
-			auto end = offset + p_end;
-			m_debugShapeFeature.DrawLine(pso, start, end, kFrustumColor, 1.0f, false);
+		auto draw = [&](const FVector3& s, const FVector3& t, float dist) {
+			auto off = pos + forward * dist;
+			m_debugShapeFeature.DrawLine(pso, off + s, off + t, kFrustumColor, 1.0f, false);
 		};
-
-		// Draw near plane
-		draw(a, b, near);
-		draw(b, d, near);
-		draw(d, c, near);
-		draw(c, a, near);
-
-		// Draw far plane
-		draw(e, f, far);
-		draw(f, h, far);
-		draw(h, g, far);
-		draw(g, e, far);
-
-		// Draw lines between near and far planes
-		draw(a + forward * near, e + forward * far, 0);
-		draw(b + forward * near, f + forward * far, 0);
-		draw(c + forward * near, g + forward * far, 0);
-		draw(d + forward * near, h + forward * far, 0);
+		draw(a,b,near); draw(b,d,near); draw(d,c,near); draw(c,a,near);
+		draw(e,f,far);  draw(f,h,far);  draw(h,g,far);  draw(g,e,far);
+		draw(a+forward*near, e+forward*far, 0);
+		draw(b+forward*near, f+forward*far, 0);
+		draw(c+forward*near, g+forward*far, 0);
+		draw(d+forward*near, h+forward*far, 0);
 	}
 
-	void DrawCameraPerspectiveFrustum(std::pair<uint16_t, uint16_t>& p_size, OvCore::ECS::Components::CCamera& p_camera)
+	void DrawCameraPerspectiveFrustum(std::pair<uint16_t,uint16_t>& sz, OvCore::ECS::Components::CCamera& cam)
 	{
-		const auto& owner = p_camera.owner;
-		auto& camera = p_camera.GetCamera();
-
-		const auto& cameraPos = owner.transform.GetWorldPosition();
-		const auto& cameraRotation = owner.transform.GetWorldRotation();
-		const auto& cameraForward = owner.transform.GetWorldForward();
-
-		camera.CacheMatrices(p_size.first, p_size.second); // TODO: We shouldn't cache matrices mid air, we could use another function to get the matrices/calculate
+		auto& camera = cam.GetCamera();
+		const auto& pos = cam.owner.transform.GetWorldPosition();
+		const auto& rot = cam.owner.transform.GetWorldRotation();
+		const auto& fwd = cam.owner.transform.GetWorldForward();
+		camera.CacheMatrices(sz.first, sz.second);
 		const auto proj = FMatrix4::Transpose(camera.GetProjectionMatrix());
-		const auto near = camera.GetNear();
-		const auto far = camera.GetFar();
-
-		const auto nLeft = near * (proj.data[2] - 1.0f) / proj.data[0];
-		const auto nRight = near * (1.0f + proj.data[2]) / proj.data[0];
-		const auto nTop = near * (1.0f + proj.data[6]) / proj.data[5];
-		const auto nBottom = near * (proj.data[6] - 1.0f) / proj.data[5];
-
-		const auto fLeft = far * (proj.data[2] - 1.0f) / proj.data[0];
-		const auto fRight = far * (1.0f + proj.data[2]) / proj.data[0];
-		const auto fTop = far * (1.0f + proj.data[6]) / proj.data[5];
-		const auto fBottom = far * (proj.data[6] - 1.0f) / proj.data[5];
-
-		auto a = cameraRotation * FVector3{ nLeft, nTop, 0 };
-		auto b = cameraRotation * FVector3{ nRight, nTop, 0 };
-		auto c = cameraRotation * FVector3{ nLeft, nBottom, 0 };
-		auto d = cameraRotation * FVector3{ nRight, nBottom, 0 };
-		auto e = cameraRotation * FVector3{ fLeft, fTop, 0 };
-		auto f = cameraRotation * FVector3{ fRight, fTop, 0 };
-		auto g = cameraRotation * FVector3{ fLeft, fBottom, 0 };
-		auto h = cameraRotation * FVector3{ fRight, fBottom, 0 };
-
-		DrawFrustumLines(cameraPos, cameraForward, near, far, a, b, c, d, e, f, g, h);
+		const auto n = camera.GetNear(), fr = camera.GetFar();
+		auto a = rot*FVector3{n*(proj.data[2]-1)/proj.data[0], n*(1+proj.data[6])/proj.data[5], 0};
+		auto b = rot*FVector3{n*(1+proj.data[2])/proj.data[0], n*(1+proj.data[6])/proj.data[5], 0};
+		auto c = rot*FVector3{n*(proj.data[2]-1)/proj.data[0], n*(proj.data[6]-1)/proj.data[5], 0};
+		auto d = rot*FVector3{n*(1+proj.data[2])/proj.data[0], n*(proj.data[6]-1)/proj.data[5], 0};
+		auto e = rot*FVector3{fr*(proj.data[2]-1)/proj.data[0], fr*(1+proj.data[6])/proj.data[5], 0};
+		auto f = rot*FVector3{fr*(1+proj.data[2])/proj.data[0], fr*(1+proj.data[6])/proj.data[5], 0};
+		auto g = rot*FVector3{fr*(proj.data[2]-1)/proj.data[0], fr*(proj.data[6]-1)/proj.data[5], 0};
+		auto h = rot*FVector3{fr*(1+proj.data[2])/proj.data[0], fr*(proj.data[6]-1)/proj.data[5], 0};
+		DrawFrustumLines(pos, fwd, n, fr, a, b, c, d, e, f, g, h);
 	}
 
-	void DrawCameraOrthographicFrustum(std::pair<uint16_t, uint16_t>& p_size, OvCore::ECS::Components::CCamera& p_camera)
+	void DrawCameraOrthographicFrustum(std::pair<uint16_t,uint16_t>& sz, OvCore::ECS::Components::CCamera& cam)
 	{
-		auto& owner = p_camera.owner;
-		auto& camera = p_camera.GetCamera();
-		const auto ratio = p_size.first / static_cast<float>(p_size.second);
-
-		const auto& cameraPos = owner.transform.GetWorldPosition();
-		const auto& cameraRotation = owner.transform.GetWorldRotation();
-		const auto& cameraForward = owner.transform.GetWorldForward();
-
-		const auto near = camera.GetNear();
-		const auto far = camera.GetFar();
-		const auto size = p_camera.GetSize();
-
-		const auto right = ratio * size;
-		const auto left = -right;
-		const auto top = size;
-		const auto bottom = -top;
-
-		const auto a = cameraRotation * FVector3{ left, top, 0 };
-		const auto b = cameraRotation * FVector3{ right, top, 0 };
-		const auto c = cameraRotation * FVector3{ left, bottom, 0 };
-		const auto d = cameraRotation * FVector3{ right, bottom, 0 };
-
-		DrawFrustumLines(cameraPos, cameraForward, near, far, a, b, c, d, a, b, c, d);
+		auto& camera = cam.GetCamera();
+		const float ratio = sz.first / static_cast<float>(sz.second);
+		const auto& pos = cam.owner.transform.GetWorldPosition();
+		const auto& rot = cam.owner.transform.GetWorldRotation();
+		const auto& fwd = cam.owner.transform.GetWorldForward();
+		const auto n = camera.GetNear(), fr = camera.GetFar();
+		const auto size = cam.GetSize(), right = ratio * size;
+		auto a = rot*FVector3{-right, size, 0}; auto b = rot*FVector3{right, size, 0};
+		auto c = rot*FVector3{-right,-size, 0}; auto d = rot*FVector3{right,-size, 0};
+		DrawFrustumLines(pos, fwd, n, fr, a, b, c, d, a, b, c, d);
 	}
 
-	void DrawCameraFrustum(OvCore::ECS::Components::CCamera& p_camera)
+	void DrawCameraFrustum(OvCore::ECS::Components::CCamera& cam)
 	{
 		auto& gameView = EDITOR_PANEL(OvEditor::Panels::GameView, "Game View");
-		auto gameViewSize = gameView.GetSafeSize();
-
-		if (gameViewSize.first == 0 || gameViewSize.second == 0)
+		auto sz = gameView.GetSafeSize();
+		if (sz.first == 0 || sz.second == 0) sz = {16, 9};
+		switch (cam.GetProjectionMode())
 		{
-			gameViewSize = { 16, 9 };
-		}
-
-		switch (p_camera.GetProjectionMode())
-		{
-		case OvRendering::Settings::EProjectionMode::ORTHOGRAPHIC:
-			DrawCameraOrthographicFrustum(gameViewSize, p_camera);
-			break;
-
-		case OvRendering::Settings::EProjectionMode::PERSPECTIVE:
-			DrawCameraPerspectiveFrustum(gameViewSize, p_camera);
-			break;
+		case OvRendering::Settings::EProjectionMode::ORTHOGRAPHIC: DrawCameraOrthographicFrustum(sz, cam); break;
+		case OvRendering::Settings::EProjectionMode::PERSPECTIVE:  DrawCameraPerspectiveFrustum(sz, cam);  break;
 		}
 	}
 
-	void DrawReflectionProbeInfluenceVolume(OvCore::ECS::Components::CReflectionProbe& p_reflectionProbe)
+	void DrawReflectionProbeInfluenceVolume(OvCore::ECS::Components::CReflectionProbe& probe)
 	{
-		auto pso = m_renderer.CreatePipelineState();
-		pso.depthTest = false;
-		const auto& size = p_reflectionProbe.GetInfluenceSize();
-		const auto position = p_reflectionProbe.owner.transform.GetWorldPosition();
-		m_debugShapeFeature.DrawBox(
-			pso,
-			position,
-			p_reflectionProbe.owner.transform.GetWorldRotation(),
-			size,
-			kDebugBoundsColor,
-			1.0f,
-			false
-		);
+		auto pso = m_renderer.CreatePipelineState(); pso.depthTest = false;
+		m_debugShapeFeature.DrawBox(pso, probe.owner.transform.GetWorldPosition(),
+			probe.owner.transform.GetWorldRotation(), probe.GetInfluenceSize(), kDebugBoundsColor, 1.0f, false);
 	}
 
-	void DrawActorCollider(OvCore::ECS::Actor& p_actor)
+	void DrawActorCollider(OvCore::ECS::Actor& actor)
 	{
 		using namespace OvCore::ECS::Components;
-		using namespace OvPhysics::Entities;
-
-		auto pso = m_renderer.CreatePipelineState();
-		pso.depthTest = false;
-
-		/* Draw the box collider if any */
-		if (auto boxColliderComponent = p_actor.GetComponent<OvCore::ECS::Components::CPhysicalBox>(); boxColliderComponent)
+		auto pso = m_renderer.CreatePipelineState(); pso.depthTest = false;
+		if (auto box = actor.GetComponent<CPhysicalBox>())
+			m_debugShapeFeature.DrawBox(pso, actor.transform.GetWorldPosition(), actor.transform.GetWorldRotation(),
+				box->GetSize() * actor.transform.GetWorldScale(), OvMaths::FVector3{0,1,0}, 1.0f, false);
+		if (auto sph = actor.GetComponent<CPhysicalSphere>())
 		{
-			m_debugShapeFeature.DrawBox(
-				pso,
-				p_actor.transform.GetWorldPosition(),
-				p_actor.transform.GetWorldRotation(),
-				boxColliderComponent->GetSize() * p_actor.transform.GetWorldScale(),
-				OvMaths::FVector3{ 0.f, 1.f, 0.f },
-				1.0f,
-				false
-			);
+			auto s = actor.transform.GetWorldScale();
+			m_debugShapeFeature.DrawSphere(pso, actor.transform.GetWorldPosition(), actor.transform.GetWorldRotation(),
+				sph->GetRadius() * std::max({s.x,s.y,s.z,0.f}), OvMaths::FVector3{0,1,0}, 1.0f, false);
 		}
-
-		/* Draw the sphere collider if any */
-		if (auto sphereColliderComponent = p_actor.GetComponent<OvCore::ECS::Components::CPhysicalSphere>(); sphereColliderComponent)
+		if (auto cap = actor.GetComponent<CPhysicalCapsule>())
 		{
-			FVector3 actorScale = p_actor.transform.GetWorldScale();
-			float radius = sphereColliderComponent->GetRadius() * std::max(std::max(std::max(actorScale.x, actorScale.y), actorScale.z), 0.0f);
-
-			m_debugShapeFeature.DrawSphere(
-				pso,
-				p_actor.transform.GetWorldPosition(),
-				p_actor.transform.GetWorldRotation(),
-				radius,
-				OvMaths::FVector3{ 0.f, 1.f, 0.f },
-				1.0f,
-				false
-			);
-		}
-
-		/* Draw the capsule collider if any */
-		if (auto capsuleColliderComponent = p_actor.GetComponent<OvCore::ECS::Components::CPhysicalCapsule>(); capsuleColliderComponent)
-		{
-			FVector3 actorScale = p_actor.transform.GetWorldScale();
-			float radius = abs(capsuleColliderComponent->GetRadius() * std::max(std::max(actorScale.x, actorScale.z), 0.f));
-			float height = abs(capsuleColliderComponent->GetHeight() * actorScale.y);
-
-			m_debugShapeFeature.DrawCapsule(
-				pso,
-				p_actor.transform.GetWorldPosition(),
-				p_actor.transform.GetWorldRotation(),
-				radius,
-				height,
-				OvMaths::FVector3{ 0.f, 1.f, 0.f },
-				1.0f,
-				false
-			);
+			auto s = actor.transform.GetWorldScale();
+			m_debugShapeFeature.DrawCapsule(pso, actor.transform.GetWorldPosition(), actor.transform.GetWorldRotation(),
+				abs(cap->GetRadius()*std::max({s.x,s.z,0.f})), abs(cap->GetHeight()*s.y),
+				OvMaths::FVector3{0,1,0}, 1.0f, false);
 		}
 	}
 
-	void DrawLightBounds(OvCore::ECS::Components::CLight& p_light)
+	void DrawLightBounds(OvCore::ECS::Components::CLight& light)
 	{
-		auto pso = m_renderer.CreatePipelineState();
-		pso.depthTest = false;
-
-		auto& data = p_light.GetData();
-
-		m_debugShapeFeature.DrawSphere(
-			pso,
-			data.transform->GetWorldPosition(),
-			data.transform->GetWorldRotation(),
-			data.CalculateEffectRange(),
-			kDebugBoundsColor,
-			1.0f,
-			false
-		);
+		auto pso = m_renderer.CreatePipelineState(); pso.depthTest = false;
+		auto& d = light.GetData();
+		m_debugShapeFeature.DrawSphere(pso, d.transform->GetWorldPosition(), d.transform->GetWorldRotation(),
+			d.CalculateEffectRange(), kDebugBoundsColor, 1.0f, false);
 	}
 
-	void DrawAmbientBoxVolume(OvCore::ECS::Components::CAmbientBoxLight& p_ambientBoxLight)
+	void DrawAmbientBoxVolume(OvCore::ECS::Components::CAmbientBoxLight& ab)
 	{
-		auto pso = m_renderer.CreatePipelineState();
-		pso.depthTest = false;
-
-		auto& data = p_ambientBoxLight.GetData();
-
-		m_debugShapeFeature.DrawBox(
-			pso,
-			p_ambientBoxLight.owner.transform.GetWorldPosition(),
-			data.transform->GetWorldRotation(),
-			{ data.constant, data.linear, data.quadratic },
-			data.CalculateEffectRange(),
-			1.0f,
-			false
-		);
+		auto pso = m_renderer.CreatePipelineState(); pso.depthTest = false;
+		auto& d = ab.GetData();
+		m_debugShapeFeature.DrawBox(pso, ab.owner.transform.GetWorldPosition(), d.transform->GetWorldRotation(),
+			{d.constant, d.linear, d.quadratic}, d.CalculateEffectRange(), 1.0f, false);
 	}
 
-	void DrawAmbientSphereVolume(OvCore::ECS::Components::CAmbientSphereLight& p_ambientSphereLight)
+	void DrawAmbientSphereVolume(OvCore::ECS::Components::CAmbientSphereLight& as)
 	{
-		auto pso = m_renderer.CreatePipelineState();
-		pso.depthTest = false;
-
-		auto& data = p_ambientSphereLight.GetData();
-
-		m_debugShapeFeature.DrawSphere(
-			pso,
-			p_ambientSphereLight.owner.transform.GetWorldPosition(),
-			p_ambientSphereLight.owner.transform.GetWorldRotation(),
-			data.constant,
-			kLightVolumeColor,
-			1.0f,
-			false
-		);
+		auto pso = m_renderer.CreatePipelineState(); pso.depthTest = false;
+		auto& d = as.GetData();
+		m_debugShapeFeature.DrawSphere(pso, as.owner.transform.GetWorldPosition(),
+			as.owner.transform.GetWorldRotation(), d.constant, kLightVolumeColor, 1.0f, false);
 	}
 
-	void DrawBoundingSpheres(OvCore::ECS::Components::CModelRenderer& p_modelRenderer)
+	void DrawBoundingSpheres(OvCore::ECS::Components::CModelRenderer& mr)
 	{
-		using namespace OvCore::ECS::Components;
-		using namespace OvPhysics::Entities;
 		using enum OvCore::ECS::Components::CModelRenderer::EFrustumBehaviour;
-
 		auto pso = m_renderer.CreatePipelineState();
-
-		const auto frustumBehaviour = p_modelRenderer.GetFrustumBehaviour();
-		
-		if (frustumBehaviour == DISABLED)
+		auto fb = mr.GetFrustumBehaviour();
+		if (fb == DISABLED) return;
+		if (auto model = mr.GetModel())
 		{
-			return; // No bounds to draw
-		}
-
-		// Draw the mesh, model, or custom bounding sphere
-		if (auto model = p_modelRenderer.GetModel())
-		{
-			auto& actor = p_modelRenderer.owner;
-
-			const auto& actorScale = actor.transform.GetWorldScale();
-			const auto& actorRotation = actor.transform.GetWorldRotation();
-			const auto& actorPosition = actor.transform.GetWorldPosition();
-
-			const float radiusScale = std::max(std::max(std::max(actorScale.x, actorScale.y), actorScale.z), 0.0f);
-
-			auto drawBounds = [&](const OvRendering::Geometry::BoundingSphere& p_bounds) {
-				const float scaledRadius = p_bounds.radius * radiusScale;
-				const auto sphereOffset = OvMaths::FQuaternion::RotatePoint(
-					p_bounds.position,
-					actorRotation
-				) * radiusScale;
-
-				m_debugShapeFeature.DrawSphere(
-					pso,
-					actorPosition + sphereOffset,
-					actorRotation,
-					scaledRadius,
-					kDebugBoundsColor,
-					1.0f,
-					false
-				);
+			auto& actor = mr.owner;
+			const auto& s = actor.transform.GetWorldScale();
+			const auto& rot = actor.transform.GetWorldRotation();
+			const auto& pos = actor.transform.GetWorldPosition();
+			const float rs = std::max({s.x, s.y, s.z, 0.f});
+			auto drawBounds = [&](const OvRendering::Geometry::BoundingSphere& b) {
+				auto off = OvMaths::FQuaternion::RotatePoint(b.position, rot) * rs;
+				m_debugShapeFeature.DrawSphere(pso, pos+off, rot, b.radius*rs, kDebugBoundsColor, 1.0f, false);
 			};
-
-			if (frustumBehaviour == MESH_BOUNDS)
-			{
-				for (auto mesh : model->GetMeshes())
-				{
-					drawBounds(mesh->GetBoundingSphere());
-				}
-			}
-			else
-			{
-				drawBounds(
-					frustumBehaviour == CUSTOM_BOUNDS ?
-					p_modelRenderer.GetCustomBoundingSphere() :
-					model->GetBoundingSphere()
-				);
-			}
+			if (fb == MESH_BOUNDS) for (auto mesh : model->GetMeshes()) drawBounds(mesh->GetBoundingSphere());
+			else drawBounds(fb == CUSTOM_BOUNDS ? mr.GetCustomBoundingSphere() : model->GetBoundingSphere());
 		}
 	}
 };
 
 OvEditor::Rendering::DebugSceneRenderer::DebugSceneRenderer(OvRendering::Context::Driver& p_driver) :
-	OvCore::Rendering::SceneRenderer(p_driver, true /* enable stencil write, required by the grid */)
+	OvCore::Rendering::SceneRenderer(p_driver, true)
 {
 	using namespace OvRendering::Features;
 	using namespace OvEditor::Rendering;
-	using namespace OvRendering::Settings;
-	using enum OvRendering::Features::EFeatureExecutionPolicy;
+	using enum EFeatureExecutionPolicy;
 
-	AddFeature<FrameInfoRenderFeature, ALWAYS>();
-	AddFeature<DebugShapeRenderFeature, FRAME_EVENTS_ONLY>();
-	AddFeature<DebugModelRenderFeature, NEVER>();
-	AddFeature<OutlineRenderFeature, NEVER>();
-	AddFeature<GizmoRenderFeature, NEVER>();
+	m_frameInfoFeature   = std::make_unique<FrameInfoRenderFeature>(*this, ALWAYS);
+	m_debugShapeFeature  = std::make_unique<DebugShapeRenderFeature>(*this, FRAME_EVENTS_ONLY);
+	m_debugModelFeature  = std::make_unique<DebugModelRenderFeature>(*this, NEVER);
+	m_outlineFeature     = std::make_unique<OutlineRenderFeature>(*this, NEVER);
+	m_gizmoFeature       = std::make_unique<GizmoRenderFeature>(*this, NEVER, *m_debugModelFeature);
 
-	AddPass<GridRenderPass>("Grid", ERenderPassOrder::Debug);
-	AddPass<DebugCamerasRenderPass>("Debug Cameras", ERenderPassOrder::Debug);
-	AddPass<DebugReflectionProbesRenderPass>("Debug Reflection Probes", ERenderPassOrder::Debug);
-	AddPass<DebugLightsRenderPass>("Debug Lights", ERenderPassOrder::Debug);
-	AddPass<DebugActorRenderPass>("Debug Actor", ERenderPassOrder::Debug);
-	AddPass<PickingRenderPass>("Picking", ERenderPassOrder::Debug);
+	m_gridPass                = std::make_unique<GridRenderPass>(*this, *m_debugShapeFeature, *m_debugModelFeature);
+	m_debugCamerasPass        = std::make_unique<DebugCamerasRenderPass>(*this, *m_debugModelFeature);
+	m_debugReflectionProbesPass = std::make_unique<DebugReflectionProbesRenderPass>(*this, *m_debugModelFeature);
+	m_debugLightsPass         = std::make_unique<DebugLightsRenderPass>(*this, *m_debugModelFeature);
+	m_debugActorPass          = std::make_unique<DebugActorRenderPass>(*this, *m_debugShapeFeature, *m_outlineFeature, *m_gizmoFeature);
+	m_pickingPass             = std::make_unique<PickingRenderPass>(*this, *m_debugModelFeature);
+}
+
+const OvRendering::Data::FrameInfo& OvEditor::Rendering::DebugSceneRenderer::GetFrameInfo() const
+{
+	return m_frameInfoFeature->GetFrameInfo();
+}
+
+OvEditor::Rendering::PickingRenderPass& OvEditor::Rendering::DebugSceneRenderer::GetPickingPass()
+{
+	return *m_pickingPass;
+}
+
+void OvEditor::Rendering::DebugSceneRenderer::EndFrame()
+{
+	m_frameInfoFeature->OnEndFrame();
+	OvCore::Rendering::SceneRenderer::EndFrame();
+}
+
+// ============================================================
+// BuildFrameGraph
+// ============================================================
+
+void OvEditor::Rendering::DebugSceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::FrameGraph& p_fg)
+{
+	using namespace OvRendering::FrameGraph;
+
+	// Run base scene passes first
+	SceneRenderer::BuildFrameGraph(p_fg);
+
+	// Notify features of frame begin
+	m_debugShapeFeature->OnBeginFrame(m_frameDescriptor);
+	m_frameInfoFeature->OnBeginFrame(m_frameDescriptor);
+
+	// PostProcess's Blit() calls outputBuffer.Unbind() at the end.
+	// Re-bind the output framebuffer so all debug passes render to the correct target.
+	struct RestoreOutputFBData {};
+	p_fg.AddPass<RestoreOutputFBData>("RestoreOutputFramebuffer",
+		[](FrameGraphBuilder& b, RestoreOutputFBData&) { b.SetAsOutput({}); },
+		[this](const FrameGraphResources&, const RestoreOutputFBData&) {
+			if (m_frameDescriptor.outputBuffer)
+				m_frameDescriptor.outputBuffer.value().Bind();
+		}
+	);
+
+	struct GridPassData {};
+	p_fg.AddPass<GridPassData>("Grid",
+		[](FrameGraphBuilder& b, GridPassData&) { b.SetAsOutput({}); },
+		[this](const FrameGraphResources&, const GridPassData&) {
+			ZoneScoped;
+			auto pso = CreatePipelineState();
+			m_gridPass->Draw(pso);
+		}
+	);
+
+	struct DebugCamerasPassData {};
+	p_fg.AddPass<DebugCamerasPassData>("DebugCameras",
+		[](FrameGraphBuilder& b, DebugCamerasPassData&) { b.SetAsOutput({}); },
+		[this](const FrameGraphResources&, const DebugCamerasPassData&) {
+			ZoneScoped;
+			auto pso = CreatePipelineState();
+			m_debugCamerasPass->Draw(pso);
+		}
+	);
+
+	struct DebugReflectionPassData {};
+	p_fg.AddPass<DebugReflectionPassData>("DebugReflectionProbes",
+		[](FrameGraphBuilder& b, DebugReflectionPassData&) { b.SetAsOutput({}); },
+		[this](const FrameGraphResources&, const DebugReflectionPassData&) {
+			ZoneScoped;
+			auto pso = CreatePipelineState();
+			m_debugReflectionProbesPass->Draw(pso);
+		}
+	);
+
+	struct DebugLightsPassData {};
+	p_fg.AddPass<DebugLightsPassData>("DebugLights",
+		[](FrameGraphBuilder& b, DebugLightsPassData&) { b.SetAsOutput({}); },
+		[this](const FrameGraphResources&, const DebugLightsPassData&) {
+			ZoneScoped;
+			auto pso = CreatePipelineState();
+			m_debugLightsPass->Draw(pso);
+		}
+	);
+
+	struct DebugActorPassData {};
+	p_fg.AddPass<DebugActorPassData>("DebugActor",
+		[](FrameGraphBuilder& b, DebugActorPassData&) { b.SetAsOutput({}); },
+		[this](const FrameGraphResources&, const DebugActorPassData&) {
+			ZoneScoped;
+			auto pso = CreatePipelineState();
+			m_debugActorPass->Draw(pso);
+		}
+	);
+
+	struct PickingPassData {};
+	p_fg.AddPass<PickingPassData>("Picking",
+		[](FrameGraphBuilder& b, PickingPassData&) { b.SetAsOutput({}); },
+		[this](const FrameGraphResources&, const PickingPassData&) {
+			ZoneScoped;
+			if (!m_pickingPass->IsEnabled()) return;
+			auto pso = CreatePipelineState();
+			m_pickingPass->Draw(pso);
+		}
+	);
 }
