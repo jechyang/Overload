@@ -40,8 +40,12 @@ void OvEditor::Rendering::GridRenderPass::Draw(OvRendering::Data::PipelineState 
 	OVASSERT(m_renderer.HasDescriptor<GridDescriptor>(), "Cannot find GridDescriptor attached to this renderer");
 
 	auto& gridDescriptor = m_renderer.GetDescriptor<GridDescriptor>();
+	auto& frameDescriptor = m_renderer.GetFrameDescriptor();
 
 	auto pso = m_renderer.CreatePipelineState();
+
+	// Set up camera matrices in engine UBO
+	static_cast<OvCore::Rendering::SceneRenderer&>(m_renderer)._SetCameraUBO(frameDescriptor.camera.value());
 
 	constexpr float gridSize = 5000.0f;
 

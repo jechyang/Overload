@@ -144,23 +144,19 @@ namespace OvCore::Rendering
 		// Rebind the light SSBO at binding point 0 (used by debug passes to restore after fake lights)
 		void _BindLightBuffer();
 
+		// Upload camera matrices to the engine UBO (used by debug passes)
+		void _SetCameraUBO(const OvRendering::Entities::Camera& p_camera);
+
+		/**
+		* Get engine UBO for matrix upload (used by DebugModelRenderFeature)
+		*/
+		OvRendering::HAL::UniformBuffer& GetEngineBuffer() { return *m_engineBuffer; }
+
 	protected:
 		/**
 		* Registers all FrameGraph passes for a scene frame.
 		*/
 		virtual void BuildFrameGraph(OvRendering::FrameGraph::FrameGraph& p_fg) override;
-
-		// Per-draw shadow uniform binding (called inside scene passes)
-		void _BindShadowUniforms(OvRendering::Data::Material& p_material);
-
-		// Per-draw reflection uniform binding (called inside scene passes)
-		void _BindReflectionUniforms(
-			OvRendering::Data::Material& p_material,
-			const OvRendering::Entities::Drawable& p_drawable
-		);
-
-		// Upload camera matrices to the engine UBO
-		void _SetCameraUBO(const OvRendering::Entities::Camera& p_camera);
 
 	private:
 		bool m_stencilWrite = false;
@@ -174,5 +170,10 @@ namespace OvCore::Rendering
 
 		// Cached post-process pass (owns ping-pong buffers and effects)
 		std::unique_ptr<PostProcessRenderPass> m_postProcessPass;
+
+		// Cached pass data for inter-pass communication
+		std::vector<std::shared_ptr<OvRendering::HAL::Texture>> m_shadowMaps;
+		std::vector<OvMaths::FMatrix4> m_lightSpaceMatrices;
+		std::vector<std::reference_wrapper<OvCore::ECS::Components::CReflectionProbe>> m_reflectionProbes;
 	};
 }

@@ -48,7 +48,7 @@ namespace OvRendering::FrameGraph
 		std::pair<FrameGraphPass<Data>&, Data&> AddPass(
 			std::string_view p_name,
 			std::function<void(FrameGraphBuilder&, Data&)> p_setup,
-			std::function<void(const FrameGraphResources&, const Data&)> p_execute
+			std::function<void(const FrameGraphResources&, Data&)> p_execute
 		);
 
 		/**

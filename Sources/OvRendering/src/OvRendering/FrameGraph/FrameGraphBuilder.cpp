@@ -5,16 +5,24 @@
 */
 
 #include <OvRendering/FrameGraph/FrameGraphBuilder.h>
+#include <OvRendering/HAL/UniformBuffer.h>
+#include <OvRendering/HAL/ShaderStorageBuffer.h>
 
 OvRendering::FrameGraph::FrameGraphBuilder::FrameGraphBuilder(
 	FrameGraphPassNode& p_pass,
 	std::vector<FrameGraphTextureDesc>& p_textureDescs,
 	std::vector<std::string>& p_textureNames,
+	std::vector<std::string>& p_bufferNames,
+	std::vector<bool>& p_bufferImported,
+	std::vector<std::shared_ptr<void>>& p_buffers,
 	uint32_t& p_nextHandleId
 ) :
 	m_pass(p_pass),
 	m_textureDescs(p_textureDescs),
 	m_textureNames(p_textureNames),
+	m_bufferNames(p_bufferNames),
+	m_bufferImported(p_bufferImported),
+	m_buffers(p_buffers),
 	m_nextHandleId(p_nextHandleId)
 {
 }

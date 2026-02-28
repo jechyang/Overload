@@ -41,7 +41,7 @@ namespace OvRendering::FrameGraph
 	struct FrameGraphPass final : FrameGraphPassNode
 	{
 		Data data{};
-		std::function<void(const FrameGraphResources&, const Data&)> executeFn;
+		std::function<void(const FrameGraphResources&, Data&)> executeFn;
 
 		void Execute(const FrameGraphResources& resources) override
 		{

@@ -14,14 +14,14 @@ namespace OvRendering::FrameGraph
 	std::pair<FrameGraphPass<Data>&, Data&> FrameGraph::AddPass(
 		std::string_view p_name,
 		std::function<void(FrameGraphBuilder&, Data&)> p_setup,
-		std::function<void(const FrameGraphResources&, const Data&)> p_execute
+		std::function<void(const FrameGraphResources&, Data&)> p_execute
 	)
 	{
 		auto* node = new FrameGraphPass<Data>();
 		node->name = p_name;
 		node->executeFn = std::move(p_execute);
 
-		FrameGraphBuilder builder(*node, m_textureDescs, m_textureNames, m_nextHandleId);
+		FrameGraphBuilder builder(*node, m_textureDescs, m_textureNames, m_bufferNames, m_bufferImported, m_buffers, m_nextHandleId);
 		p_setup(builder, node->data);
 
 		m_passes.emplace_back(node);

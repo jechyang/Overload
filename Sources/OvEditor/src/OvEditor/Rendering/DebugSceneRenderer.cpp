@@ -32,7 +32,6 @@
 
 #include <OvRendering/Features/DebugShapeRenderFeature.h>
 #include <OvRendering/Features/FrameInfoRenderFeature.h>
-#include <OvRendering/Features/LightingRenderFeature.h>
 #include <OvRendering/HAL/Profiling.h>
 
 using namespace OvMaths;
@@ -140,6 +139,9 @@ public:
 		// Override the light buffer with fake lights
 		m_fakeLightsBuffer->Bind(0);
 
+		// Set up camera matrices in engine UBO
+		static_cast<OvCore::Rendering::SceneRenderer&>(m_renderer)._SetCameraUBO(m_renderer.GetFrameDescriptor().camera.value());
+
 		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
 
 		for (auto camera : sceneDescriptor.scene.GetFastAccessComponents().cameras)
@@ -196,6 +198,9 @@ public:
 
 		// Override the light buffer with fake lights
 		m_fakeLightsBuffer->Bind(0);
+
+		// Set up camera matrices in engine UBO
+		static_cast<OvCore::Rendering::SceneRenderer&>(m_renderer)._SetCameraUBO(m_renderer.GetFrameDescriptor().camera.value());
 
 		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
 
@@ -263,6 +268,9 @@ public:
 		ZoneScoped;
 		TracyGpuZone("DebugLightsRenderPass");
 
+		// Set up camera matrices in engine UBO
+		static_cast<OvCore::Rendering::SceneRenderer&>(m_renderer)._SetCameraUBO(m_renderer.GetFrameDescriptor().camera.value());
+
 		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
 		m_lightMaterial.SetProperty("u_Scale", OvEditor::Settings::EditorSettings::LightBillboardScale * 0.1f);
 
@@ -310,6 +318,9 @@ public:
 	{
 		ZoneScoped;
 		TracyGpuZone("DebugActorRenderPass");
+
+		// Set up camera matrices in engine UBO
+		static_cast<OvCore::Rendering::SceneRenderer&>(m_renderer)._SetCameraUBO(m_renderer.GetFrameDescriptor().camera.value());
 
 		m_renderer.Clear(false, false, true);
 

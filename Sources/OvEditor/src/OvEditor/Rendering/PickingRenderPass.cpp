@@ -122,10 +122,13 @@ void OvEditor::Rendering::PickingRenderPass::Draw(OvRendering::Data::PipelineSta
 	m_actorPickingFramebuffer.Resize(frameDescriptor.renderWidth, frameDescriptor.renderHeight);
 
 	m_actorPickingFramebuffer.Bind();
-	
+
 	auto pso = m_renderer.CreatePipelineState();
 
 	m_renderer.Clear(true, true, true);
+
+	// Set up camera matrices in engine UBO
+	static_cast<SceneRenderer&>(m_renderer)._SetCameraUBO(frameDescriptor.camera.value());
 
 	DrawPickableModels(pso, scene);
 	DrawPickableCameras(pso, scene);

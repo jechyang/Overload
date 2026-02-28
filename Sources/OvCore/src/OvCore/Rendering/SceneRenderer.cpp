@@ -15,9 +15,6 @@
 #include <OvCore/ParticleSystem/CParticleSystem.h>
 #include <OvCore/Global/ServiceLocator.h>
 #include <OvCore/Rendering/EngineDrawableDescriptor.h>
-#include <OvCore/Rendering/FrameGraphData/EngineBufferData.h>
-#include <OvCore/Rendering/FrameGraphData/LightingData.h>
-#include <OvCore/Rendering/FrameGraphData/ShadowData.h>
 #include <OvCore/Rendering/FrameGraphData/ReflectionData.h>
 #include <OvCore/Rendering/PostProcessRenderPass.h>
 #include <OvCore/Rendering/SceneRenderer.h>
@@ -25,7 +22,6 @@
 
 #include <OvRendering/Data/Frustum.h>
 #include <OvRendering/Entities/Light.h>
-#include <OvRendering/Features/LightingRenderFeature.h>
 #include <OvRendering/HAL/Profiling.h>
 #include <OvRendering/HAL/UniformBuffer.h>
 #include <OvRendering/HAL/ShaderStorageBuffer.h>
@@ -44,9 +40,19 @@ namespace
 		sizeof(float) +              // Elapsed time
 		sizeof(OvMaths::FMatrix4);   // User matrix
 
-	OvRendering::Features::LightingRenderFeature::LightSet FindActiveLights(const OvCore::SceneSystem::Scene& p_scene)
+	// Type alias for light set (formerly defined in LightingRenderFeature)
+	using LightSet = std::vector<std::reference_wrapper<OvRendering::Entities::Light>>;
+
+	// Lighting descriptor (formerly defined in LightingRenderFeature)
+	struct LightingDescriptor
 	{
-		OvRendering::Features::LightingRenderFeature::LightSet lights;
+		LightSet lights;
+		OvTools::Utils::OptRef<const OvRendering::Data::Frustum> frustumOverride;
+	};
+
+	LightSet FindActiveLights(const OvCore::SceneSystem::Scene& p_scene)
+	{
+		LightSet lights;
 		for (auto light : p_scene.GetFastAccessComponents().lights)
 		{
 			if (light->owner.IsActive())
@@ -91,24 +97,6 @@ OvCore::Rendering::SceneRenderer::SceneRenderer(OvRendering::Context::Driver& p_
 	m_lightBuffer = std::make_unique<OvRendering::HAL::ShaderStorageBuffer>();
 
 	m_postProcessPass = std::make_unique<PostProcessRenderPass>(*this);
-
-	// Upload model/user matrices to the engine UBO before each draw call.
-	preDrawEntityEvent += [this](OvRendering::Data::PipelineState&, const OvRendering::Entities::Drawable& drawable)
-	{
-		OvTools::Utils::OptRef<const EngineDrawableDescriptor> descriptor;
-		if (drawable.TryGetDescriptor<EngineDrawableDescriptor>(descriptor))
-		{
-			const auto modelMatrix = OvMaths::FMatrix4::Transpose(descriptor->modelMatrix);
-			m_engineBuffer->Upload(&modelMatrix, OvRendering::HAL::BufferMemoryRange{
-				.offset = 0,
-				.size = sizeof(modelMatrix)
-			});
-			m_engineBuffer->Upload(&descriptor->userMatrix, OvRendering::HAL::BufferMemoryRange{
-				.offset = kUBOSize - sizeof(modelMatrix),
-				.size = sizeof(modelMatrix)
-			});
-		}
-	};
 }
 
 // ============================================================
@@ -124,7 +112,7 @@ void OvCore::Rendering::SceneRenderer::BeginFrame(const OvRendering::Data::Frame
 	auto& sceneDescriptor = GetDescriptor<SceneDescriptor>();
 	const bool frustumLightCulling = p_frameDescriptor.camera.value().HasFrustumLightCulling();
 
-	AddDescriptor<OvRendering::Features::LightingRenderFeature::LightingDescriptor>({
+	AddDescriptor<LightingDescriptor>({
 		FindActiveLights(sceneDescriptor.scene),
 		frustumLightCulling ? sceneDescriptor.frustumOverride : std::nullopt
 	});
@@ -178,88 +166,12 @@ void OvCore::Rendering::SceneRenderer::_SetCameraUBO(const OvRendering::Entities
 		.offset = sizeof(OvMaths::FMatrix4),
 		.size = sizeof(d)
 	});
+	m_engineBuffer->Bind(0);
 }
 
 void OvCore::Rendering::SceneRenderer::_BindLightBuffer()
 {
-	if (m_lightBuffer)
-		m_lightBuffer->Bind(0);
-}
-
-void OvCore::Rendering::SceneRenderer::_BindShadowUniforms(OvRendering::Data::Material& p_material)
-{
-	if (!p_material.IsShadowReceiver() ||
-		!p_material.HasProperty("_ShadowMap") ||
-		!p_material.HasProperty("_LightSpaceMatrix"))
-		return;
-
-	if (!m_frameGraph.GetBlackboard().Has<FrameGraphData::ShadowData>())
-		return;
-
-	const auto& sd = m_frameGraph.GetBlackboard().Get<FrameGraphData::ShadowData>();
-	if (!sd.shadowMap) return;
-
-	// Get texture handle from shared_ptr
-	auto* textureHandle = sd.shadowMap.get();
-	p_material.SetProperty("_ShadowMap", textureHandle, true);
-	p_material.SetProperty("_LightSpaceMatrix", sd.lightSpaceMatrix, true);
-}
-
-void OvCore::Rendering::SceneRenderer::_BindReflectionUniforms(
-	OvRendering::Data::Material& p_material,
-	const OvRendering::Entities::Drawable& p_drawable
-)
-{
-	if (!p_material.IsReflectionReceiver() || !p_material.HasProperty("_EnvironmentMap"))
-		return;
-
-	if (!m_frameGraph.GetBlackboard().Has<FrameGraphData::ReflectionData>())
-		return;
-
-	const auto& rd = m_frameGraph.GetBlackboard().Get<FrameGraphData::ReflectionData>();
-
-	OvTools::Utils::OptRef<const OvCore::ECS::Components::CReflectionProbe> targetProbe;
-
-	if (p_drawable.HasDescriptor<EngineDrawableDescriptor>())
-	{
-		const auto& engineDesc = p_drawable.GetDescriptor<EngineDrawableDescriptor>();
-		const auto& mm = engineDesc.modelMatrix;
-		const OvMaths::FVector3 drawablePos{ mm.data[3], mm.data[7], mm.data[11] };
-
-		struct Best {
-			OvTools::Utils::OptRef<const OvCore::ECS::Components::CReflectionProbe> probe;
-			float distance = std::numeric_limits<float>::max();
-		} bestLocal, bestGlobal;
-
-		for (auto& probeRef : rd.reflectionProbes)
-		{
-			const auto& probe = probeRef.get();
-			const auto probePos = probe.owner.transform.GetWorldPosition() + probe.GetCapturePosition();
-			const float dist = OvMaths::FVector3::Distance(drawablePos, probePos);
-			const bool isLocal = probe.GetInfluencePolicy() ==
-				OvCore::ECS::Components::CReflectionProbe::EInfluencePolicy::LOCAL;
-
-			// Local probes take priority over global
-			if (!isLocal && bestLocal.probe.has_value()) continue;
-
-			auto& best = isLocal ? bestLocal : bestGlobal;
-			if (dist < best.distance)
-				best = { probe, dist };
-		}
-
-		targetProbe = bestLocal.probe ? bestLocal.probe : bestGlobal.probe;
-	}
-
-	p_material.SetProperty(
-		"_EnvironmentMap",
-		targetProbe.has_value() ?
-			targetProbe->GetCubemap().get() :
-			static_cast<OvRendering::HAL::TextureHandle*>(nullptr),
-		true
-	);
-
-	if (targetProbe)
-		targetProbe->_GetUniformBuffer().Bind(1);
+	m_lightBuffer->Bind(0);
 }
 
 // ============================================================
@@ -272,10 +184,8 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 	using namespace OvRendering;
 
 	// ---- Import buffer resources into FrameGraph ----
-	// Engine UBO
+	// Note: Buffers are owned by SceneRenderer and imported into FrameGraph for resource dependency tracking
 	auto engineUBOHandle = p_fg.ImportBuffer("EngineUBO", m_engineBuffer.get());
-
-	// Light SSBO
 	auto lightSSBOHandle = p_fg.ImportBuffer("LightSSBO", m_lightBuffer.get());
 
 	// ---- Pass 1: EngineBuffer ----
@@ -290,7 +200,7 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 			// Mark as output to prevent culling
 			builder.SetAsOutput({});
 		},
-		[this](const FrameGraphResources& resources, const EngineBufferPassData& data)
+		[this](const FrameGraphResources& resources, EngineBufferPassData& data)
 		{
 			ZoneScoped;
 			OVASSERT(m_frameDescriptor.camera.has_value(), "Camera is not set");
@@ -312,9 +222,6 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 				.offset = sizeof(OvMaths::FMatrix4), .size = sizeof(d)
 			});
 			engineUBO.Bind(0);
-
-			// For backward compatibility, still write to Blackboard
-			resources.GetBlackboard().Put(FrameGraphData::EngineBufferData{ &engineUBO });
 		}
 	);
 
@@ -330,13 +237,13 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 			// Mark as output to prevent culling
 			builder.SetAsOutput({});
 		},
-		[this](const FrameGraphResources& resources, const LightingPassData& data)
+		[this](const FrameGraphResources& resources, LightingPassData& data)
 		{
 			ZoneScoped;
-			OVASSERT(HasDescriptor<OvRendering::Features::LightingRenderFeature::LightingDescriptor>(),
+			OVASSERT(HasDescriptor<LightingDescriptor>(),
 				"Cannot find LightingDescriptor");
 
-			auto& ld = GetDescriptor<OvRendering::Features::LightingRenderFeature::LightingDescriptor>();
+			auto& ld = GetDescriptor<LightingDescriptor>();
 			auto frustum = ld.frustumOverride ? ld.frustumOverride : m_frameDescriptor.camera->GetLightFrustum();
 
 			std::vector<OvMaths::FMatrix4> lightMatrices;
@@ -363,33 +270,34 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 			}
 
 			lightSSBO.Bind(0);
-
-			// For backward compatibility, still write to Blackboard
-			resources.GetBlackboard().Put(FrameGraphData::LightingData{ &lightSSBO });
 		}
 	);
 
 	// ---- Pass 3: Shadow ----
 	struct ShadowPassData {
-		std::vector<FrameGraphTextureHandle> shadowMaps;
+		FrameGraphBufferHandle engineUBO;  // Read dependency from EngineBuffer
+		std::vector<std::shared_ptr<OvRendering::HAL::Texture>> shadowMaps;
+		std::vector<OvMaths::FMatrix4> lightSpaceMatrices;
 	};
 	p_fg.AddPass<ShadowPassData>(
 		"Shadow",
-		[](FrameGraphBuilder& builder, ShadowPassData& data) {
+		[engineUBOHandle](FrameGraphBuilder& builder, ShadowPassData& data) {
+			// Declare read dependency on engine UBO for matrix upload
+			data.engineUBO = builder.Read(engineUBOHandle);
 			// Shadow maps will be created dynamically in the execute callback
 			// based on the number of lights that cast shadows
-			builder.SetAsOutput({});
+			// No handle dependencies needed - textures are created internally
 		},
-		[this](const FrameGraphResources& resources, const ShadowPassData& data)
+		[this](const FrameGraphResources& resources, ShadowPassData& data)
 		{
 			ZoneScoped;
 			TracyGpuZone("ShadowPass");
 
 			OVASSERT(HasDescriptor<SceneDescriptor>(), "Cannot find SceneDescriptor");
-			OVASSERT(HasDescriptor<OvRendering::Features::LightingRenderFeature::LightingDescriptor>(),
+			OVASSERT(HasDescriptor<LightingDescriptor>(),
 				"Cannot find LightingDescriptor");
 
-			auto& ld = GetDescriptor<OvRendering::Features::LightingRenderFeature::LightingDescriptor>();
+			auto& ld = GetDescriptor<LightingDescriptor>();
 			auto& scene = GetDescriptor<SceneDescriptor>().scene;
 
 			const auto shadowShader = OVSERVICE(OvCore::ResourceManagement::ShaderManager)
@@ -402,7 +310,12 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 			uint8_t lightIndex = 0;
 			constexpr uint8_t kMaxShadowMaps = 1;
 
-			std::optional<FrameGraphData::ShadowData> shadowData;
+			// Clear cached shadow data
+			m_shadowMaps.clear();
+			m_lightSpaceMatrices.clear();
+
+			// Get buffer via handle for matrix upload
+			auto& engineUBO = resources.GetBuffer<HAL::UniformBuffer>(data.engineUBO);
 
 			for (auto lightRef : ld.lights)
 			{
@@ -412,6 +325,9 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 
 				// Prepare light camera and matrix
 				light.PrepareForShadowRendering(m_frameDescriptor);
+
+				// Bind engine UBO before uploading camera matrices
+				engineUBO.Bind(0);
 				_SetCameraUBO(light.shadowCamera.value());
 
 				// Create shadow map texture via FrameGraph (if not already created)
@@ -499,29 +415,31 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 						d.stateMask.backfaceCulling = false;
 						d.pass = shadowPass;
 						d.AddDescriptor<EngineDrawableDescriptor>({ modelMatrix, matRenderer->GetUserMatrix() });
+
+						// Upload model/user matrices to engine UBO before draw
+						const auto transposedModelMatrix = OvMaths::FMatrix4::Transpose(modelMatrix);
+						engineUBO.Upload(&transposedModelMatrix, OvRendering::HAL::BufferMemoryRange{
+							.offset = 0,
+							.size = sizeof(transposedModelMatrix)
+						});
+						engineUBO.Upload(&matRenderer->GetUserMatrix(), OvRendering::HAL::BufferMemoryRange{
+							.offset = kUBOSize - sizeof(transposedModelMatrix),
+							.size = sizeof(matRenderer->GetUserMatrix())
+						});
+						engineUBO.Bind(0);
+
 						DrawEntity(pso, d);
 					}
 				}
 
 				shadowFbo->Unbind();
 
-				// Store shadow data for blackboard
-				if (!shadowData.has_value())
-				{
-					shadowData = FrameGraphData::ShadowData{
-						.shadowMap = shadowTex,
-						.lightSpaceMatrix = light.lightSpaceMatrix.value()
-					};
-				}
+				// Store shadow data in member variables for Scene Pass
+				m_shadowMaps.push_back(shadowTex);
+				m_lightSpaceMatrices.push_back(light.lightSpaceMatrix.value());
 
 				_SetCameraUBO(m_frameDescriptor.camera.value());
 				++lightIndex;
-			}
-
-			// Write to blackboard for scene pass
-			if (shadowData.has_value())
-			{
-				resources.GetBlackboard().Put(std::move(shadowData.value()));
 			}
 
 			if (auto out = m_frameDescriptor.outputBuffer) out.value().Bind();
@@ -530,24 +448,31 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 	);
 
 	// ---- Pass 4: Reflection ----
-	struct ReflectionPassData {};
+	struct ReflectionPassData {
+		FrameGraphBufferHandle engineUBO;  // Read dependency from EngineBuffer
+	};
 	p_fg.AddPass<ReflectionPassData>(
 		"Reflection",
-		[](FrameGraphBuilder& builder, ReflectionPassData&) {
+		[engineUBOHandle](FrameGraphBuilder& builder, ReflectionPassData& data) {
+			// Declare read dependency on engine UBO for matrix upload
+			data.engineUBO = builder.Read(engineUBOHandle);
+			// No handle dependencies - probes use internal framebuffers
 			builder.SetAsOutput({});
 		},
-		[this](const FrameGraphResources& resources, const ReflectionPassData& data)
+		[this](const FrameGraphResources& resources, ReflectionPassData& data)
 		{
 			ZoneScoped;
 			TracyGpuZone("ReflectionPass");
 
-			OVASSERT(HasDescriptor<FrameGraphData::ReflectionData>(),
-				"Cannot find ReflectionDescriptor");
-
-			auto& rd = GetDescriptor<FrameGraphData::ReflectionData>();
+			// Get reflection probes from descriptor and cache for Scene Pass
+			if (HasDescriptor<FrameGraphData::ReflectionData>())
+			{
+				const auto& rd = GetDescriptor<FrameGraphData::ReflectionData>();
+				m_reflectionProbes = rd.reflectionProbes;
+			}
 
 			// Prepare probe UBOs once per frame
-			for (auto& probeRef : rd.reflectionProbes)
+			for (auto& probeRef : m_reflectionProbes)
 				probeRef.get()._PrepareUBO();
 
 			constexpr uint32_t kFaceCount = 6;
@@ -561,7 +486,7 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 			auto pso = CreatePipelineState();
 
 			// Render each probe's faces using its internal cubemap
-			for (auto probeRef : rd.reflectionProbes)
+			for (auto probeRef : m_reflectionProbes)
 			{
 				auto& probe = probeRef.get();
 				const auto faceIndices = probe._GetCaptureFaceIndices();
@@ -595,6 +520,11 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 				{
 					cam.SetRotation(OvMaths::FQuaternion{ kFaceRotations[faceIdx] });
 					cam.CacheMatrices(w, h);
+
+					// Bind engine UBO before uploading camera and model matrices
+					auto& engineUBO = resources.GetBuffer<HAL::UniformBuffer>(data.engineUBO);
+					engineUBO.Bind(0);
+
 					_SetCameraUBO(cam);
 					fbo.SetTargetDrawBuffer(faceIdx);
 					// Skip clear if already cleared in initialization phase
@@ -612,6 +542,23 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 						{
 							auto copy = drawable;
 							copy.pass = "REFLECTION_PASS";
+
+							// Upload model/user matrices to engine UBO before draw
+							if (copy.HasDescriptor<EngineDrawableDescriptor>())
+							{
+								const auto& engineDesc = copy.GetDescriptor<EngineDrawableDescriptor>();
+								const auto modelMatrix = OvMaths::FMatrix4::Transpose(engineDesc.modelMatrix);
+								engineUBO.Upload(&modelMatrix, OvRendering::HAL::BufferMemoryRange{
+									.offset = 0,
+									.size = sizeof(modelMatrix)
+								});
+								engineUBO.Upload(&engineDesc.userMatrix, OvRendering::HAL::BufferMemoryRange{
+									.offset = kUBOSize - sizeof(modelMatrix),
+									.size = sizeof(modelMatrix)
+								});
+								engineUBO.Bind(0);
+							}
+
 							DrawEntity(pso, copy);
 						}
 					};
@@ -628,9 +575,6 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 
 				fbo.Unbind();
 			}
-
-			// Store reflection data in blackboard for scene pass
-			resources.GetBlackboard().Put(FrameGraphData::ReflectionData{ rd.reflectionProbes });
 
 			_SetCameraUBO(m_frameDescriptor.camera.value());
 			if (auto out = m_frameDescriptor.outputBuffer) out.value().Bind();
@@ -651,10 +595,11 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 			data.engineUBO = builder.Read(engineUBOHandle);
 			data.lightSSBO = builder.Read(lightSSBOHandle);
 			data.stencilWrite = m_stencilWrite;
+
 			// Mark as output to prevent culling (scene renders to output framebuffer)
 			builder.SetAsOutput({});
 		},
-		[this](const FrameGraphResources& resources, const ScenePassData& data)
+		[this](const FrameGraphResources& resources, ScenePassData& data)
 		{
 			ZoneScoped;
 			TracyGpuZone("ScenePass");
@@ -696,15 +641,106 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 			auto drawWithBindings = [&](const OvRendering::Entities::Drawable& drawable) {
 				if (drawable.material)
 				{
-					_BindShadowUniforms(drawable.material.value());
-					_BindReflectionUniforms(drawable.material.value(), drawable);
+					// Upload model/user matrices to engine UBO before draw
+					if (drawable.HasDescriptor<EngineDrawableDescriptor>())
+					{
+						const auto& engineDesc = drawable.GetDescriptor<EngineDrawableDescriptor>();
+						const auto modelMatrix = OvMaths::FMatrix4::Transpose(engineDesc.modelMatrix);
+						engineUBO.Upload(&modelMatrix, OvRendering::HAL::BufferMemoryRange{
+							.offset = 0,
+							.size = sizeof(modelMatrix)
+						});
+						engineUBO.Upload(&engineDesc.userMatrix, OvRendering::HAL::BufferMemoryRange{
+							.offset = kUBOSize - sizeof(modelMatrix),
+							.size = sizeof(modelMatrix)
+						});
+						engineUBO.Bind(0);
+					}
+
+					// Bind shadow uniforms
+					auto& shadowMat = drawable.material.value();
+					if (shadowMat.IsShadowReceiver() && shadowMat.HasProperty("_ShadowMap") &&
+						shadowMat.HasProperty("_LightSpaceMatrix") && !m_shadowMaps.empty())
+					{
+						if (auto* shadowTex = m_shadowMaps[0].get())
+						{
+							shadowMat.SetProperty("_ShadowMap", shadowTex, true);
+							shadowMat.SetProperty("_LightSpaceMatrix", m_lightSpaceMatrices[0], true);
+						}
+					}
+
+					// Bind reflection uniforms (inlined)
+					auto& reflectMat = drawable.material.value();
+					if (reflectMat.IsReflectionReceiver() && reflectMat.HasProperty("_EnvironmentMap"))
+					{
+						if (drawable.HasDescriptor<EngineDrawableDescriptor>())
+						{
+							const auto& engineDesc = drawable.GetDescriptor<EngineDrawableDescriptor>();
+							const auto& mm = engineDesc.modelMatrix;
+							const OvMaths::FVector3 drawablePos{ mm.data[3], mm.data[7], mm.data[11] };
+
+							struct Best {
+								OvTools::Utils::OptRef<const OvCore::ECS::Components::CReflectionProbe> probe;
+								float distance = std::numeric_limits<float>::max();
+							} bestLocal, bestGlobal;
+
+							for (auto& probeRef : m_reflectionProbes)
+							{
+								const auto& probe = probeRef.get();
+								const auto probePos = probe.owner.transform.GetWorldPosition() + probe.GetCapturePosition();
+								const float dist = OvMaths::FVector3::Distance(drawablePos, probePos);
+								const bool isLocal = probe.GetInfluencePolicy() ==
+									OvCore::ECS::Components::CReflectionProbe::EInfluencePolicy::LOCAL;
+
+								// Local probes take priority over global
+								if (!isLocal && bestLocal.probe.has_value()) continue;
+
+								auto& best = isLocal ? bestLocal : bestGlobal;
+								if (dist < best.distance)
+									best = { probe, dist };
+							}
+
+							auto targetProbe = bestLocal.probe ? bestLocal.probe : bestGlobal.probe;
+
+							reflectMat.SetProperty(
+								"_EnvironmentMap",
+								targetProbe.has_value() ?
+									targetProbe->GetCubemap().get() :
+									static_cast<OvRendering::HAL::TextureHandle*>(nullptr),
+								true
+							);
+
+							if (targetProbe)
+								targetProbe->_GetUniformBuffer().Bind(1);
+						}
+					}
+				}
+				DrawEntity(pso, drawable);
+			};
+
+			// Draw UI elements (also need matrix upload, though typically identity)
+			auto drawUI = [&](const OvRendering::Entities::Drawable& drawable) {
+				// Upload model/user matrices to engine UBO before draw
+				if (drawable.HasDescriptor<EngineDrawableDescriptor>())
+				{
+					const auto& engineDesc = drawable.GetDescriptor<EngineDrawableDescriptor>();
+					const auto modelMatrix = OvMaths::FMatrix4::Transpose(engineDesc.modelMatrix);
+					engineUBO.Upload(&modelMatrix, OvRendering::HAL::BufferMemoryRange{
+						.offset = 0,
+						.size = sizeof(modelMatrix)
+					});
+					engineUBO.Upload(&engineDesc.userMatrix, OvRendering::HAL::BufferMemoryRange{
+						.offset = kUBOSize - sizeof(modelMatrix),
+						.size = sizeof(modelMatrix)
+					});
+					engineUBO.Bind(0);
 				}
 				DrawEntity(pso, drawable);
 			};
 
 			for (const auto& d : drawables.opaques | std::views::values)     drawWithBindings(d);
 			for (const auto& d : drawables.transparents | std::views::values) drawWithBindings(d);
-			for (const auto& d : drawables.ui | std::views::values)           DrawEntity(pso, d);
+			for (const auto& d : drawables.ui | std::views::values)           drawUI(d);
 		}
 	);
 
@@ -713,7 +749,7 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 	p_fg.AddPass<PostProcessPassData>(
 		"PostProcess",
 		[](FrameGraphBuilder& builder, PostProcessPassData&) { builder.SetAsOutput({}); },
-		[this](const FrameGraphResources&, const PostProcessPassData&)
+		[this](const FrameGraphResources& resources, PostProcessPassData& data)
 		{
 			ZoneScoped;
 			TracyGpuZone("PostProcessPass");
@@ -738,6 +774,9 @@ void OvCore::Rendering::SceneRenderer::DrawModelWithSingleMaterial(
 	auto userMatrix = OvMaths::FMatrix4::Identity;
 	auto engineDesc = EngineDrawableDescriptor{ p_modelMatrix, userMatrix };
 
+	// Pre-compute transposed model matrix for UBO upload
+	const auto transposedModelMatrix = OvMaths::FMatrix4::Transpose(p_modelMatrix);
+
 	for (auto mesh : p_model.GetMeshes())
 	{
 		OvRendering::Entities::Drawable element;
@@ -745,6 +784,20 @@ void OvCore::Rendering::SceneRenderer::DrawModelWithSingleMaterial(
 		element.material = p_material;
 		element.stateMask = stateMask;
 		element.AddDescriptor(engineDesc);
+
+		// Upload model/user matrices to engine UBO before draw
+		// Note: m_engineBuffer is imported into FrameGraph, so Upload() affects the
+		// same buffer. Bind is assumed to be done by the calling pass.
+		m_engineBuffer->Upload(&transposedModelMatrix, OvRendering::HAL::BufferMemoryRange{
+			.offset = 0,
+			.size = sizeof(transposedModelMatrix)
+		});
+		m_engineBuffer->Upload(&userMatrix, OvRendering::HAL::BufferMemoryRange{
+			.offset = kUBOSize - sizeof(transposedModelMatrix),
+			.size = sizeof(userMatrix)
+		});
+		m_engineBuffer->Bind(0);
+
 		DrawEntity(p_pso, element);
 	}
 }
