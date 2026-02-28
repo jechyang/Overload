@@ -15,6 +15,7 @@ namespace OvRendering::Geometry
 	{
 		float position[3];
 		float texCoords[2];
+		float color[4];      // RGBA color for particle system
 		float normals[3];
 		float tangent[3];
 		float bitangent[3];

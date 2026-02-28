@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvMaths/FVector4.h>
+
 #include "OvCore/ParticleSystem/ParticleSystemParticle.h"
 
 namespace OvCore::ParticleSystem
@@ -38,5 +40,28 @@ namespace OvCore::ParticleSystem
 
 	public:
 		float gravity;
+	};
+
+	/**
+	* Interpolates particle color over its lifetime.
+	* Uses three key colors: start, mid, and end.
+	*/
+	class ColorGradientAffector : public AParticleAffector
+	{
+	public:
+		ColorGradientAffector(
+			const OvMaths::FVector4& p_startColor = OvMaths::FVector4{ 1.0f, 1.0f, 1.0f, 1.0f },
+			const OvMaths::FVector4& p_midColor   = OvMaths::FVector4{ 1.0f, 1.0f, 0.5f, 0.8f },
+			const OvMaths::FVector4& p_endColor   = OvMaths::FVector4{ 1.0f, 0.3f, 0.0f, 0.0f },
+			float p_midTime                       = 0.5f
+		);
+
+		virtual void Apply(ParticleSystemParticle& p_particle, float p_deltaTime) override;
+
+	public:
+		OvMaths::FVector4 startColor;
+		OvMaths::FVector4 midColor;
+		OvMaths::FVector4 endColor;
+		float midTime; // Normalized time (0-1) when midColor is reached
 	};
 }

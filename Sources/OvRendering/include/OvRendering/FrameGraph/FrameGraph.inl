@@ -27,4 +27,14 @@ namespace OvRendering::FrameGraph
 		m_passes.emplace_back(node);
 		return { *node, node->data };
 	}
+
+	template<typename BufferType>
+	FrameGraphBufferHandle FrameGraph::ImportBuffer(std::string_view p_name, BufferType* p_buffer)
+	{
+		FrameGraphBufferHandle handle{ m_nextHandleId++ };
+		m_bufferNames.emplace_back(p_name);
+		m_bufferImported.push_back(true);
+		m_buffers.push_back(std::shared_ptr<void>(p_buffer, [](void*){})); // null deleter
+		return handle;
+	}
 }

@@ -58,6 +58,13 @@ namespace OvRendering::FrameGraph
 		FrameGraphTextureHandle ImportTexture(std::string_view p_name, std::shared_ptr<HAL::Texture> p_texture);
 
 		/**
+		* Import an externally-owned buffer into the graph (e.g. UBO/SSBO).
+		* Imported buffers are never culled and never destroyed by the graph.
+		*/
+		template<typename BufferType>
+		FrameGraphBufferHandle ImportBuffer(std::string_view p_name, BufferType* p_buffer);
+
+		/**
 		* Compile the graph: compute reference counts, cull unused passes, instantiate transient textures.
 		*/
 		void Compile();
@@ -75,6 +82,11 @@ namespace OvRendering::FrameGraph
 		std::vector<std::string>           m_textureNames;
 		std::vector<bool>                  m_textureImported;
 		std::vector<std::shared_ptr<HAL::Texture>> m_textures; // resolved during Compile()
+
+		// Buffer registry (indexed by handle id)
+		std::vector<std::string> m_bufferNames;
+		std::vector<bool>        m_bufferImported;
+		std::vector<std::shared_ptr<void>> m_buffers; // type-erased buffer pointers
 
 		// Pass registry
 		std::vector<std::unique_ptr<FrameGraphPassNode>> m_passes;

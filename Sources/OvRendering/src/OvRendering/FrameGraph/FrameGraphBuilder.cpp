@@ -57,3 +57,25 @@ void OvRendering::FrameGraph::FrameGraphBuilder::SetAsOutput(FrameGraphTextureHa
 {
 	m_pass.isOutput = true;
 }
+
+OvRendering::FrameGraph::FrameGraphBufferHandle OvRendering::FrameGraph::FrameGraphBuilder::Read(
+	FrameGraphBufferHandle p_handle
+)
+{
+	if (p_handle.IsValid())
+	{
+		m_pass.bufferReads.push_back(p_handle);
+	}
+	return p_handle;
+}
+
+OvRendering::FrameGraph::FrameGraphBufferHandle OvRendering::FrameGraph::FrameGraphBuilder::Write(
+	FrameGraphBufferHandle p_handle
+)
+{
+	if (p_handle.IsValid())
+	{
+		m_pass.bufferWrites.push_back(p_handle);
+	}
+	return p_handle;
+}

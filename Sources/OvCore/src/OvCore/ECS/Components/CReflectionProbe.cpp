@@ -48,6 +48,9 @@ OvCore::ECS::Components::CReflectionProbe::CReflectionProbe(ECS::Actor& p_owner)
 	m_uniformBuffer->Allocate(kUBOSize, OvRendering::Settings::EAccessSpecifier::STREAM_DRAW);
 
 	_AllocateResources();
+
+	// Automatically request an initial capture to ensure we have at least one valid cubemap
+	RequestCapture(true);
 }
 
 std::string OvCore::ECS::Components::CReflectionProbe::GetName()
@@ -422,6 +425,9 @@ void OvCore::ECS::Components::CReflectionProbe::_AllocateResources()
 		// Validation
 		m_framebuffers[i].Validate();
 	}
+
+	// Reset capture face index to start from the first face
+	m_captureFaceIndex = 0;
 }
 
 void OvCore::ECS::Components::CReflectionProbe::_PrepareUBO()
@@ -534,4 +540,51 @@ OvRendering::HAL::UniformBuffer& OvCore::ECS::Components::CReflectionProbe::_Get
 bool OvCore::ECS::Components::CReflectionProbe::_IsDoubleBuffered() const
 {
 	return RequiresDoubleBuffering(m_captureSpeed);
+}
+
+void OvCore::ECS::Components::CReflectionProbe::SetCubemapBackBuffer(
+	std::shared_ptr<OvRendering::HAL::Texture> p_cubemap,
+	std::optional<uint32_t> p_faceIndex
+)
+{
+	if (!p_cubemap) return;
+
+	const size_t backBufferIndex = 0; // kBackBufferIndex
+	m_cubemaps[backBufferIndex] = p_cubemap;
+
+	// Re-attach the cubemap to the framebuffer for the specified face(s)
+	if (p_faceIndex)
+	{
+		m_framebuffers[backBufferIndex].Attach<OvRendering::HAL::Texture>(
+			p_cubemap,
+			OvRendering::Settings::EFramebufferAttachment::COLOR,
+			*p_faceIndex,
+			*p_faceIndex
+		);
+	}
+	else
+	{
+		// Attach all 6 faces
+		for (uint32_t faceIndex = 0; faceIndex < 6; ++faceIndex)
+		{
+			m_framebuffers[backBufferIndex].Attach<OvRendering::HAL::Texture>(
+				p_cubemap,
+				OvRendering::Settings::EFramebufferAttachment::COLOR,
+				faceIndex,
+				faceIndex
+			);
+		}
+	}
+
+	m_framebuffers[backBufferIndex].Validate();
+}
+
+void OvCore::ECS::Components::CReflectionProbe::SwapBuffers()
+{
+	if (_IsDoubleBuffered())
+	{
+		++m_cubemapIterator;
+		++m_framebuffers;
+	}
+	m_isAnyCubemapComplete = true;
 }

@@ -61,5 +61,16 @@ namespace OvRendering::Entities
 		* Calculate the light effect range from the quadratic falloff equation
 		*/
 		float CalculateEffectRange() const;
+
+		// ---- FrameGraph integration ----
+		/**
+		* Set the shadow framebuffer (used by FrameGraph to provide externally-managed shadow buffer)
+		*/
+		void SetShadowBuffer(std::unique_ptr<HAL::Framebuffer> p_buffer);
+
+		/**
+		* Set the shadow map texture directly (alternative to SetShadowBuffer)
+		*/
+		void SetShadowMapTexture(std::shared_ptr<HAL::Texture> p_texture);
 	};
 }

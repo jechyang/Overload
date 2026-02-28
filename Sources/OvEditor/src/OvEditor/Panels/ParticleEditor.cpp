@@ -136,7 +136,7 @@ void OvEditor::Panels::ParticleEditor::SetTarget(OvCore::ECS::Components::CParti
 	// Copy material reference
 	m_particleSystem->material = p_system.material;
 
-	// Copy emitter settings if both are PointParticleEmitters
+	// Copy emitter settings - support both Point and Circle emitters
 	if (auto* src = dynamic_cast<PointParticleEmitter*>(p_system.GetEmitter()))
 	{
 		auto newEmitter = std::make_unique<PointParticleEmitter>(
@@ -148,11 +148,32 @@ void OvEditor::Panels::ParticleEditor::SetTarget(OvCore::ECS::Components::CParti
 		);
 		m_particleSystem->SetEmitter(std::move(newEmitter));
 	}
+	else if (auto* src = dynamic_cast<CircleParticleEmitter*>(p_system.GetEmitter()))
+	{
+		auto newEmitter = std::make_unique<CircleParticleEmitter>(
+			src->emissionRate,
+			src->lifetime,
+			src->initialSpeed,
+			src->size,
+			src->radius,
+			src->direction,
+			src->spread
+		);
+		m_particleSystem->SetEmitter(std::move(newEmitter));
+	}
 
 	// Copy gravity affector if present
 	if (auto* src = p_system.GetAffectorAs<GravityAffector>())
 	{
 		m_particleSystem->AddAffector(std::make_unique<GravityAffector>(src->gravity));
+	}
+
+	// Copy color gradient affector if present
+	if (auto* src = p_system.GetAffectorAs<ColorGradientAffector>())
+	{
+		m_particleSystem->AddAffector(std::make_unique<ColorGradientAffector>(
+			src->startColor, src->midColor, src->endColor, src->midTime
+		));
 	}
 }
 
@@ -270,8 +291,19 @@ void OvEditor::Panels::ParticleEditor::DrawProperties()
 
 	if (ImGui::Button("  Reset  "))
 	{
-		m_particleSystem->Reset();
-		m_particleSystem->SetEmitter(std::make_unique<PointParticleEmitter>());
+		// Save current affector settings before reset
+		auto* colorGrad = m_particleSystem->GetAffectorAs<ColorGradientAffector>();
+		if (colorGrad)
+		{
+			m_particleSystem->Reset();
+			m_particleSystem->AddAffector(std::make_unique<ColorGradientAffector>(
+				colorGrad->startColor, colorGrad->midColor, colorGrad->endColor, colorGrad->midTime
+			));
+		}
+		else
+		{
+			m_particleSystem->Reset();
+		}
 		m_playing = true;
 	}
 
@@ -328,6 +360,55 @@ void OvEditor::Panels::ParticleEditor::DrawProperties()
 				ImGui::EndTable();
 			}
 		}
+		else if (auto* emitter = dynamic_cast<CircleParticleEmitter*>(m_particleSystem->GetEmitter()))
+		{
+			constexpr float kLabelW = 110.0f;
+			if (ImGui::BeginTable("##emitter_tbl", 2, ImGuiTableFlags_None))
+			{
+				ImGui::TableSetupColumn("##lbl", ImGuiTableColumnFlags_WidthFixed, kLabelW);
+				ImGui::TableSetupColumn("##val", ImGuiTableColumnFlags_WidthStretch);
+
+				auto row = [](const char* label, const char* desc) {
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::AlignTextToFramePadding();
+					ImGui::TextUnformatted(label);
+					if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+						ImGui::SetTooltip("%s", desc);
+					ImGui::TableSetColumnIndex(1);
+					ImGui::SetNextItemWidth(-1);
+				};
+
+				row("Emission Rate", "Particles emitted per second.");
+				ImGui::DragFloat("##emissionRate", &emitter->emissionRate, 0.5f,  0.0f,   1000.0f, "%.1f /s");
+
+				row("Lifetime", "How long each particle lives (seconds).");
+				ImGui::DragFloat("##lifetime",     &emitter->lifetime,     0.05f, 0.01f,  60.0f,   "%.2f s");
+
+				row("Initial Speed", "Speed at the moment of emission (units/s).");
+				ImGui::DragFloat("##initSpeed",    &emitter->initialSpeed, 0.05f, 0.0f,   100.0f,  "%.2f u/s");
+
+				row("Size", "Billboard quad side length per particle (world units).");
+				ImGui::DragFloat("##size",         &emitter->size,         0.005f,0.001f, 10.0f,   "%.3f u");
+
+				row("Radius", "Circle radius in world units.");
+				ImGui::DragFloat("##radius",       &emitter->radius,       0.01f, 0.0f,   100.0f,  "%.2f u");
+
+				row("Spread", "Emission cone half-angle (radians). 0 = straight up, ~3.14 = all directions.");
+				ImGui::DragFloat("##spread",       &emitter->spread,       0.01f, 0.0f,   3.1416f, "%.3f rad");
+
+				row("Direction X", "Direction vector X component.");
+				ImGui::DragFloat("##dirX",         &emitter->direction.x,  0.01f, -1.0f,   1.0f,    "%.2f");
+
+				row("Direction Y", "Direction vector Y component.");
+				ImGui::DragFloat("##dirY",         &emitter->direction.y,  0.01f, -1.0f,   1.0f,    "%.2f");
+
+				row("Direction Z", "Direction vector Z component.");
+				ImGui::DragFloat("##dirZ",         &emitter->direction.z,  0.01f, -1.0f,   1.0f,    "%.2f");
+
+				ImGui::EndTable();
+			}
+		}
 		else
 		{
 			ImGui::TextDisabled("(no emitter)");
@@ -343,6 +424,7 @@ void OvEditor::Panels::ParticleEditor::DrawProperties()
 	{
 		ImGui::Indent(8.0f);
 
+		// Gravity affector
 		auto* gravity = m_particleSystem->GetAffectorAs<GravityAffector>();
 		bool  hasGravity = gravity != nullptr;
 
@@ -350,13 +432,12 @@ void OvEditor::Panels::ParticleEditor::DrawProperties()
 		{
 			if (hasGravity)
 				m_particleSystem->AddAffector(std::make_unique<GravityAffector>());
-			// Removal not yet supported; Reset() clears all affectors
 		}
 
 		if (gravity)
 		{
 			constexpr float kLabelW = 110.0f;
-			if (ImGui::BeginTable("##affector_tbl", 2, ImGuiTableFlags_None))
+			if (ImGui::BeginTable("##affector_gravity_tbl", 2, ImGuiTableFlags_None))
 			{
 				ImGui::TableSetupColumn("##lbl", ImGuiTableColumnFlags_WidthFixed, kLabelW);
 				ImGui::TableSetupColumn("##val", ImGuiTableColumnFlags_WidthStretch);
@@ -368,6 +449,59 @@ void OvEditor::Panels::ParticleEditor::DrawProperties()
 				ImGui::TableSetColumnIndex(1);
 				ImGui::SetNextItemWidth(-1);
 				ImGui::DragFloat("##gravity_val", &gravity->gravity, 0.1f, 0.0f, 100.0f, "%.2f m/s^2");
+
+				ImGui::EndTable();
+			}
+		}
+
+		ImGui::Separator();
+
+		// Color gradient affector
+		auto* colorGrad = m_particleSystem->GetAffectorAs<ColorGradientAffector>();
+		bool  hasColorGradient = colorGrad != nullptr;
+
+		if (ImGui::Checkbox("Color Gradient", &hasColorGradient))
+		{
+			if (hasColorGradient)
+				m_particleSystem->AddAffector(std::make_unique<ColorGradientAffector>());
+		}
+
+		if (colorGrad)
+		{
+			constexpr float kLabelW = 110.0f;
+			if (ImGui::BeginTable("##affector_color_tbl", 2, ImGuiTableFlags_None))
+			{
+				ImGui::TableSetupColumn("##lbl", ImGuiTableColumnFlags_WidthFixed, kLabelW);
+				ImGui::TableSetupColumn("##val", ImGuiTableColumnFlags_WidthStretch);
+
+				auto row = [](const char* label, const char* desc) {
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex(0);
+					ImGui::AlignTextToFramePadding();
+					ImGui::TextUnformatted(label);
+					if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+						ImGui::SetTooltip("%s", desc);
+					ImGui::TableSetColumnIndex(1);
+					ImGui::SetNextItemWidth(-1);
+				};
+
+				row("Start Color", "Color at particle birth.");
+				{
+					ImGui::ColorEdit4("##startColor", &colorGrad->startColor.x, ImGuiColorEditFlags_Float);
+				}
+
+				row("Mid Color", "Color at midTime.");
+				{
+					ImGui::ColorEdit4("##midColor", &colorGrad->midColor.x, ImGuiColorEditFlags_Float);
+				}
+
+				row("End Color", "Color at particle death.");
+				{
+					ImGui::ColorEdit4("##endColor", &colorGrad->endColor.x, ImGuiColorEditFlags_Float);
+				}
+
+				row("Mid Time", "Normalized time (0-1) when midColor is reached.");
+				ImGui::DragFloat("##midTime", &colorGrad->midTime, 0.01f, 0.0f, 1.0f, "%.2f");
 
 				ImGui::EndTable();
 			}

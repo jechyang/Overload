@@ -15,6 +15,8 @@
 #include <OvRendering/FrameGraph/FrameGraphBlackboard.h>
 #include <OvRendering/HAL/Texture.h>
 #include <OvRendering/HAL/Framebuffer.h>
+#include <OvRendering/HAL/UniformBuffer.h>
+#include <OvRendering/HAL/ShaderStorageBuffer.h>
 
 namespace OvRendering::FrameGraph
 {
@@ -27,8 +29,10 @@ namespace OvRendering::FrameGraph
 	public:
 		FrameGraphResources(
 			const std::vector<std::shared_ptr<HAL::Texture>>& p_textures,
+			const std::vector<std::shared_ptr<void>>& p_buffers,
 			std::unordered_map<std::string, std::unique_ptr<HAL::Framebuffer>>& p_framebufferCache,
 			const std::vector<std::string>& p_textureNames,
+			const std::vector<std::string>& p_bufferNames,
 			FrameGraphBlackboard& p_blackboard,
 			uint32_t p_frameWidth,
 			uint32_t p_frameHeight
@@ -37,7 +41,13 @@ namespace OvRendering::FrameGraph
 		/**
 		* Returns the resolved texture for the given handle.
 		*/
-		HAL::Texture& GetTexture(FrameGraphTextureHandle p_handle) const;
+		std::shared_ptr<HAL::Texture> GetTexture(FrameGraphTextureHandle p_handle) const;
+
+		/**
+		* Returns the resolved buffer for the given handle (type must match).
+		*/
+		template<typename BufferType>
+		BufferType& GetBuffer(FrameGraphBufferHandle p_handle) const;
 
 		/**
 		* Returns (or creates) a framebuffer with the given color and optional depth attachments.
@@ -54,8 +64,10 @@ namespace OvRendering::FrameGraph
 
 	private:
 		const std::vector<std::shared_ptr<HAL::Texture>>& m_textures;
+		const std::vector<std::shared_ptr<void>>& m_buffers;
 		std::unordered_map<std::string, std::unique_ptr<HAL::Framebuffer>>& m_framebufferCache;
 		const std::vector<std::string>& m_textureNames;
+		const std::vector<std::string>& m_bufferNames;
 		FrameGraphBlackboard& m_blackboard;
 		uint32_t m_frameWidth;
 		uint32_t m_frameHeight;

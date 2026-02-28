@@ -19,18 +19,20 @@ OvRendering::Features::DebugShapeRenderFeature::DebugShapeRenderFeature(
 {
 	constexpr auto kVertices = std::to_array<Geometry::Vertex>({
 		{
-			0, 0, 0,
-			0, 0,
-			0, 0, 0,
-			0, 0, 0,
-			0, 0, 0
+			0, 0, 0,       // position
+			0, 0,          // texCoords
+			0, 0, 0, 0,    // color (RGBA)
+			0, 0, 0,       // normals
+			0, 0, 0,       // tangent
+			0, 0, 0        // bitangent
 		},
 		{
-			0, 0, 0,
-			0, 0,
-			0, 0, 0,
-			0, 0, 0,
-			0, 0, 0
+			0, 0, 0,       // position
+			0, 0,          // texCoords
+			0, 0, 0, 0,    // color (RGBA)
+			0, 0, 0,       // normals
+			0, 0, 0,       // tangent
+			0, 0, 0        // bitangent
 		}
 	});
 

@@ -70,4 +70,45 @@ namespace OvCore::ParticleSystem
 	private:
 		float m_accumulator = 0.0f;
 	};
+
+	/**
+	* Emits particles from a circular area in world space.
+	*/
+	class CircleParticleEmitter : public AParticleEmitter
+	{
+	public:
+		/**
+		* @param p_emissionRate    Particles per second
+		* @param p_lifetime        Particle lifetime in seconds
+		* @param p_initialSpeed    Initial speed magnitude
+		* @param p_size            Particle quad size in world units
+		* @param p_radius          Circle radius in world units
+		* @param p_direction       Emission direction (normalized vector, default is up Y-axis)
+		* @param p_spread          Cone half-angle in radians around the direction
+		*/
+		CircleParticleEmitter(
+			float p_emissionRate  = 10.0f,
+			float p_lifetime      = 2.0f,
+			float p_initialSpeed  = 1.0f,
+			float p_size          = 0.1f,
+			float p_radius        = 1.0f,
+			OvMaths::FVector3 p_direction = OvMaths::FVector3{ 0.0f, 1.0f, 0.0f },
+			float p_spread        = 0.5f
+		);
+
+		virtual void InitParticle(ParticleSystemParticle& p_particle) override;
+		virtual void Emit(ParticlePool& p_pool, float p_deltaTime) override;
+
+	public:
+		float emissionRate;
+		float lifetime;
+		float initialSpeed;
+		float size;
+		float radius;
+		OvMaths::FVector3 direction;
+		float spread;
+
+	private:
+		float m_accumulator = 0.0f;
+	};
 }

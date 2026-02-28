@@ -67,6 +67,7 @@ void OvRendering::Resources::Mesh::Upload(std::span<const Geometry::Vertex> p_ve
 			m_vertexArray.SetLayout(std::to_array<Settings::VertexAttribute>({
 				{ Settings::EDataType::FLOAT, 3 }, // position
 				{ Settings::EDataType::FLOAT, 2 }, // texCoords
+				{ Settings::EDataType::FLOAT, 4 }, // color (RGBA)
 				{ Settings::EDataType::FLOAT, 3 }, // normal
 				{ Settings::EDataType::FLOAT, 3 }, // tangent
 				{ Settings::EDataType::FLOAT, 3 }  // bitangent

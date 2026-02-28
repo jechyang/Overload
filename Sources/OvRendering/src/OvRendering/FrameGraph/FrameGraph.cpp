@@ -19,6 +19,11 @@ void OvRendering::FrameGraph::FrameGraph::Reset(const Data::FrameDescriptor& p_f
 	m_textureNames.clear();
 	m_textureImported.clear();
 	m_textures.clear();
+
+	m_bufferNames.clear();
+	m_bufferImported.clear();
+	m_buffers.clear();
+
 	m_blackboard.Clear();
 	m_nextHandleId = 0;
 	m_frameWidth  = p_frameDescriptor.renderWidth;
@@ -40,25 +45,38 @@ OvRendering::FrameGraph::FrameGraphTextureHandle OvRendering::FrameGraph::FrameG
 
 void OvRendering::FrameGraph::FrameGraph::Compile()
 {
-	// Ensure imported textures are already in m_textures.
-	// Resize m_textures to cover all handles (imported ones already added).
+	// Resize textures to cover all handles
 	const uint32_t totalTextures = m_nextHandleId;
 	m_textures.resize(totalTextures);
 	m_textureImported.resize(totalTextures, false);
 
+	// Resize buffers to cover all handles (buffers use the same handle ID space)
+	m_buffers.resize(totalTextures);
+	m_bufferImported.resize(totalTextures, false);
+
 	// --- Reference counting for culling ---
-	// refCount per texture = number of passes that read it
-	std::vector<int> texRefCount(totalTextures, 0);
+	// refCount per resource = number of passes that read it
+	std::vector<int> resourceRefCount(totalTextures, 0);
 
 	for (const auto& pass : m_passes)
 	{
+		// Count texture reads
 		for (auto handle : pass->reads)
 		{
 			if (handle.IsValid() && handle.id < totalTextures)
 			{
-				++texRefCount[handle.id];
+				++resourceRefCount[handle.id];
 			}
 		}
+		// Count buffer reads
+		for (auto handle : pass->bufferReads)
+		{
+			if (handle.IsValid() && handle.id < totalTextures)
+			{
+				++resourceRefCount[handle.id];
+			}
+		}
+
 		// Passes marked as output are never culled
 		if (pass->isOutput)
 		{
@@ -71,7 +89,14 @@ void OvRendering::FrameGraph::FrameGraph::Compile()
 			{
 				if (handle.IsValid() && handle.id < totalTextures)
 				{
-					pass->refCount += texRefCount[handle.id];
+					pass->refCount += resourceRefCount[handle.id];
+				}
+			}
+			for (auto handle : pass->bufferWrites)
+			{
+				if (handle.IsValid() && handle.id < totalTextures)
+				{
+					pass->refCount += resourceRefCount[handle.id];
 				}
 			}
 		}
@@ -90,9 +115,14 @@ void OvRendering::FrameGraph::FrameGraph::Compile()
 	// --- Instantiate transient textures for non-culled passes ---
 	for (uint32_t i = 0; i < totalTextures; ++i)
 	{
-		if (m_textureImported[i])
+		// Skip buffers (they are always imported, not created by FrameGraph)
+		if (i < m_bufferImported.size() && m_bufferImported[i])
 		{
-			continue; // already set
+			continue;
+		}
+		if (i < m_textureImported.size() && m_textureImported[i])
+		{
+			continue; // imported texture, already set
 		}
 
 		// Check if any non-culled pass writes this texture
@@ -165,8 +195,10 @@ void OvRendering::FrameGraph::FrameGraph::Execute()
 {
 	FrameGraphResources resources(
 		m_textures,
+		m_buffers,
 		m_framebufferCache,
 		m_textureNames,
+		m_bufferNames,
 		m_blackboard,
 		m_frameWidth,
 		m_frameHeight

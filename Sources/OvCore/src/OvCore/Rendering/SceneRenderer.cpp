@@ -5,6 +5,8 @@
 */
 
 #include <cmath>
+#include <format>
+#include <optional>
 #include <ranges>
 #include <tracy/Tracy.hpp>
 
@@ -25,6 +27,8 @@
 #include <OvRendering/Entities/Light.h>
 #include <OvRendering/Features/LightingRenderFeature.h>
 #include <OvRendering/HAL/Profiling.h>
+#include <OvRendering/HAL/UniformBuffer.h>
+#include <OvRendering/HAL/ShaderStorageBuffer.h>
 #include <OvRendering/Settings/EAccessSpecifier.h>
 #include <OvRendering/Settings/ELightType.h>
 
@@ -195,7 +199,9 @@ void OvCore::Rendering::SceneRenderer::_BindShadowUniforms(OvRendering::Data::Ma
 	const auto& sd = m_frameGraph.GetBlackboard().Get<FrameGraphData::ShadowData>();
 	if (!sd.shadowMap) return;
 
-	p_material.SetProperty("_ShadowMap", sd.shadowMap, true);
+	// Get texture handle from shared_ptr
+	auto* textureHandle = sd.shadowMap.get();
+	p_material.SetProperty("_ShadowMap", textureHandle, true);
 	p_material.SetProperty("_LightSpaceMatrix", sd.lightSpaceMatrix, true);
 }
 
@@ -263,13 +269,28 @@ void OvCore::Rendering::SceneRenderer::_BindReflectionUniforms(
 void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::FrameGraph& p_fg)
 {
 	using namespace OvRendering::FrameGraph;
+	using namespace OvRendering;
+
+	// ---- Import buffer resources into FrameGraph ----
+	// Engine UBO
+	auto engineUBOHandle = p_fg.ImportBuffer("EngineUBO", m_engineBuffer.get());
+
+	// Light SSBO
+	auto lightSSBOHandle = p_fg.ImportBuffer("LightSSBO", m_lightBuffer.get());
 
 	// ---- Pass 1: EngineBuffer ----
-	struct EngineBufferPassData {};
+	struct EngineBufferPassData {
+		FrameGraphBufferHandle engineUBO;
+	};
 	p_fg.AddPass<EngineBufferPassData>(
 		"EngineBuffer",
-		[](FrameGraphBuilder& builder, EngineBufferPassData&) { builder.SetAsOutput({}); },
-		[this](const FrameGraphResources& resources, const EngineBufferPassData&)
+		[engineUBOHandle](FrameGraphBuilder& builder, EngineBufferPassData& data) {
+			// Declare write to engine UBO
+			data.engineUBO = builder.Write(engineUBOHandle);
+			// Mark as output to prevent culling
+			builder.SetAsOutput({});
+		},
+		[this](const FrameGraphResources& resources, const EngineBufferPassData& data)
 		{
 			ZoneScoped;
 			OVASSERT(m_frameDescriptor.camera.has_value(), "Camera is not set");
@@ -283,20 +304,33 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 				m_frameDescriptor.camera->GetPosition(),
 				elapsed
 			};
-			m_engineBuffer->Upload(&d, OvRendering::HAL::BufferMemoryRange{
+
+			// Get buffer via handle (for consistency, though we still have m_engineBuffer member)
+			// In the future, this would be the only way to access the buffer
+			auto& engineUBO = resources.GetBuffer<HAL::UniformBuffer>(data.engineUBO);
+			engineUBO.Upload(&d, OvRendering::HAL::BufferMemoryRange{
 				.offset = sizeof(OvMaths::FMatrix4), .size = sizeof(d)
 			});
-			m_engineBuffer->Bind(0);
-			resources.GetBlackboard().Put(FrameGraphData::EngineBufferData{ m_engineBuffer.get() });
+			engineUBO.Bind(0);
+
+			// For backward compatibility, still write to Blackboard
+			resources.GetBlackboard().Put(FrameGraphData::EngineBufferData{ &engineUBO });
 		}
 	);
 
 	// ---- Pass 2: Lighting ----
-	struct LightingPassData {};
+	struct LightingPassData {
+		FrameGraphBufferHandle lightSSBO;
+	};
 	p_fg.AddPass<LightingPassData>(
 		"Lighting",
-		[](FrameGraphBuilder& builder, LightingPassData&) { builder.SetAsOutput({}); },
-		[this](const FrameGraphResources& resources, const LightingPassData&)
+		[lightSSBOHandle](FrameGraphBuilder& builder, LightingPassData& data) {
+			// Declare write to light SSBO
+			data.lightSSBO = builder.Write(lightSSBOHandle);
+			// Mark as output to prevent culling
+			builder.SetAsOutput({});
+		},
+		[this](const FrameGraphResources& resources, const LightingPassData& data)
 		{
 			ZoneScoped;
 			OVASSERT(HasDescriptor<OvRendering::Features::LightingRenderFeature::LightingDescriptor>(),
@@ -313,20 +347,40 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 					lightMatrices.push_back(light.get().GenerateMatrix());
 			}
 
-			const auto view = std::span{ lightMatrices };
-			if (m_lightBuffer->Allocate(view.size_bytes(), OvRendering::Settings::EAccessSpecifier::STREAM_DRAW))
-				m_lightBuffer->Upload(view.data());
-			m_lightBuffer->Bind(0);
-			resources.GetBlackboard().Put(FrameGraphData::LightingData{ m_lightBuffer.get() });
+			auto& lightSSBO = resources.GetBuffer<HAL::ShaderStorageBuffer>(data.lightSSBO);
+
+			// Upload light data if there are lights, otherwise allocate a minimal buffer
+			if (!lightMatrices.empty())
+			{
+				const auto view = std::span{ lightMatrices };
+				lightSSBO.Allocate(view.size_bytes(), OvRendering::Settings::EAccessSpecifier::STREAM_DRAW);
+				lightSSBO.Upload(view.data());
+			}
+			else
+			{
+				// Allocate a minimal buffer to avoid upload assert on empty buffer
+				lightSSBO.Allocate(sizeof(OvMaths::FMatrix4), OvRendering::Settings::EAccessSpecifier::STREAM_DRAW);
+			}
+
+			lightSSBO.Bind(0);
+
+			// For backward compatibility, still write to Blackboard
+			resources.GetBlackboard().Put(FrameGraphData::LightingData{ &lightSSBO });
 		}
 	);
 
 	// ---- Pass 3: Shadow ----
-	struct ShadowPassData {};
+	struct ShadowPassData {
+		std::vector<FrameGraphTextureHandle> shadowMaps;
+	};
 	p_fg.AddPass<ShadowPassData>(
 		"Shadow",
-		[](FrameGraphBuilder& builder, ShadowPassData&) { builder.SetAsOutput({}); },
-		[this](const FrameGraphResources& resources, const ShadowPassData&)
+		[](FrameGraphBuilder& builder, ShadowPassData& data) {
+			// Shadow maps will be created dynamically in the execute callback
+			// based on the number of lights that cast shadows
+			builder.SetAsOutput({});
+		},
+		[this](const FrameGraphResources& resources, const ShadowPassData& data)
 		{
 			ZoneScoped;
 			TracyGpuZone("ShadowPass");
@@ -348,16 +402,68 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 			uint8_t lightIndex = 0;
 			constexpr uint8_t kMaxShadowMaps = 1;
 
+			std::optional<FrameGraphData::ShadowData> shadowData;
+
 			for (auto lightRef : ld.lights)
 			{
 				auto& light = lightRef.get();
 				if (!light.castShadows || lightIndex >= kMaxShadowMaps) continue;
 				if (light.type != OvRendering::Settings::ELightType::DIRECTIONAL) continue;
 
+				// Prepare light camera and matrix
 				light.PrepareForShadowRendering(m_frameDescriptor);
 				_SetCameraUBO(light.shadowCamera.value());
 
-				light.shadowBuffer->Bind();
+				// Create shadow map texture via FrameGraph (if not already created)
+				const std::string shadowMapName = std::format("ShadowMap_{}", static_cast<int>(lightIndex));
+
+				// Create texture description for shadow map
+				OvRendering::FrameGraph::FrameGraphTextureDesc shadowDesc;
+				shadowDesc.debugName = shadowMapName;
+				shadowDesc.width = static_cast<uint32_t>(light.shadowMapResolution);
+				shadowDesc.height = static_cast<uint32_t>(light.shadowMapResolution);
+				shadowDesc.internalFormat = OvRendering::Settings::EInternalFormat::DEPTH_COMPONENT;
+				shadowDesc.minFilter = OvRendering::Settings::ETextureFilteringMode::LINEAR;
+				shadowDesc.magFilter = OvRendering::Settings::ETextureFilteringMode::LINEAR;
+				shadowDesc.wrapS = OvRendering::Settings::ETextureWrapMode::CLAMP_TO_BORDER;
+				shadowDesc.wrapT = OvRendering::Settings::ETextureWrapMode::CLAMP_TO_BORDER;
+				shadowDesc.generateMipmaps = false;
+
+				// Create framebuffer with the shadow map texture
+				auto shadowFbo = std::make_unique<OvRendering::HAL::Framebuffer>(shadowMapName);
+				auto shadowTex = std::make_shared<OvRendering::HAL::Texture>(
+					OvRendering::Settings::ETextureType::TEXTURE_2D,
+					shadowMapName
+				);
+
+				OvRendering::Settings::MutableTextureDesc mutableDesc;
+				mutableDesc.format = OvRendering::Settings::EFormat::DEPTH_COMPONENT;
+				mutableDesc.type = OvRendering::Settings::EPixelDataType::FLOAT;
+
+				OvRendering::Settings::TextureDesc texDesc;
+				texDesc.width = static_cast<uint32_t>(light.shadowMapResolution);
+				texDesc.height = static_cast<uint32_t>(light.shadowMapResolution);
+				texDesc.minFilter = OvRendering::Settings::ETextureFilteringMode::LINEAR;
+				texDesc.magFilter = OvRendering::Settings::ETextureFilteringMode::LINEAR;
+				texDesc.horizontalWrap = OvRendering::Settings::ETextureWrapMode::CLAMP_TO_BORDER;
+				texDesc.verticalWrap = OvRendering::Settings::ETextureWrapMode::CLAMP_TO_BORDER;
+				texDesc.internalFormat = OvRendering::Settings::EInternalFormat::DEPTH_COMPONENT;
+				texDesc.useMipMaps = false;
+				texDesc.mutableDesc = mutableDesc;
+
+				shadowTex->Allocate(texDesc);
+				shadowTex->SetBorderColor(OvMaths::FVector4::One);
+
+				shadowFbo->Attach<OvRendering::HAL::Texture>(shadowTex, OvRendering::Settings::EFramebufferAttachment::DEPTH);
+				shadowFbo->Validate();
+				shadowFbo->SetTargetDrawBuffer(std::nullopt);
+				shadowFbo->SetTargetReadBuffer(std::nullopt);
+
+				// Set the shadow map texture to the light
+				light.SetShadowMapTexture(shadowTex);
+
+				// Render shadow map
+				shadowFbo->Bind();
 				SetViewport(0, 0, light.shadowMapResolution, light.shadowMapResolution);
 				Clear(true, true, true);
 
@@ -397,20 +503,25 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 					}
 				}
 
-				light.shadowBuffer->Unbind();
+				shadowFbo->Unbind();
 
-				const auto shadowTex = light.shadowBuffer->GetAttachment<OvRendering::HAL::Texture>(
-					OvRendering::Settings::EFramebufferAttachment::DEPTH);
-				if (shadowTex)
+				// Store shadow data for blackboard
+				if (!shadowData.has_value())
 				{
-					resources.GetBlackboard().Put(FrameGraphData::ShadowData{
-						.shadowMap = &shadowTex.value(),
+					shadowData = FrameGraphData::ShadowData{
+						.shadowMap = shadowTex,
 						.lightSpaceMatrix = light.lightSpaceMatrix.value()
-					});
+					};
 				}
 
 				_SetCameraUBO(m_frameDescriptor.camera.value());
 				++lightIndex;
+			}
+
+			// Write to blackboard for scene pass
+			if (shadowData.has_value())
+			{
+				resources.GetBlackboard().Put(std::move(shadowData.value()));
 			}
 
 			if (auto out = m_frameDescriptor.outputBuffer) out.value().Bind();
@@ -422,8 +533,10 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 	struct ReflectionPassData {};
 	p_fg.AddPass<ReflectionPassData>(
 		"Reflection",
-		[](FrameGraphBuilder& builder, ReflectionPassData&) { builder.SetAsOutput({}); },
-		[this](const FrameGraphResources& resources, const ReflectionPassData&)
+		[](FrameGraphBuilder& builder, ReflectionPassData&) {
+			builder.SetAsOutput({});
+		},
+		[this](const FrameGraphResources& resources, const ReflectionPassData& data)
 		{
 			ZoneScoped;
 			TracyGpuZone("ReflectionPass");
@@ -437,9 +550,6 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 			for (auto& probeRef : rd.reflectionProbes)
 				probeRef.get()._PrepareUBO();
 
-			// Store in blackboard for scene pass
-			resources.GetBlackboard().Put(FrameGraphData::ReflectionData{ rd.reflectionProbes });
-
 			constexpr uint32_t kFaceCount = 6;
 			const OvMaths::FVector3 kFaceRotations[kFaceCount] = {
 				{ 0.0f, -90.0f, 180.0f }, { 0.0f,  90.0f, 180.0f },
@@ -450,6 +560,7 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 			auto& drawables = GetDescriptor<SceneDrawablesDescriptor>();
 			auto pso = CreatePipelineState();
 
+			// Render each probe's faces using its internal cubemap
 			for (auto probeRef : rd.reflectionProbes)
 			{
 				auto& probe = probeRef.get();
@@ -465,13 +576,30 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 				fbo.Bind();
 				SetViewport(0, 0, w, h);
 
+				// If this is the first capture (no cubemap is complete yet), clear all 6 faces first
+				// to ensure the cubemap has defined content. This prevents flickering from undefined
+				// texture content when using progressive capture.
+				bool isFirstCapture = !probe._IsCubemapComplete();
+				if (isFirstCapture)
+				{
+					for (uint32_t face = 0; face < 6; ++face)
+					{
+						fbo.SetTargetDrawBuffer(face);
+						Clear(true, true, true);
+					}
+					// Reset to first face index for actual rendering
+					fbo.SetTargetDrawBuffer(0);
+				}
+
 				for (auto faceIdx : faceIndices)
 				{
 					cam.SetRotation(OvMaths::FQuaternion{ kFaceRotations[faceIdx] });
 					cam.CacheMatrices(w, h);
 					_SetCameraUBO(cam);
 					fbo.SetTargetDrawBuffer(faceIdx);
-					Clear(true, true, true);
+					// Skip clear if already cleared in initialization phase
+					if (!isFirstCapture)
+						Clear(true, true, true);
 
 					const auto filtered = FilterDrawables(drawables, SceneDrawablesFilteringInput{
 						.camera = cam,
@@ -491,11 +619,18 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 					for (const auto& d : filtered.opaques | std::views::values) captureDrawable(d);
 					for (const auto& d : filtered.transparents | std::views::values) captureDrawable(d);
 
-					if (faceIdx == 5) probe._NotifyCubemapComplete();
+					// Only notify complete when the last face (face 5) is rendered
+					if (faceIdx == 5)
+					{
+						probe._NotifyCubemapComplete();
+					}
 				}
 
 				fbo.Unbind();
 			}
+
+			// Store reflection data in blackboard for scene pass
+			resources.GetBlackboard().Put(FrameGraphData::ReflectionData{ rd.reflectionProbes });
 
 			_SetCameraUBO(m_frameDescriptor.camera.value());
 			if (auto out = m_frameDescriptor.outputBuffer) out.value().Bind();
@@ -504,12 +639,20 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 	);
 
 	// ---- Pass 5: Scene (Opaque + Transparent + UI) ----
-	struct ScenePassData { bool stencilWrite; };
+	struct ScenePassData {
+		bool stencilWrite;
+		FrameGraphBufferHandle engineUBO;  // Read dependency from EngineBuffer
+		FrameGraphBufferHandle lightSSBO;  // Read dependency from Lighting
+	};
 	p_fg.AddPass<ScenePassData>(
 		"Scene",
-		[this](FrameGraphBuilder& builder, ScenePassData& data) {
-			builder.SetAsOutput({});
+		[this, engineUBOHandle, lightSSBOHandle](FrameGraphBuilder& builder, ScenePassData& data) {
+			// Declare read dependencies on buffers created by previous passes
+			data.engineUBO = builder.Read(engineUBOHandle);
+			data.lightSSBO = builder.Read(lightSSBOHandle);
 			data.stencilWrite = m_stencilWrite;
+			// Mark as output to prevent culling (scene renders to output framebuffer)
+			builder.SetAsOutput({});
 		},
 		[this](const FrameGraphResources& resources, const ScenePassData& data)
 		{
@@ -519,6 +662,22 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 			OVASSERT(HasDescriptor<SceneFilteredDrawablesDescriptor>(),
 				"Cannot find SceneFilteredDrawablesDescriptor");
 			const auto& drawables = GetDescriptor<SceneFilteredDrawablesDescriptor>();
+
+			// Bind output framebuffer
+			if (auto out = m_frameDescriptor.outputBuffer)
+				out.value().Bind();
+			else
+				return; // No output buffer, skip rendering
+
+			// Clear buffers
+			Clear(true, true, data.stencilWrite);
+
+			// Bind buffers via handles (for consistency, though we still have members)
+			auto& engineUBO = resources.GetBuffer<HAL::UniformBuffer>(data.engineUBO);
+			engineUBO.Bind(0);
+
+			auto& lightSSBO = resources.GetBuffer<HAL::ShaderStorageBuffer>(data.lightSSBO);
+			lightSSBO.Bind(0);
 
 			auto pso = CreatePipelineState();
 

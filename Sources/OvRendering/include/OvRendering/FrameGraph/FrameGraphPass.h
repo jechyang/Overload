@@ -26,6 +26,8 @@ namespace OvRendering::FrameGraph
 		bool isOutput = false;
 		std::vector<FrameGraphTextureHandle> reads;
 		std::vector<FrameGraphTextureHandle> writes;
+		std::vector<FrameGraphBufferHandle> bufferReads;
+		std::vector<FrameGraphBufferHandle> bufferWrites;
 		int refCount = 0;
 
 		virtual ~FrameGraphPassNode() = default;

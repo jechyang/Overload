@@ -35,5 +35,10 @@ namespace OvCore::ParticleSystem
 		* Write a minimal default .ovpart file (PointEmitter, no affectors, no material).
 		*/
 		static void CreateDefault(const std::string& p_path);
+
+		/**
+		* Write a default .ovpart file with a CircleEmitter.
+		*/
+		static void CreateDefaultCircleEmitter(const std::string& p_path);
 	};
 }

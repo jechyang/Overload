@@ -1,0 +1,21 @@
+<root>
+    <Emitter type="Circle">
+        <emissionRate>20</emissionRate>
+        <lifetime>2</lifetime>
+        <initialSpeed>2</initialSpeed>
+        <size>0.2</size>
+        <radius>1.0</radius>
+        <spread>0.4</spread>
+        <direction>
+            <x>0</x>
+            <y>1</y>
+            <z>0</z>
+        </direction>
+    </Emitter>
+    <Affectors>
+        <Affector type="Gravity">
+            <gravity>4</gravity>
+        </Affector>
+    </Affectors>
+    <material>:Materials\Particle.ovmat</material>
+</root>

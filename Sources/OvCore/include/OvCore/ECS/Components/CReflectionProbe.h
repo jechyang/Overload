@@ -164,6 +164,19 @@ namespace OvCore::ECS::Components
 		*/
 		std::shared_ptr<OvRendering::HAL::Texture> GetCubemap() const;
 
+		// ---- FrameGraph integration ----
+		/**
+		* Set the cubemap texture for back buffer (used by FrameGraph to provide externally-managed cubemap)
+		* @param p_cubemap Cubemap texture with 6 faces
+		* @param p_faceIndex Face index (0-5) to update, or std::nullopt for all faces
+		*/
+		void SetCubemapBackBuffer(std::shared_ptr<OvRendering::HAL::Texture> p_cubemap, std::optional<uint32_t> p_faceIndex = std::nullopt);
+
+		/**
+		* Swap the back buffer and complete buffer (used when capture is complete)
+		*/
+		void SwapBuffers();
+
 		/**
 		* Serialize the component
 		* @param p_doc
@@ -187,6 +200,7 @@ namespace OvCore::ECS::Components
 	public:
 		void _PrepareUBO();
 		OvRendering::HAL::UniformBuffer& _GetUniformBuffer() const;
+		bool _IsCubemapComplete() const { return m_isAnyCubemapComplete; }
 
 	private:
 		void _NotifyCubemapComplete();

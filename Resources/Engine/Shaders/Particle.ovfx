@@ -1,0 +1,71 @@
+#pass SHADOW_PASS
+
+#feature ALPHA_CLIPPING
+
+#shader vertex
+#version 450 core
+
+#include ":Shaders/Common/Buffers/EngineUBO.ovfxh"
+#include ":Shaders/Common/Utils.ovfxh"
+
+layout (location = 0) in vec3 geo_Pos;
+layout (location = 1) in vec2 geo_TexCoords;
+layout (location = 2) in vec4 geo_Color;
+
+out VS_OUT
+{
+    vec3 FragPos;
+    vec2 TexCoords;
+    vec4 Color;
+} vs_out;
+
+void main()
+{
+    vs_out.FragPos = vec3(ubo_Model * vec4(geo_Pos, 1.0));
+    vs_out.TexCoords = geo_TexCoords;
+    vs_out.Color = geo_Color;
+
+    gl_Position = ubo_Projection * ubo_View * vec4(vs_out.FragPos, 1.0);
+}
+
+#shader fragment
+#version 450 core
+
+#include ":Shaders/Common/Buffers/EngineUBO.ovfxh"
+#include ":Shaders/Common/Utils.ovfxh"
+
+in VS_OUT
+{
+    vec3 FragPos;
+    vec2 TexCoords;
+    vec4 Color;
+} fs_in;
+
+uniform sampler2D u_DiffuseMap;
+uniform vec4 u_Diffuse = vec4(1.0);
+uniform vec2 u_TextureTiling = vec2(1.0);
+uniform vec2 u_TextureOffset = vec2(0.0);
+
+#if defined(ALPHA_CLIPPING)
+uniform float u_AlphaClippingThreshold = 0.1f;
+#endif
+
+out vec4 FRAGMENT_COLOR;
+
+void main()
+{
+#if defined(SHADOW_PASS)
+    // Empty fragment shader for shadow pass
+#else
+    const vec2 texCoords = TileAndOffsetTexCoords(fs_in.TexCoords, u_TextureTiling, u_TextureOffset);
+    const vec4 textureColor = texture(u_DiffuseMap, texCoords) * u_Diffuse;
+#if defined(ALPHA_CLIPPING)
+    if (textureColor.a < u_AlphaClippingThreshold)
+    {
+        discard;
+    }
+#endif
+    // Multiply texture color by vertex color (for particle gradient)
+    FRAGMENT_COLOR = textureColor * fs_in.Color;
+#endif
+}

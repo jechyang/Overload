@@ -223,3 +223,20 @@ float OvRendering::Entities::Light::CalculateEffectRange() const
 	default: return std::numeric_limits<float>::infinity();
 	}
 }
+
+void OvRendering::Entities::Light::SetShadowBuffer(std::unique_ptr<HAL::Framebuffer> p_buffer)
+{
+	shadowBuffer = std::move(p_buffer);
+}
+
+void OvRendering::Entities::Light::SetShadowMapTexture(std::shared_ptr<HAL::Texture> p_texture)
+{
+	if (!shadowBuffer)
+	{
+		shadowBuffer = std::make_unique<HAL::Framebuffer>("DirectionalShadow_FrameGraph");
+	}
+	shadowBuffer->Attach<HAL::Texture>(p_texture, Settings::EFramebufferAttachment::DEPTH);
+	shadowBuffer->SetTargetDrawBuffer(std::nullopt);
+	shadowBuffer->SetTargetReadBuffer(std::nullopt);
+	shadowBuffer->Validate();
+}

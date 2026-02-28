@@ -59,9 +59,21 @@ void OvCore::ECS::Components::CParticleSystem::OnUpdate(float p_deltaTime)
 		// Integrate position
 		p.position += p.velocity * p_deltaTime;
 
-		// Fade alpha over lifetime
-		const float lifeRatio = p.timeToLive / p.totalTimeToLive;
-		p.color.w = lifeRatio;
+		// Fade alpha over lifetime (only if no ColorGradientAffector is present)
+		bool hasColorGradient = false;
+		for (auto& affector : m_affectors)
+		{
+			if (dynamic_cast<ParticleSystem::ColorGradientAffector*>(affector.get()))
+			{
+				hasColorGradient = true;
+				break;
+			}
+		}
+		if (!hasColorGradient)
+		{
+			const float lifeRatio = p.timeToLive / p.totalTimeToLive;
+			p.color.w = lifeRatio;
+		}
 
 		p.timeToLive -= p_deltaTime;
 
@@ -119,17 +131,19 @@ void OvCore::ECS::Components::CParticleSystem::RebuildMesh(
 
 		const uint32_t base = static_cast<uint32_t>(vertices.size());
 
-		auto makeVertex = [](const OvMaths::FVector3& pos, float u, float v) -> OvRendering::Geometry::Vertex {
+		auto makeVertex = [](const OvMaths::FVector3& pos, const OvMaths::FVector4& color, float u, float v) -> OvRendering::Geometry::Vertex {
 			OvRendering::Geometry::Vertex vert{};
 			vert.position[0] = pos.x; vert.position[1] = pos.y; vert.position[2] = pos.z;
+			vert.color[0] = color.x;  vert.color[1] = color.y;
+			vert.color[2] = color.z;  vert.color[3] = color.w;
 			vert.texCoords[0] = u;    vert.texCoords[1] = v;
 			return vert;
 		};
 
-		vertices.push_back(makeVertex(bl, p.lb_uv.x, p.lb_uv.y));
-		vertices.push_back(makeVertex(br, p.rt_uv.x, p.lb_uv.y));
-		vertices.push_back(makeVertex(tr, p.rt_uv.x, p.rt_uv.y));
-		vertices.push_back(makeVertex(tl, p.lb_uv.x, p.rt_uv.y));
+		vertices.push_back(makeVertex(bl, p.color, p.lb_uv.x, p.lb_uv.y));
+		vertices.push_back(makeVertex(br, p.color, p.rt_uv.x, p.lb_uv.y));
+		vertices.push_back(makeVertex(tr, p.color, p.rt_uv.x, p.rt_uv.y));
+		vertices.push_back(makeVertex(tl, p.color, p.lb_uv.x, p.rt_uv.y));
 
 		indices.insert(indices.end(), {
 			base, base + 1, base + 2,
@@ -168,6 +182,17 @@ void OvCore::ECS::Components::CParticleSystem::OnSerialize(
 			Helpers::Serializer::SerializeFloat(p_doc, emitterElem, "size",         point->size);
 			Helpers::Serializer::SerializeFloat(p_doc, emitterElem, "spread",       point->spread);
 		}
+		else if (auto* circle = dynamic_cast<ParticleSystem::CircleParticleEmitter*>(m_emitter.get()))
+		{
+			emitterElem->SetAttribute("type", "Circle");
+			Helpers::Serializer::SerializeFloat(p_doc, emitterElem, "emissionRate", circle->emissionRate);
+			Helpers::Serializer::SerializeFloat(p_doc, emitterElem, "lifetime",     circle->lifetime);
+			Helpers::Serializer::SerializeFloat(p_doc, emitterElem, "initialSpeed", circle->initialSpeed);
+			Helpers::Serializer::SerializeFloat(p_doc, emitterElem, "size",         circle->size);
+			Helpers::Serializer::SerializeFloat(p_doc, emitterElem, "radius",       circle->radius);
+			Helpers::Serializer::SerializeFloat(p_doc, emitterElem, "spread",       circle->spread);
+			Helpers::Serializer::SerializeVec3(p_doc, emitterElem, "direction",     circle->direction);
+		}
 	}
 
 	// Affectors
@@ -182,6 +207,16 @@ void OvCore::ECS::Components::CParticleSystem::OnSerialize(
 			affectorsElem->InsertEndChild(gravElem);
 			gravElem->SetAttribute("type", "Gravity");
 			Helpers::Serializer::SerializeFloat(p_doc, gravElem, "gravity", gravity->gravity);
+		}
+		else if (auto* colorGrad = dynamic_cast<ParticleSystem::ColorGradientAffector*>(affector.get()))
+		{
+			tinyxml2::XMLElement* colorElem = p_doc.NewElement("Affector");
+			affectorsElem->InsertEndChild(colorElem);
+			colorElem->SetAttribute("type", "ColorGradient");
+			Helpers::Serializer::SerializeVec4(p_doc, colorElem, "startColor", colorGrad->startColor);
+			Helpers::Serializer::SerializeVec4(p_doc, colorElem, "midColor",   colorGrad->midColor);
+			Helpers::Serializer::SerializeVec4(p_doc, colorElem, "endColor",   colorGrad->endColor);
+			Helpers::Serializer::SerializeFloat(p_doc, colorElem, "midTime",    colorGrad->midTime);
 		}
 	}
 
@@ -206,6 +241,18 @@ void OvCore::ECS::Components::CParticleSystem::OnDeserialize(
 			Helpers::Serializer::DeserializeFloat(p_doc, emitterElem, "spread",       emitter->spread);
 			m_emitter = std::move(emitter);
 		}
+		else if (type && std::string_view(type) == "Circle")
+		{
+			auto emitter = std::make_unique<ParticleSystem::CircleParticleEmitter>();
+			Helpers::Serializer::DeserializeFloat(p_doc, emitterElem, "emissionRate", emitter->emissionRate);
+			Helpers::Serializer::DeserializeFloat(p_doc, emitterElem, "lifetime",     emitter->lifetime);
+			Helpers::Serializer::DeserializeFloat(p_doc, emitterElem, "initialSpeed", emitter->initialSpeed);
+			Helpers::Serializer::DeserializeFloat(p_doc, emitterElem, "size",         emitter->size);
+			Helpers::Serializer::DeserializeFloat(p_doc, emitterElem, "radius",       emitter->radius);
+			Helpers::Serializer::DeserializeFloat(p_doc, emitterElem, "spread",       emitter->spread);
+			Helpers::Serializer::DeserializeVec3(p_doc, emitterElem, "direction",  emitter->direction);
+			m_emitter = std::move(emitter);
+		}
 	}
 
 	// Affectors
@@ -220,6 +267,15 @@ void OvCore::ECS::Components::CParticleSystem::OnDeserialize(
 			{
 				auto aff = std::make_unique<ParticleSystem::GravityAffector>();
 				Helpers::Serializer::DeserializeFloat(p_doc, affElem, "gravity", aff->gravity);
+				m_affectors.push_back(std::move(aff));
+			}
+			else if (type && std::string_view(type) == "ColorGradient")
+			{
+				auto aff = std::make_unique<ParticleSystem::ColorGradientAffector>();
+				Helpers::Serializer::DeserializeVec4(p_doc, affElem, "startColor", aff->startColor);
+				Helpers::Serializer::DeserializeVec4(p_doc, affElem, "midColor",   aff->midColor);
+				Helpers::Serializer::DeserializeVec4(p_doc, affElem, "endColor",   aff->endColor);
+				Helpers::Serializer::DeserializeFloat(p_doc, affElem, "midTime",  aff->midTime);
 				m_affectors.push_back(std::move(aff));
 			}
 		}

@@ -49,6 +49,16 @@ namespace OvRendering::FrameGraph
 		*/
 		void SetAsOutput(FrameGraphTextureHandle p_handle);
 
+		/**
+		* Declare a read dependency on an existing buffer resource.
+		*/
+		FrameGraphBufferHandle Read(FrameGraphBufferHandle p_handle);
+
+		/**
+		* Declare a write dependency on an existing buffer resource.
+		*/
+		FrameGraphBufferHandle Write(FrameGraphBufferHandle p_handle);
+
 	private:
 		FrameGraphPassNode& m_pass;
 		std::vector<FrameGraphTextureDesc>& m_textureDescs;

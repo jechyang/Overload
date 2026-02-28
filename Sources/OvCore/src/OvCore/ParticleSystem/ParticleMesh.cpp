@@ -88,6 +88,7 @@ void OvCore::ParticleSystem::ParticleMesh::SetupLayout()
 	m_vertexArray.SetLayout(std::to_array<OvRendering::Settings::VertexAttribute>({
 		{ OvRendering::Settings::EDataType::FLOAT, 3 }, // position
 		{ OvRendering::Settings::EDataType::FLOAT, 2 }, // texCoords
+		{ OvRendering::Settings::EDataType::FLOAT, 4 }, // color (RGBA)
 		{ OvRendering::Settings::EDataType::FLOAT, 3 }, // normal
 		{ OvRendering::Settings::EDataType::FLOAT, 3 }, // tangent
 		{ OvRendering::Settings::EDataType::FLOAT, 3 }  // bitangent
