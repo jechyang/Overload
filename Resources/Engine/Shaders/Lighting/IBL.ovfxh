@@ -43,14 +43,14 @@ vec3 ParallaxCorrect(vec3 reflectionDir, vec3 worldPos)
     {
         return BoxProjectionOBB(
             reflectionDir,
-            worldPos, 
+            worldPos,
             ubo_ReflectionProbeData.position.xyz,
             ubo_ReflectionProbeData.boxCenter.xyz,
             ubo_ReflectionProbeData.boxHalfExtents.xyz,
             mat3(ubo_ReflectionProbeData.rotation)
         );
     }
-    
+
     return reflectionDir; // No box projection, return original reflection direction
 }
 

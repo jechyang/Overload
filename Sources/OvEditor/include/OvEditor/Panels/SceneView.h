@@ -8,7 +8,7 @@
 
 #include <OvEditor/Core/GizmoBehaviour.h>
 #include <OvEditor/Panels/AViewControllable.h>
-#include <OvEditor/Rendering/PickingRenderPass.h>
+#include <OvEditor/Rendering/DebugSceneRenderer.h>
 #include <OvTools/Eventing/Event.h>
 
 namespace OvEditor::Panels
@@ -65,7 +65,7 @@ namespace OvEditor::Panels
 	private:
 		virtual void DrawFrame() override;
 		void HandleActorPicking();
-		OvEditor::Rendering::PickingRenderPass::PickingResult GetPickingResult();
+		OvEditor::Rendering::DebugSceneRenderer::PickingResult GetPickingResult();
 		void OnSceneDropped(const std::string& p_path);
 		void OnModelDropped(const std::string& p_path);
 		void OnMaterialDropped(const std::string& p_path);

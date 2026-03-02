@@ -8,7 +8,6 @@
 
 #include <memory>
 
-#include <OvRendering/Core/ARenderPass.h>
 #include <OvRendering/Entities/Camera.h>
 #include <OvRendering/Features/DebugShapeRenderFeature.h>
 #include <OvRendering/Features/FrameInfoRenderFeature.h>
@@ -26,7 +25,6 @@
 #include "OvEditor/Rendering/DebugModelRenderFeature.h"
 #include "OvEditor/Rendering/GizmoRenderFeature.h"
 #include "OvEditor/Rendering/OutlineRenderFeature.h"
-#include "OvEditor/Rendering/PickingRenderPass.h"
 
 namespace OvEditor::Panels { class AView; }
 
@@ -47,6 +45,13 @@ namespace OvEditor::Rendering
 			std::optional<OvEditor::Core::GizmoBehaviour::EDirection> highlightedGizmoDirection;
 		};
 
+		// Grid descriptor for grid pass
+		struct GridDescriptor
+		{
+			OvMaths::FVector3 gridColor;
+			OvMaths::FVector3 viewPosition;
+		};
+
 		/**
 		* Constructor of the Renderer
 		* @param p_driver
@@ -59,9 +64,19 @@ namespace OvEditor::Rendering
 		const OvRendering::Data::FrameInfo& GetFrameInfo() const;
 
 		/**
-		* Returns the picking render pass
+		* Return the picking result at the given position
+		* @param p_scene
+		* @param p_x
+		* @param p_y
 		*/
-		PickingRenderPass& GetPickingPass();
+		using PickingResult = std::optional<std::variant<OvTools::Utils::OptRef<OvCore::ECS::Actor>, OvEditor::Core::GizmoBehaviour::EDirection>>;
+		PickingResult ReadbackPickingResult(const OvCore::SceneSystem::Scene& p_scene, uint32_t p_x, uint32_t p_y);
+
+		/**
+		* Enable or disable the picking pass
+		* @param p_enabled
+		*/
+		void SetPickingEnabled(bool p_enabled);
 
 		virtual void EndFrame() override;
 
@@ -76,12 +91,12 @@ namespace OvEditor::Rendering
 		std::unique_ptr<OutlineRenderFeature> m_outlineFeature;
 		std::unique_ptr<GizmoRenderFeature> m_gizmoFeature;
 
-		// Debug passes stored as base-class pointers
-		std::unique_ptr<OvRendering::Core::ARenderPass> m_gridPass;
-		std::unique_ptr<OvRendering::Core::ARenderPass> m_debugCamerasPass;
-		std::unique_ptr<OvRendering::Core::ARenderPass> m_debugReflectionProbesPass;
-		std::unique_ptr<OvRendering::Core::ARenderPass> m_debugLightsPass;
-		std::unique_ptr<OvRendering::Core::ARenderPass> m_debugActorPass;
-		std::unique_ptr<PickingRenderPass> m_pickingPass;
+		// Picking resources (migrated from PickingRenderPass)
+		OvRendering::HAL::Framebuffer m_pickingFramebuffer;
+		OvCore::Resources::Material m_pickingFallbackMaterial;
+		OvCore::Resources::Material m_reflectionProbeMaterial;
+		OvCore::Resources::Material m_lightMaterial;
+		OvCore::Resources::Material m_gizmoPickingMaterial;
+		bool m_pickingEnabled = true;
 	};
 }

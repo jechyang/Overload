@@ -9,17 +9,6 @@
 #include "OvCore/Rendering/SceneRenderer.h"
 #include "OvRendering/Core/CompositeRenderer.h"
 
-namespace
-{
-	constexpr size_t kUBOSize =
-		sizeof(OvMaths::FMatrix4) +  // Model matrix
-		sizeof(OvMaths::FMatrix4) +  // View matrix
-		sizeof(OvMaths::FMatrix4) +  // Projection matrix
-		sizeof(OvMaths::FVector3) +  // Camera position
-		sizeof(float) +              // Elapsed time
-		sizeof(OvMaths::FMatrix4);   // User matrix
-}
-
 OvEditor::Rendering::DebugModelRenderFeature::DebugModelRenderFeature(
 	OvRendering::Core::CompositeRenderer& p_renderer,
 	OvRendering::Features::EFeatureExecutionPolicy p_executionPolicy
@@ -36,17 +25,13 @@ void OvEditor::Rendering::DebugModelRenderFeature::DrawModelWithSingleMaterial(
 )
 {
 	auto stateMask = p_material.GenerateStateMask();
-
 	auto userMatrix = OvMaths::FMatrix4::Identity;
 	auto engineDrawableDescriptor = OvCore::Rendering::EngineDrawableDescriptor{
 		p_modelMatrix,
 		userMatrix
 	};
 
-	// Pre-compute transposed model matrix for UBO upload
-	const auto transposedModelMatrix = OvMaths::FMatrix4::Transpose(p_modelMatrix);
-
-	// Get engine UBO from SceneRenderer and upload matrices
+	// Get engine UBO from SceneRenderer
 	auto* sceneRenderer = dynamic_cast<OvCore::Rendering::SceneRenderer*>(&m_renderer);
 	if (!sceneRenderer)
 	{
@@ -73,17 +58,7 @@ void OvEditor::Rendering::DebugModelRenderFeature::DrawModelWithSingleMaterial(
 		element.stateMask = stateMask;
 		element.AddDescriptor(engineDrawableDescriptor);
 
-		// Upload model/user matrices to engine UBO before draw
-		engineUBO.Upload(&transposedModelMatrix, OvRendering::HAL::BufferMemoryRange{
-			.offset = 0,
-			.size = sizeof(transposedModelMatrix)
-		});
-		engineUBO.Upload(&userMatrix, OvRendering::HAL::BufferMemoryRange{
-			.offset = kUBOSize - sizeof(transposedModelMatrix),
-			.size = sizeof(userMatrix)
-		});
-		engineUBO.Bind(0);
-
-		m_renderer.DrawEntity(p_pso, element);
+		// Use helper method to upload matrices and draw
+		sceneRenderer->UploadMatricesAndDraw(p_pso, element, engineUBO, p_modelMatrix, userMatrix);
 	}
 }

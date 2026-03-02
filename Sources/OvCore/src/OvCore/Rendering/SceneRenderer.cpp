@@ -16,7 +16,7 @@
 #include <OvCore/Global/ServiceLocator.h>
 #include <OvCore/Rendering/EngineDrawableDescriptor.h>
 #include <OvCore/Rendering/FrameGraphData/ReflectionData.h>
-#include <OvCore/Rendering/PostProcessRenderPass.h>
+#include <OvCore/Rendering/FramebufferUtil.h>
 #include <OvCore/Rendering/SceneRenderer.h>
 #include <OvCore/ResourceManagement/ShaderManager.h>
 
@@ -27,6 +27,8 @@
 #include <OvRendering/HAL/ShaderStorageBuffer.h>
 #include <OvRendering/Settings/EAccessSpecifier.h>
 #include <OvRendering/Settings/ELightType.h>
+
+#include "OvDebug/Logger.h"
 
 namespace
 {
@@ -94,9 +96,24 @@ OvCore::Rendering::SceneRenderer::SceneRenderer(OvRendering::Context::Driver& p_
 	m_engineBuffer->Allocate(kUBOSize, OvRendering::Settings::EAccessSpecifier::STREAM_DRAW);
 	m_startTime = std::chrono::high_resolution_clock::now();
 
+	// Initialize light buffer with a minimal size (will be reallocated in Lighting pass)
 	m_lightBuffer = std::make_unique<OvRendering::HAL::ShaderStorageBuffer>();
+	m_lightBuffer->Allocate(sizeof(OvMaths::FMatrix4), OvRendering::Settings::EAccessSpecifier::STREAM_DRAW);
 
-	m_postProcessPass = std::make_unique<PostProcessRenderPass>(*this);
+	// Initialize post-process resources
+	m_blitMaterial.SetShader(OVSERVICE(OvCore::ResourceManagement::ShaderManager)[":Shaders\\PostProcess\\Blit.ovfx"]);
+	m_pingPongBuffers = std::make_unique<OvCore::Rendering::PingPongFramebuffer>("PostProcessBlit");
+	for (auto& buffer : m_pingPongBuffers->GetFramebuffers())
+	{
+		OvCore::Rendering::FramebufferUtil::SetupFramebuffer(buffer, 1, 1, false, false, false);
+	}
+
+	// Instantiate available effects
+	m_postProcessEffects.reserve(4);
+	m_postProcessEffects.push_back(std::make_unique<OvCore::Rendering::PostProcess::AutoExposureEffect>(*this));
+	m_postProcessEffects.push_back(std::make_unique<OvCore::Rendering::PostProcess::BloomEffect>(*this));
+	m_postProcessEffects.push_back(std::make_unique<OvCore::Rendering::PostProcess::TonemappingEffect>(*this));
+	m_postProcessEffects.push_back(std::make_unique<OvCore::Rendering::PostProcess::FXAAEffect>(*this));
 }
 
 // ============================================================
@@ -162,15 +179,25 @@ void OvCore::Rendering::SceneRenderer::_SetCameraUBO(const OvRendering::Entities
 		OvMaths::FMatrix4::Transpose(p_camera.GetProjectionMatrix()),
 		p_camera.GetPosition()
 	};
+
+	// Upload camera matrices to the engine UBO
 	m_engineBuffer->Upload(&d, OvRendering::HAL::BufferMemoryRange{
 		.offset = sizeof(OvMaths::FMatrix4),
 		.size = sizeof(d)
 	});
 	m_engineBuffer->Bind(0);
+
+	#if _DEBUG
+	if (GLenum err = glGetError(); err != GL_NO_ERROR)
+	{
+		OVLOG_ERROR("[_SetCameraUBO] OpenGL error " + std::to_string(err) + ", size=" + std::to_string(sizeof(d)));
+	}
+	#endif
 }
 
 void OvCore::Rendering::SceneRenderer::_BindLightBuffer()
 {
+	// Bind the light SSBO (always allocated in constructor)
 	m_lightBuffer->Bind(0);
 }
 
@@ -744,7 +771,7 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 		}
 	);
 
-	// ---- Pass 6: PostProcess ----
+	// ---- Pass 6: PostProcess (inlined from PostProcessRenderPass) ----
 	struct PostProcessPassData {};
 	p_fg.AddPass<PostProcessPassData>(
 		"PostProcess",
@@ -753,8 +780,52 @@ void OvCore::Rendering::SceneRenderer::BuildFrameGraph(OvRendering::FrameGraph::
 		{
 			ZoneScoped;
 			TracyGpuZone("PostProcessPass");
-			auto pso = CreatePipelineState();
-			m_postProcessPass->Draw(pso);
+
+			auto& sceneDescriptor = GetDescriptor<SceneDescriptor>();
+			auto& scene = sceneDescriptor.scene;
+
+			// Find active post-process stack
+			auto& postProcessStacks = scene.GetFastAccessComponents().postProcessStacks;
+			OvTools::Utils::OptRef<const OvCore::Rendering::PostProcess::PostProcessStack> stack;
+			for (auto pps : postProcessStacks)
+			{
+				if (pps && pps->owner.IsActive())
+				{
+					stack = pps->GetStack();
+					break;
+				}
+			}
+
+			if (stack)
+			{
+				auto& framebuffer = m_frameDescriptor.outputBuffer.value();
+
+				// Resize ping-pong buffers if needed
+				m_pingPongBuffers->Resize(m_frameDescriptor.renderWidth, m_frameDescriptor.renderHeight);
+
+				// Blit scene to ping-pong buffer
+				Blit(CreatePipelineState(), framebuffer, (*m_pingPongBuffers)[0], m_blitMaterial);
+
+				// Apply effects
+				for (auto& effect : m_postProcessEffects)
+				{
+					if (effect)
+					{
+						auto& effectRef = *effect;
+						const auto& effectType = typeid(effectRef);
+						const auto& settings = stack->Get(effectType);
+
+						if (effect->IsApplicable(settings))
+						{
+							effect->Draw(CreatePipelineState(), (*m_pingPongBuffers)[0], (*m_pingPongBuffers)[1], settings);
+							++(*m_pingPongBuffers);
+						}
+					}
+				}
+
+				// Blit result back to output framebuffer
+				Blit(CreatePipelineState(), (*m_pingPongBuffers)[0], framebuffer, m_blitMaterial);
+			}
 		}
 	);
 }
@@ -774,9 +845,6 @@ void OvCore::Rendering::SceneRenderer::DrawModelWithSingleMaterial(
 	auto userMatrix = OvMaths::FMatrix4::Identity;
 	auto engineDesc = EngineDrawableDescriptor{ p_modelMatrix, userMatrix };
 
-	// Pre-compute transposed model matrix for UBO upload
-	const auto transposedModelMatrix = OvMaths::FMatrix4::Transpose(p_modelMatrix);
-
 	for (auto mesh : p_model.GetMeshes())
 	{
 		OvRendering::Entities::Drawable element;
@@ -785,20 +853,8 @@ void OvCore::Rendering::SceneRenderer::DrawModelWithSingleMaterial(
 		element.stateMask = stateMask;
 		element.AddDescriptor(engineDesc);
 
-		// Upload model/user matrices to engine UBO before draw
-		// Note: m_engineBuffer is imported into FrameGraph, so Upload() affects the
-		// same buffer. Bind is assumed to be done by the calling pass.
-		m_engineBuffer->Upload(&transposedModelMatrix, OvRendering::HAL::BufferMemoryRange{
-			.offset = 0,
-			.size = sizeof(transposedModelMatrix)
-		});
-		m_engineBuffer->Upload(&userMatrix, OvRendering::HAL::BufferMemoryRange{
-			.offset = kUBOSize - sizeof(transposedModelMatrix),
-			.size = sizeof(userMatrix)
-		});
-		m_engineBuffer->Bind(0);
-
-		DrawEntity(p_pso, element);
+		// Use helper method to upload matrices and draw
+		UploadMatricesAndDraw(p_pso, element, *m_engineBuffer, p_modelMatrix, userMatrix, kUBOSize);
 	}
 }
 

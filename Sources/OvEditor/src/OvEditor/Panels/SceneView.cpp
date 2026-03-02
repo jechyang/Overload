@@ -7,7 +7,6 @@
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
 
 #include <OvEditor/Rendering/DebugSceneRenderer.h>
-#include <OvEditor/Rendering/PickingRenderPass.h>
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Panels/SceneView.h>
 #include <OvEditor/Panels/GameView.h>
@@ -18,7 +17,7 @@
 namespace
 {
 	OvTools::Utils::OptRef<OvCore::ECS::Actor> GetActorFromPickingResult(
-		OvEditor::Rendering::PickingRenderPass::PickingResult p_result
+		OvEditor::Rendering::DebugSceneRenderer::PickingResult p_result
 	)
 	{
 		if (p_result)
@@ -117,10 +116,8 @@ void OvEditor::Panels::SceneView::InitFrame()
 		m_highlightedGizmoDirection
 	});
 
-	auto& pickingPass = static_cast<OvEditor::Rendering::DebugSceneRenderer&>(*m_renderer).GetPickingPass();
-
 	// Enable picking pass only when the scene view is hovered, not picking, and not operating the camera
-	pickingPass.SetEnabled(
+	static_cast<OvEditor::Rendering::DebugSceneRenderer&>(*m_renderer).SetPickingEnabled(
 		IsHovered() &&
 		!m_gizmoOperations.IsPicking() &&
 		!m_cameraController.IsOperating()
@@ -260,7 +257,7 @@ void OvEditor::Panels::SceneView::HandleActorPicking()
 	}
 }
 
-OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Panels::SceneView::GetPickingResult()
+OvEditor::Rendering::DebugSceneRenderer::PickingResult OvEditor::Panels::SceneView::GetPickingResult()
 {
 	auto [mouseX, mouseY] = EDITOR_CONTEXT(inputManager)->GetMousePosition();
 	mouseX -= m_position.x;
@@ -269,9 +266,7 @@ OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Panels::SceneVie
 
 	auto& scene = *GetScene();
 
-	auto& actorPickingFeature = static_cast<OvEditor::Rendering::DebugSceneRenderer&>(*m_renderer).GetPickingPass();
-
-	return actorPickingFeature.ReadbackPickingResult(
+	return static_cast<OvEditor::Rendering::DebugSceneRenderer&>(*m_renderer).ReadbackPickingResult(
 		scene,
 		static_cast<uint32_t>(mouseX),
 		static_cast<uint32_t>(mouseY)

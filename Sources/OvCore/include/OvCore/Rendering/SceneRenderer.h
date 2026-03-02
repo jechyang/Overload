@@ -19,7 +19,8 @@
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/ECS/Components/CCamera.h>
 #include <OvCore/Rendering/EVisibilityFlags.h>
-#include <OvCore/Rendering/PostProcessRenderPass.h>
+#include <OvCore/Rendering/PingPongFramebuffer.h>
+#include <OvCore/Rendering/PostProcess/AEffect.h>
 #include <OvCore/Resources/Material.h>
 #include <OvCore/SceneSystem/Scene.h>
 
@@ -31,6 +32,15 @@ namespace OvCore::Rendering
 	class SceneRenderer : public OvRendering::Core::CompositeRenderer
 	{
 	public:
+		// Engine UBO size (must match definition in SceneRenderer.cpp)
+		static constexpr size_t kEngineUBOSize =
+			sizeof(OvMaths::FMatrix4) +  // Model matrix
+			sizeof(OvMaths::FMatrix4) +  // View matrix
+			sizeof(OvMaths::FMatrix4) +  // Projection matrix
+			sizeof(OvMaths::FVector3) +  // Camera position
+			sizeof(float) +              // Elapsed time
+			sizeof(OvMaths::FMatrix4);   // User matrix
+
 		enum class EOrderingMode
 		{
 			BACK_TO_FRONT,
@@ -168,8 +178,10 @@ namespace OvCore::Rendering
 		// Light shader storage buffer
 		std::unique_ptr<OvRendering::HAL::ShaderStorageBuffer> m_lightBuffer;
 
-		// Cached post-process pass (owns ping-pong buffers and effects)
-		std::unique_ptr<PostProcessRenderPass> m_postProcessPass;
+		// Post-process resources (inlined from PostProcessRenderPass)
+		OvRendering::Data::Material m_blitMaterial;
+		std::unique_ptr<OvCore::Rendering::PingPongFramebuffer> m_pingPongBuffers;
+		std::vector<std::unique_ptr<OvCore::Rendering::PostProcess::AEffect>> m_postProcessEffects;
 
 		// Cached pass data for inter-pass communication
 		std::vector<std::shared_ptr<OvRendering::HAL::Texture>> m_shadowMaps;

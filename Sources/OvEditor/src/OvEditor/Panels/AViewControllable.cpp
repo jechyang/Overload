@@ -6,7 +6,6 @@
 
 #include "OvEditor/Panels/AViewControllable.h"
 #include "OvEditor/Rendering/DebugSceneRenderer.h"
-#include "OvEditor/Rendering/GridRenderPass.h"
 #include "OvEditor/Core/EditorActions.h"
 #include "OvEditor/Settings/EditorSettings.h"
 
@@ -41,7 +40,8 @@ void OvEditor::Panels::AViewControllable::InitFrame()
 
 	AView::InitFrame();
 
-	m_renderer->AddDescriptor<Rendering::GridRenderPass::GridDescriptor>({
+	// Update grid descriptor for the renderer
+	m_renderer->AddDescriptor<OvEditor::Rendering::DebugSceneRenderer::GridDescriptor>({
 		m_gridColor,
 		m_camera.GetPosition()
 	});

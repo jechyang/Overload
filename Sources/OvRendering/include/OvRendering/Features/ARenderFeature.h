@@ -48,6 +48,11 @@ namespace OvRendering::Features
 		bool IsEnabled() const;
 
 		/**
+		* Get the renderer associated with this render feature
+		*/
+		Core::CompositeRenderer& GetRenderer() const { return m_renderer; }
+
+		/**
 		* Returns true if this render feature is enabled for the given render pass.
 		* @param p_type
 		*/

@@ -450,7 +450,7 @@ void OvCore::ECS::Components::CReflectionProbe::_PrepareUBO()
 		std::byte padding1[3];
 		bool local;
 		std::byte padding2[3];
-	} uboDataPage{ 
+	} uboDataPage{
 		.position = probePosition,
 		.rotation = probeRotationMatrix,
 		.boxCenter = boxPosition,

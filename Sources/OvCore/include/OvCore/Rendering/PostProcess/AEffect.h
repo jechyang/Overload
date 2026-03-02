@@ -6,7 +6,6 @@
 
 #pragma once
 
-#include <OvRendering/Core/ARenderPass.h>
 #include <OvRendering/Data/Material.h>
 #include <OvRendering/Core/CompositeRenderer.h>
 

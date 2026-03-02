@@ -11,13 +11,13 @@
 #include <OvCore/Rendering/SceneRenderer.h>
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Panels/AssetView.h>
-#include <OvEditor/Rendering/GridRenderPass.h>
 #include <OvEditor/Rendering/DebugModelRenderFeature.h>
 #include <OvRendering/Features/DebugShapeRenderFeature.h>
 #include <OvRendering/Features/FrameInfoRenderFeature.h>
 #include <OvRendering/FrameGraph/FrameGraph.h>
 #include <OvRendering/FrameGraph/FrameGraphBuilder.h>
 #include <OvRendering/FrameGraph/FrameGraphResources.h>
+#include <tracy/Tracy.hpp>
 #include <OvTools/Utils/PathParser.h>
 #include <OvUI/Plugins/DDTarget.h>
 
@@ -35,7 +35,6 @@ namespace
 			m_debugModelFeature = std::make_unique<OvEditor::Rendering::DebugModelRenderFeature>(*this, NEVER);
 			m_debugShapeFeature = std::make_unique<DebugShapeRenderFeature>(*this, NEVER);
 			m_frameInfoFeature  = std::make_unique<FrameInfoRenderFeature>(*this, ALWAYS);
-			m_gridPass = std::make_unique<OvEditor::Rendering::GridRenderPass>(*this, *m_debugShapeFeature, *m_debugModelFeature);
 		}
 
 		const OvRendering::Data::FrameInfo& GetFrameInfo() const
@@ -55,12 +54,57 @@ namespace
 			m_frameInfoFeature->OnBeginFrame(m_frameDescriptor);
 			SceneRenderer::BuildFrameGraph(p_fg);
 
-			struct GridPassData {};
+			// Grid Pass - inlined from GridRenderPass
+			struct GridPassData
+			{
+				OvCore::Resources::Material gridMaterial;
+			};
+
 			p_fg.AddPass<GridPassData>("Grid",
-				[](OvRendering::FrameGraph::FrameGraphBuilder& b, GridPassData&) { b.SetAsOutput({}); },
-				[this](const OvRendering::FrameGraph::FrameGraphResources&, const GridPassData&) {
+				[this](OvRendering::FrameGraph::FrameGraphBuilder& builder, GridPassData& data) {
+					// Initialize grid material
+					data.gridMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Grid"));
+					data.gridMaterial.SetBlendable(true);
+					data.gridMaterial.SetBackfaceCulling(false);
+					data.gridMaterial.SetDepthWriting(false);
+					data.gridMaterial.SetDepthTest(true);
+					builder.SetAsOutput({});
+				},
+				[this](const OvRendering::FrameGraph::FrameGraphResources&, GridPassData& data) {
+					ZoneScoped;
+
+					auto& frameDescriptor = m_frameDescriptor;
 					auto pso = CreatePipelineState();
-					m_gridPass->Draw(pso);
+
+					// Set up camera matrices
+					auto viewPos = frameDescriptor.camera->transform->GetWorldPosition();
+					auto transposedView = OvMaths::FMatrix4::Transpose(frameDescriptor.camera->GetViewMatrix());
+					auto proj = frameDescriptor.camera->GetProjectionMatrix();
+
+					// Upload camera matrices to engine UBO
+					auto& engineUBO = GetEngineBuffer();
+					engineUBO.Upload(&transposedView, OvRendering::HAL::BufferMemoryRange{ .offset = sizeof(OvMaths::FMatrix4), .size = sizeof(OvMaths::FMatrix4) });
+					engineUBO.Upload(&proj, OvRendering::HAL::BufferMemoryRange{ .offset = sizeof(OvMaths::FMatrix4) * 2, .size = sizeof(OvMaths::FMatrix4) });
+					engineUBO.Bind(0);
+
+					constexpr float gridSize = 5000.0f;
+					OvMaths::FMatrix4 model =
+						OvMaths::FMatrix4::Translation({ viewPos.x, 0.0f, viewPos.z }) *
+						OvMaths::FMatrix4::Scaling({ gridSize * 2.0f, 1.f, gridSize * 2.0f });
+
+					data.gridMaterial.SetProperty("u_Color", OvMaths::FVector3{ 0.0f, 0.447f, 1.0f });
+
+					m_debugModelFeature->DrawModelWithSingleMaterial(
+						pso,
+						*EDITOR_CONTEXT(editorResources)->GetModel("Plane"),
+						data.gridMaterial,
+						model
+					);
+
+					constexpr float kLineWidth = 1.0f;
+					m_debugShapeFeature->DrawLine(pso, OvMaths::FVector3(-gridSize + viewPos.x, 0.0f, 0.0f), OvMaths::FVector3(gridSize + viewPos.x, 0.0f, 0.0f), OvMaths::FVector3::Right, kLineWidth);
+					m_debugShapeFeature->DrawLine(pso, OvMaths::FVector3(0.0f, -gridSize + viewPos.y, 0.0f), OvMaths::FVector3(0.0f, gridSize + viewPos.y, 0.0f), OvMaths::FVector3::Up, kLineWidth);
+					m_debugShapeFeature->DrawLine(pso, OvMaths::FVector3(0.0f, 0.0f, -gridSize + viewPos.z), OvMaths::FVector3(0.0f, 0.0f, gridSize + viewPos.z), OvMaths::FVector3::Forward, kLineWidth);
 				}
 			);
 		}
@@ -69,7 +113,6 @@ namespace
 		std::unique_ptr<OvEditor::Rendering::DebugModelRenderFeature> m_debugModelFeature;
 		std::unique_ptr<OvRendering::Features::DebugShapeRenderFeature> m_debugShapeFeature;
 		std::unique_ptr<OvRendering::Features::FrameInfoRenderFeature> m_frameInfoFeature;
-		std::unique_ptr<OvRendering::Core::ARenderPass> m_gridPass;
 	};
 }
 

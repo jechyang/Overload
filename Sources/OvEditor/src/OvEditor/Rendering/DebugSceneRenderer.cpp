@@ -4,6 +4,8 @@
 * @licence: MIT
 */
 
+#include <glad.h>
+
 #include <OvCore/ECS/Components/CCamera.h>
 #include <OvCore/ECS/Components/CDirectionalLight.h>
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
@@ -14,6 +16,7 @@
 #include <OvCore/ECS/Components/CSpotLight.h>
 #include <OvCore/ECS/Components/CReflectionProbe.h>
 #include <OvCore/Rendering/EngineDrawableDescriptor.h>
+#include <OvCore/Rendering/FramebufferUtil.h>
 #include <OvCore/Rendering/SceneRenderer.h>
 
 #include <OvDebug/Assertion.h>
@@ -23,16 +26,17 @@
 #include <OvEditor/Panels/AView.h>
 #include <OvEditor/Panels/GameView.h>
 #include <OvEditor/Rendering/DebugModelRenderFeature.h>
+#include <OvEditor/Rendering/DebugRenderState.h>
 #include <OvEditor/Rendering/DebugSceneRenderer.h>
 #include <OvEditor/Rendering/GizmoRenderFeature.h>
-#include <OvEditor/Rendering/GridRenderPass.h>
 #include <OvEditor/Rendering/OutlineRenderFeature.h>
-#include <OvEditor/Rendering/PickingRenderPass.h>
 #include <OvEditor/Settings/EditorSettings.h>
 
 #include <OvRendering/Features/DebugShapeRenderFeature.h>
 #include <OvRendering/Features/FrameInfoRenderFeature.h>
 #include <OvRendering/HAL/Profiling.h>
+
+#include "OvDebug/Logger.h"
 
 using namespace OvMaths;
 using namespace OvRendering::Resources;
@@ -106,43 +110,28 @@ namespace
 
 		return lightBuffer;
 	}
-}
 
-// ============================================================
-// DebugCamerasRenderPass
-// ============================================================
+	// ============================================================
+	// Helper lambdas for Debug Passes (inlined into BuildFrameGraph)
+	// ============================================================
 
-class DebugCamerasRenderPass : public OvRendering::Core::ARenderPass
-{
-public:
-	DebugCamerasRenderPass(
-		OvRendering::Core::CompositeRenderer& p_renderer,
-		OvEditor::Rendering::DebugModelRenderFeature& p_debugModelFeature
-	) : OvRendering::Core::ARenderPass(p_renderer),
-		m_debugModelFeature(p_debugModelFeature)
-	{
-		m_fakeLightsBuffer = CreateDebugLightBuffer();
-
-		m_cameraMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Standard.ovfx"]);
-		m_cameraMaterial.SetProperty("u_Albedo", FVector4{ 0.0f, 0.447f, 1.0f, 1.0f });
-		m_cameraMaterial.SetProperty("u_Metallic", 0.0f);
-		m_cameraMaterial.SetProperty("u_Roughness", 0.25f);
-		m_cameraMaterial.SetProperty("u_BuiltInGammaCorrection", true);
-		m_cameraMaterial.SetProperty("u_BuiltInToneMapping", true);
-	}
-
-	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
+	void DrawDebugCameras(
+		OvCore::Rendering::SceneRenderer& p_renderer,
+		OvEditor::Rendering::DebugModelRenderFeature& p_debugModelFeature,
+		OvCore::Resources::Material& p_cameraMaterial,
+		OvRendering::HAL::ShaderStorageBuffer& p_fakeLightsBuffer
+	)
 	{
 		ZoneScoped;
-		TracyGpuZone("DebugCamerasRenderPass");
+		TracyGpuZone("DebugCameras");
 
 		// Override the light buffer with fake lights
-		m_fakeLightsBuffer->Bind(0);
+		p_fakeLightsBuffer.Bind(0);
 
-		// Set up camera matrices in engine UBO
-		static_cast<OvCore::Rendering::SceneRenderer&>(m_renderer)._SetCameraUBO(m_renderer.GetFrameDescriptor().camera.value());
+		// Set up camera matrices in engine UBO using RAII helper
+		OvEditor::Rendering::DebugRenderStateSetup setup(p_renderer, p_renderer.GetFrameDescriptor().camera.value());
 
-		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
+		auto& sceneDescriptor = p_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
 
 		for (auto camera : sceneDescriptor.scene.GetFastAccessComponents().cameras)
 		{
@@ -153,56 +142,36 @@ public:
 				auto& model = *EDITOR_CONTEXT(editorResources)->GetModel("Camera");
 				auto modelMatrix = CalculateUnscaledModelMatrix(actor);
 
-				m_debugModelFeature.DrawModelWithSingleMaterial(p_pso, model, m_cameraMaterial, modelMatrix);
+				p_debugModelFeature.DrawModelWithSingleMaterial(
+					p_renderer.CreatePipelineState(),
+					model,
+					p_cameraMaterial,
+					modelMatrix
+				);
 			}
 		}
 
 		// Restore the original light buffer
-		static_cast<OvCore::Rendering::SceneRenderer&>(m_renderer)._BindLightBuffer();
+		p_renderer._BindLightBuffer();
 	}
 
-private:
-	OvEditor::Rendering::DebugModelRenderFeature& m_debugModelFeature;
-	OvCore::Resources::Material m_cameraMaterial;
-	std::unique_ptr<OvRendering::HAL::ShaderStorageBuffer> m_fakeLightsBuffer;
-};
-
-// ============================================================
-// DebugReflectionProbesRenderPass
-// ============================================================
-
-class DebugReflectionProbesRenderPass : public OvRendering::Core::ARenderPass
-{
-public:
-	DebugReflectionProbesRenderPass(
-		OvRendering::Core::CompositeRenderer& p_renderer,
-		OvEditor::Rendering::DebugModelRenderFeature& p_debugModelFeature
-	) : OvRendering::Core::ARenderPass(p_renderer),
-		m_debugModelFeature(p_debugModelFeature)
-	{
-		m_fakeLightsBuffer = CreateDebugLightBuffer();
-
-		m_reflectiveMaterial.SetDepthTest(false);
-		m_reflectiveMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Standard.ovfx"]);
-		m_reflectiveMaterial.SetProperty("u_Albedo", FVector4{ 1.0, 1.0f, 1.0f, 1.0f });
-		m_reflectiveMaterial.SetProperty("u_Metallic", 1.0f);
-		m_reflectiveMaterial.SetProperty("u_Roughness", 0.0f);
-		m_reflectiveMaterial.SetProperty("u_BuiltInGammaCorrection", true);
-		m_reflectiveMaterial.SetProperty("u_BuiltInToneMapping", true);
-	}
-
-	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
+	void DrawDebugReflectionProbes(
+		OvCore::Rendering::SceneRenderer& p_renderer,
+		OvEditor::Rendering::DebugModelRenderFeature& p_debugModelFeature,
+		OvCore::Resources::Material& p_reflectiveMaterial,
+		OvRendering::HAL::ShaderStorageBuffer& p_fakeLightsBuffer
+	)
 	{
 		ZoneScoped;
-		TracyGpuZone("DebugReflectionProbesRenderPass");
+		TracyGpuZone("DebugReflectionProbes");
 
 		// Override the light buffer with fake lights
-		m_fakeLightsBuffer->Bind(0);
+		p_fakeLightsBuffer.Bind(0);
 
-		// Set up camera matrices in engine UBO
-		static_cast<OvCore::Rendering::SceneRenderer&>(m_renderer)._SetCameraUBO(m_renderer.GetFrameDescriptor().camera.value());
+		// Set up camera matrices in engine UBO using RAII helper
+		OvEditor::Rendering::DebugRenderStateSetup setup(p_renderer, p_renderer.GetFrameDescriptor().camera.value());
 
-		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
+		auto& sceneDescriptor = p_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
 
 		for (auto reflectionProbe : sceneDescriptor.scene.GetFastAccessComponents().reflectionProbes)
 		{
@@ -210,6 +179,11 @@ public:
 
 			if (actor.IsActive())
 			{
+				// Skip if reflection probe doesn't have a valid cubemap yet
+				auto cubemap = reflectionProbe->GetCubemap();
+				if (!cubemap)
+					continue;
+
 				auto& model = *EDITOR_CONTEXT(editorResources)->GetModel("Sphere");
 				auto modelMatrix =
 					OvMaths::FMatrix4::Scale(
@@ -222,57 +196,40 @@ public:
 
 				// Inline ReflectionRenderFeature::PrepareProbe / SendProbeData / BindProbe
 				reflectionProbe->_PrepareUBO();
-				m_reflectiveMaterial.SetProperty(
+				p_reflectiveMaterial.SetProperty(
 					"_EnvironmentMap",
-					reflectionProbe->GetCubemap().get(),
+					cubemap.get(),
 					true
 				);
 				reflectionProbe->_GetUniformBuffer().Bind(1);
 
-				m_debugModelFeature.DrawModelWithSingleMaterial(p_pso, model, m_reflectiveMaterial, modelMatrix);
+				p_debugModelFeature.DrawModelWithSingleMaterial(
+					p_renderer.CreatePipelineState(),
+					model,
+					p_reflectiveMaterial,
+					modelMatrix
+				);
 			}
 		}
 
 		// Restore the original light buffer
-		static_cast<OvCore::Rendering::SceneRenderer&>(m_renderer)._BindLightBuffer();
+		p_renderer._BindLightBuffer();
 	}
 
-private:
-	OvEditor::Rendering::DebugModelRenderFeature& m_debugModelFeature;
-	OvCore::Resources::Material m_reflectiveMaterial;
-	std::unique_ptr<OvRendering::HAL::ShaderStorageBuffer> m_fakeLightsBuffer;
-};
-
-// ============================================================
-// DebugLightsRenderPass
-// ============================================================
-
-class DebugLightsRenderPass : public OvRendering::Core::ARenderPass
-{
-public:
-	DebugLightsRenderPass(
-		OvRendering::Core::CompositeRenderer& p_renderer,
-		OvEditor::Rendering::DebugModelRenderFeature& p_debugModelFeature
-	) : OvRendering::Core::ARenderPass(p_renderer),
-		m_debugModelFeature(p_debugModelFeature)
-	{
-		m_lightMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Billboard"));
-		m_lightMaterial.SetProperty("u_Diffuse", FVector4{ 1.f, 1.f, 0.5f, 0.5f });
-		m_lightMaterial.SetBackfaceCulling(false);
-		m_lightMaterial.SetBlendable(true);
-		m_lightMaterial.SetDepthTest(false);
-	}
-
-	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
+	void DrawDebugLights(
+		OvCore::Rendering::SceneRenderer& p_renderer,
+		OvEditor::Rendering::DebugModelRenderFeature& p_debugModelFeature,
+		OvCore::Resources::Material& p_lightMaterial
+	)
 	{
 		ZoneScoped;
-		TracyGpuZone("DebugLightsRenderPass");
+		TracyGpuZone("DebugLights");
 
-		// Set up camera matrices in engine UBO
-		static_cast<OvCore::Rendering::SceneRenderer&>(m_renderer)._SetCameraUBO(m_renderer.GetFrameDescriptor().camera.value());
+		// Set up camera matrices in engine UBO using RAII helper
+		OvEditor::Rendering::DebugRenderStateSetup setup(p_renderer, p_renderer.GetFrameDescriptor().camera.value());
 
-		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
-		m_lightMaterial.SetProperty("u_Scale", OvEditor::Settings::EditorSettings::LightBillboardScale * 0.1f);
+		auto& sceneDescriptor = p_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
+		p_lightMaterial.SetProperty("u_Scale", OvEditor::Settings::EditorSettings::LightBillboardScale * 0.1f);
 
 		for (auto light : sceneDescriptor.scene.GetFastAccessComponents().lights)
 		{
@@ -285,119 +242,44 @@ public:
 			auto lightTexture = lightTypeTextureName ?
 				EDITOR_CONTEXT(editorResources)->GetTexture(lightTypeTextureName.value()) : nullptr;
 			const auto& lightColor = light->GetColor();
-			m_lightMaterial.SetProperty("u_DiffuseMap", lightTexture);
-			m_lightMaterial.SetProperty("u_Diffuse", OvMaths::FVector4(lightColor.x, lightColor.y, lightColor.z, 0.75f));
-			m_debugModelFeature.DrawModelWithSingleMaterial(p_pso, model, m_lightMaterial, modelMatrix);
+			p_lightMaterial.SetProperty("u_DiffuseMap", lightTexture);
+			p_lightMaterial.SetProperty("u_Diffuse", OvMaths::FVector4(lightColor.x, lightColor.y, lightColor.z, 0.75f));
+			p_debugModelFeature.DrawModelWithSingleMaterial(
+				p_renderer.CreatePipelineState(),
+				model,
+				p_lightMaterial,
+				modelMatrix
+			);
 		}
 	}
 
-private:
-	OvEditor::Rendering::DebugModelRenderFeature& m_debugModelFeature;
-	OvCore::Resources::Material m_lightMaterial;
-};
-
-// ============================================================
-// DebugActorRenderPass
-// ============================================================
-
-class DebugActorRenderPass : public OvRendering::Core::ARenderPass
-{
-public:
-	DebugActorRenderPass(
-		OvRendering::Core::CompositeRenderer& p_renderer,
+	void DrawFrustumLines(
 		OvRendering::Features::DebugShapeRenderFeature& p_debugShapeFeature,
-		OvEditor::Rendering::OutlineRenderFeature& p_outlineFeature,
-		OvEditor::Rendering::GizmoRenderFeature& p_gizmoFeature
-	) : OvRendering::Core::ARenderPass(p_renderer),
-		m_debugShapeFeature(p_debugShapeFeature),
-		m_outlineFeature(p_outlineFeature),
-		m_gizmoFeature(p_gizmoFeature)
-	{}
-
-	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
-	{
-		ZoneScoped;
-		TracyGpuZone("DebugActorRenderPass");
-
-		// Set up camera matrices in engine UBO
-		static_cast<OvCore::Rendering::SceneRenderer&>(m_renderer)._SetCameraUBO(m_renderer.GetFrameDescriptor().camera.value());
-
-		m_renderer.Clear(false, false, true);
-
-		auto& desc = m_renderer.GetDescriptor<OvEditor::Rendering::DebugSceneRenderer::DebugSceneDescriptor>();
-
-		if (desc.selectedActor)
-		{
-			auto& selected = desc.selectedActor.value();
-			const bool isHovered = desc.highlightedActor && desc.highlightedActor->GetID() == selected.GetID();
-			DrawActorDebugElements(selected);
-			m_outlineFeature.DrawOutline(selected,
-				isHovered ? kHoveredOutlineColor : kSelectedOutlineColor, kSelectedOutlineWidth);
-			m_renderer.Clear(false, true, false, OvMaths::FVector3::Zero);
-			m_gizmoFeature.DrawGizmo(
-				selected.transform.GetWorldPosition(),
-				selected.transform.GetWorldRotation(),
-				desc.gizmoOperation, false,
-				desc.highlightedGizmoDirection);
-		}
-
-		if (desc.highlightedActor)
-		{
-			auto& highlighted = desc.highlightedActor.value();
-			if (!desc.selectedActor || highlighted.GetID() != desc.selectedActor->GetID())
-				m_outlineFeature.DrawOutline(highlighted, kHoveredOutlineColor, kHoveredOutlineWidth);
-		}
-	}
-
-private:
-	OvRendering::Features::DebugShapeRenderFeature& m_debugShapeFeature;
-	OvEditor::Rendering::OutlineRenderFeature& m_outlineFeature;
-	OvEditor::Rendering::GizmoRenderFeature& m_gizmoFeature;
-
-	const OvMaths::FVector4 kHoveredOutlineColor{ 1.0f, 1.0f, 0.0f, 1.0f };
-	const OvMaths::FVector4 kSelectedOutlineColor{ 1.0f, 0.7f, 0.0f, 1.0f };
-
-	void DrawActorDebugElements(OvCore::ECS::Actor& p_actor)
-	{
-		if (!p_actor.IsActive()) return;
-		if (OvEditor::Settings::EditorSettings::ShowGeometryBounds)
-		{
-			auto mr = p_actor.GetComponent<OvCore::ECS::Components::CModelRenderer>();
-			if (mr && mr->GetModel()) DrawBoundingSpheres(*mr);
-		}
-		if (auto cam = p_actor.GetComponent<OvCore::ECS::Components::CCamera>()) DrawCameraFrustum(*cam);
-		if (auto probe = p_actor.GetComponent<OvCore::ECS::Components::CReflectionProbe>())
-			if (probe->GetInfluencePolicy() == OvCore::ECS::Components::CReflectionProbe::EInfluencePolicy::LOCAL)
-				DrawReflectionProbeInfluenceVolume(*probe);
-		if (p_actor.GetComponent<OvCore::ECS::Components::CPhysicalObject>()) DrawActorCollider(p_actor);
-		if (auto ab = p_actor.GetComponent<OvCore::ECS::Components::CAmbientBoxLight>()) DrawAmbientBoxVolume(*ab);
-		if (auto as = p_actor.GetComponent<OvCore::ECS::Components::CAmbientSphereLight>()) DrawAmbientSphereVolume(*as);
-		if (OvEditor::Settings::EditorSettings::ShowLightBounds)
-			if (auto light = p_actor.GetComponent<OvCore::ECS::Components::CLight>()) DrawLightBounds(*light);
-		for (auto& child : p_actor.GetChildren()) DrawActorDebugElements(*child);
-	}
-
-	void DrawFrustumLines(const OvMaths::FVector3& pos, const OvMaths::FVector3& forward,
+		const OvMaths::FVector3& pos,
+		const OvMaths::FVector3& forward,
 		float near, float far,
 		const OvMaths::FVector3& a, const OvMaths::FVector3& b,
 		const OvMaths::FVector3& c, const OvMaths::FVector3& d,
 		const OvMaths::FVector3& e, const OvMaths::FVector3& f,
 		const OvMaths::FVector3& g, const OvMaths::FVector3& h)
 	{
-		auto pso = m_renderer.CreatePipelineState();
+		auto pso = p_debugShapeFeature.GetRenderer().CreatePipelineState();
 		auto draw = [&](const FVector3& s, const FVector3& t, float dist) {
 			auto off = pos + forward * dist;
-			m_debugShapeFeature.DrawLine(pso, off + s, off + t, kFrustumColor, 1.0f, false);
+			p_debugShapeFeature.DrawLine(pso, off + s, off + t, kFrustumColor, 1.0f, false);
 		};
-		draw(a,b,near); draw(b,d,near); draw(d,c,near); draw(c,a,near);
-		draw(e,f,far);  draw(f,h,far);  draw(h,g,far);  draw(g,e,far);
-		draw(a+forward*near, e+forward*far, 0);
-		draw(b+forward*near, f+forward*far, 0);
-		draw(c+forward*near, g+forward*far, 0);
-		draw(d+forward*near, h+forward*far, 0);
+		draw(a, b, near); draw(b, d, near); draw(d, c, near); draw(c, a, near);
+		draw(e, f, far);  draw(f, h, far);  draw(h, g, far);  draw(g, e, far);
+		draw(a + forward * near, e + forward * far, 0);
+		draw(b + forward * near, f + forward * far, 0);
+		draw(c + forward * near, g + forward * far, 0);
+		draw(d + forward * near, h + forward * far, 0);
 	}
 
-	void DrawCameraPerspectiveFrustum(std::pair<uint16_t,uint16_t>& sz, OvCore::ECS::Components::CCamera& cam)
+	void DrawCameraPerspectiveFrustum(
+		OvRendering::Features::DebugShapeRenderFeature& p_debugShapeFeature,
+		std::pair<uint16_t, uint16_t>& sz,
+		OvCore::ECS::Components::CCamera& cam)
 	{
 		auto& camera = cam.GetCamera();
 		const auto& pos = cam.owner.transform.GetWorldPosition();
@@ -406,18 +288,21 @@ private:
 		camera.CacheMatrices(sz.first, sz.second);
 		const auto proj = FMatrix4::Transpose(camera.GetProjectionMatrix());
 		const auto n = camera.GetNear(), fr = camera.GetFar();
-		auto a = rot*FVector3{n*(proj.data[2]-1)/proj.data[0], n*(1+proj.data[6])/proj.data[5], 0};
-		auto b = rot*FVector3{n*(1+proj.data[2])/proj.data[0], n*(1+proj.data[6])/proj.data[5], 0};
-		auto c = rot*FVector3{n*(proj.data[2]-1)/proj.data[0], n*(proj.data[6]-1)/proj.data[5], 0};
-		auto d = rot*FVector3{n*(1+proj.data[2])/proj.data[0], n*(proj.data[6]-1)/proj.data[5], 0};
-		auto e = rot*FVector3{fr*(proj.data[2]-1)/proj.data[0], fr*(1+proj.data[6])/proj.data[5], 0};
-		auto f = rot*FVector3{fr*(1+proj.data[2])/proj.data[0], fr*(1+proj.data[6])/proj.data[5], 0};
-		auto g = rot*FVector3{fr*(proj.data[2]-1)/proj.data[0], fr*(proj.data[6]-1)/proj.data[5], 0};
-		auto h = rot*FVector3{fr*(1+proj.data[2])/proj.data[0], fr*(proj.data[6]-1)/proj.data[5], 0};
-		DrawFrustumLines(pos, fwd, n, fr, a, b, c, d, e, f, g, h);
+		auto a = rot * FVector3{ n * (proj.data[2] - 1) / proj.data[0], n * (1 + proj.data[6]) / proj.data[5], 0 };
+		auto b = rot * FVector3{ n * (1 + proj.data[2]) / proj.data[0], n * (1 + proj.data[6]) / proj.data[5], 0 };
+		auto c = rot * FVector3{ n * (proj.data[2] - 1) / proj.data[0], n * (proj.data[6] - 1) / proj.data[5], 0 };
+		auto d = rot * FVector3{ n * (1 + proj.data[2]) / proj.data[0], n * (proj.data[6] - 1) / proj.data[5], 0 };
+		auto e = rot * FVector3{ fr * (proj.data[2] - 1) / proj.data[0], fr * (1 + proj.data[6]) / proj.data[5], 0 };
+		auto f = rot * FVector3{ fr * (1 + proj.data[2]) / proj.data[0], fr * (1 + proj.data[6]) / proj.data[5], 0 };
+		auto g = rot * FVector3{ fr * (proj.data[2] - 1) / proj.data[0], fr * (proj.data[6] - 1) / proj.data[5], 0 };
+		auto h = rot * FVector3{ fr * (1 + proj.data[2]) / proj.data[0], fr * (proj.data[6] - 1) / proj.data[5], 0 };
+		DrawFrustumLines(p_debugShapeFeature, pos, fwd, n, fr, a, b, c, d, e, f, g, h);
 	}
 
-	void DrawCameraOrthographicFrustum(std::pair<uint16_t,uint16_t>& sz, OvCore::ECS::Components::CCamera& cam)
+	void DrawCameraOrthographicFrustum(
+		OvRendering::Features::DebugShapeRenderFeature& p_debugShapeFeature,
+		std::pair<uint16_t, uint16_t>& sz,
+		OvCore::ECS::Components::CCamera& cam)
 	{
 		auto& camera = cam.GetCamera();
 		const float ratio = sz.first / static_cast<float>(sz.second);
@@ -426,80 +311,94 @@ private:
 		const auto& fwd = cam.owner.transform.GetWorldForward();
 		const auto n = camera.GetNear(), fr = camera.GetFar();
 		const auto size = cam.GetSize(), right = ratio * size;
-		auto a = rot*FVector3{-right, size, 0}; auto b = rot*FVector3{right, size, 0};
-		auto c = rot*FVector3{-right,-size, 0}; auto d = rot*FVector3{right,-size, 0};
-		DrawFrustumLines(pos, fwd, n, fr, a, b, c, d, a, b, c, d);
+		auto a = rot * FVector3{ -right, size, 0 }; auto b = rot * FVector3{ right, size, 0 };
+		auto c = rot * FVector3{ -right, -size, 0 }; auto d = rot * FVector3{ right, -size, 0 };
+		DrawFrustumLines(p_debugShapeFeature, pos, fwd, n, fr, a, b, c, d, a, b, c, d);
 	}
 
-	void DrawCameraFrustum(OvCore::ECS::Components::CCamera& cam)
+	void DrawCameraFrustum(
+		OvRendering::Features::DebugShapeRenderFeature& p_debugShapeFeature,
+		OvCore::ECS::Components::CCamera& cam)
 	{
 		auto& gameView = EDITOR_PANEL(OvEditor::Panels::GameView, "Game View");
 		auto sz = gameView.GetSafeSize();
-		if (sz.first == 0 || sz.second == 0) sz = {16, 9};
+		if (sz.first == 0 || sz.second == 0) sz = { 16, 9 };
 		switch (cam.GetProjectionMode())
 		{
-		case OvRendering::Settings::EProjectionMode::ORTHOGRAPHIC: DrawCameraOrthographicFrustum(sz, cam); break;
-		case OvRendering::Settings::EProjectionMode::PERSPECTIVE:  DrawCameraPerspectiveFrustum(sz, cam);  break;
+		case OvRendering::Settings::EProjectionMode::ORTHOGRAPHIC: DrawCameraOrthographicFrustum(p_debugShapeFeature, sz, cam); break;
+		case OvRendering::Settings::EProjectionMode::PERSPECTIVE:  DrawCameraPerspectiveFrustum(p_debugShapeFeature, sz, cam);  break;
 		}
 	}
 
-	void DrawReflectionProbeInfluenceVolume(OvCore::ECS::Components::CReflectionProbe& probe)
+	void DrawReflectionProbeInfluenceVolume(
+		OvRendering::Features::DebugShapeRenderFeature& p_debugShapeFeature,
+		OvCore::ECS::Components::CReflectionProbe& probe)
 	{
-		auto pso = m_renderer.CreatePipelineState(); pso.depthTest = false;
-		m_debugShapeFeature.DrawBox(pso, probe.owner.transform.GetWorldPosition(),
+		auto pso = p_debugShapeFeature.GetRenderer().CreatePipelineState(); pso.depthTest = false;
+		p_debugShapeFeature.DrawBox(pso, probe.owner.transform.GetWorldPosition(),
 			probe.owner.transform.GetWorldRotation(), probe.GetInfluenceSize(), kDebugBoundsColor, 1.0f, false);
 	}
 
-	void DrawActorCollider(OvCore::ECS::Actor& actor)
+	void DrawActorCollider(
+		OvRendering::Features::DebugShapeRenderFeature& p_debugShapeFeature,
+		OvCore::ECS::Actor& actor)
 	{
 		using namespace OvCore::ECS::Components;
-		auto pso = m_renderer.CreatePipelineState(); pso.depthTest = false;
+		auto pso = p_debugShapeFeature.GetRenderer().CreatePipelineState(); pso.depthTest = false;
 		if (auto box = actor.GetComponent<CPhysicalBox>())
-			m_debugShapeFeature.DrawBox(pso, actor.transform.GetWorldPosition(), actor.transform.GetWorldRotation(),
-				box->GetSize() * actor.transform.GetWorldScale(), OvMaths::FVector3{0,1,0}, 1.0f, false);
+			p_debugShapeFeature.DrawBox(pso, actor.transform.GetWorldPosition(), actor.transform.GetWorldRotation(),
+				box->GetSize() * actor.transform.GetWorldScale(), OvMaths::FVector3{ 0,1,0 }, 1.0f, false);
 		if (auto sph = actor.GetComponent<CPhysicalSphere>())
 		{
 			auto s = actor.transform.GetWorldScale();
-			m_debugShapeFeature.DrawSphere(pso, actor.transform.GetWorldPosition(), actor.transform.GetWorldRotation(),
-				sph->GetRadius() * std::max({s.x,s.y,s.z,0.f}), OvMaths::FVector3{0,1,0}, 1.0f, false);
+			p_debugShapeFeature.DrawSphere(pso, actor.transform.GetWorldPosition(), actor.transform.GetWorldRotation(),
+				sph->GetRadius() * std::max({ s.x,s.y,s.z,0.f }), OvMaths::FVector3{ 0,1,0 }, 1.0f, false);
 		}
 		if (auto cap = actor.GetComponent<CPhysicalCapsule>())
 		{
 			auto s = actor.transform.GetWorldScale();
-			m_debugShapeFeature.DrawCapsule(pso, actor.transform.GetWorldPosition(), actor.transform.GetWorldRotation(),
-				abs(cap->GetRadius()*std::max({s.x,s.z,0.f})), abs(cap->GetHeight()*s.y),
-				OvMaths::FVector3{0,1,0}, 1.0f, false);
+			p_debugShapeFeature.DrawCapsule(pso, actor.transform.GetWorldPosition(), actor.transform.GetWorldRotation(),
+				abs(cap->GetRadius() * std::max({ s.x,s.z,0.f })), abs(cap->GetHeight() * s.y),
+				OvMaths::FVector3{ 0,1,0 }, 1.0f, false);
 		}
 	}
 
-	void DrawLightBounds(OvCore::ECS::Components::CLight& light)
+	void DrawLightBounds(
+		OvRendering::Features::DebugShapeRenderFeature& p_debugShapeFeature,
+		OvCore::ECS::Components::CLight& light)
 	{
-		auto pso = m_renderer.CreatePipelineState(); pso.depthTest = false;
+		auto pso = p_debugShapeFeature.GetRenderer().CreatePipelineState(); pso.depthTest = false;
 		auto& d = light.GetData();
-		m_debugShapeFeature.DrawSphere(pso, d.transform->GetWorldPosition(), d.transform->GetWorldRotation(),
+		p_debugShapeFeature.DrawSphere(pso, d.transform->GetWorldPosition(), d.transform->GetWorldRotation(),
 			d.CalculateEffectRange(), kDebugBoundsColor, 1.0f, false);
 	}
 
-	void DrawAmbientBoxVolume(OvCore::ECS::Components::CAmbientBoxLight& ab)
+	void DrawAmbientBoxVolume(
+		OvRendering::Features::DebugShapeRenderFeature& p_debugShapeFeature,
+		OvCore::ECS::Components::CAmbientBoxLight& ab)
 	{
-		auto pso = m_renderer.CreatePipelineState(); pso.depthTest = false;
+		auto pso = p_debugShapeFeature.GetRenderer().CreatePipelineState(); pso.depthTest = false;
 		auto& d = ab.GetData();
-		m_debugShapeFeature.DrawBox(pso, ab.owner.transform.GetWorldPosition(), d.transform->GetWorldRotation(),
-			{d.constant, d.linear, d.quadratic}, d.CalculateEffectRange(), 1.0f, false);
+		p_debugShapeFeature.DrawBox(pso, ab.owner.transform.GetWorldPosition(), d.transform->GetWorldRotation(),
+			{ d.constant, d.linear, d.quadratic }, d.CalculateEffectRange(), 1.0f, false);
 	}
 
-	void DrawAmbientSphereVolume(OvCore::ECS::Components::CAmbientSphereLight& as)
+	void DrawAmbientSphereVolume(
+		OvRendering::Features::DebugShapeRenderFeature& p_debugShapeFeature,
+		OvCore::ECS::Components::CAmbientSphereLight& as)
 	{
-		auto pso = m_renderer.CreatePipelineState(); pso.depthTest = false;
+		auto pso = p_debugShapeFeature.GetRenderer().CreatePipelineState(); pso.depthTest = false;
 		auto& d = as.GetData();
-		m_debugShapeFeature.DrawSphere(pso, as.owner.transform.GetWorldPosition(),
+		p_debugShapeFeature.DrawSphere(pso, as.owner.transform.GetWorldPosition(),
 			as.owner.transform.GetWorldRotation(), d.constant, kLightVolumeColor, 1.0f, false);
 	}
 
-	void DrawBoundingSpheres(OvCore::ECS::Components::CModelRenderer& mr)
+	void DrawBoundingSpheres(
+		OvRendering::Features::DebugShapeRenderFeature& p_debugShapeFeature,
+		OvCore::ECS::Components::CModelRenderer& mr)
 	{
 		using enum OvCore::ECS::Components::CModelRenderer::EFrustumBehaviour;
-		auto pso = m_renderer.CreatePipelineState();
+		auto pso = p_debugShapeFeature.GetRenderer().CreatePipelineState();
 		auto fb = mr.GetFrustumBehaviour();
 		if (fb == DISABLED) return;
 		if (auto model = mr.GetModel())
@@ -508,16 +407,84 @@ private:
 			const auto& s = actor.transform.GetWorldScale();
 			const auto& rot = actor.transform.GetWorldRotation();
 			const auto& pos = actor.transform.GetWorldPosition();
-			const float rs = std::max({s.x, s.y, s.z, 0.f});
+			const float rs = std::max({ s.x, s.y, s.z, 0.f });
 			auto drawBounds = [&](const OvRendering::Geometry::BoundingSphere& b) {
 				auto off = OvMaths::FQuaternion::RotatePoint(b.position, rot) * rs;
-				m_debugShapeFeature.DrawSphere(pso, pos+off, rot, b.radius*rs, kDebugBoundsColor, 1.0f, false);
+				p_debugShapeFeature.DrawSphere(pso, pos + off, rot, b.radius * rs, kDebugBoundsColor, 1.0f, false);
 			};
 			if (fb == MESH_BOUNDS) for (auto mesh : model->GetMeshes()) drawBounds(mesh->GetBoundingSphere());
 			else drawBounds(fb == CUSTOM_BOUNDS ? mr.GetCustomBoundingSphere() : model->GetBoundingSphere());
 		}
 	}
-};
+
+	void DrawActorDebugElements(
+		OvRendering::Features::DebugShapeRenderFeature& p_debugShapeFeature,
+		OvCore::ECS::Actor& p_actor)
+	{
+		if (!p_actor.IsActive()) return;
+		if (OvEditor::Settings::EditorSettings::ShowGeometryBounds)
+		{
+			auto mr = p_actor.GetComponent<OvCore::ECS::Components::CModelRenderer>();
+			if (mr && mr->GetModel()) DrawBoundingSpheres(p_debugShapeFeature, *mr);
+		}
+		if (auto cam = p_actor.GetComponent<OvCore::ECS::Components::CCamera>()) DrawCameraFrustum(p_debugShapeFeature, *cam);
+		if (auto probe = p_actor.GetComponent<OvCore::ECS::Components::CReflectionProbe>())
+			if (probe->GetInfluencePolicy() == OvCore::ECS::Components::CReflectionProbe::EInfluencePolicy::LOCAL)
+				DrawReflectionProbeInfluenceVolume(p_debugShapeFeature, *probe);
+		if (p_actor.GetComponent<OvCore::ECS::Components::CPhysicalObject>()) DrawActorCollider(p_debugShapeFeature, p_actor);
+		if (auto ab = p_actor.GetComponent<OvCore::ECS::Components::CAmbientBoxLight>()) DrawAmbientBoxVolume(p_debugShapeFeature, *ab);
+		if (auto as = p_actor.GetComponent<OvCore::ECS::Components::CAmbientSphereLight>()) DrawAmbientSphereVolume(p_debugShapeFeature, *as);
+		if (OvEditor::Settings::EditorSettings::ShowLightBounds)
+			if (auto light = p_actor.GetComponent<OvCore::ECS::Components::CLight>()) DrawLightBounds(p_debugShapeFeature, *light);
+		for (auto& child : p_actor.GetChildren()) DrawActorDebugElements(p_debugShapeFeature, *child);
+	}
+
+	void DrawDebugActor(
+		OvCore::Rendering::SceneRenderer& p_renderer,
+		OvRendering::Features::DebugShapeRenderFeature& p_debugShapeFeature,
+		OvEditor::Rendering::OutlineRenderFeature& p_outlineFeature,
+		OvEditor::Rendering::GizmoRenderFeature& p_gizmoFeature,
+		const OvEditor::Rendering::DebugSceneRenderer::DebugSceneDescriptor& p_desc)
+	{
+		ZoneScoped;
+		TracyGpuZone("DebugActor");
+
+		// Set up camera matrices in engine UBO using RAII helper
+		OvEditor::Rendering::DebugRenderStateSetup setup(
+			p_renderer,
+			p_renderer.GetFrameDescriptor().camera.value()
+		);
+
+		p_renderer.Clear(false, false, true);
+
+		if (p_desc.selectedActor)
+		{
+			auto& selected = p_desc.selectedActor.value();
+			const bool isHovered = p_desc.highlightedActor && p_desc.highlightedActor->GetID() == selected.GetID();
+			DrawActorDebugElements(p_debugShapeFeature, selected);
+			p_outlineFeature.DrawOutline(selected,
+				isHovered ? OvMaths::FVector4{ 1.0f, 1.0f, 0.0f, 1.0f } : OvMaths::FVector4{ 1.0f, 0.7f, 0.0f, 1.0f },
+				kSelectedOutlineWidth);
+			p_renderer.Clear(false, true, false, OvMaths::FVector3::Zero);
+			p_gizmoFeature.DrawGizmo(
+				selected.transform.GetWorldPosition(),
+				selected.transform.GetWorldRotation(),
+				p_desc.gizmoOperation, false,
+				p_desc.highlightedGizmoDirection);
+		}
+
+		if (p_desc.highlightedActor)
+		{
+			auto& highlighted = p_desc.highlightedActor.value();
+			if (!p_desc.selectedActor || highlighted.GetID() != p_desc.selectedActor->GetID())
+				p_outlineFeature.DrawOutline(highlighted, OvMaths::FVector4{ 1.0f, 1.0f, 0.0f, 1.0f }, kHoveredOutlineWidth);
+		}
+	}
+}
+
+// ============================================================
+// DebugSceneRenderer Implementation
+// ============================================================
 
 OvEditor::Rendering::DebugSceneRenderer::DebugSceneRenderer(OvRendering::Context::Driver& p_driver) :
 	OvCore::Rendering::SceneRenderer(p_driver, true)
@@ -532,12 +499,27 @@ OvEditor::Rendering::DebugSceneRenderer::DebugSceneRenderer(OvRendering::Context
 	m_outlineFeature     = std::make_unique<OutlineRenderFeature>(*this, NEVER);
 	m_gizmoFeature       = std::make_unique<GizmoRenderFeature>(*this, NEVER, *m_debugModelFeature);
 
-	m_gridPass                = std::make_unique<GridRenderPass>(*this, *m_debugShapeFeature, *m_debugModelFeature);
-	m_debugCamerasPass        = std::make_unique<DebugCamerasRenderPass>(*this, *m_debugModelFeature);
-	m_debugReflectionProbesPass = std::make_unique<DebugReflectionProbesRenderPass>(*this, *m_debugModelFeature);
-	m_debugLightsPass         = std::make_unique<DebugLightsRenderPass>(*this, *m_debugModelFeature);
-	m_debugActorPass          = std::make_unique<DebugActorRenderPass>(*this, *m_debugShapeFeature, *m_outlineFeature, *m_gizmoFeature);
-	m_pickingPass             = std::make_unique<PickingRenderPass>(*this, *m_debugModelFeature);
+	// Initialize picking framebuffer
+	OvCore::Rendering::FramebufferUtil::SetupFramebuffer(
+		m_pickingFramebuffer, 1, 1, true, false, false
+	);
+
+	/* Light Material */
+	m_lightMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Billboard"));
+	m_lightMaterial.SetDepthTest(false);
+
+	/* Gizmo Pickable Material */
+	m_gizmoPickingMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Gizmo"));
+	m_gizmoPickingMaterial.SetGPUInstances(3);
+	m_gizmoPickingMaterial.SetProperty("u_IsBall", false);
+	m_gizmoPickingMaterial.SetProperty("u_IsPickable", true);
+	m_gizmoPickingMaterial.SetDepthTest(true);
+
+	m_reflectionProbeMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("PickingFallback"));
+	m_reflectionProbeMaterial.SetDepthTest(false);
+
+	/* Picking Material */
+	m_pickingFallbackMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("PickingFallback"));
 }
 
 const OvRendering::Data::FrameInfo& OvEditor::Rendering::DebugSceneRenderer::GetFrameInfo() const
@@ -545,9 +527,44 @@ const OvRendering::Data::FrameInfo& OvEditor::Rendering::DebugSceneRenderer::Get
 	return m_frameInfoFeature->GetFrameInfo();
 }
 
-OvEditor::Rendering::PickingRenderPass& OvEditor::Rendering::DebugSceneRenderer::GetPickingPass()
+void OvEditor::Rendering::DebugSceneRenderer::SetPickingEnabled(bool p_enabled)
 {
-	return *m_pickingPass;
+	m_pickingEnabled = p_enabled;
+}
+
+OvEditor::Rendering::DebugSceneRenderer::PickingResult OvEditor::Rendering::DebugSceneRenderer::ReadbackPickingResult(
+	const OvCore::SceneSystem::Scene& p_scene,
+	uint32_t p_x,
+	uint32_t p_y
+)
+{
+	uint8_t pixel[3];
+
+	m_pickingFramebuffer.ReadPixels(
+		p_x, p_y, 1, 1,
+		OvRendering::Settings::EPixelDataFormat::RGB,
+		OvRendering::Settings::EPixelDataType::UNSIGNED_BYTE,
+		pixel
+	);
+
+	uint32_t actorID = (0 << 24) | (pixel[2] << 16) | (pixel[1] << 8) | (pixel[0] << 0);
+	auto actorUnderMouse = p_scene.FindActorByID(actorID);
+
+	if (actorUnderMouse)
+	{
+		return OvTools::Utils::OptRef(*actorUnderMouse);
+	}
+	else if (
+		pixel[0] == 255 &&
+		pixel[1] == 255 &&
+		pixel[2] >= 252 &&
+		pixel[2] <= 254
+		)
+	{
+		return static_cast<OvEditor::Core::GizmoBehaviour::EDirection>(pixel[2] - 252);
+	}
+
+	return std::nullopt;
 }
 
 void OvEditor::Rendering::DebugSceneRenderer::EndFrame()
@@ -582,64 +599,484 @@ void OvEditor::Rendering::DebugSceneRenderer::BuildFrameGraph(OvRendering::Frame
 		}
 	);
 
-	struct GridPassData {};
-	p_fg.AddPass<GridPassData>("Grid",
-		[](FrameGraphBuilder& b, GridPassData&) { b.SetAsOutput({}); },
-		[this](const FrameGraphResources&, const GridPassData&) {
+	// ============================================================
+	// Grid Pass - inlined from GridRenderPass
+	// ============================================================
+	struct GridPassData
+	{
+		OvCore::Resources::Material gridMaterial;
+		std::unique_ptr<OvRendering::HAL::ShaderStorageBuffer> fakeLightsBuffer;
+	};
+
+	auto gridPassData = p_fg.AddPass<GridPassData>("Grid",
+		[this](FrameGraphBuilder& builder, GridPassData& data) {
+			// Initialize materials and buffers
+			data.gridMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Grid"));
+			data.gridMaterial.SetBlendable(true);
+			data.gridMaterial.SetBackfaceCulling(false);
+			data.gridMaterial.SetDepthWriting(false);
+			data.gridMaterial.SetDepthTest(true);
+			builder.SetAsOutput({});
+		},
+		[this](const FrameGraphResources& resources, GridPassData& data) {
 			ZoneScoped;
+			TracyGpuZone("Grid");
+
+			auto& gridDescriptor = GetDescriptor<DebugSceneRenderer::GridDescriptor>();
+			auto& frameDescriptor = m_frameDescriptor;
 			auto pso = CreatePipelineState();
-			m_gridPass->Draw(pso);
+
+			// Set up camera matrices
+			DebugRenderStateSetup setup(
+				static_cast<OvCore::Rendering::SceneRenderer&>(*this),
+				frameDescriptor.camera.value()
+			);
+
+			constexpr float gridSize = 5000.0f;
+			OvMaths::FMatrix4 model =
+				OvMaths::FMatrix4::Translation({ gridDescriptor.viewPosition.x, 0.0f, gridDescriptor.viewPosition.z }) *
+				OvMaths::FMatrix4::Scaling({ gridSize * 2.0f, 1.f, gridSize * 2.0f });
+
+			data.gridMaterial.SetProperty("u_Color", gridDescriptor.gridColor);
+
+			m_debugModelFeature->DrawModelWithSingleMaterial(
+				pso,
+				*EDITOR_CONTEXT(editorResources)->GetModel("Plane"),
+				data.gridMaterial,
+				model
+			);
+
+			constexpr float kLineWidth = 1.0f;
+			m_debugShapeFeature->DrawLine(pso, OvMaths::FVector3(-gridSize + gridDescriptor.viewPosition.x, 0.0f, 0.0f), OvMaths::FVector3(gridSize + gridDescriptor.viewPosition.x, 0.0f, 0.0f), OvMaths::FVector3::Right, kLineWidth);
+			m_debugShapeFeature->DrawLine(pso, OvMaths::FVector3(0.0f, -gridSize + gridDescriptor.viewPosition.y, 0.0f), OvMaths::FVector3(0.0f, gridSize + gridDescriptor.viewPosition.y, 0.0f), OvMaths::FVector3::Up, kLineWidth);
+			m_debugShapeFeature->DrawLine(pso, OvMaths::FVector3(0.0f, 0.0f, -gridSize + gridDescriptor.viewPosition.z), OvMaths::FVector3(0.0f, 0.0f, gridSize + gridDescriptor.viewPosition.z), OvMaths::FVector3::Forward, kLineWidth);
 		}
 	);
 
-	struct DebugCamerasPassData {};
+	// ============================================================
+	// Debug Cameras Pass
+	// ============================================================
+	struct DebugCamerasPassData
+	{
+		OvCore::Resources::Material cameraMaterial;
+		std::unique_ptr<OvRendering::HAL::ShaderStorageBuffer> fakeLightsBuffer;
+	};
+
 	p_fg.AddPass<DebugCamerasPassData>("DebugCameras",
-		[](FrameGraphBuilder& b, DebugCamerasPassData&) { b.SetAsOutput({}); },
-		[this](const FrameGraphResources&, const DebugCamerasPassData&) {
-			ZoneScoped;
-			auto pso = CreatePipelineState();
-			m_debugCamerasPass->Draw(pso);
+		[](FrameGraphBuilder& b, DebugCamerasPassData& data) {
+			// Initialize material
+			data.cameraMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Standard.ovfx"]);
+			data.cameraMaterial.SetProperty("u_Albedo", FVector4{ 0.0f, 0.447f, 1.0f, 1.0f });
+			data.cameraMaterial.SetProperty("u_Metallic", 0.0f);
+			data.cameraMaterial.SetProperty("u_Roughness", 0.25f);
+			data.cameraMaterial.SetProperty("u_BuiltInGammaCorrection", true);
+			data.cameraMaterial.SetProperty("u_BuiltInToneMapping", true);
+			b.SetAsOutput({});
+		},
+		[this](const FrameGraphResources&, DebugCamerasPassData& data) {
+			// Initialize fake lights buffer on first use
+			static std::once_flag initFlag;
+			static std::unique_ptr<OvRendering::HAL::ShaderStorageBuffer> fakeLightsBuffer;
+			std::call_once(initFlag, [&]() {
+				fakeLightsBuffer = CreateDebugLightBuffer();
+			});
+
+			DrawDebugCameras(
+				static_cast<OvCore::Rendering::SceneRenderer&>(*this),
+				*m_debugModelFeature,
+				data.cameraMaterial,
+				*fakeLightsBuffer
+			);
 		}
 	);
 
-	struct DebugReflectionPassData {};
+	// ============================================================
+	// Debug Reflection Probes Pass
+	// ============================================================
+	struct DebugReflectionPassData
+	{
+		OvCore::Resources::Material reflectiveMaterial;
+	};
+
 	p_fg.AddPass<DebugReflectionPassData>("DebugReflectionProbes",
-		[](FrameGraphBuilder& b, DebugReflectionPassData&) { b.SetAsOutput({}); },
-		[this](const FrameGraphResources&, const DebugReflectionPassData&) {
-			ZoneScoped;
-			auto pso = CreatePipelineState();
-			m_debugReflectionProbesPass->Draw(pso);
+		[](FrameGraphBuilder& b, DebugReflectionPassData& data) {
+			// Initialize material
+			data.reflectiveMaterial.SetDepthTest(false);
+			data.reflectiveMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Standard.ovfx"]);
+			data.reflectiveMaterial.SetProperty("u_Albedo", FVector4{ 1.0, 1.0f, 1.0f, 1.0f });
+			data.reflectiveMaterial.SetProperty("u_Metallic", 1.0f);
+			data.reflectiveMaterial.SetProperty("u_Roughness", 0.0f);
+			data.reflectiveMaterial.SetProperty("u_BuiltInGammaCorrection", true);
+			data.reflectiveMaterial.SetProperty("u_BuiltInToneMapping", true);
+			b.SetAsOutput({});
+		},
+		[this](const FrameGraphResources&, DebugReflectionPassData& data) {
+			// Initialize fake lights buffer on first use
+			static std::once_flag initFlag;
+			static std::unique_ptr<OvRendering::HAL::ShaderStorageBuffer> fakeLightsBuffer;
+			std::call_once(initFlag, [&]() {
+				fakeLightsBuffer = CreateDebugLightBuffer();
+			});
+
+			DrawDebugReflectionProbes(
+				static_cast<OvCore::Rendering::SceneRenderer&>(*this),
+				*m_debugModelFeature,
+				data.reflectiveMaterial,
+				*fakeLightsBuffer
+			);
 		}
 	);
 
-	struct DebugLightsPassData {};
+	// ============================================================
+	// Debug Lights Pass
+	// ============================================================
+	struct DebugLightsPassData
+	{
+		OvCore::Resources::Material lightMaterial;
+	};
+
 	p_fg.AddPass<DebugLightsPassData>("DebugLights",
-		[](FrameGraphBuilder& b, DebugLightsPassData&) { b.SetAsOutput({}); },
-		[this](const FrameGraphResources&, const DebugLightsPassData&) {
-			ZoneScoped;
-			auto pso = CreatePipelineState();
-			m_debugLightsPass->Draw(pso);
+		[](FrameGraphBuilder& b, DebugLightsPassData& data) {
+			// Initialize material
+			data.lightMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Billboard"));
+			data.lightMaterial.SetProperty("u_Diffuse", FVector4{ 1.f, 1.f, 0.5f, 0.5f });
+			data.lightMaterial.SetBackfaceCulling(false);
+			data.lightMaterial.SetBlendable(true);
+			data.lightMaterial.SetDepthTest(false);
+			b.SetAsOutput({});
+		},
+		[this](const FrameGraphResources&, DebugLightsPassData& data) {
+			DrawDebugLights(
+				static_cast<OvCore::Rendering::SceneRenderer&>(*this),
+				*m_debugModelFeature,
+				data.lightMaterial
+			);
 		}
 	);
 
+	// ============================================================
+	// Debug Actor Pass
+	// ============================================================
 	struct DebugActorPassData {};
 	p_fg.AddPass<DebugActorPassData>("DebugActor",
-		[](FrameGraphBuilder& b, DebugActorPassData&) { b.SetAsOutput({}); },
+		[](FrameGraphBuilder& b, DebugActorPassData&) {
+			b.SetAsOutput({});
+		},
 		[this](const FrameGraphResources&, const DebugActorPassData&) {
-			ZoneScoped;
-			auto pso = CreatePipelineState();
-			m_debugActorPass->Draw(pso);
+			auto& desc = GetDescriptor<DebugSceneDescriptor>();
+			DrawDebugActor(
+				static_cast<OvCore::Rendering::SceneRenderer&>(*this),
+				*m_debugShapeFeature,
+				*m_outlineFeature,
+				*m_gizmoFeature,
+				desc
+			);
 		}
 	);
 
-	struct PickingPassData {};
+	// ============================================================
+	// Picking Pass - inlined from PickingRenderPass
+	// ============================================================
+	struct PickingPassData
+	{
+		OvCore::Resources::Material pickingFallbackMaterial;
+		OvCore::Resources::Material reflectionProbeMaterial;
+		OvCore::Resources::Material lightMaterial;
+		OvCore::Resources::Material gizmoPickingMaterial;
+	};
+
 	p_fg.AddPass<PickingPassData>("Picking",
-		[](FrameGraphBuilder& b, PickingPassData&) { b.SetAsOutput({}); },
-		[this](const FrameGraphResources&, const PickingPassData&) {
+		[this](FrameGraphBuilder& builder, PickingPassData& data) {
+			// Initialize materials
+			data.pickingFallbackMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("PickingFallback"));
+			data.reflectionProbeMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Standard.ovfx"]);
+			data.reflectionProbeMaterial.SetDepthTest(false);
+			data.lightMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Billboard"));
+			data.lightMaterial.SetDepthTest(false);
+			data.gizmoPickingMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Gizmo"));
+			data.gizmoPickingMaterial.SetGPUInstances(3);
+			data.gizmoPickingMaterial.SetProperty("u_IsBall", false);
+			data.gizmoPickingMaterial.SetProperty("u_IsPickable", true);
+			data.gizmoPickingMaterial.SetDepthTest(true);
+			builder.SetAsOutput({});
+		},
+		[this](const FrameGraphResources&, PickingPassData& data) {
+			// Skip picking pass if disabled
+			if (!m_pickingEnabled)
+				return;
+
 			ZoneScoped;
-			if (!m_pickingPass->IsEnabled()) return;
+			TracyGpuZone("PickingPass");
+
+			auto& sceneDescriptor = GetDescriptor<SceneRenderer::SceneDescriptor>();
+			auto& debugSceneDescriptor = GetDescriptor<DebugSceneDescriptor>();
+			auto& frameDescriptor = m_frameDescriptor;
+			auto& scene = sceneDescriptor.scene;
+
+			// Debug: Check for OpenGL errors at pass start
+			#if _DEBUG
+			if (GLenum err = glGetError(); err != GL_NO_ERROR)
+			{
+				OVLOG_ERROR("[Picking Pass] Start: OpenGL error " + std::to_string(err));
+			}
+			#endif
+
+			// Bind light SSBO for shaders that require it (e.g., Standard.ovfx used by reflection probes)
+			_BindLightBuffer();
+
+			#if _DEBUG
+			if (GLenum err = glGetError(); err != GL_NO_ERROR)
+			{
+				OVLOG_ERROR("[Picking Pass] After _BindLightBuffer: OpenGL error " + std::to_string(err));
+			}
+			#endif
+
+			// Resize and bind picking framebuffer
+			m_pickingFramebuffer.Resize(frameDescriptor.renderWidth, frameDescriptor.renderHeight);
+			m_pickingFramebuffer.Bind();
+
+			#if _DEBUG
+			if (GLenum err = glGetError(); err != GL_NO_ERROR)
+			{
+				OVLOG_ERROR("[Picking Pass] After framebuffer bind: OpenGL error " + std::to_string(err));
+			}
+			#endif
+
 			auto pso = CreatePipelineState();
-			m_pickingPass->Draw(pso);
+			Clear(true, true, true);
+
+			#if _DEBUG
+			if (GLenum err = glGetError(); err != GL_NO_ERROR)
+			{
+				OVLOG_ERROR("[Picking Pass] After Clear: OpenGL error " + std::to_string(err));
+			}
+			#endif
+
+			// Set up camera matrices
+			DebugRenderStateSetup setup(
+				static_cast<SceneRenderer&>(*this),
+				frameDescriptor.camera.value()
+			);
+
+			#if _DEBUG
+			if (GLenum err = glGetError(); err != GL_NO_ERROR)
+			{
+				OVLOG_ERROR("[Picking Pass] After setup: OpenGL error " + std::to_string(err));
+			}
+			#endif
+
+			// Helper lambda for preparing picking material
+			auto preparePickingMaterial = [&](const OvCore::ECS::Actor& actor, OvCore::Resources::Material& material) {
+				uint32_t actorID = static_cast<uint32_t>(actor.GetID());
+				auto bytes = reinterpret_cast<uint8_t*>(&actorID);
+				auto color = OvMaths::FVector4{ bytes[0] / 255.0f, bytes[1] / 255.0f, bytes[2] / 255.0f, 1.0f };
+				if (material.HasProperty("_PickingColor"))
+					material.SetProperty("_PickingColor", color, true);
+			};
+
+			// Helper lambda for drawing pickable drawable
+			auto drawPickingDrawable = [&](const OvRendering::Entities::Drawable& drawable, OvCore::Resources::Material* targetMaterialPtr) {
+				OvCore::Resources::Material& targetMaterial = *targetMaterialPtr;
+
+				const SceneRenderer::SceneDrawableDescriptor& sceneDrawableDesc = drawable.GetDescriptor<SceneRenderer::SceneDrawableDescriptor>();
+				const auto& actor = sceneDrawableDesc.actor;
+				preparePickingMaterial(actor, targetMaterial);
+
+				OvRendering::Data::StateMask stateMask;
+				if (drawable.material && drawable.material->IsValid())
+					stateMask = drawable.material->GenerateStateMask();
+				else
+					stateMask = targetMaterial.GenerateStateMask();
+
+				OvRendering::Entities::Drawable finalDrawable;
+				finalDrawable.mesh = drawable.mesh;
+				finalDrawable.material = static_cast<OvRendering::Data::Material&>(targetMaterial);
+				finalDrawable.stateMask = stateMask;
+				finalDrawable.stateMask.frontfaceCulling = false;
+				finalDrawable.stateMask.backfaceCulling = false;
+				finalDrawable.primitiveMode = drawable.primitiveMode;
+				finalDrawable.pass = "PICKING_PASS";
+				finalDrawable.featureSetOverride = drawable.featureSetOverride;
+				// Copy descriptor by value (create a new instance with same data)
+				finalDrawable.AddDescriptor<SceneRenderer::SceneDrawableDescriptor>(SceneRenderer::SceneDrawableDescriptor{
+					.actor = sceneDrawableDesc.actor,
+					.visibilityFlags = sceneDrawableDesc.visibilityFlags,
+					.bounds = sceneDrawableDesc.bounds
+				});
+
+				DrawEntity(pso, finalDrawable);
+			};
+
+			// Draw pickable models
+			const auto& filteredDrawables = GetDescriptor<SceneRenderer::SceneFilteredDrawablesDescriptor>();
+			const std::string pickingPassName = "PICKING_PASS";
+
+			for (auto& [key, drawable] : filteredDrawables.opaques)
+			{
+				OvCore::Resources::Material* targetMaterialPtr = nullptr;
+				if (drawable.material && drawable.material->IsValid())
+				{
+					// Cast base material reference to derived type using static_cast
+					auto* derivedMat = static_cast<OvCore::Resources::Material*>(&drawable.material.value());
+					if (derivedMat->HasPass(pickingPassName))
+						targetMaterialPtr = derivedMat;
+				}
+				if (!targetMaterialPtr)
+					targetMaterialPtr = &data.pickingFallbackMaterial;
+				drawPickingDrawable(drawable, targetMaterialPtr);
+			}
+
+			#if _DEBUG
+			if (GLenum err = glGetError(); err != GL_NO_ERROR)
+			{
+				OVLOG_ERROR("[Picking Pass] After drawing opaques: OpenGL error " + std::to_string(err));
+			}
+			#endif
+
+			for (auto& [key, drawable] : filteredDrawables.transparents)
+			{
+				OvCore::Resources::Material* targetMaterialPtr = nullptr;
+				if (drawable.material && drawable.material->IsValid())
+				{
+					// Cast base material reference to derived type using static_cast
+					auto* derivedMat = static_cast<OvCore::Resources::Material*>(&drawable.material.value());
+					if (derivedMat->HasPass(pickingPassName))
+						targetMaterialPtr = derivedMat;
+				}
+				if (!targetMaterialPtr)
+					targetMaterialPtr = &data.pickingFallbackMaterial;
+				drawPickingDrawable(drawable, targetMaterialPtr);
+			}
+
+			#if _DEBUG
+			if (GLenum err = glGetError(); err != GL_NO_ERROR)
+			{
+				OVLOG_ERROR("[Picking Pass] After drawing transparents: OpenGL error " + std::to_string(err));
+			}
+			#endif
+			for (auto& [key, drawable] : filteredDrawables.ui)
+			{
+				OvCore::Resources::Material* targetMaterialPtr = nullptr;
+				if (drawable.material && drawable.material->IsValid())
+				{
+					// Cast base material reference to derived type using static_cast
+					auto* derivedMat = static_cast<OvCore::Resources::Material*>(&drawable.material.value());
+					if (derivedMat->HasPass(pickingPassName))
+						targetMaterialPtr = derivedMat;
+				}
+				if (!targetMaterialPtr)
+					targetMaterialPtr = &data.pickingFallbackMaterial;
+				drawPickingDrawable(drawable, targetMaterialPtr);
+			}
+
+			// Draw pickable cameras (TEMPORARILY DISABLED FOR DEBUG)
+			/*
+			for (auto camera : scene.GetFastAccessComponents().cameras)
+			{
+				auto& actor = camera->owner;
+				if (actor.IsActive())
+				{
+					preparePickingMaterial(actor, data.pickingFallbackMaterial);
+					auto& cameraModel = *EDITOR_CONTEXT(editorResources)->GetModel("Camera");
+					auto modelMatrix = OvMaths::FMatrix4::Translation(actor.transform.GetWorldPosition()) *
+						OvMaths::FQuaternion::ToMatrix4(actor.transform.GetWorldRotation());
+					m_debugModelFeature->DrawModelWithSingleMaterial(pso, cameraModel,
+						data.pickingFallbackMaterial, modelMatrix);
+				}
+			}
+			*/
+
+			#if _DEBUG
+			if (GLenum err = glGetError(); err != GL_NO_ERROR)
+			{
+				OVLOG_ERROR("[Picking Pass] After drawing cameras: OpenGL error " + std::to_string(err));
+			}
+			#endif
+
+			// Draw pickable reflection probes (TEMPORARILY DISABLED FOR DEBUG)
+			/*
+			for (auto reflectionProbe : scene.GetFastAccessComponents().reflectionProbes)
+			{
+				auto& actor = reflectionProbe->owner;
+				if (actor.IsActive())
+				{
+					preparePickingMaterial(actor, data.reflectionProbeMaterial);
+
+					// Skip if reflection probe doesn't have a valid cubemap yet
+					auto cubemap = reflectionProbe->GetCubemap();
+					if (!cubemap)
+						continue;
+
+					auto& model = *EDITOR_CONTEXT(editorResources)->GetModel("Sphere");
+					auto modelMatrix = OvMaths::FMatrix4::Scale(
+						OvMaths::FMatrix4::Translate(CalculateUnscaledModelMatrix(actor), reflectionProbe->GetCapturePosition()),
+						OvMaths::FVector3::One * OvEditor::Settings::EditorSettings::ReflectionProbeScale
+					);
+					reflectionProbe->_PrepareUBO();
+					data.reflectionProbeMaterial.SetProperty("_EnvironmentMap", cubemap.get(), true);
+
+					// Bind reflection UBO before drawing
+					reflectionProbe->_GetUniformBuffer().Bind(1);
+
+					m_debugModelFeature->DrawModelWithSingleMaterial(pso, model,
+						data.reflectionProbeMaterial, modelMatrix);
+
+					// Debug: Check for OpenGL errors after drawing reflection probe
+					#if _DEBUG
+					if (GLenum err = glGetError(); err != GL_NO_ERROR)
+					{
+						OVLOG_ERROR("[Picking Pass] After drawing reflection probe: OpenGL error " + std::to_string(err));
+					}
+					#endif
+				}
+			}
+			*/
+
+			// Draw pickable lights
+			if (OvEditor::Settings::EditorSettings::LightBillboardScale > 0.001f)
+			{
+				Clear(false, true, false);
+				data.lightMaterial.SetProperty("u_Scale",
+					OvEditor::Settings::EditorSettings::LightBillboardScale * 0.1f);
+
+				for (auto light : scene.GetFastAccessComponents().lights)
+				{
+					auto& actor = light->owner;
+					if (actor.IsActive())
+					{
+						preparePickingMaterial(actor, data.lightMaterial);
+						auto& model = *EDITOR_CONTEXT(editorResources)->GetModel("Vertical_Plane");
+						auto modelMatrix = OvMaths::FMatrix4::Translation(actor.transform.GetWorldPosition());
+						auto lightTypeTextureName = GetLightTypeTextureName(light->GetData().type);
+						if (lightTypeTextureName)
+						{
+							data.lightMaterial.SetProperty("u_DiffuseMap",
+								EDITOR_CONTEXT(editorResources)->GetTexture(lightTypeTextureName.value()), true);
+						}
+						data.lightMaterial.SetProperty("u_Diffuse",
+							OvMaths::FVector4(light->GetColor().x, light->GetColor().y, light->GetColor().z, 0.75f));
+						m_debugModelFeature->DrawModelWithSingleMaterial(pso, model,
+							data.lightMaterial, modelMatrix);
+					}
+				}
+			}
+
+			// Clear depth and draw gizmo
+			Clear(false, true, false);
+			if (debugSceneDescriptor.selectedActor)
+			{
+				auto& selected = debugSceneDescriptor.selectedActor.value();
+				auto modelMatrix = OvMaths::FMatrix4::Translation(selected.transform.GetWorldPosition()) *
+					OvMaths::FQuaternion::ToMatrix4(OvMaths::FQuaternion::Normalize(selected.transform.GetWorldRotation()));
+				auto arrowModel = EDITOR_CONTEXT(editorResources)->GetModel("Arrow_Picking");
+				m_debugModelFeature->DrawModelWithSingleMaterial(pso, *arrowModel,
+					data.gizmoPickingMaterial, modelMatrix);
+			}
+
+			// Unbind and restore output framebuffer
+			m_pickingFramebuffer.Unbind();
+			if (auto output = frameDescriptor.outputBuffer)
+				output.value().Bind();
 		}
 	);
 }
