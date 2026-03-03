@@ -9,6 +9,8 @@
 #include <OvCore/ResourceManagement/ShaderManager.h>
 #include <OvRendering/HAL/Profiling.h>
 
+#include "tracy/Tracy.hpp"
+
 OvCore::Rendering::PostProcess::TonemappingEffect::TonemappingEffect(OvRendering::Core::CompositeRenderer& p_renderer) : AEffect(p_renderer)
 {
 	m_tonemappingMaterial.SetShader(OVSERVICE(OvCore::ResourceManagement::ShaderManager)[":Shaders\\PostProcess\\Tonemapping.ovfx"]);

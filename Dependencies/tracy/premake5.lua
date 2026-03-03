@@ -15,14 +15,14 @@ project "tracy"
 	}
 
 	-- Not needed on Windows
-	filter { "system:windows" }
+	filter "system:windows"
 		removefiles { "libbacktrace/**" }
 	filter {}
-	
-	filter { "configurations:Debug" }
+
+	filter "configurations:Debug"
 		defines { "DEBUG", "_DEBUG" }
 		symbols "On"
 
-	filter { "configurations:Release" }
+	filter "configurations:Release"
 		defines { "NDEBUG" }
 		optimize "On"

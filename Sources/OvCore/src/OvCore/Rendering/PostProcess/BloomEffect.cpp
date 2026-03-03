@@ -12,6 +12,8 @@
 #include <OvCore/ResourceManagement/ShaderManager.h>
 #include <OvRendering/HAL/Profiling.h>
 
+#include "tracy/Tracy.hpp"
+
 // Implementation reference: https://learnopengl.com/Guest-Articles/2022/Phys.-Based-Bloom
 
 // Additional private constants for the bloom effect

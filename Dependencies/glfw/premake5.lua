@@ -17,7 +17,7 @@ project "glfw"
 		"include"
 	}
 
-	filter { "system:windows" }
+	filter "system:windows"
 		defines { "_GLFW_WIN32" }
 		removefiles {
 			"src/cocoa_*",
@@ -28,7 +28,7 @@ project "glfw"
 		}
 	filter {}
 
-	filter { "system:linux" }
+	filter "system:linux"
 		defines { "_GLFW_X11", "_GNU_SOURCE" }
 		removefiles {
 			"src/win32_*",
@@ -39,10 +39,10 @@ project "glfw"
 		}
 	filter {}
 
-	filter { "configurations:Debug" }
+	filter "configurations:Debug"
 		defines { "DEBUG", "_DEBUG" }
 		symbols "On"
 
-	filter { "configurations:Release" }
+	filter "configurations:Release"
 		defines { "NDEBUG" }
 		optimize "On"

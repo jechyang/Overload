@@ -9,6 +9,8 @@
 #include <OvCore/ResourceManagement/ShaderManager.h>
 #include <OvRendering/HAL/Profiling.h>
 
+#include "tracy/Tracy.hpp"
+
 OvCore::Rendering::PostProcess::FXAAEffect::FXAAEffect(OvRendering::Core::CompositeRenderer& p_renderer) : AEffect(p_renderer)
 {
 	m_material.SetShader(OVSERVICE(OvCore::ResourceManagement::ShaderManager)[":Shaders\\PostProcess\\FXAA.ovfx"]);

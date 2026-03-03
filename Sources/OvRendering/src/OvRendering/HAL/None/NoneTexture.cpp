@@ -90,3 +90,9 @@ void OvRendering::HAL::NoneTexture::SetBorderColor(const OvMaths::FVector4& p_co
 {
 	OVASSERT(IsValid(), "Cannot set border color for a texture before it has been allocated");
 }
+
+template<>
+const std::string& OvRendering::HAL::NoneTexture::GetDebugName() const
+{
+	return m_textureContext.debugName;
+}

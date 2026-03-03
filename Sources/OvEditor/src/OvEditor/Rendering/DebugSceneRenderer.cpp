@@ -37,6 +37,7 @@
 #include <OvRendering/HAL/Profiling.h>
 
 #include "OvDebug/Logger.h"
+#include "tracy/Tracy.hpp"
 
 using namespace OvMaths;
 using namespace OvRendering::Resources;

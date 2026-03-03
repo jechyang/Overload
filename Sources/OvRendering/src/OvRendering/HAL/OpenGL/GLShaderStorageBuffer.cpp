@@ -4,8 +4,6 @@
 * @licence: MIT
 */
 
-#include <glad.h>
-
 #include <OvRendering/HAL/OpenGL/GLTypes.h>
 #include <OvRendering/HAL/OpenGL/GLShaderStorageBuffer.h>
 

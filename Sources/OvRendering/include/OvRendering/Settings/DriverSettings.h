@@ -19,5 +19,8 @@ namespace OvRendering::Settings
 	{
 		bool debugMode = false;
 		std::optional<OvRendering::Data::PipelineState> defaultPipelineState = std::nullopt;
+#ifdef _WIN32
+		void* windowHandle = nullptr;  // HWND (defined in Windows.h)
+#endif
 	};
 }

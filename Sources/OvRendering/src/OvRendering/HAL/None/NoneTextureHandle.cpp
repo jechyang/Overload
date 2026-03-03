@@ -4,6 +4,7 @@
 * @licence: MIT
 */
 
+#include <string>
 #include <OvRendering/HAL/None/NoneTextureHandle.h>
 
 template<>

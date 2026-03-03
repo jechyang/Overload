@@ -6,11 +6,9 @@
 
 #include <algorithm>
 
-#include <glad.h>
-
+#include <OvRendering/HAL/OpenGL/GLTypes.h>
 #include <OvDebug/Logger.h>
 #include <OvRendering/HAL/OpenGL/GLShaderStage.h>
-#include <OvRendering/HAL/OpenGL/GLTypes.h>
 #include <OvRendering/Utils/ShaderUtil.h>
 
 template<>

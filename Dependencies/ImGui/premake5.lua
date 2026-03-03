@@ -20,10 +20,10 @@ project "ImGui"
 		"include"
 	}
 
-	filter { "configurations:Debug" }
+	filter "configurations:Debug"
 		defines { "DEBUG", "_DEBUG" }
 		symbols "On"
 
-	filter { "configurations:Release" }
+	filter "configurations:Release"
 		defines { "NDEBUG" }
 		optimize "On"

@@ -6,6 +6,19 @@
 
 #pragma once
 
+// Prevent Windows min/max macros from interfering with std::min/std::max
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+// Include windows.h first to prevent APIENTRY redefinition when using DirectX 12
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <Windows.h>
+#endif
+
 #include <glad.h>
 
 #include <OvRendering/Settings/EAccessSpecifier.h>

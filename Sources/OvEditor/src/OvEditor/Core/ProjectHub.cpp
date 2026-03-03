@@ -29,6 +29,10 @@
 #include <OvWindowing/Dialogs/OpenFileDialog.h>
 #include <OvWindowing/Dialogs/SaveFileDialog.h>
 
+#ifdef _WIN32
+#include <OvWindowing/Window.h>
+#endif
+
 namespace OvEditor::Core
 {
 	class ProjectHubPanel : public OvUI::Panels::PanelWindow
@@ -279,7 +283,13 @@ void OvEditor::Core::ProjectHub::SetupContext()
 	m_window->SetPosition(monWidth / 2 - winWidth / 2, monHeight / 2 - winHeight / 2);
 
 	/* Graphics context creation */
-	m_driver = std::make_unique<OvRendering::Context::Driver>(OvRendering::Settings::DriverSettings{ false });
+	OvRendering::Settings::DriverSettings driverSettings{
+		.debugMode = false,
+#ifdef _WIN32
+		.windowHandle = m_window->GetNativeHandle()
+#endif
+	};
+	m_driver = std::make_unique<OvRendering::Context::Driver>(driverSettings);
 
 	m_uiManager = std::make_unique<OvUI::Core::UIManager>(m_window->GetGlfwWindow(),
 		static_cast<OvUI::Styling::EStyle>(OvEditor::Settings::EditorSettings::ColorTheme.Get())

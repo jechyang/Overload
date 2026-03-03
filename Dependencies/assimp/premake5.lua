@@ -133,10 +133,10 @@ project 'assimp'
 		'ASSIMP_BUILD_NO_PBRT_EXPORTER'
 	}
 
-	filter { "configurations:Debug" }
+	filter "configurations:Debug"
 		defines { "DEBUG", "_DEBUG" }
 		symbols "On"
 
-	filter { "configurations:Release" }
+	filter "configurations:Release"
 		defines { "NDEBUG" }
 		optimize "On"

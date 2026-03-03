@@ -26,13 +26,13 @@ project "OvWindowing"
 		"include"
 	}
 
-	filter { "system:windows" }
+	filter "system:windows"
 		characterset ("MBCS")
 
-	filter { "configurations:Debug" }
+	filter "configurations:Debug"
 		defines { "DEBUG", "_DEBUG" }
 		symbols "On"
 
-	filter { "configurations:Release" }
+	filter "configurations:Release"
 		defines { "NDEBUG" }
 		optimize "On"

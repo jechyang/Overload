@@ -4,11 +4,9 @@
 * @licence: MIT
 */
 
-#include <glad.h>
-
+#include <OvRendering/HAL/OpenGL/GLTypes.h>
 #include <OvDebug/Assertion.h>
 #include <OvRendering/HAL/OpenGL/GLRenderbuffer.h>
-#include <OvRendering/HAL/OpenGL/GLTypes.h>
 
 template<>
 OvRendering::HAL::GLRenderbuffer::TRenderbuffer()

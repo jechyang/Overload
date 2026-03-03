@@ -6,7 +6,7 @@
 
 #include <format>
 
-#include <glad.h>
+#include <OvRendering/HAL/OpenGL/GLTypes.h>
 
 // Needs to be included after OpenGL headers
 #include <tracy/TracyOpenGL.hpp>
@@ -218,7 +218,7 @@ namespace
 namespace OvRendering::HAL
 {
 	template<>
-	std::optional<Data::PipelineState> GLBackend::Init(bool debug)
+	std::optional<Data::PipelineState> GLBackend::Init(bool p_debug, void* p_windowHandle)
 	{
 		const int error = gladLoadGL();
 
@@ -230,7 +230,7 @@ namespace OvRendering::HAL
 
 		TracyGpuContext;
 
-		if (debug)
+		if (p_debug)
 		{
 			glEnable(GL_DEBUG_OUTPUT);
 			glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);

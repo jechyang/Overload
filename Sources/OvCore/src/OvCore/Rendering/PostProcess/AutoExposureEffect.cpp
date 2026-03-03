@@ -11,6 +11,8 @@
 #include <OvCore/ResourceManagement/ShaderManager.h>
 #include <OvRendering/HAL/Profiling.h>
 
+#include "tracy/Tracy.hpp"
+
 constexpr uint32_t kLuminanceBufferResolution = 1024;
 constexpr uint32_t kExposureBufferResolution = 1;
 

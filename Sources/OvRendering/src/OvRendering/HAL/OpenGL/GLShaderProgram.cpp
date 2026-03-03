@@ -7,8 +7,7 @@
 #include <array>
 #include <algorithm>
 
-#include <glad.h>
-
+#include <OvRendering/HAL/OpenGL/GLTypes.h>
 #include <OvDebug/Assertion.h>
 #include <OvDebug/Logger.h>
 #include <OvRendering/HAL/OpenGL/GLShaderProgram.h>

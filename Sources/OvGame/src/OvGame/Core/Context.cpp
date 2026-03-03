@@ -14,6 +14,10 @@
 
 #include <OvGame/Core/Context.h>
 
+#ifdef _WIN32
+#include <OvWindowing/Window.h>
+#endif
+
 using namespace OvCore::Global;
 using namespace OvCore::ResourceManagement;
 
@@ -101,14 +105,18 @@ OvGame::Core::Context::Context() :
 	basePSO.multisample = projectSettings.GetOrDefault<bool>("multisampling", false);
 
 	/* Graphics context creation */
-	driver = std::make_unique<OvRendering::Context::Driver>(OvRendering::Settings::DriverSettings{
+	OvRendering::Settings::DriverSettings driverSettings{
 #ifdef _DEBUG
-		true,
+		.debugMode = true,
 #else
-		false,
+		.debugMode = false,
 #endif
-		basePSO
-	});
+		.defaultPipelineState = basePSO,
+#ifdef _WIN32
+		.windowHandle = window->GetNativeHandle()
+#endif
+	};
+	driver = std::make_unique<OvRendering::Context::Driver>(driverSettings);
 
 	uiManager = std::make_unique<OvUI::Core::UIManager>(window->GetGlfwWindow(), OvUI::Styling::EStyle::DEFAULT_DARK);
 

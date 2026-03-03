@@ -158,3 +158,9 @@ void OvRendering::HAL::NoneFramebuffer::ReadPixels(
 {
 	OVASSERT(IsValid(), "Cannot read pixels from an invalid framebuffer");
 }
+
+template<>
+const std::string& OvRendering::HAL::NoneFramebuffer::GetDebugName() const
+{
+	return m_context.debugName;
+}

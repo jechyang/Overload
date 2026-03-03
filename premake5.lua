@@ -16,21 +16,44 @@ workspace "Overload"
 	configurations { "Debug", "Release" }
 	platforms { "x64" }
 	startproject "OvEditor"
+
+	-- Register graphics-api option
+	newoption {
+		category = "Graphics",
+		trigger = "graphics-api",
+		value = "API",
+		description = "Graphics API to use (default: OpenGL)",
+		allowed = {
+			{ "opengl", "OpenGL" },
+			{ "directx12", "DirectX 12" }
+		}
+	}
+
+	-- Global defines
 	defines {
 		"LUA_SCRIPTING",
-		"GRAPHICS_API_OPENGL",
 		"OVERLOAD_VERSION=\"" .. version .. "\"",
 		"TRACY_ENABLE",
 		"TRACY_ON_DEMAND",
 		"TRACY_MEMORY_ENABLE"
 	}
 
+	-- Graphics API selection (default to OpenGL)
+	-- Use: premake5 vs2022 --graphics-api=directx12
+	if _OPTIONS["graphics-api"] == "directx12" then
+		defines { "GRAPHICS_API_DIRECTX12" }
+	else
+		defines { "GRAPHICS_API_OPENGL" }
+	end
+
 	-- Set toolset based on operating system
-	filter {"system:windows"}
-		toolset("msc")
+	filter "system:windows"
+		toolset "msc"
 		buildoptions { "/utf-8" }
-	filter {"system:linux"}
-		toolset("clang") -- Use Clang on Linux (sol2 doesn't work well with GCC)
+
+	filter "system:linux"
+		toolset "clang" -- Use Clang on Linux (sol2 doesn't work well with GCC)
+
 	filter {}
 
 	-- Disable "Hot Reload": Doesn't work with Tracy.

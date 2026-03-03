@@ -4,10 +4,8 @@
 * @licence: MIT
 */
 
-#include <glad.h>
-
-#include <OvRendering/HAL/OpenGL/GLTextureHandle.h>
 #include <OvRendering/HAL/OpenGL/GLTypes.h>
+#include <OvRendering/HAL/OpenGL/GLTextureHandle.h>
 
 template<>
 OvRendering::HAL::GLTextureHandle::TTextureHandle(Settings::ETextureType p_type) : m_context{ 

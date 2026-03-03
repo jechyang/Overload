@@ -4,8 +4,6 @@
 * @licence: MIT
 */
 
-#include <glad.h>
-
 #include <OvDebug/Assertion.h>
 #include <OvRendering/HAL/OpenGL/GLVertexArray.h>
 #include <OvRendering/HAL/OpenGL/GLTypes.h>

@@ -7,12 +7,12 @@ project "lua"
 	targetdir (outputdir .. "%{cfg.buildcfg}/%{prj.name}")
 	objdir (objoutdir .. "%{cfg.buildcfg}/%{prj.name}")
 
-	filter { "configurations:Debug" }
+	filter "configurations:Debug"
 		defines { "DEBUG", "_DEBUG" }
 		optimize "On"
 		symbols "Off"
 		runtime "Debug" -- Ensures /MDd is used
 
-	filter { "configurations:Release" }
+	filter "configurations:Release"
 		defines { "NDEBUG" }
 		optimize "Speed"

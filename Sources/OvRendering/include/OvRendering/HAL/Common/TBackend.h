@@ -33,7 +33,7 @@ namespace OvRendering::HAL
 		* @param debug Indicates whether to enable debug mode.
 		* @return An optional pipeline state.
 		*/
-		std::optional<Data::PipelineState> Init(bool p_debug);
+		std::optional<Data::PipelineState> Init(bool p_debug, void* p_windowHandle = nullptr);
 
 		/**
 		* Notifies the backend that a frame is about to be rendered.

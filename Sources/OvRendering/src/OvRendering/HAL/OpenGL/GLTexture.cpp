@@ -4,10 +4,8 @@
 * @licence: MIT
 */
 
-#include <glad.h>
-
-#include <OvRendering/HAL/OpenGL/GLTexture.h>
 #include <OvRendering/HAL/OpenGL/GLTypes.h>
+#include <OvRendering/HAL/OpenGL/GLTexture.h>
 #include <OvDebug/Assertion.h>
 #include <OvDebug/Logger.h>
 

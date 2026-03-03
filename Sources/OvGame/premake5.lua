@@ -59,17 +59,17 @@ project "OvGame"
 		"OvWindowing"
     }
 
-	filter { "configurations:Debug" }
+	filter "configurations:Debug"
 		defines { "DEBUG", "_DEBUG" }
 		symbols "On"
 		kind "ConsoleApp"
 
-	filter { "configurations:Release" }
+	filter "configurations:Release"
 		defines { "NDEBUG" }
 		optimize "Speed"
 		kind "WindowedApp"
 
-	filter { "system:windows" }
+	filter "system:windows"
 		-- forces post-build commands to trigger even if nothing changed
 		fastuptodate "Off"
 
@@ -89,7 +89,7 @@ project "OvGame"
 			"EXIT /B 0"
 		}
 
-	filter { "system:linux" }
+	filter "system:linux"
 		links {
 			"dl",
 			"pthread",

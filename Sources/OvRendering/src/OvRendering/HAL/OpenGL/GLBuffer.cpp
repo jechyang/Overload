@@ -4,11 +4,9 @@
 * @licence: MIT
 */
 
-#include <glad.h>
-
+#include <OvRendering/HAL/OpenGL/GLTypes.h>
 #include <OvDebug/Assertion.h>
 #include <OvRendering/HAL/OpenGL/GLBuffer.h>
-#include <OvRendering/HAL/OpenGL/GLTypes.h>
 
 template<>
 OvRendering::HAL::GLBuffer::TBuffer(Settings::EBufferType p_type) : m_buffer{

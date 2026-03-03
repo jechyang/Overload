@@ -16,6 +16,10 @@
 #include <OvRendering/Entities/Light.h>
 #include <OvTools/Utils/SystemCalls.h>
 
+#ifdef _WIN32
+#include <OvWindowing/Window.h>
+#endif
+
 using namespace OvCore::Global;
 using namespace OvCore::ResourceManagement;
 
@@ -109,7 +113,13 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 	device->SetVsync(true);
 
 	/* Graphics context creation */
-	driver = std::make_unique<OvRendering::Context::Driver>(OvRendering::Settings::DriverSettings{ true });
+	OvRendering::Settings::DriverSettings driverSettings{
+		.debugMode = true,
+#ifdef _WIN32
+		.windowHandle = window->GetNativeHandle()
+#endif
+	};
+	driver = std::make_unique<OvRendering::Context::Driver>(driverSettings);
 	textureRegistry = std::make_unique<OvEditor::Utils::TextureRegistry>();
 
 	std::filesystem::create_directories(Utils::FileSystem::kEditorDataPath);

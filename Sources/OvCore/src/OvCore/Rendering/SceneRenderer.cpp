@@ -186,13 +186,6 @@ void OvCore::Rendering::SceneRenderer::_SetCameraUBO(const OvRendering::Entities
 		.size = sizeof(d)
 	});
 	m_engineBuffer->Bind(0);
-
-	#if _DEBUG
-	if (GLenum err = glGetError(); err != GL_NO_ERROR)
-	{
-		OVLOG_ERROR("[_SetCameraUBO] OpenGL error " + std::to_string(err) + ", size=" + std::to_string(sizeof(d)));
-	}
-	#endif
 }
 
 void OvCore::Rendering::SceneRenderer::_BindLightBuffer()

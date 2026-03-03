@@ -4,6 +4,10 @@
 * @licence: MIT
 */
 
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
+
 #include "OvWindowing/Window.h"
 
 // #define STB_IMAGE_IMPLEMENTATION
@@ -13,8 +17,6 @@
 #if defined(_WIN32)
 #include <windows.h>
 #endif
-
-#include <GLFW/glfw3.h>
 
 #include <stdexcept>
 
@@ -319,6 +321,13 @@ GLFWwindow* OvWindowing::Window::GetGlfwWindow() const
 {
 	return m_glfwWindow;
 }
+
+#ifdef _WIN32
+void* OvWindowing::Window::GetNativeHandle() const
+{
+	return glfwGetWin32Window(m_glfwWindow);
+}
+#endif
 
 void OvWindowing::Window::CreateGlfwWindow(const Settings::WindowSettings& p_windowSettings)
 {

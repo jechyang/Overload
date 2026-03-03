@@ -17,7 +17,7 @@
 namespace OvRendering::HAL
 {
 	template<>
-	std::optional<OvRendering::Data::PipelineState> NoneBackend::Init(bool debug)
+	std::optional<OvRendering::Data::PipelineState> NoneBackend::Init(bool p_debug, void* p_windowHandle)
 	{
 		gladLoadGL(); // <-- initialize GLAD; see comment above the GLAD include directive for more details.
 		return OvRendering::Data::PipelineState{};

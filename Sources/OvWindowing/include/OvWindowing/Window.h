@@ -287,6 +287,13 @@ namespace OvWindowing
 		*/
 		GLFWwindow* GetGlfwWindow() const;
 
+#ifdef _WIN32
+		/**
+		* Return native window handle (HWND on Windows)
+		*/
+		void* GetNativeHandle() const;
+#endif
+
 	private:
 		void CreateGlfwWindow(const Settings::WindowSettings& p_windowSettings);
 

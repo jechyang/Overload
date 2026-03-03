@@ -22,7 +22,7 @@ OvRendering::Context::Driver::Driver(const OvRendering::Settings::DriverSettings
 {
 	m_gfxBackend = std::make_unique<OvRendering::HAL::Backend>();
 
-	auto initialPipelineState = m_gfxBackend->Init(p_driverSettings.debugMode);
+	auto initialPipelineState = m_gfxBackend->Init(p_driverSettings.debugMode, p_driverSettings.windowHandle);
 
 	OVASSERT(initialPipelineState.has_value(), "Failed to initialized driver!");
 

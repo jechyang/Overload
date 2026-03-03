@@ -30,10 +30,25 @@ project "OvRendering"
 		"include"
 	}
 
-	filter { "configurations:Debug" }
+	filter "system:windows"
+	filter "configurations:Debug"
 		defines { "DEBUG", "_DEBUG" }
 		symbols "On"
 
-	filter { "configurations:Release" }
+	filter "system:windows"
+	filter "configurations:Release"
 		defines { "NDEBUG" }
 		optimize "On"
+
+	filter {}
+
+	-- DX12 SDK - use Lua conditional to check for GRAPHICS_API_DIRECTX12
+	if _OPTIONS["graphics-api"] == "directx12" then
+		defines { "WIN32", "_WINDOWS", "UNICODE", "_UNICODE" }
+		links {
+			"d3d12.lib",
+			"dxgi.lib",
+			"dxguid.lib",
+			"D3Dcompiler.lib"
+		}
+	end
