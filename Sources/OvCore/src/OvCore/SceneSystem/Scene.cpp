@@ -16,12 +16,42 @@
 #include <OvCore/ECS/Components/CAmbientSphereLight.h>
 #include <OvCore/ECS/Components/CDirectionalLight.h>
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
+#include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
+#include <OvTools/Jobs/JobSystem.h>
+#include <stdexcept>
+#include <typeinfo>
 #include <OvCore/Global/ServiceLocator.h>
 #include <OvCore/ResourceManagement/MaterialManager.h>
 #include <OvCore/ResourceManagement/ModelManager.h>
 #include <OvCore/SceneSystem/PrefabOperations.h>
 #include <OvCore/SceneSystem/Scene.h>
 #include <OvTools/Utils/PathParser.h>
+
+namespace
+{
+	// An update callback may delete a later Actor. Invalidate its snapshot entry
+	// before storage is freed; actors created during an update wait until next frame.
+	class ActorUpdateSnapshot
+	{
+	public:
+		explicit ActorUpdateSnapshot(const std::vector<OvCore::ECS::Actor*>& p_actors) : actors(p_actors)
+		{
+			m_listener = OvCore::ECS::Actor::DestroyedEvent.AddListener([this](auto& actor)
+			{
+				for (auto*& entry : actors)
+				{
+					if (entry == &actor) entry = nullptr;
+				}
+			});
+		}
+		~ActorUpdateSnapshot() { OvCore::ECS::Actor::DestroyedEvent.RemoveListener(m_listener); }
+		ActorUpdateSnapshot(const ActorUpdateSnapshot&) = delete;
+		ActorUpdateSnapshot& operator=(const ActorUpdateSnapshot&) = delete;
+		std::vector<OvCore::ECS::Actor*> actors;
+	private:
+		OvTools::Eventing::ListenerID m_listener;
+	};
+}
 
 OvCore::SceneSystem::Scene::Scene(
 	const std::filesystem::path& p_projectAssetsPath,
@@ -134,8 +164,78 @@ bool OvCore::SceneSystem::Scene::IsPlaying() const
 void OvCore::SceneSystem::Scene::Update(float p_deltaTime)
 {
 	ZoneScoped;
-	auto actors = m_actors;
-	std::for_each(actors.begin(), actors.end(), std::bind(std::mem_fn(&ECS::Actor::OnUpdate), std::placeholders::_1, p_deltaTime));
+	ActorUpdateSnapshot snapshot(m_actors);
+	for (auto* actor : snapshot.actors)
+	{
+		if (actor) actor->OnUpdate(p_deltaTime);
+	}
+}
+
+void OvCore::SceneSystem::Scene::Update(float p_deltaTime, OvTools::Jobs::JobSystem& p_jobs, SkinningUpdateStats* p_stats)
+{
+	ZoneScopedN("Scene Update with Skinning Jobs");
+	if (p_stats) *p_stats = {};
+	if (!p_jobs.IsMainThread())
+	{
+		throw std::invalid_argument("Scene update requires the JobSystem constructing thread");
+	}
+	using namespace ECS::Components;
+	const auto candidate = [](ECS::Actor& actor) -> CSkinnedMeshRenderer*
+	{
+		if (!actor.IsActive() || !actor.GetBehaviours().empty()) return nullptr;
+		CSkinnedMeshRenderer* skin = nullptr;
+		for (const auto& component : actor.GetComponents())
+		{
+			if (!component || &component->owner != &actor) return nullptr;
+			const auto& type = typeid(*component);
+			if (type == typeid(CSkinnedMeshRenderer))
+			{
+				if (skin) return nullptr;
+				skin = static_cast<CSkinnedMeshRenderer*>(component.get());
+			}
+			else if (type != typeid(CTransform) && type != typeid(CModelRenderer) && type != typeid(CMaterialRenderer))
+			{
+				// Exact types only: derived/custom components may query or mutate any
+				// actor/resource. New built-ins are serial until their updates are audited.
+				return nullptr;
+			}
+		}
+		return skin && skin->CanBatchUpdate() ? skin : nullptr;
+	};
+
+	ActorUpdateSnapshot snapshot(m_actors);
+	const auto& actors = snapshot.actors;
+	if (p_stats) p_stats->snapshotActors = actors.size();
+	std::vector<CSkinnedMeshRenderer*> batch;
+	for (size_t i = 0; i < actors.size();)
+	{
+		if (!actors[i]) { ++i; continue; }
+		batch.clear();
+		size_t end = i;
+		while (end < actors.size())
+		{
+			auto* skin = actors[end] ? candidate(*actors[end]) : nullptr;
+			if (!skin) break;
+			batch.push_back(skin);
+			++end;
+		}
+		if (batch.empty())
+		{
+			actors[i++]->OnUpdate(p_deltaTime);
+		}
+		else
+		{
+			// No arbitrary callbacks, resource mutation or main-queue pumping may
+			// occur until this batch has drained and published its results.
+			if (p_stats)
+			{
+				p_stats->candidateActors += batch.size();
+				++p_stats->batches;
+			}
+			CSkinnedMeshRenderer::UpdateBatch(batch, p_deltaTime, p_jobs, p_stats);
+			i = end;
+		}
+	}
 }
 
 void OvCore::SceneSystem::Scene::FixedUpdate(float p_deltaTime)

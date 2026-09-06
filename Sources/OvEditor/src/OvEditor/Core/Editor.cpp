@@ -307,7 +307,7 @@ void OvEditor::Core::Editor::UpdatePlayMode(float p_deltaTime)
 
 	{
 		ZoneScopedN("Update");
-		currentScene->Update(p_deltaTime);
+		currentScene->Update(p_deltaTime, *m_context.jobSystem);
 	}
 
 	{

@@ -109,7 +109,7 @@ void OvGame::Core::Game::Update(float p_deltaTime)
 			#ifdef _DEBUG
 			ZoneScopedN("Scene Update");
 			#endif
-			currentScene->Update(p_deltaTime);
+			currentScene->Update(p_deltaTime, *m_context.jobSystem);
 			currentScene->LateUpdate(p_deltaTime);
 		}
 

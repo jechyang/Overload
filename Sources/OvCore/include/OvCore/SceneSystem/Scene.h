@@ -20,8 +20,24 @@
 #include <OvCore/ECS/Components/CReflectionProbe.h>
 #include <OvTools/Utils/OptRef.h>
 
+namespace OvTools::Jobs { class JobSystem; }
+
 namespace OvCore::SceneSystem
 {
+	// Optional, main-thread counters for one Update call. Reset at entry; partial
+	// progress on exception. Candidate actors are audited, contiguous skin owners.
+	struct SkinningUpdateStats
+	{
+		size_t snapshotActors = 0;
+		size_t candidateActors = 0;
+		size_t batches = 0;
+		size_t evaluatedInstances = 0;
+		size_t evaluatedNodes = 0;
+		size_t parallelBatches = 0;
+		size_t parallelInstances = 0;
+		size_t submittedJobs = 0;
+	};
+
 	/**
 	* The scene is a set of actors
 	*/
@@ -99,6 +115,15 @@ namespace OvCore::SceneSystem
 		* @param p_deltaTime
 		*/
 		void Update(float p_deltaTime);
+
+		/**
+		* Updates on the pool's constructing thread. Consecutive script-free actors
+		* containing only audited built-ins may evaluate skinning in parallel.
+		* Every batch finishes before the next arbitrary component/behaviour runs.
+		* Other threads must not mutate this scene or its resources during Update.
+		* The overload without a pool retains the original serial path.
+		*/
+		void Update(float p_deltaTime, OvTools::Jobs::JobSystem& p_jobs, SkinningUpdateStats* p_stats = nullptr);
 
 		/**
 		* Update every actors 60 frames per seconds

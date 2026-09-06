@@ -7,12 +7,16 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <stdexcept>
+#include <tracy/Tracy.hpp>
+#include <OvTools/Jobs/JobSystem.h>
 
 #include <optional>
 #include <string>
 #include <tinyxml2.h>
 
 #include <OvCore/ECS/Actor.h>
+#include <OvCore/SceneSystem/Scene.h>
 #include <OvCore/ECS/Components/CModelRenderer.h>
 #include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
 #include <OvCore/Helpers/GUIDrawer.h>
@@ -37,9 +41,11 @@ namespace
 		return wrapped < 0.0f ? wrapped + p_duration : wrapped;
 	}
 
+	// Read-only spans retain bounds checks without MSVC vector iterator
+	// registration on a global debug lock while workers sample shared keys.
 	template<typename T, typename TLerp>
 	T SampleKeys(
-		const std::vector<OvRendering::Animation::Keyframe<T>>& p_keys,
+		std::span<const OvRendering::Animation::Keyframe<T>> p_keys,
 		float p_time,
 		float p_duration,
 		const T& p_defaultValue,
@@ -351,7 +357,6 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::Stop()
 	m_playing = false;
 	m_currentTimeTicks = 0.0f;
 	m_poseEvaluationAccumulator = 0.0f;
-	m_manualPoseOverride = false;
 	EvaluatePose();
 }
 
@@ -469,7 +474,6 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::SetAnimation(std::optional<u
 		m_animationIndex = std::nullopt;
 		m_currentTimeTicks = 0.0f;
 		m_poseEvaluationAccumulator = 0.0f;
-		m_manualPoseOverride = false;
 		EvaluatePose();
 		return true;
 	}
@@ -482,7 +486,6 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::SetAnimation(std::optional<u
 	m_animationIndex = p_index;
 	m_currentTimeTicks = 0.0f;
 	m_poseEvaluationAccumulator = 0.0f;
-	m_manualPoseOverride = false;
 	EvaluatePose();
 	return true;
 }
@@ -664,8 +667,8 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::SetBoneLocalPosition(uint32_
 	DecomposeTransform(m_localPose[*nodeIndex], currentPosition, currentRotation, currentScale);
 
 	const OvMaths::FTransform transform(p_position, currentRotation, currentScale);
-	m_localPose[*nodeIndex] = transform.GetLocalMatrix();
-	m_manualPoseOverride = true;
+	m_poseScratch.localPose = m_localPose;
+	m_poseScratch.localPose[*nodeIndex] = transform.GetLocalMatrix();
 	RecomputeBoneMatricesFromLocalPose();
 	return true;
 }
@@ -684,8 +687,8 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::SetBoneLocalRotation(uint32_
 	DecomposeTransform(m_localPose[*nodeIndex], currentPosition, currentRotation, currentScale);
 
 	const OvMaths::FTransform transform(currentPosition, p_rotation, currentScale);
-	m_localPose[*nodeIndex] = transform.GetLocalMatrix();
-	m_manualPoseOverride = true;
+	m_poseScratch.localPose = m_localPose;
+	m_poseScratch.localPose[*nodeIndex] = transform.GetLocalMatrix();
 	RecomputeBoneMatricesFromLocalPose();
 	return true;
 }
@@ -704,8 +707,8 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::SetBoneLocalScale(uint32_t p
 	DecomposeTransform(m_localPose[*nodeIndex], currentPosition, currentRotation, currentScale);
 
 	const OvMaths::FTransform transform(currentPosition, currentRotation, p_scale);
-	m_localPose[*nodeIndex] = transform.GetLocalMatrix();
-	m_manualPoseOverride = true;
+	m_poseScratch.localPose = m_localPose;
+	m_poseScratch.localPose[*nodeIndex] = transform.GetLocalMatrix();
 	RecomputeBoneMatricesFromLocalPose();
 	return true;
 }
@@ -722,16 +725,31 @@ uint64_t OvCore::ECS::Components::CSkinnedMeshRenderer::GetPoseVersion() const
 
 void OvCore::ECS::Components::CSkinnedMeshRenderer::OnUpdate(float p_deltaTime)
 {
+	if (PrepareUpdate(p_deltaTime))
+	{
+		EvaluatePose();
+	}
+}
+
+bool OvCore::ECS::Components::CSkinnedMeshRenderer::CanBatchUpdate() const
+{
+	const auto renderer = owner.GetComponent<CModelRenderer>();
+	// Resource synchronization can log/rebuild; it remains on the serial path.
+	return renderer && renderer->GetModel() == m_model && HasCompatibleModel();
+}
+
+bool OvCore::ECS::Components::CSkinnedMeshRenderer::PrepareUpdate(float p_deltaTime)
+{
 	if (!owner.IsActive())
 	{
-		return;
+		return false;
 	}
 
 	SyncWithModel();
 
 	if (!HasCompatibleModel() || !m_playing)
 	{
-		return;
+		return false;
 	}
 
 	const float previousTimeTicks = m_currentTimeTicks;
@@ -753,7 +771,7 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::OnUpdate(float p_deltaTime)
 			const float updatePeriod = 1.0f / clampedPoseEvaluationRate;
 			if (m_poseEvaluationAccumulator < updatePeriod && !playbackStateChanged)
 			{
-				return;
+				return false;
 			}
 
 			m_poseEvaluationAccumulator = std::fmod(m_poseEvaluationAccumulator, updatePeriod);
@@ -763,7 +781,140 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::OnUpdate(float p_deltaTime)
 			m_poseEvaluationAccumulator = 0.0f;
 		}
 
-		EvaluatePose();
+		return true;
+	}
+	return false;
+}
+
+void OvCore::ECS::Components::CSkinnedMeshRenderer::UpdateBatch(
+	std::span<CSkinnedMeshRenderer* const> p_renderers,
+	float p_deltaTime,
+	OvTools::Jobs::JobSystem& p_jobs,
+	OvCore::SceneSystem::SkinningUpdateStats* p_stats
+)
+{
+	ZoneScopedN("Skinning Batch");
+	if (p_renderers.size() < 8 || p_jobs.GetWorkerCount() < 2)
+	{
+		for (auto* renderer : p_renderers)
+		{
+			const auto version = renderer->GetPoseVersion();
+			renderer->OnUpdate(p_deltaTime);
+			if (p_stats && renderer->GetPoseVersion() != version)
+			{
+				++p_stats->evaluatedInstances;
+				p_stats->evaluatedNodes += renderer->m_model->GetSkeleton()->nodes.size();
+			}
+		}
+		return;
+	}
+	struct PendingPose
+	{
+		CSkinnedMeshRenderer* renderer;
+		PoseEvaluationInput input;
+		std::exception_ptr error;
+		bool completed = false;
+	};
+	std::vector<PendingPose> pending;
+	pending.reserve(p_renderers.size());
+	size_t nodeCount = 0;
+	{
+		ZoneScopedN("Skinning Batch Prepare");
+		for (auto* renderer : p_renderers)
+		{
+			if (renderer->PrepareUpdate(p_deltaTime))
+			{
+				pending.push_back({ renderer, renderer->PreparePoseEvaluation(), {}, false });
+				nodeCount += pending.back().input.skeleton.nodes.size();
+			}
+		}
+	}
+
+	if (p_stats)
+	{
+		p_stats->evaluatedInstances += pending.size();
+		p_stats->evaluatedNodes += nodeCount;
+	}
+
+	// Small batches cannot amortize submission/wakeup costs. See the skinning
+	// validation report for the workload used to select these conservative gates.
+	if (pending.size() < 8 || nodeCount < 512 || p_jobs.GetWorkerCount() < 2)
+	{
+		for (auto& pose : pending)
+		{
+			ComputePose(pose.input, pose.renderer->m_poseScratch);
+			pose.renderer->PublishPose(pose.renderer->m_poseScratch, false);
+		}
+		return;
+	}
+
+	if (p_stats)
+	{
+		++p_stats->parallelBatches;
+		p_stats->parallelInstances += pending.size();
+	}
+
+	const auto evaluateRange = [&pending](size_t begin, size_t end)
+	{
+		ZoneScopedN("Skinning Job");
+		for (size_t i = begin; i < end; ++i)
+		{
+			auto& pose = pending[i];
+			try
+			{
+				ComputePose(pose.input, pose.renderer->m_poseScratch);
+				pose.completed = true;
+			}
+			catch (...)
+			{
+				// Report on the main thread after draining, never through worker UI
+				// callbacks. Each instance owns its output and failure slot.
+				pose.error = std::current_exception();
+			}
+		}
+	};
+	const size_t chunkCount = std::min(pending.size(), size_t(p_jobs.GetWorkerCount()) * 2 + 1);
+	std::vector<OvTools::Jobs::JobHandle> handles;
+	handles.reserve(chunkCount - 1);
+	try
+	{
+		for (size_t chunk = 1; chunk < chunkCount; ++chunk)
+		{
+			const size_t begin = pending.size() * chunk / chunkCount;
+			const size_t end = pending.size() * (chunk + 1) / chunkCount;
+			handles.push_back(p_jobs.Submit([&evaluateRange, begin, end] { evaluateRange(begin, end); }));
+			if (p_stats) ++p_stats->submittedJobs;
+		}
+	}
+	catch (...)
+	{
+		// All captures and borrowed resources must remain alive on unwind too.
+		p_jobs.WaitAllPassive(handles);
+		throw;
+	}
+	// Help only with our own explicitly assigned range, not arbitrary queued work.
+	evaluateRange(0, pending.size() / chunkCount);
+	{
+		ZoneScopedN("Skinning Wait");
+		p_jobs.WaitAllPassive(handles);
+	}
+
+	std::exception_ptr firstError;
+	for (auto& pose : pending)
+	{
+		if (pose.completed)
+		{
+			pose.renderer->PublishPose(pose.renderer->m_poseScratch, false);
+		}
+		else if (!firstError)
+		{
+			firstError = pose.error ? pose.error :
+				std::make_exception_ptr(std::runtime_error("Skinning job ended without a pose"));
+		}
+	}
+	if (firstError)
+	{
+		std::rethrow_exception(firstError);
 	}
 }
 
@@ -899,6 +1050,8 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::RebuildRuntimeData()
 
 	m_animationNames.clear();
 	m_animationNodeMap.clear();
+	// A palette from the previous model is not valid for the replacement. Keep
+	// the published arrays empty until its initial pose has been computed.
 	m_localPose.clear();
 	m_globalPose.clear();
 	m_boneMatrices.clear();
@@ -915,11 +1068,6 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::RebuildRuntimeData()
 
 	const auto& skeleton = m_model->GetSkeleton().value();
 	const auto animationModel = GetAnimationModel();
-
-	m_localPose.resize(skeleton.nodes.size(), OvMaths::FMatrix4::Identity);
-	m_globalPose.resize(skeleton.nodes.size(), OvMaths::FMatrix4::Identity);
-	m_boneMatrices.resize(skeleton.bones.size(), OvMaths::FMatrix4::Identity);
-	m_boneMatricesTransposed.resize(skeleton.bones.size(), OvMaths::FMatrix4::Identity);
 
 	if (
 		animationModel &&
@@ -985,33 +1133,57 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::EvaluatePose()
 		return;
 	}
 
-	const auto& skeleton = m_model->GetSkeleton().value();
+	const auto input = PreparePoseEvaluation();
+	ComputePose(input, m_poseScratch);
+	PublishPose(m_poseScratch, false);
+}
+
+OvCore::ECS::Components::CSkinnedMeshRenderer::PoseEvaluationInput OvCore::ECS::Components::CSkinnedMeshRenderer::PreparePoseEvaluation() const
+{
+	ZoneScopedN("Skinning Prepare");
+	const auto animationModel = GetAnimationModel();
+	const bool hasAnimation = HasCompatibleAnimationSource() && m_animationIndex.has_value() &&
+		*m_animationIndex < animationModel->GetAnimations().size();
+
+	return {
+		m_model->GetSkeleton().value(),
+		hasAnimation ? &animationModel->GetAnimations().at(*m_animationIndex) : nullptr,
+		hasAnimation ? animationModel->GetSkeleton()->nodes.size() : 0,
+		m_animationNodeMap,
+		m_currentTimeTicks,
+		m_looping
+	};
+}
+
+void OvCore::ECS::Components::CSkinnedMeshRenderer::ComputePose(const PoseEvaluationInput& p_input, PoseEvaluationOutput& p_output)
+{
+	ZoneScopedN("Skinning Evaluate");
+	const auto& skeleton = p_input.skeleton;
+	p_output.localPose.resize(skeleton.nodes.size());
 
 	for (size_t nodeIndex = 0; nodeIndex < skeleton.nodes.size(); ++nodeIndex)
 	{
-		m_localPose[nodeIndex] = skeleton.nodes[nodeIndex].localBindTransform;
+		p_output.localPose[nodeIndex] = skeleton.nodes[nodeIndex].localBindTransform;
 	}
 
-	const auto animationModel = GetAnimationModel();
-	if (HasCompatibleAnimationSource() && m_animationIndex.has_value() && *m_animationIndex < animationModel->GetAnimations().size())
+	if (p_input.animation)
 	{
-		const auto& animation = animationModel->GetAnimations().at(*m_animationIndex);
-		const auto& animationSkeleton = animationModel->GetSkeleton().value();
+		const auto& animation = *p_input.animation;
 		const float duration = std::max(animation.duration, 0.0f);
 		const float sampleTime =
 			duration > 0.0f ?
-			(m_looping ? WrapTime(m_currentTimeTicks, duration) : std::clamp(m_currentTimeTicks, 0.0f, duration)) :
+			(p_input.looping ? WrapTime(p_input.timeTicks, duration) : std::clamp(p_input.timeTicks, 0.0f, duration)) :
 			0.0f;
 
-		for (const auto& track : animation.tracks)
+		for (const auto& track : std::span{animation.tracks})
 		{
-			if (track.nodeIndex >= animationSkeleton.nodes.size() || track.nodeIndex >= m_animationNodeMap.size())
+			if (track.nodeIndex >= p_input.animationNodeCount || track.nodeIndex >= p_input.animationNodeMap.size())
 			{
 				continue;
 			}
 
-			const int32_t targetNodeIndex = m_animationNodeMap[track.nodeIndex];
-			if (targetNodeIndex < 0 || static_cast<size_t>(targetNodeIndex) >= m_localPose.size())
+			const int32_t targetNodeIndex = p_input.animationNodeMap[track.nodeIndex];
+			if (targetNodeIndex < 0 || static_cast<size_t>(targetNodeIndex) >= p_output.localPose.size())
 			{
 				continue;
 			}
@@ -1019,39 +1191,42 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::EvaluatePose()
 			const auto& node = skeleton.nodes[static_cast<size_t>(targetNodeIndex)];
 
 			const OvMaths::FVector3 sampledPosition = SampleKeys(
-				track.positionKeys,
+				std::span{track.positionKeys},
 				sampleTime,
 				duration,
 				node.bindPosition,
-				m_looping,
+				p_input.looping,
 				[](const auto& p_a, const auto& p_b, float p_alpha) { return OvMaths::FVector3::Lerp(p_a, p_b, p_alpha); }
 			);
 
 			const OvMaths::FQuaternion sampledRotation = SampleKeys(
-				track.rotationKeys,
+				std::span{track.rotationKeys},
 				sampleTime,
 				duration,
 				node.bindRotation,
-				m_looping,
+				p_input.looping,
 				[](const auto& p_a, const auto& p_b, float p_alpha) { return OvMaths::FQuaternion::Slerp(p_a, p_b, p_alpha); }
 			);
 
 			const OvMaths::FVector3 sampledScale = SampleKeys(
-				track.scaleKeys,
+				std::span{track.scaleKeys},
 				sampleTime,
 				duration,
 				node.bindScale,
-				m_looping,
+				p_input.looping,
 				[](const auto& p_a, const auto& p_b, float p_alpha) { return OvMaths::FVector3::Lerp(p_a, p_b, p_alpha); }
 			);
 
-			const OvMaths::FTransform sampled(sampledPosition, sampledRotation, sampledScale);
-			m_localPose[static_cast<size_t>(targetNodeIndex)] = sampled.GetLocalMatrix();
+			// Same local TRS expression and operation order as FTransform, without
+			// allocating a notifier or decomposing an unused world transform per track.
+			p_output.localPose[static_cast<size_t>(targetNodeIndex)] =
+				OvMaths::FMatrix4::Translation(sampledPosition) *
+				OvMaths::FQuaternion::ToMatrix4(OvMaths::FQuaternion::Normalize(sampledRotation)) *
+				OvMaths::FMatrix4::Scaling(sampledScale);
 		}
 	}
 
-	m_manualPoseOverride = false;
-	RecomputeBoneMatricesFromLocalPose();
+	ComputeBoneMatrices(skeleton, p_output);
 }
 
 std::optional<uint32_t> OvCore::ECS::Components::CSkinnedMeshRenderer::GetNodeIndexFromBoneIndex(uint32_t p_boneIndex) const
@@ -1078,42 +1253,60 @@ std::optional<uint32_t> OvCore::ECS::Components::CSkinnedMeshRenderer::GetNodeIn
 
 void OvCore::ECS::Components::CSkinnedMeshRenderer::RecomputeBoneMatricesFromLocalPose()
 {
-	if (!HasCompatibleModel())
-	{
-		return;
-	}
+	// Manual edits have already copied and modified the local pose in scratch.
+	ComputeBoneMatrices(m_model->GetSkeleton().value(), m_poseScratch);
+	PublishPose(m_poseScratch, true);
+}
 
-	const auto& skeleton = m_model->GetSkeleton().value();
-	if (
-		m_localPose.size() != skeleton.nodes.size() ||
-		m_globalPose.size() != skeleton.nodes.size() ||
-		m_boneMatrices.size() != skeleton.bones.size() ||
-		m_boneMatricesTransposed.size() != skeleton.bones.size()
-	)
+void OvCore::ECS::Components::CSkinnedMeshRenderer::ComputeBoneMatrices(
+	const OvRendering::Animation::Skeleton& p_skeleton,
+	PoseEvaluationOutput& p_output
+)
+{
+	const auto& skeleton = p_skeleton;
+	if (p_output.localPose.size() != skeleton.nodes.size())
 	{
-		return;
+		throw std::invalid_argument("Skinning local pose does not match skeleton");
 	}
+	p_output.globalPose.resize(skeleton.nodes.size());
+	p_output.boneMatrices.resize(skeleton.bones.size());
+	p_output.boneMatricesTransposed.resize(skeleton.bones.size());
 
 	for (size_t nodeIndex = 0; nodeIndex < skeleton.nodes.size(); ++nodeIndex)
 	{
 		const auto parentIndex = skeleton.nodes[nodeIndex].parentIndex;
-		m_globalPose[nodeIndex] =
+		if (parentIndex >= 0 && static_cast<size_t>(parentIndex) >= nodeIndex)
+		{
+			throw std::invalid_argument("Skinning requires parent-before-child skeleton nodes");
+		}
+		p_output.globalPose[nodeIndex] =
 			parentIndex >= 0 ?
-			m_globalPose[static_cast<size_t>(parentIndex)] * m_localPose[nodeIndex] :
-			m_localPose[nodeIndex];
+			p_output.globalPose[static_cast<size_t>(parentIndex)] * p_output.localPose[nodeIndex] :
+			p_output.localPose[nodeIndex];
 	}
 
 	for (size_t boneIndex = 0; boneIndex < skeleton.bones.size(); ++boneIndex)
 	{
 		const auto& bone = skeleton.bones[boneIndex];
-		m_boneMatrices[boneIndex] =
-			bone.nodeIndex < m_globalPose.size() ?
-			m_globalPose[bone.nodeIndex] * bone.offsetMatrix :
+		p_output.boneMatrices[boneIndex] =
+			bone.nodeIndex < p_output.globalPose.size() ?
+			p_output.globalPose[bone.nodeIndex] * bone.offsetMatrix :
 			OvMaths::FMatrix4::Identity;
 
-		m_boneMatricesTransposed[boneIndex] = OvMaths::FMatrix4::Transpose(m_boneMatrices[boneIndex]);
+		p_output.boneMatricesTransposed[boneIndex] = OvMaths::FMatrix4::Transpose(p_output.boneMatrices[boneIndex]);
 	}
+}
 
+void OvCore::ECS::Components::CSkinnedMeshRenderer::PublishPose(PoseEvaluationOutput& p_output, bool p_manualOverride) noexcept
+{
+	ZoneScopedN("Skinning Publish");
+	// Main thread only, before returning to any component/script/render consumer.
+	// Swaps cannot throw; failed computation leaves the last published pose intact.
+	m_localPose.swap(p_output.localPose);
+	m_globalPose.swap(p_output.globalPose);
+	m_boneMatrices.swap(p_output.boneMatrices);
+	m_boneMatricesTransposed.swap(p_output.boneMatricesTransposed);
+	m_manualPoseOverride = p_manualOverride;
 	++m_poseVersion;
 }
 

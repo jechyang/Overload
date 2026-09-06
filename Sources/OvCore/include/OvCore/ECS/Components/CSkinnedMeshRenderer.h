@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -18,7 +19,10 @@
 #include <OvTools/Eventing/Event.h>
 
 namespace OvCore::ECS { class Actor; }
+namespace OvCore::SceneSystem { class Scene; struct SkinningUpdateStats; }
+namespace OvTools::Jobs { class JobSystem; }
 namespace OvRendering::Resources { class Model; }
+namespace OvRendering::Animation { struct Skeleton; struct SkeletalAnimation; }
 
 namespace OvCore::ECS::Components
 {
@@ -283,6 +287,38 @@ namespace OvCore::ECS::Components
 		virtual void OnInspector(OvUI::Internal::WidgetContainer& p_root) override;
 
 	private:
+		friend class OvCore::SceneSystem::Scene;
+		// Scene only batches exact built-in components with no scripts/callbacks.
+		// Preparation finishes before submission, and a passive wait drains every
+		// job before any user update, mutation, resource change or destruction.
+		bool CanBatchUpdate() const;
+		bool PrepareUpdate(float p_deltaTime);
+		static void UpdateBatch(std::span<CSkinnedMeshRenderer* const> p_renderers, float p_deltaTime, OvTools::Jobs::JobSystem& p_jobs, OvCore::SceneSystem::SkinningUpdateStats* p_stats);
+
+		// Borrowed for a synchronous call or the bounded Scene batch above.
+		struct PoseEvaluationInput
+		{
+			const OvRendering::Animation::Skeleton& skeleton;
+			const OvRendering::Animation::SkeletalAnimation* animation;
+			size_t animationNodeCount;
+			std::span<const int32_t> animationNodeMap;
+			float timeTicks;
+			bool looping;
+		};
+
+		struct PoseEvaluationOutput
+		{
+			std::vector<OvMaths::FMatrix4> localPose;
+			std::vector<OvMaths::FMatrix4> globalPose;
+			std::vector<OvMaths::FMatrix4> boneMatrices;
+			std::vector<OvMaths::FMatrix4> boneMatricesTransposed;
+		};
+
+		PoseEvaluationInput PreparePoseEvaluation() const;
+		static void ComputePose(const PoseEvaluationInput& p_input, PoseEvaluationOutput& p_output);
+		static void ComputeBoneMatrices(const OvRendering::Animation::Skeleton& p_skeleton, PoseEvaluationOutput& p_output);
+		void PublishPose(PoseEvaluationOutput& p_output, bool p_manualOverride) noexcept;
+
 		bool HasCompatibleModel() const;
 		bool HasCompatibleAnimationSource() const;
 		const OvRendering::Resources::Model* GetAnimationModel() const;
@@ -319,6 +355,8 @@ namespace OvCore::ECS::Components
 		std::vector<OvMaths::FMatrix4> m_globalPose;
 		std::vector<OvMaths::FMatrix4> m_boneMatrices;
 		std::vector<OvMaths::FMatrix4> m_boneMatricesTransposed;
+		// Reused scratch storage; computation never modifies the published arrays.
+		PoseEvaluationOutput m_poseScratch;
 	};
 
 	template<>
