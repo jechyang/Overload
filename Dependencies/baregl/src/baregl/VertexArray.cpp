@@ -4,6 +4,7 @@
 * @licence: MIT
 */
 
+#include <baregl/ResourceExecutor.h>
 #include <baregl/VertexArray.h>
 
 #include <baregl/debug/Assert.h>
@@ -114,9 +115,11 @@ namespace baregl
 {
 	VertexArray::VertexArray() : detail::NativeObject(ResourceKind::VERTEX_ARRAY)
 	{
-		glCreateVertexArrays(1, &m_id);
-		AdoptNativeID();
-		NOTIFY_VERTEX_ARRAY_CREATED;
+		ResourceExecutor::Invoke([&]() -> void {
+			glCreateVertexArrays(1, &m_id);
+			AdoptNativeID();
+			NOTIFY_VERTEX_ARRAY_CREATED;
+		});
 	}
 
 	VertexArray::~VertexArray()
@@ -135,57 +138,65 @@ namespace baregl
 		Buffer& p_indexBuffer
 	)
 	{
-		BAREGL_ASSERT(!IsValid(), "Vertex array layout already set");
+		return ResourceExecutor::Invoke([&]() -> void {
+			BAREGL_ASSERT(!IsValid(), "Vertex array layout already set");
 
-		Bind();
-		p_indexBuffer.Bind(types::EBufferType::INDEX);
-		p_vertexBuffer.Bind(types::EBufferType::VERTEX);
+			Bind();
+			p_indexBuffer.Bind(types::EBufferType::INDEX);
+			p_vertexBuffer.Bind(types::EBufferType::VERTEX);
 
-		uint32_t attributeIndex = 0;
+			uint32_t attributeIndex = 0;
 
-		const GLsizei totalSize = static_cast<GLsizei>(CalculateTotalVertexSize(p_attributes));
-		intptr_t currentOffset = 0;
+			const GLsizei totalSize = static_cast<GLsizei>(CalculateTotalVertexSize(p_attributes));
+			intptr_t currentOffset = 0;
 
-		for (const auto& attribute : p_attributes)
-		{
-			glEnableVertexAttribArray(attributeIndex);
+			for (const auto& attribute : p_attributes)
+			{
+				glEnableVertexAttribArray(attributeIndex);
 
-			std::visit(VertexAttribSetter{
-				static_cast<GLuint>(attributeIndex),
-				totalSize,
-				reinterpret_cast<const GLvoid*>(currentOffset)
-			}, attribute);
+				std::visit(VertexAttribSetter{
+					static_cast<GLuint>(attributeIndex),
+					totalSize,
+					reinterpret_cast<const GLvoid*>(currentOffset)
+				}, attribute);
 
-			currentOffset += GetAttributeSizeInBytes(attribute);
-			++attributeIndex;
-			++m_attributeCount;
-		}
+				currentOffset += GetAttributeSizeInBytes(attribute);
+				++attributeIndex;
+				++m_attributeCount;
+			}
 
-		Unbind();
-		p_indexBuffer.Unbind();
-		p_vertexBuffer.Unbind();
+			Unbind();
+			p_indexBuffer.Unbind();
+			p_vertexBuffer.Unbind();
+		});
 	}
 
 	void VertexArray::ResetLayout()
 	{
-		BAREGL_ASSERT(IsValid(), "Vertex array layout not already set");
+		return ResourceExecutor::Invoke([&]() -> void {
+			BAREGL_ASSERT(IsValid(), "Vertex array layout not already set");
 
-		Bind();
-		for (uint32_t i = 0; i < m_attributeCount; ++i)
-		{
-			glDisableVertexAttribArray(i);
-		}
-		m_attributeCount = 0;
-		Unbind();
+			Bind();
+			for (uint32_t i = 0; i < m_attributeCount; ++i)
+			{
+				glDisableVertexAttribArray(i);
+			}
+			m_attributeCount = 0;
+			Unbind();
+		});
 	}
 
 	void VertexArray::Bind() const
 	{
-		glBindVertexArray(m_id);
+		return ResourceExecutor::Invoke([&]() -> void {
+			glBindVertexArray(m_id);
+		});
 	}
 
 	void VertexArray::Unbind() const
 	{
-		glBindVertexArray(0);
+		return ResourceExecutor::Invoke([&]() -> void {
+			glBindVertexArray(0);
+		});
 	}
 }

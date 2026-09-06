@@ -1,3 +1,4 @@
+#include <baregl/ResourceExecutor.h>
 #include <baregl/ResourceLifetime.h>
 #include <baregl/detail/glad/glad.h>
 #include <atomic>
@@ -91,16 +92,19 @@ namespace baregl
         if (current == m_state) current.reset();
         return invalidated;
     }
-    ResourceLifetime::ResourceLifetime(ResourceKind kind) : m_kind(kind), m_state(current)
+    ResourceLifetime::ResourceLifetime(ResourceKind kind) : m_kind(kind)
     {
-        if (m_state && kind != ResourceKind::NONE)
-        {
-            m_record = std::make_shared<detail::DeletionRecord>(kind);
-            std::lock_guard lock(m_state->mutex);
-            if (!m_state->alive.load(std::memory_order_relaxed)) throw std::logic_error("GL resource domain is closed");
-            m_state->records.push_back(m_record);
-            m_record->position = std::prev(m_state->records.end());
-        }
+        ResourceExecutor::Invoke([&] {
+            m_state = current;
+            if (m_state && kind != ResourceKind::NONE)
+            {
+                m_record = std::make_shared<detail::DeletionRecord>(kind);
+                std::lock_guard lock(m_state->mutex);
+                if (!m_state->alive.load(std::memory_order_relaxed)) throw std::logic_error("GL resource domain is closed");
+                m_state->records.push_back(m_record);
+                m_record->position = std::prev(m_state->records.end());
+            }
+        });
     }
     void ResourceLifetime::Adopt(uint32_t id)
     {

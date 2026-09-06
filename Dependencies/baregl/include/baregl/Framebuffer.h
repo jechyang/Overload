@@ -121,9 +121,9 @@ namespace baregl
 		public:
 			Snapshot() = default;
 			void Bind() const;
-			// GL owner only. Tightly packed full image; restores read target and pack state.
+			// GL owner or bound ResourceExecutor. Tightly packed full image; restores read target and pack state.
 			void ReadRGBA8(std::span<uint8_t> p_pixels) const;
-			uint32_t GetID() const; // Realizes the FBO; GL owner only.
+			uint32_t GetID() const; // Realizes the FBO on the GL owner (or through ResourceExecutor).
 			std::pair<uint16_t, uint16_t> GetSize() const;
 		private:
 			explicit Snapshot(std::shared_ptr<SnapshotData> p_data) : m_data(std::move(p_data)) {}

@@ -7,6 +7,7 @@
 #include "OvUI/Modules/Canvas.h"
 
 #include <imgui_internal.h>
+#include <baregl/ResourceExecutor.h>
 
 void OvUI::Modules::Canvas::Draw() { BuildFrame(true); }
 
@@ -14,7 +15,8 @@ bool OvUI::Modules::Canvas::BuildFrame(bool p_beginRendererFrame)
 {
 	if (!m_panels.empty())
 	{
-		if (p_beginRendererFrame) ImGui_ImplOpenGL3_NewFrame();
+		if (p_beginRendererFrame)
+            baregl::ResourceExecutor::Invoke([] { ImGui_ImplOpenGL3_NewFrame(); });
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 

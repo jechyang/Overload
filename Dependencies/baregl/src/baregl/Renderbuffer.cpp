@@ -4,6 +4,7 @@
 * @licence: MIT
 */
 
+#include <baregl/ResourceExecutor.h>
 #include <baregl/Renderbuffer.h>
 
 #include <baregl/debug/Assert.h>
@@ -15,9 +16,11 @@ namespace baregl
 {
 	Renderbuffer::Renderbuffer() : detail::NativeObject(ResourceKind::RENDERBUFFER)
 	{
-		glCreateRenderbuffers(1, &m_id);
-		AdoptNativeID();
-		NOTIFY_RENDERBUFFER_CREATED;
+		ResourceExecutor::Invoke([&]() -> void {
+			glCreateRenderbuffers(1, &m_id);
+			AdoptNativeID();
+			NOTIFY_RENDERBUFFER_CREATED;
+		});
 	}
 
 	Renderbuffer::~Renderbuffer()
@@ -27,23 +30,29 @@ namespace baregl
 
 	void Renderbuffer::Bind() const
 	{
-		glBindRenderbuffer(GL_RENDERBUFFER, m_id);
+		return ResourceExecutor::Invoke([&]() -> void {
+			glBindRenderbuffer(GL_RENDERBUFFER, m_id);
+		});
 	}
 
 	void Renderbuffer::Unbind() const
 	{
-		glBindRenderbuffer(GL_RENDERBUFFER, 0);
+		return ResourceExecutor::Invoke([&]() -> void {
+			glBindRenderbuffer(GL_RENDERBUFFER, 0);
+		});
 	}
 
 	void Renderbuffer::Allocate(uint16_t p_width, uint16_t p_height, types::EInternalFormat p_format)
 	{
-		m_width = p_width;
-		m_height = p_height;
-		m_format = p_format;
+		return ResourceExecutor::Invoke([&]() -> void {
+			m_width = p_width;
+			m_height = p_height;
+			m_format = p_format;
 
-		glNamedRenderbufferStorage(m_id, utils::EnumToValue<GLenum>(m_format), m_width, m_height);
+			glNamedRenderbufferStorage(m_id, utils::EnumToValue<GLenum>(m_format), m_width, m_height);
 
-		m_allocated = true;
+			m_allocated = true;
+		});
 	}
 
 	bool Renderbuffer::IsValid() const
@@ -53,14 +62,16 @@ namespace baregl
 
 	void Renderbuffer::Resize(uint16_t p_width, uint16_t p_height)
 	{
-		BAREGL_ASSERT(IsValid(), "Cannot resize a renderbuffer that has not been allocated");
+		return ResourceExecutor::Invoke([&]() -> void {
+			BAREGL_ASSERT(IsValid(), "Cannot resize a renderbuffer that has not been allocated");
 
-		if (m_width == p_width && m_height == p_height)
-		{
-			return;
-		}
+			if (m_width == p_width && m_height == p_height)
+			{
+				return;
+			}
 
-		Allocate(p_width, p_height, m_format);
+			Allocate(p_width, p_height, m_format);
+		});
 	}
 
 
@@ -77,8 +88,10 @@ namespace baregl
 	}
 	std::shared_ptr<Renderbuffer> Renderbuffer::CreateResizedStorage(uint16_t p_width, uint16_t p_height) const
 	{
-		auto result = std::make_shared<Renderbuffer>();
-		result->Allocate(p_width, p_height, m_format);
-		return result;
+		return ResourceExecutor::Invoke([&]() -> std::shared_ptr<Renderbuffer> {
+			auto result = std::make_shared<Renderbuffer>();
+			result->Allocate(p_width, p_height, m_format);
+			return result;
+		});
 	}
 }

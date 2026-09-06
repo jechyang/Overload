@@ -4,6 +4,7 @@
 * @licence: MIT
 */
 
+#include <baregl/ResourceExecutor.h>
 #include <baregl/Framebuffer.h>
 #include <stdexcept>
 
@@ -29,16 +30,18 @@ namespace baregl
 		std::optional<uint32_t> p_layer
 	)
 	{
-		BAREGL_ASSERT(p_toAttach != nullptr, "Cannot attach a null renderbuffer");
-		BAREGL_ASSERT(!p_layer.has_value(), "Renderbuffer cannot use layers");
-		BAREGL_ASSERT(p_index == 0 || p_attachment == types::EFramebufferAttachment::COLOR, "Only color attachments support indexing");
-		BAREGL_ASSERT(p_index < k_maxColorAttachmentCount, "Color attachment index must be in range [0, 31]");
+		return ResourceExecutor::Invoke([&]() -> void {
+			BAREGL_ASSERT(p_toAttach != nullptr, "Cannot attach a null renderbuffer");
+			BAREGL_ASSERT(!p_layer.has_value(), "Renderbuffer cannot use layers");
+			BAREGL_ASSERT(p_index == 0 || p_attachment == types::EFramebufferAttachment::COLOR, "Only color attachments support indexing");
+			BAREGL_ASSERT(p_index < k_maxColorAttachmentCount, "Color attachment index must be in range [0, 31]");
 
-		const auto attachmentIndex = utils::EnumToValue<GLenum>(p_attachment) + static_cast<GLenum>(p_index);
-		glNamedFramebufferRenderbuffer(m_id, attachmentIndex, GL_RENDERBUFFER, p_toAttach->GetID());
-		m_attachments[attachmentIndex] = p_toAttach;
-		m_layers[attachmentIndex] = p_layer;
-		m_snapshot.reset();
+			const auto attachmentIndex = utils::EnumToValue<GLenum>(p_attachment) + static_cast<GLenum>(p_index);
+			glNamedFramebufferRenderbuffer(m_id, attachmentIndex, GL_RENDERBUFFER, p_toAttach->GetID());
+			m_attachments[attachmentIndex] = p_toAttach;
+			m_layers[attachmentIndex] = p_layer;
+			m_snapshot.reset();
+		});
 	}
 
 	template<>
@@ -49,34 +52,38 @@ namespace baregl
 		std::optional<uint32_t> p_layer
 	)
 	{
-		BAREGL_ASSERT(p_toAttach != nullptr, "Cannot attach a null texture");
-		BAREGL_ASSERT(p_index == 0 || p_attachment == types::EFramebufferAttachment::COLOR, "Only color attachments support indexing");
-		BAREGL_ASSERT(p_index < k_maxColorAttachmentCount, "Color attachment index must be in range [0, 31]");
+		return ResourceExecutor::Invoke([&]() -> void {
+			BAREGL_ASSERT(p_toAttach != nullptr, "Cannot attach a null texture");
+			BAREGL_ASSERT(p_index == 0 || p_attachment == types::EFramebufferAttachment::COLOR, "Only color attachments support indexing");
+			BAREGL_ASSERT(p_index < k_maxColorAttachmentCount, "Color attachment index must be in range [0, 31]");
 
-		const auto attachmentIndex = utils::EnumToValue<GLenum>(p_attachment) + static_cast<GLenum>(p_index);
-		constexpr uint32_t k_mipMapLevel = 0;
+			const auto attachmentIndex = utils::EnumToValue<GLenum>(p_attachment) + static_cast<GLenum>(p_index);
+			constexpr uint32_t k_mipMapLevel = 0;
 
-		if (p_layer.has_value())
-		{
-			glNamedFramebufferTextureLayer(m_id, attachmentIndex, p_toAttach->GetID(), k_mipMapLevel, p_layer.value());
-		}
-		else
-		{
-			glNamedFramebufferTexture(m_id, attachmentIndex, p_toAttach->GetID(), k_mipMapLevel);
-		}
+			if (p_layer.has_value())
+			{
+				glNamedFramebufferTextureLayer(m_id, attachmentIndex, p_toAttach->GetID(), k_mipMapLevel, p_layer.value());
+			}
+			else
+			{
+				glNamedFramebufferTexture(m_id, attachmentIndex, p_toAttach->GetID(), k_mipMapLevel);
+			}
 
-		m_attachments[attachmentIndex] = p_toAttach;
-		m_layers[attachmentIndex] = p_layer;
-		m_snapshot.reset();
+			m_attachments[attachmentIndex] = p_toAttach;
+			m_layers[attachmentIndex] = p_layer;
+			m_snapshot.reset();
+		});
 	}
 
 	Framebuffer::Framebuffer(std::string_view p_debugName) :
 		detail::NativeObject(ResourceKind::FRAMEBUFFER),
 		m_debugName{ p_debugName }
 	{
-		glCreateFramebuffers(1, &m_id);
-		AdoptNativeID();
-		NOTIFY_FRAMEBUFFER_CREATED;
+		ResourceExecutor::Invoke([&]() -> void {
+			glCreateFramebuffers(1, &m_id);
+			AdoptNativeID();
+			NOTIFY_FRAMEBUFFER_CREATED;
+		});
 	}
 
 	Framebuffer::~Framebuffer()
@@ -86,25 +93,31 @@ namespace baregl
 
 	void Framebuffer::Bind() const
 	{
-		glBindFramebuffer(GL_FRAMEBUFFER, m_id);
+		return ResourceExecutor::Invoke([&]() -> void {
+			glBindFramebuffer(GL_FRAMEBUFFER, m_id);
+		});
 	}
 
 	void Framebuffer::Unbind() const
 	{
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		return ResourceExecutor::Invoke([&]() -> void {
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		});
 	}
 
 	bool Framebuffer::Validate()
 	{
-		const GLenum status = glCheckNamedFramebufferStatus(m_id, GL_FRAMEBUFFER);
+		return ResourceExecutor::Invoke([&]() -> bool {
+			const GLenum status = glCheckNamedFramebufferStatus(m_id, GL_FRAMEBUFFER);
 
-		if (status != GL_FRAMEBUFFER_COMPLETE)
-		{
-			BAREGL_LOG_ERROR("Framebuffer validation failed with status: " + std::to_string(status));
-			return m_valid = false;
-		}
+			if (status != GL_FRAMEBUFFER_COMPLETE)
+			{
+				BAREGL_LOG_ERROR("Framebuffer validation failed with status: " + std::to_string(status));
+				return m_valid = false;
+			}
 
-		return m_valid = true;
+			return m_valid = true;
+		});
 	}
 
 	bool Framebuffer::IsValid() const
@@ -209,24 +222,28 @@ namespace baregl
 
 	uint32_t Framebuffer::Snapshot::GetID() const
 	{
-		if (!m_data) throw std::logic_error("Empty framebuffer snapshot");
-		if (!m_data->realized)
-		{
-			auto target = std::make_unique<Framebuffer>(m_data->debugName);
-			target->m_attachments = m_data->attachments;
-			target->m_layers = m_data->layers;
-			target->m_drawBuffer = m_data->drawBuffer;
-			target->m_readBuffer = m_data->readBuffer;
-			target->ApplyAttachments();
-			if (!target->Validate()) throw std::runtime_error("Recorded framebuffer is incomplete");
-			m_data->realized = std::move(target);
-		}
-		return m_data->realized->GetID();
+		return ResourceExecutor::Invoke([&]() -> uint32_t {
+			if (!m_data) throw std::logic_error("Empty framebuffer snapshot");
+			if (!m_data->realized)
+			{
+				auto target = std::make_unique<Framebuffer>(m_data->debugName);
+				target->m_attachments = m_data->attachments;
+				target->m_layers = m_data->layers;
+				target->m_drawBuffer = m_data->drawBuffer;
+				target->m_readBuffer = m_data->readBuffer;
+				target->ApplyAttachments();
+				if (!target->Validate()) throw std::runtime_error("Recorded framebuffer is incomplete");
+				m_data->realized = std::move(target);
+			}
+			return m_data->realized->GetID();
+		});
 	}
 
 	void Framebuffer::Snapshot::Bind() const
 	{
-		glBindFramebuffer(GL_FRAMEBUFFER, GetID());
+		return ResourceExecutor::Invoke([&]() -> void {
+			glBindFramebuffer(GL_FRAMEBUFFER, GetID());
+		});
 	}
 
 	std::pair<uint16_t, uint16_t> Framebuffer::Snapshot::GetSize() const
@@ -237,103 +254,113 @@ namespace baregl
 
     void Framebuffer::Snapshot::ReadRGBA8(std::span<uint8_t> p_pixels) const
     {
-        const auto [width, height] = GetSize();
-        if (!width || !height || p_pixels.size() != size_t(width) * height * 4)
-            throw std::invalid_argument("Invalid readback storage size");
-        const auto target = GetID();
-        GLint readTarget, packBuffer, alignment, rowLength, skipRows, skipPixels;
-        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readTarget);
-        glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &packBuffer);
-        glGetIntegerv(GL_PACK_ALIGNMENT, &alignment);
-        glGetIntegerv(GL_PACK_ROW_LENGTH, &rowLength);
-        glGetIntegerv(GL_PACK_SKIP_ROWS, &skipRows);
-        glGetIntegerv(GL_PACK_SKIP_PIXELS, &skipPixels);
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, target);
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-        glPixelStorei(GL_PACK_ALIGNMENT, 1);
-        glPixelStorei(GL_PACK_ROW_LENGTH, 0);
-        glPixelStorei(GL_PACK_SKIP_ROWS, 0);
-        glPixelStorei(GL_PACK_SKIP_PIXELS, 0);
-        glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, p_pixels.data());
-        glPixelStorei(GL_PACK_ALIGNMENT, alignment);
-        glPixelStorei(GL_PACK_ROW_LENGTH, rowLength);
-        glPixelStorei(GL_PACK_SKIP_ROWS, skipRows);
-        glPixelStorei(GL_PACK_SKIP_PIXELS, skipPixels);
-        glBindBuffer(GL_PIXEL_PACK_BUFFER, packBuffer);
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, readTarget);
+        return ResourceExecutor::Invoke([&]() -> void {
+            const auto [width, height] = GetSize();
+            if (!width || !height || p_pixels.size() != size_t(width) * height * 4)
+                throw std::invalid_argument("Invalid readback storage size");
+            const auto target = GetID();
+            GLint readTarget, packBuffer, alignment, rowLength, skipRows, skipPixels;
+            glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readTarget);
+            glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &packBuffer);
+            glGetIntegerv(GL_PACK_ALIGNMENT, &alignment);
+            glGetIntegerv(GL_PACK_ROW_LENGTH, &rowLength);
+            glGetIntegerv(GL_PACK_SKIP_ROWS, &skipRows);
+            glGetIntegerv(GL_PACK_SKIP_PIXELS, &skipPixels);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, target);
+            glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+            glPixelStorei(GL_PACK_ALIGNMENT, 1);
+            glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+            glPixelStorei(GL_PACK_SKIP_ROWS, 0);
+            glPixelStorei(GL_PACK_SKIP_PIXELS, 0);
+            glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, p_pixels.data());
+            glPixelStorei(GL_PACK_ALIGNMENT, alignment);
+            glPixelStorei(GL_PACK_ROW_LENGTH, rowLength);
+            glPixelStorei(GL_PACK_SKIP_ROWS, skipRows);
+            glPixelStorei(GL_PACK_SKIP_PIXELS, skipPixels);
+            glBindBuffer(GL_PIXEL_PACK_BUFFER, packBuffer);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, readTarget);
+        });
     }
 
 	void Framebuffer::BindDefault()
 	{
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		return ResourceExecutor::Invoke([&]() -> void {
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		});
 	}
 
 	void Framebuffer::Resize(uint16_t p_width, uint16_t p_height)
 	{
-		if (!IsValid() || !p_width || !p_height) throw std::invalid_argument("Invalid framebuffer resize");
-		if (GetSize() == std::pair{p_width, p_height}) return;
-		Framebuffer candidate(m_debugName);
-		candidate.m_layers = m_layers;
-		candidate.m_drawBuffer = m_drawBuffer;
-		candidate.m_readBuffer = m_readBuffer;
-		std::unordered_map<const Texture*, std::shared_ptr<Texture>> textures;
-		std::unordered_map<const Renderbuffer*, std::shared_ptr<Renderbuffer>> renderbuffers;
-		for (const auto& [key, attachment] : m_attachments)
-		{
-			if (const auto texture = std::get_if<std::shared_ptr<Texture>>(&attachment))
+		return ResourceExecutor::Invoke([&]() -> void {
+			if (!IsValid() || !p_width || !p_height) throw std::invalid_argument("Invalid framebuffer resize");
+			if (GetSize() == std::pair{p_width, p_height}) return;
+			Framebuffer candidate(m_debugName);
+			candidate.m_layers = m_layers;
+			candidate.m_drawBuffer = m_drawBuffer;
+			candidate.m_readBuffer = m_readBuffer;
+			std::unordered_map<const Texture*, std::shared_ptr<Texture>> textures;
+			std::unordered_map<const Renderbuffer*, std::shared_ptr<Renderbuffer>> renderbuffers;
+			for (const auto& [key, attachment] : m_attachments)
 			{
-				auto& replacement = textures[texture->get()];
-				if (!replacement) replacement = (*texture)->CreateResizedStorage(p_width, p_height);
-				candidate.m_attachments.emplace(key, replacement);
+				if (const auto texture = std::get_if<std::shared_ptr<Texture>>(&attachment))
+				{
+					auto& replacement = textures[texture->get()];
+					if (!replacement) replacement = (*texture)->CreateResizedStorage(p_width, p_height);
+					candidate.m_attachments.emplace(key, replacement);
+				}
+				else
+				{
+					const auto& renderbuffer = std::get<std::shared_ptr<Renderbuffer>>(attachment);
+					auto& replacement = renderbuffers[renderbuffer.get()];
+					if (!replacement) replacement = renderbuffer->CreateResizedStorage(p_width, p_height);
+					candidate.m_attachments.emplace(key, replacement);
+				}
 			}
-			else
-			{
-				const auto& renderbuffer = std::get<std::shared_ptr<Renderbuffer>>(attachment);
-				auto& replacement = renderbuffers[renderbuffer.get()];
-				if (!replacement) replacement = renderbuffer->CreateResizedStorage(p_width, p_height);
-				candidate.m_attachments.emplace(key, replacement);
-			}
-		}
-		candidate.ApplyAttachments();
-		if (!candidate.Validate()) throw std::runtime_error("Resized framebuffer is incomplete");
-		// Preserve this FBO's native identity; publish only after allocation and validation.
-		m_attachments.swap(candidate.m_attachments);
-		ApplyAttachments();
-		m_snapshot.reset();
+			candidate.ApplyAttachments();
+			if (!candidate.Validate()) throw std::runtime_error("Resized framebuffer is incomplete");
+			// Preserve this FBO's native identity; publish only after allocation and validation.
+			m_attachments.swap(candidate.m_attachments);
+			ApplyAttachments();
+			m_snapshot.reset();
+		});
 	}
 
 	void Framebuffer::SetTargetDrawBuffer(std::optional<uint32_t> p_index)
 	{
-		BAREGL_ASSERT(IsValid(), "Invalid framebuffer");
-		BAREGL_ASSERT(!p_index.has_value() || p_index < k_maxColorAttachmentCount, "Color attachment index must be in range [0, 31]");
+		return ResourceExecutor::Invoke([&]() -> void {
+			BAREGL_ASSERT(IsValid(), "Invalid framebuffer");
+			BAREGL_ASSERT(!p_index.has_value() || p_index < k_maxColorAttachmentCount, "Color attachment index must be in range [0, 31]");
 
-		if (p_index.has_value())
-		{
-			glNamedFramebufferDrawBuffer(m_id, GL_COLOR_ATTACHMENT0 + p_index.value());
-		}
-		else
-		{
-			glNamedFramebufferDrawBuffer(m_id, GL_NONE);
-		}
-		if (m_drawBuffer != p_index) m_snapshot.reset();
-		m_drawBuffer = p_index;
+			if (p_index.has_value())
+			{
+				glNamedFramebufferDrawBuffer(m_id, GL_COLOR_ATTACHMENT0 + p_index.value());
+			}
+			else
+			{
+				glNamedFramebufferDrawBuffer(m_id, GL_NONE);
+			}
+			if (m_drawBuffer != p_index) m_snapshot.reset();
+			m_drawBuffer = p_index;
+		});
 	}
 
 	void Framebuffer::SetTargetReadBuffer(std::optional<uint32_t> p_index)
 	{
-		BAREGL_ASSERT(IsValid(), "Invalid framebuffer");
-		BAREGL_ASSERT(!p_index.has_value() || p_index < k_maxColorAttachmentCount, "Color attachment index must be in range [0, 31]");
+		return ResourceExecutor::Invoke([&]() -> void {
+			BAREGL_ASSERT(IsValid(), "Invalid framebuffer");
+			BAREGL_ASSERT(!p_index.has_value() || p_index < k_maxColorAttachmentCount, "Color attachment index must be in range [0, 31]");
 
-		if (p_index.has_value())
-		{
-			glNamedFramebufferReadBuffer(m_id, GL_COLOR_ATTACHMENT0 + p_index.value());
-		}
-		else
-		{
-			glNamedFramebufferReadBuffer(m_id, GL_NONE);
-		}
-		if (m_readBuffer != p_index) m_snapshot.reset();
-		m_readBuffer = p_index;
+			if (p_index.has_value())
+			{
+				glNamedFramebufferReadBuffer(m_id, GL_COLOR_ATTACHMENT0 + p_index.value());
+			}
+			else
+			{
+				glNamedFramebufferReadBuffer(m_id, GL_NONE);
+			}
+			if (m_readBuffer != p_index) m_snapshot.reset();
+			m_readBuffer = p_index;
+		});
 	}
 
 	std::pair<uint16_t, uint16_t> Framebuffer::GetSize() const
@@ -365,16 +392,18 @@ namespace baregl
 
 	void Framebuffer::BlitToBackBuffer(uint16_t p_backBufferWidth, uint16_t p_backBufferHeight) const
 	{
-		BAREGL_ASSERT(IsValid(), "Cannot blit an invalid framebuffer");
+		return ResourceExecutor::Invoke([&]() -> void {
+			BAREGL_ASSERT(IsValid(), "Cannot blit an invalid framebuffer");
 
-		auto [width, height] = GetSize();
+			auto [width, height] = GetSize();
 
-		glBlitNamedFramebuffer(
-			m_id, 0,
-			0, 0, width, height,
-			0, 0, p_backBufferWidth, p_backBufferHeight,
-			GL_COLOR_BUFFER_BIT, GL_LINEAR
-		);
+			glBlitNamedFramebuffer(
+				m_id, 0,
+				0, 0, width, height,
+				0, 0, p_backBufferWidth, p_backBufferHeight,
+				GL_COLOR_BUFFER_BIT, GL_LINEAR
+			);
+		});
 	}
 
 	void Framebuffer::ReadPixels(
@@ -386,19 +415,21 @@ namespace baregl
 		types::EPixelDataType p_type,
 		void* p_data) const
 	{
-		BAREGL_ASSERT(IsValid(), "Cannot read pixels from an invalid framebuffer");
-		BAREGL_ASSERT(p_width > 0 && p_height > 0, "Invalid read size");
+		ResourceExecutor::Invoke([&] {
+			BAREGL_ASSERT(IsValid(), "Cannot read pixels from an invalid framebuffer");
+			BAREGL_ASSERT(p_width > 0 && p_height > 0, "Invalid read size");
 
-		Bind();
-		glReadPixels(
-			p_x, p_y,
-			p_width,
-			p_height,
-			utils::EnumToValue<GLenum>(p_format),
-			utils::EnumToValue<GLenum>(p_type),
-			p_data
-		);
-		Unbind();
+			Bind();
+			glReadPixels(
+				p_x, p_y,
+				p_width,
+				p_height,
+				utils::EnumToValue<GLenum>(p_format),
+				utils::EnumToValue<GLenum>(p_type),
+				p_data
+			);
+			Unbind();
+		});
 	}
 
 	const std::string& Framebuffer::GetDebugName() const

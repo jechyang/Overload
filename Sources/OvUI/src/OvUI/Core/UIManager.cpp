@@ -14,6 +14,7 @@
 #include <imgui_internal.h>
 #include <OvUI/Internal/TextureID.h>
 #include <optional>
+#include <baregl/ResourceExecutor.h>
 
 OvUI::Core::UIManager::UIManager(OvWindowing::Window& p_window, Styling::EStyle p_style, std::string_view p_glslVersion) :
 	m_window(p_window)
@@ -26,7 +27,7 @@ OvUI::Core::UIManager::UIManager(OvWindowing::Window& p_window, Styling::EStyle 
 	ApplyStyle(p_style);
 	
 	ImGui_ImplGlfw_InitForOpenGL(m_window.GetGlfwWindow(), true);
-	ImGui_ImplOpenGL3_Init(p_glslVersion.data());
+	baregl::ResourceExecutor::Invoke([&] { ImGui_ImplOpenGL3_Init(p_glslVersion.data()); });
 
 	m_contentScaleChangedListener = m_window.ContentScaleChangedEvent += [this](float x, float y) {
 		if (m_dpiAware)
@@ -213,7 +214,7 @@ void OvUI::Core::UIManager::Render()
 {
     SetCommandRecordingEnabled(false);
     if (m_currentCanvas && m_currentCanvas->BuildFrame(true))
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        baregl::ResourceExecutor::Invoke([] { ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData()); });
 }
 
 void OvUI::Core::UIManager::SetCommandRecordingEnabled(bool p_enabled)
@@ -223,7 +224,7 @@ void OvUI::Core::UIManager::SetCommandRecordingEnabled(bool p_enabled)
     {
         auto recorder = std::make_unique<Rendering::DrawDataRecorder>();
         ImGui_ImplOpenGL3_DestroyDeviceObjects();
-        ImGui_ImplOpenGL3_NewFrame();
+        baregl::ResourceExecutor::Invoke([] { ImGui_ImplOpenGL3_NewFrame(); });
         m_recorder = std::move(recorder);
     }
     else

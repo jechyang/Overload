@@ -4,6 +4,7 @@
 * @licence: MIT
 */
 
+#include <baregl/ResourceExecutor.h>
 #include <baregl/ShaderStage.h>
 
 #include <baregl/debug/Event.h>
@@ -19,9 +20,11 @@ namespace baregl
 		detail::NativeObject(ResourceKind::SHADER),
 		m_type{ p_type }
 	{
-		m_id = glCreateShader(utils::EnumToValue<GLenum>(p_type));
-		AdoptNativeID();
-		NOTIFY_SHADER_STAGE_CREATED;
+		ResourceExecutor::Invoke([&]() -> void {
+			m_id = glCreateShader(utils::EnumToValue<GLenum>(p_type));
+			AdoptNativeID();
+			NOTIFY_SHADER_STAGE_CREATED;
+		});
 	}
 
 	ShaderStage::~ShaderStage()
@@ -31,34 +34,38 @@ namespace baregl
 
 	void ShaderStage::Upload(const std::string& p_source) const
 	{
-		const char* source = p_source.c_str();
-		glShaderSource(m_id, 1, &source, nullptr);
+		return ResourceExecutor::Invoke([&]() -> void {
+			const char* source = p_source.c_str();
+			glShaderSource(m_id, 1, &source, nullptr);
+		});
 	}
 
 	baregl::data::ShaderCompilationResult ShaderStage::Compile() const
 	{
-		glCompileShader(m_id);
+		return ResourceExecutor::Invoke([&]() -> baregl::data::ShaderCompilationResult {
+			glCompileShader(m_id);
 
-		GLint compileStatus;
-		glGetShaderiv(m_id, GL_COMPILE_STATUS, &compileStatus);
+			GLint compileStatus;
+			glGetShaderiv(m_id, GL_COMPILE_STATUS, &compileStatus);
 
-		if (compileStatus == GL_FALSE)
-		{
-			GLint maxLength;
-			glGetShaderiv(m_id, GL_INFO_LOG_LENGTH, &maxLength);
+			if (compileStatus == GL_FALSE)
+			{
+				GLint maxLength;
+				glGetShaderiv(m_id, GL_INFO_LOG_LENGTH, &maxLength);
 
-			std::string errorLog(maxLength, ' ');
-			glGetShaderInfoLog(m_id, maxLength, &maxLength, errorLog.data());
+				std::string errorLog(maxLength, ' ');
+				glGetShaderInfoLog(m_id, maxLength, &maxLength, errorLog.data());
+
+				return {
+					.success = false,
+					.message = errorLog
+				};
+			}
 
 			return {
-				.success = false,
-				.message = errorLog
+				.success = true
 			};
-		}
-
-		return {
-			.success = true
-		};
+		});
 	}
 
 	types::EShaderType ShaderStage::GetType() const

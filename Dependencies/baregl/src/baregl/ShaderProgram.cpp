@@ -4,6 +4,7 @@
 * @licence: MIT
 */
 
+#include <baregl/ResourceExecutor.h>
 #include <baregl/ShaderProgram.h>
 
 #include <baregl/debug/Assert.h>
@@ -22,9 +23,11 @@ namespace baregl
 	ShaderProgram::ShaderProgram() :
 		detail::NativeObject(ResourceKind::PROGRAM)
 	{
-		m_id = glCreateProgram();
-		AdoptNativeID();
-		NOTIFY_SHADER_PROGRAM_CREATED;
+		ResourceExecutor::Invoke([&]() -> void {
+			m_id = glCreateProgram();
+			AdoptNativeID();
+			NOTIFY_SHADER_PROGRAM_CREATED;
+		});
 	}
 
 	ShaderProgram::~ShaderProgram()
@@ -34,80 +37,94 @@ namespace baregl
 
 	void ShaderProgram::Bind() const
 	{
-		glUseProgram(m_id);
+		return ResourceExecutor::Invoke([&]() -> void {
+			glUseProgram(m_id);
+		});
 	}
 
 	void ShaderProgram::Unbind() const
 	{
-		glUseProgram(0);
+		return ResourceExecutor::Invoke([&]() -> void {
+			glUseProgram(0);
+		});
 	}
 
 	void ShaderProgram::Attach(const ShaderStage& p_shader)
 	{
-		glAttachShader(m_id, p_shader.GetID());
-		m_attachedShaders.push_back(std::ref(p_shader));
+		return ResourceExecutor::Invoke([&]() -> void {
+			glAttachShader(m_id, p_shader.GetID());
+			m_attachedShaders.push_back(std::ref(p_shader));
+		});
 	}
 
 	void ShaderProgram::Detach(const ShaderStage& p_shader)
 	{
-		glDetachShader(m_id, p_shader.GetID());
-		m_attachedShaders.erase(std::remove_if(
-			m_attachedShaders.begin(),
-			m_attachedShaders.end(),
-			[&p_shader](const std::reference_wrapper<const ShaderStage> shader) {
-				return shader.get().GetID() == p_shader.GetID();
-			}
-		));
+		return ResourceExecutor::Invoke([&]() -> void {
+			glDetachShader(m_id, p_shader.GetID());
+			m_attachedShaders.erase(std::remove_if(
+				m_attachedShaders.begin(),
+				m_attachedShaders.end(),
+				[&p_shader](const std::reference_wrapper<const ShaderStage> shader) {
+					return shader.get().GetID() == p_shader.GetID();
+				}
+			));
+		});
 	}
 
 	void ShaderProgram::DetachAll()
 	{
-		for (auto& shader : m_attachedShaders)
-		{
-			glDetachShader(m_id, shader.get().GetID());
-		}
+		return ResourceExecutor::Invoke([&]() -> void {
+			for (auto& shader : m_attachedShaders)
+			{
+				glDetachShader(m_id, shader.get().GetID());
+			}
 
-		m_attachedShaders.clear();
+			m_attachedShaders.clear();
+		});
 	}
 
 	baregl::data::ShaderLinkingResult ShaderProgram::Link()
 	{
-		glLinkProgram(m_id);
+		return ResourceExecutor::Invoke([&]() -> baregl::data::ShaderLinkingResult {
+			glLinkProgram(m_id);
 
-		GLint linkStatus;
-		glGetProgramiv(m_id, GL_LINK_STATUS, &linkStatus);
+			GLint linkStatus;
+			glGetProgramiv(m_id, GL_LINK_STATUS, &linkStatus);
 
-		if (linkStatus == GL_FALSE)
-		{
-			GLint maxLength;
-			glGetProgramiv(m_id, GL_INFO_LOG_LENGTH, &maxLength);
+			if (linkStatus == GL_FALSE)
+			{
+				GLint maxLength;
+				glGetProgramiv(m_id, GL_INFO_LOG_LENGTH, &maxLength);
 
-			std::string errorLog(maxLength, ' ');
-			glGetProgramInfoLog(m_id, maxLength, &maxLength, errorLog.data());
+				std::string errorLog(maxLength, ' ');
+				glGetProgramInfoLog(m_id, maxLength, &maxLength, errorLog.data());
+
+				return {
+					.success = false,
+					.message = errorLog
+				};
+			}
+
+			QueryUniforms();
 
 			return {
-				.success = false,
-				.message = errorLog
+				.success = true
 			};
-		}
-
-		QueryUniforms();
-
-		return {
-			.success = true
-		};
+		});
 	}
 
 #define DECLARE_GET_UNIFORM_FUNCTION(type, glType, func) \
 template<> \
 type ShaderProgram::GetUniform<type>(const std::string& p_name) \
 { \
+	return ResourceExecutor::Invoke([&]() -> type { \
 	type result{}; \
 	if (auto it = m_uniformsLocationCache.find(p_name); it != m_uniformsLocationCache.end()) \
 	{ \
 		func(m_id, it->second, reinterpret_cast<glType*>(&result)); \
 	} \
 	return result; \
+	}); \
 }
 
 	DECLARE_GET_UNIFORM_FUNCTION(int, GLint, glGetUniformiv);
@@ -123,20 +140,22 @@ type ShaderProgram::GetUniform<type>(const std::string& p_name) \
 template<> \
 void ShaderProgram::SetUniform<type>(const std::string& p_name, const type& value) \
 { \
+	ResourceExecutor::Invoke([&] { \
 	if (auto it = m_uniformsLocationCache.find(p_name); it != m_uniformsLocationCache.end()) \
 	{ \
-		func(it->second, __VA_ARGS__); \
+		func(m_id, it->second, __VA_ARGS__); \
 	} \
+	}); \
 }
 
-	DECLARE_SET_UNIFORM_FUNCTION(int, glUniform1i, value);
-	DECLARE_SET_UNIFORM_FUNCTION(unsigned int, glUniform1ui, value);
-	DECLARE_SET_UNIFORM_FUNCTION(float, glUniform1f, value);
-	DECLARE_SET_UNIFORM_FUNCTION(math::Vec2, glUniform2f, value.x, value.y);
-	DECLARE_SET_UNIFORM_FUNCTION(math::Vec3, glUniform3f, value.x, value.y, value.z);
-	DECLARE_SET_UNIFORM_FUNCTION(math::Vec4, glUniform4f, value.x, value.y, value.z, value.w);
-	DECLARE_SET_UNIFORM_FUNCTION(math::Mat3, glUniformMatrix3fv, 1, GL_FALSE, &value[0][0]);
-	DECLARE_SET_UNIFORM_FUNCTION(math::Mat4, glUniformMatrix4fv, 1, GL_FALSE, &value[0][0]);
+	DECLARE_SET_UNIFORM_FUNCTION(int, glProgramUniform1i, value);
+	DECLARE_SET_UNIFORM_FUNCTION(unsigned int, glProgramUniform1ui, value);
+	DECLARE_SET_UNIFORM_FUNCTION(float, glProgramUniform1f, value);
+	DECLARE_SET_UNIFORM_FUNCTION(math::Vec2, glProgramUniform2f, value.x, value.y);
+	DECLARE_SET_UNIFORM_FUNCTION(math::Vec3, glProgramUniform3f, value.x, value.y, value.z);
+	DECLARE_SET_UNIFORM_FUNCTION(math::Vec4, glProgramUniform4f, value.x, value.y, value.z, value.w);
+	DECLARE_SET_UNIFORM_FUNCTION(math::Mat3, glProgramUniformMatrix3fv, 1, GL_FALSE, &value[0][0]);
+	DECLARE_SET_UNIFORM_FUNCTION(math::Mat4, glProgramUniformMatrix4fv, 1, GL_FALSE, &value[0][0]);
 
 	std::optional<std::reference_wrapper<const baregl::data::UniformInfo>> ShaderProgram::GetUniformInfo(const std::string& p_name) const
 	{

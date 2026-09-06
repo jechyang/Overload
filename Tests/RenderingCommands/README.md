@@ -165,3 +165,7 @@ Debug/Release --log-dispatch 独立运行，覆盖拥有型主线程事件、六
 ## Tracy GPU 查询与 TLS 退出（阶段 3 第六增量）
 
 完整构建后运行 Debug/Release --gpu-profiling（可追加 --vs），输出 <配置>-gpu-profiling/current。当前 Driver 测试副本仅插入 profiling 初始化前/后两个回调，安装 GL hook 并注入失败，不改变正常生命周期逻辑或 ABI。验证 8 次主线程/8 次 Render 重启的查询名称匹配、TLS 归零、重复创建/销毁及两类初始化失败；正常产品回归链接未插桩的 Driver。生成的 exe 可接收输出目录和 --capture，等待本机 Tracy 连接并验证尾部时间戳收集。见 MULTITHREADING_GPU_PROFILING_VALIDATION.md。
+
+## 资源调用与 UI 后端分派（阶段 3 第七增量）
+
+重新生成工程并完整构建后运行 Debug/Release --resource-executor（可追加 --vs），输出 <配置>-resource-executor/current。主线程无 GL 上下文，通过显式 ResourceExecutor 同步调用真正的资源类与 UIManager/Canvas；GL hooks 检查固定 owner。覆盖七类资源、上传/读回/resize 旧存储、shader 诊断及跨帧 uniform 指向、UI 像素对拍与源销毁、作用域/异常/关闭。协议及产品接入边界见 MULTITHREADING_RESOURCE_EXECUTOR_VALIDATION.md。
