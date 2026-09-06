@@ -173,3 +173,7 @@ Debug/Release --log-dispatch 独立运行，覆盖拥有型主线程事件、六
 ## Game 实际双线程（阶段 3 第八增量）
 
 完整构建后独立运行 Debug/Release --game-thread（可追加 --vs），输出 <配置>-game-thread/current。新建保存项目，比较实际 Application/Game 的主线程与 Render Context 32 帧姿态/场景/UI；验证自然交叠、两帧容量、重载/退出/重建/失败。测试 Window 副本只在 Present 之前插入 backbuffer 读回 hook。生成 exe 可接收输出目录及 --capture，等待 Tracy 连接并验证消费线程 GPU scope。Game.ini 的 render_thread=true 要求 render_commands=true，暂不默认开启；Editor 接入和最终性能/延迟验收仍待完成，见 MULTITHREADING_GAME_THREAD_VALIDATION.md。
+
+## Editor 实际双线程与在途交互（阶段 3 第九增量）
+
+完整构建后独立运行 Debug/Release --editor-thread（可追加 --vs），输出 <配置>-editor-thread-command-list-editor-ui/current。创建保存项目并运行旧 Editor 回归，再比较实际 Application 的同线程/Render Context 16 帧三视图、完整测试画布与姿态。覆盖两帧积压交互、拾取/材质拖放、源视图覆盖、场景替换、四次应用重建、实际 Run 退出及呈现失败。生成 exe 可接收输出目录和 --capture，独占连接 Tracy 检查 owner 查询。固定画布图像 oracle 显式排空；自然交叠单独验证，性能/完整 UI/窗口/输入延迟仍待后续验收。见 MULTITHREADING_EDITOR_THREAD_VALIDATION.md。

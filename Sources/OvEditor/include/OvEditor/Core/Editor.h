@@ -10,6 +10,7 @@
 #include <OvRendering/Data/RenderFrame.h>
 #include <OvEditor/Panels/SceneView.h>
 #include <optional>
+#include <deque>
 
 #include <OvEditor/Core/Context.h>
 #include <OvEditor/Core/EditorActions.h>
@@ -90,10 +91,12 @@ namespace OvEditor::Core
 		*/
 		void RenderViews(float p_deltaTime);
 
-		// Same-thread frame handoff. Complete before recording another frame to apply picking.
+		// Manual frame handoff accepts the latest result. Product submissions retain
+        // a separate interaction/completion entry for every in-flight frame.
 		OvRendering::Data::RenderFrame RecordRenderFrame(float p_deltaTime);
 		bool CompleteRenderFrame(const OvRendering::Data::RenderFrame::Completion& completion);
         void SetFrameSubmissionEnabled(bool enabled);
+        void DrainRenderFrames();
         bool IsFrameSubmissionEnabled() const { return m_frameSubmissionEnabled; }
 
 		/**
@@ -109,6 +112,13 @@ namespace OvEditor::Core
 		void PostUpdate();
 
 	private:
+        void CollectCompletedFrames();
+        struct InFlightFrame
+        {
+            OvRendering::Data::RenderFrame::Completion completion;
+            std::shared_ptr<Panels::SceneView::Interaction> interaction;
+        };
+        std::deque<InFlightFrame> m_inFlightFrames;
 		uint64_t m_elapsedFrames = 0;
 		uint64_t m_recordedFrameID = 0;
         bool m_frameSubmissionEnabled = false;

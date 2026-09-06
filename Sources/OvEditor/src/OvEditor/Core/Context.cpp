@@ -113,11 +113,29 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 	const auto fallbackWindowIconPath = engineAssetsPath / "Textures" / "Overload.png";
 	window->SetIcon(fallbackWindowIconPath.string());
 	inputManager = std::make_unique<OvWindowing::Inputs::InputManager>(*window);
-	window->MakeCurrentContext();
-	device->SetVsync(true);
-
-	/* Graphics context creation */
-	driver = std::make_unique<OvRendering::Context::Driver>(OvRendering::Settings::DriverSettings{ true });
+    /* Graphics context creation */
+    if (projectSettings.GetOrDefault<bool>("render_thread", false))
+    {
+        if (!projectSettings.GetOrDefault<bool>("render_commands", true))
+            throw std::invalid_argument("render_thread requires render_commands");
+        OvWindowing::Window::DetachCurrentContext();
+        renderThread = std::make_unique<OvRendering::Threading::RenderThread>([this] {
+            window->MakeCurrentContext();
+            device->SetVsync(true);
+            auto owned = std::make_unique<OvRendering::Context::Driver>(OvRendering::Settings::DriverSettings{ true });
+            driver = std::shared_ptr<OvRendering::Context::Driver>(owned.get(), [](auto*) {});
+            return owned;
+        }, [] { OvWindowing::Window::DetachCurrentContext(); });
+        resourceExecutor = std::make_unique<baregl::ResourceExecutor>([this](std::function<void()> work) {
+            renderThread->Invoke([&](auto&) { work(); });
+        });
+    }
+    else
+    {
+        window->MakeCurrentContext();
+        device->SetVsync(true);
+        driver = std::make_shared<OvRendering::Context::Driver>(OvRendering::Settings::DriverSettings{ true });
+    }
 
 	std::filesystem::create_directories(Utils::FileSystem::kEditorDataPath);
 

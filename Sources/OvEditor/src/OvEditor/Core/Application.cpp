@@ -32,6 +32,7 @@ void OvEditor::Core::Application::Run()
 		clock.Update();
 		FrameMark;
 	}
+    m_editor.DrainRenderFrames();
 }
 
 bool OvEditor::Core::Application::IsRunning() const

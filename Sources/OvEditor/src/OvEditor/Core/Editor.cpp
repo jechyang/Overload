@@ -55,10 +55,21 @@ OvEditor::Core::Editor::Editor(Context& p_context) :
 	SetupUI();
 
 	m_context.sceneManager.LoadDefaultScene();
+    if (m_context.renderThread) SetFrameSubmissionEnabled(true);
 }
 
 OvEditor::Core::Editor::~Editor()
 {
+    try
+    {
+        if (m_context.renderThread && m_pendingFrame)
+        {
+            m_context.renderThread->Discard(std::move(*m_pendingFrame));
+            m_pendingFrame.reset();
+        }
+        DrainRenderFrames();
+    }
+    catch (const std::exception& error) { OVLOG_ERROR(error.what()); }
 	OvCore::Helpers::GUIHelpers::SetActorIconID(0);
 	OvCore::Helpers::GUIHelpers::SetIconProvider({});
 	Settings::EditorSettings::Save();
@@ -223,11 +234,13 @@ void OvEditor::Core::Editor::PreUpdate()
 {
 	ZoneScopedN("Editor Pre-Update");
 	OvDebug::Logger::DispatchPendingEvents();
+    CollectCompletedFrames();
 	m_context.device->PollEvents();
 }
 
 void OvEditor::Core::Editor::Update(float p_deltaTime)
 {
+    ZoneScopedN("Editor Update");
     if (m_pendingFrame) throw std::logic_error("Previous Editor frame has not been submitted");
 	// Disable mouse input when the cursor is locked during gameplay or view interaction.
 	const bool mouseEnabled = m_context.window->GetCursorMode() != OvWindowing::Cursor::ECursorMode::DISABLED;
@@ -490,6 +503,8 @@ void OvEditor::Core::Editor::RenderEditorUI(float p_deltaTime)
 void OvEditor::Core::Editor::SetFrameSubmissionEnabled(bool enabled)
 {
     if (m_pendingFrame) throw std::logic_error("Cannot switch Editor submission mode during a frame");
+    if (!enabled && m_context.renderThread) throw std::logic_error("Threaded Editor requires command submission");
+    DrainRenderFrames();
     for (const auto* name : {"Asset View", "Game View", "Scene View"})
         m_panelsManager.GetPanelAs<Panels::AView>(name).SetCommandRecordingEnabled(enabled);
     m_context.uiManager->SetCommandRecordingEnabled(enabled);
@@ -500,6 +515,7 @@ void OvEditor::Core::Editor::SetFrameSubmissionEnabled(bool enabled)
 void OvEditor::Core::Editor::PostUpdate()
 {
     ZoneScopedN("Editor Post-Update");
+    CollectCompletedFrames();
     std::exception_ptr error;
     if (m_frameSubmissionEnabled)
     {
@@ -507,9 +523,30 @@ void OvEditor::Core::Editor::PostUpdate()
         auto frame = std::move(*m_pendingFrame); m_pendingFrame.reset();
         try
         {
-            frame.Submit(*m_context.driver, [&] { m_context.window->SwapBuffers(); });
-            frame.Wait(); frame.GetCompletion().RethrowIfFailed();
-            CompleteRenderFrame(frame.GetCompletion());
+            if (m_context.renderThread)
+            {
+                m_context.window->ApplyPendingCursor();
+                m_inFlightFrames.push_back({frame.GetCompletion(), std::move(m_recordedInteraction)});
+                m_latestFrameCompletion = {};
+                try
+                {
+                    m_context.renderThread->Submit(std::move(frame), [window = m_context.window.get()] { window->Present(); });
+                }
+                catch (...)
+                {
+                    m_inFlightFrames.pop_back();
+                    m_context.renderThread->Discard(std::move(frame));
+                    throw;
+                }
+            }
+            else
+            {
+                frame.Submit(*m_context.driver, [&] { m_context.window->SwapBuffers(); });
+                frame.Wait(); frame.GetCompletion().RethrowIfFailed();
+                CompleteRenderFrame(frame.GetCompletion());
+            }
+            // Main frame cadence, independent of GPU completion. Source deletion
+            // is safe after recording; captured interactions validate scene/GUID.
             m_editorActions.ExecuteDelayedActions();
         }
         catch (...) { error = std::current_exception(); }
@@ -522,4 +559,22 @@ void OvEditor::Core::Editor::PostUpdate()
     m_context.inputManager->ClearEvents();
     ++m_elapsedFrames;
     if (error) std::rethrow_exception(error);
+}
+
+void OvEditor::Core::Editor::CollectCompletedFrames()
+{
+    while (!m_inFlightFrames.empty() && m_inFlightFrames.front().completion.IsRetired())
+    {
+        auto frame = std::move(m_inFlightFrames.front()); m_inFlightFrames.pop_front();
+        frame.completion.RethrowIfFailed();
+        if (frame.interaction)
+            m_panelsManager.GetPanelAs<Panels::SceneView>("Scene View").CompleteInteraction(frame.interaction);
+    }
+    if (m_context.renderThread) m_context.renderThread->RethrowIfFailed();
+}
+
+void OvEditor::Core::Editor::DrainRenderFrames()
+{
+    if (m_context.renderThread) m_context.renderThread->WaitIdle();
+    CollectCompletedFrames();
 }

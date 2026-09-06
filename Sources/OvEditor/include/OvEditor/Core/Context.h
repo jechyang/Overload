@@ -11,6 +11,8 @@
 #include <variant>
 
 #include <baregl/Buffer.h>
+#include <baregl/ResourceExecutor.h>
+#include <OvRendering/Threading/RenderThread.h>
 
 #include <OvAudio/Core/AudioEngine.h>
 #include <OvCore/ResourceManagement/MaterialManager.h>
@@ -88,7 +90,11 @@ namespace OvEditor::Core
 		std::unique_ptr<OvWindowing::Context::Device> device;
 		std::unique_ptr<OvWindowing::Window> window;
 		std::unique_ptr<OvWindowing::Inputs::InputManager> inputManager;
-		std::unique_ptr<OvRendering::Context::Driver> driver;
+		// Resources/UI die before the producer scope, Render owner and window.
+        std::unique_ptr<OvRendering::Threading::RenderThread> renderThread;
+        std::unique_ptr<baregl::ResourceExecutor> resourceExecutor;
+        // Owning in legacy mode; RenderThread owns the Driver in threaded mode.
+        std::shared_ptr<OvRendering::Context::Driver> driver;
 		std::unique_ptr<OvUI::Core::UIManager> uiManager;
 		std::unique_ptr<OvPhysics::Core::PhysicsEngine> physicsEngine;
 		std::unique_ptr<OvAudio::Core::AudioEngine> audioEngine;

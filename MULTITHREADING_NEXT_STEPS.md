@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、1 已验收提交。阶段 2 已完成拥有型场景/编辑器/UI 帧命令、历史失效恢复、GPU 回收和同线程产品交互。阶段 3 已建立固定 Render owner、有界队列、资源/日志/纹理注册表/UI/Tracy 归属，Game 现可用 render_thread=true 接入实际双线程循环，正常逐帧不再 Wait。Debug/Release 实际姿态/图像、失败/重启/退出及连接 Tracy 的 GPU scope 验收通过，最新报告见 MULTITHREADING_GAME_THREAD_VALIDATION.md。render_thread 暂默认 false；Editor 仍为同线程产品循环。阶段 2/3 整体目标尚未完成，下一步 Editor 多帧交互与 Context 接入，随后进行窗口、压力、整帧性能和输入延迟验收。**
+**阶段 0、1 已验收提交。阶段 2 已完成拥有型场景/编辑器/UI 帧命令、历史失效恢复、GPU 回收和同线程产品交互。阶段 3 已建立固定 Render owner、有界队列、资源/日志/纹理注册表/UI/Tracy 归属，Game 和 Editor 现均可用 render_thread=true 接入实际双线程循环，正常逐帧不再 Wait；Editor 按提交顺序保存和应用每帧交互结果。两配置实际姿态/图像、失败/重启/退出、旧路径及独占连接 Tracy 验收通过，最新报告见 MULTITHREADING_EDITOR_THREAD_VALIDATION.md。render_thread 暂默认 false。阶段 2/3 整体目标尚未完成，下一步完整 UI、多帧输入/Gizmo、窗口/场景/退出压力和独立整帧性能/输入延迟验收。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -18,7 +18,7 @@
 - Scene::Update 新增接收 JobSystem 的重载，Editor/Game 已使用；连续、无脚本且仅含已核实组件的 Actor 可进行蒙皮批次评估，在下一处任意回调前等待并发布。原串行重载保留。
 - ParseScene 与 FilterDrawables 已按连续块并行、按块序合并，返回前等待所有任务，包括异常展开路径。
 - Parse 串行门槛 max(128, 2×worker)，Filter 为 max(256, 2×worker)；大批次目标约 4×worker 个块。不要未经测量重新调整。
-- **Game 可选固定 RenderThread（render_thread=true），GL 和呈现在 Render，更新/平台/UI 在 Main；Editor 仍在主线程提交。** Game 帧命令拥有消费数据，场景内 CPU 并行仍依赖稳定读写边界。
+- **Game/Editor 均可选固定 RenderThread（render_thread=true），GL 和呈现在 Render，更新/平台/UI 在 Main。** Game 帧命令拥有消费数据，场景内 CPU 并行仍依赖稳定读写边界。
 - 每个编辑器视图有独立 renderer。Filter 也会在 DrawFrame 内的反射 pass 调用，不能假设它只在 BeginFrame 运行。
 
 ### 阶段 0 的验收结论
@@ -286,6 +286,10 @@ ResourceExecutor 绑定生产线程，资源创建时在 owner 捕获回收域�
 
 Game Context 可选独立 RenderThread 并安装 ResourceExecutor；Main 更新、录制和处理输入，Render 呈现及 GPU 退役，正常逐帧不 Wait，在途容量为 2。GPU scope 延至消费线程；identity 检查、无变化 Resize 和反射面选择不再造成稳态录制同步。Debug/Release 各 32 组姿态/场景/UI 精确对拍、实际 Application 退出/4 次重建/呈现失败及原产品/动态回归通过；独占连接 Tracy 检查 2,032 次 owner 时间戳，采集可解析。详见 MULTITHREADING_GAME_THREAD_VALIDATION.md。render_thread 暂默认 false；下一步 Editor 多帧交互与 Context 接入，后续窗口/压力/性能及输入延迟仍待验收。
 
+### 5.9 已完成第九增量：Editor 双线程与在途交互
+
+Editor Context 安装固定 Render owner 和资源作用域，实际产品循环按两帧容量提交；每帧 completion/Interaction 独立保留并在 Main 按序应用。延迟 UI 动作按 Main 帧数推进，退出先取消/排空再拆场景/面板。Debug/Release 各 16 帧三视图/UI/姿态对拍、两帧阻塞交叠、实际拾取/材质拖放、场景替换、4 次应用重建和呈现失败及旧 Application 回归通过；独占 Tracy owner 查询与采集解析通过。详见 MULTITHREADING_EDITOR_THREAD_VALIDATION.md。下一步完整 UI、多帧输入/Gizmo、窗口 resize/最小化、场景/退出压力及独立 CPU/GPU、队列和输入延迟验收，暂未完成阶段 2/3 整体目标。
+
 ## 6. 阶段 4：多 Pass/View 并行命令录制
 
 - 使用阶段 0 的任务依赖描述 view/pass 之间的真实数据依赖；各 job 使用私有命令缓冲或独占 arena。
@@ -381,4 +385,4 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 ## 11. 新对话建议起始消息
 
-> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_GAME_THREAD_VALIDATION.md，继续完成阶段 2、3：Game 已可选实际双线程，下一步迁移 Editor Context，建立多帧交互/完成结果传递，验证视图/场景/窗口/退出和真实交叠，最后完成 CPU/GPU、队列和输入延迟验收。保持严格图像及源销毁回放对拍，按独立可验收增量提交 Git，不包含用户已有修改，后台验证。
+> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_EDITOR_THREAD_VALIDATION.md，继续完成阶段 2、3：Game/Editor 已可选实际双线程，下一步完整 UI、多帧输入/Gizmo、窗口 resize/最小化及场景/退出压力，随后独立量化 CPU/GPU、队列和输入到呈现/交互应用延迟，决定默认配置。保持严格图像及源销毁回放对拍，按可验收增量提交 Git，不包含用户已有修改，后台验证。
