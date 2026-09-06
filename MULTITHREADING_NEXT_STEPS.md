@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、阶段 1 均已完成约定范围验收。阶段 1 第三个增量已修复 Debug 热区、完成新建真实编辑器项目的批次命中率与多视图/暂停/逐帧/切场景验证。下一次从阶段 2「同线程渲染命令与帧数据所有权」的独立增量开始；不重做蒙皮调度，不直接跳到 Render 线程。最新结果见 MULTITHREADING_SKINNING_STAGE1_COMPLETION.md。**
+**阶段 0、阶段 1 均已完成约定范围验收并分别提交。阶段 2 首增量已拆分同线程几何命令准备/执行，完整帧所有权仍待后续逐类迁移；不直接跳到 Render 线程。阶段 2 最新范围与验收见 MULTITHREADING_RENDER_COMMAND_VALIDATION.md；阶段 1 收尾结果见 MULTITHREADING_SKINNING_STAGE1_COMPLETION.md。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -135,6 +135,14 @@
 
 **验收：** 单线程新旧路径命令顺序/状态对照、图像对拍；跨视图共享资源无状态污染；完成前资源保持有效；所有既有功能继续工作。
 
+### 4.1 首增量：同线程几何提交边界
+
+- ABaseRenderer 新增受保护的 GeometryDrawCommand、PrepareGeometryDraw、ExecuteGeometryDraw；命令按值持有不可变 PSO/primitive/instances，同次 DrawEntity 内立即消费借用的 IMesh。
+- 保持 feature 前处理、材质 Bind/Upload、几何提交、Unbind、feature 后处理顺序；执行几何命令不再读取 Drawable/Material。未提前查询 mesh count，以保持 Bind/查询顺序。
+- 现有命令不包含 shader、texture、uniform、palette、viewport、target，不能跨 draw 或跨帧保存。SceneDrawableDescriptor 的 Actor 引用与 SkinningDrawableDescriptor 的矩阵指针尚未迁移；详细所有权表见新报告。
+- 新增 `Debug/Release --geometry`，保留阶段 1 ABaseRenderer.cpp 作旧路径；对照实际 GL 顺序/状态、四种几何提交分支和图像。真实编辑器项目回归继续使用 `--editor`。最终结果与日志见 MULTITHREADING_RENDER_COMMAND_VALIDATION.md。
+- 下一增量从材质 CPU 参数/变体选择与 GL 上传拆分开始，固定单次属性、signature 和资源持有语义。然后逐步迁移 transform/palette/view/pass/target；阶段 2 整体尚未完成。
+
 ## 5. 阶段 3：Game/Render 双线程（A 形态）
 
 **目标：让固定 Render 线程消费稳定帧数据，Game/Main 线程负责应用更新与必要的平台/UI 事件。**
@@ -185,10 +193,10 @@
 ### 工作区
 
 - 原基准为 73ae710a57889bfde94184c3c8f073228e998144；工作分支 main。
-- 按用户要求补齐阶段提交：阶段 0 为 30eb8fe，阶段 1 的三个已验收增量合并为一个完整提交（本文件所属提交）。后续每个独立可验收增量完成检查后单独提交。
+- 按用户要求补齐阶段提交：阶段 0 为 30eb8fe，阶段 1 的三个已验收增量合并为 4f8da08。阶段 2 首增量为本文件所属的新提交；后续每个独立可验收增量完成检查后单独提交。
 - 仅提交多线程实现、测试与验收文档。Editor.cpp 的既有注释修改通过按 hunk 暂存排除；ItemPicker、SkeletalData、OvUI、.zcode 等其他用户改动仍留在工作树。
 - 历史验收是在包含这些既有用户改动的工作区中完成，不声称逐个检出了补提交来复现历史构建。Tests/Skinning 的旧源码基准仍固定为原基准，不因补提交而变化。
-- 未创建额外任务或推送远程。阶段 2 从当前基线按独立增量继续。
+- 未创建额外任务或推送远程。阶段 2 已建立首个几何边界，继续按独立增量推进。
 
 ### 构建（已实际验证的入口）
 
@@ -216,6 +224,7 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 - 第三增量最新报告：`MULTITHREADING_SKINNING_STAGE1_COMPLETION.md`；新增 `Debug/Release --editor`。可打开项目：`Build/JobsValidation/Skinning/Release-editor/current/SkinningProject/SkinningProject.ovproject`。测试会重新生成该专用项目。
 - 最新正式构建为 `msbuild-debug-skinning-stage1-retry.log`、`msbuild-release-skinning-stage1-final.log`，复制为 `skinning-stage1-build-artifacts.json`；最终独占性能 `skinning-stage1-perf-*`，Tracy 为 `tracy-skinning-stage1-release*`。
+- 阶段 2 首增量使用 `Debug/Release --geometry`，输出 `Build/JobsValidation/Skinning/<配置>-geometry/`；详情见 `Tests/RenderingCommands/README.md`。新构建日志后缀为 `geometry-stage2`，编辑器回归日志为 `geometry-editor-{debug,release}.log`，不将并发构建/验收期间的耗时作为性能基线。
 
 ### 只在需要时阅读的证据
 
@@ -231,4 +240,4 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 ## 11. 新对话建议起始消息
 
-> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_SKINNING_STAGE1_COMPLETION.md，以阶段 0/1 已验收的未提交工作区为基线，继续阶段 2 的第一个独立增量：梳理渲染命令与帧数据所有权，先在同一线程验证新旧命令消费顺序及图像。保留已有用户改动、串行对照和多视图语义；不要将 Actor/组件 vector 的裸引用浅拷贝跨帧，不直接引入 Render 线程。后台验证优先，不操作 VS2022 界面。
+> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_RENDER_COMMAND_VALIDATION.md，以已提交的阶段 0/1 和阶段 2 几何边界为基线，继续阶段 2 下一个独立增量：拆分材质 CPU 参数/变体选择与 GL 绑定上传，明确参数快照及资源持有，先同线程对拍再单独 git 提交。保留已有用户改动、旧路径对照和多视图语义；不要将 Actor/组件 vector 的裸引用浅拷贝跨帧，不直接引入 Render 线程。后台验证优先，不操作 VS2022 界面。

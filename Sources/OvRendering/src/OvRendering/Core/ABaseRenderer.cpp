@@ -5,6 +5,7 @@
 */
 
 #include <functional>
+#include <stdexcept>
 
 #include <baregl/Texture.h>
 #include <tracy/Tracy.hpp>
@@ -202,14 +203,17 @@ bool OvRendering::Core::ABaseRenderer::IsDrawable(const Entities::Drawable& p_dr
 		p_drawable.material->GetGPUInstances() > 0;
 }
 
-void OvRendering::Core::ABaseRenderer::DrawEntity(
-	OvRendering::Data::PipelineState p_pso,
+OvRendering::Core::ABaseRenderer::GeometryDrawCommand OvRendering::Core::ABaseRenderer::PrepareGeometryDraw(
+	Data::PipelineState p_pso,
 	const Entities::Drawable& p_drawable
 )
 {
-	ZoneScoped;
-
-	OVASSERT(IsDrawable(p_drawable), "Submitted an entity that isn't properly configured!");
+	ZoneScopedN("Prepare Geometry Draw");
+	// CPU-only. Resources and frame bindings remain owned by the synchronous caller.
+	if (!p_drawable.mesh || !p_drawable.material || p_drawable.material->GetGPUInstances() <= 0)
+	{
+		throw std::invalid_argument("Geometry draw requires a mesh, material and positive instance count");
+	}
 
 	p_pso.depthWriting = p_drawable.stateMask.depthWriting;
 	p_pso.colorWriting.mask = p_drawable.stateMask.colorWriting ? 0xFF : 0x00;
@@ -231,6 +235,29 @@ void OvRendering::Core::ABaseRenderer::DrawEntity(
 				baregl::types::ECullFace::FRONT;
 		}
 	}
+
+	return { p_pso, p_drawable.mesh.value(), p_drawable.primitiveMode,
+		static_cast<uint32_t>(p_drawable.material->GetGPUInstances()) };
+}
+
+void OvRendering::Core::ABaseRenderer::ExecuteGeometryDraw(const GeometryDrawCommand& p_command)
+{
+	ZoneScopedN("Execute Geometry Draw");
+	// Material, textures, uniforms and feature buffers have already been bound.
+	// No Scene, Actor, Drawable or Material is inspected during geometry submission.
+	m_driver.Draw(p_command.pipelineState, p_command.mesh, p_command.primitiveMode, p_command.instances);
+}
+
+void OvRendering::Core::ABaseRenderer::DrawEntity(
+	OvRendering::Data::PipelineState p_pso,
+	const Entities::Drawable& p_drawable
+)
+{
+	ZoneScoped;
+
+	OVASSERT(IsDrawable(p_drawable), "Submitted an entity that isn't properly configured!");
+
+	const auto geometryCommand = PrepareGeometryDraw(p_pso, p_drawable);
 
 	const auto signature = p_drawable.material->Bind(
 		p_drawable.pass,
@@ -257,12 +284,7 @@ void OvRendering::Core::ABaseRenderer::DrawEntity(
 
 	m_previousMaterialSignature = signature;
 
-	m_driver.Draw(
-		p_pso,
-		p_drawable.mesh.value(),
-		p_drawable.primitiveMode,
-		p_drawable.material->GetGPUInstances()
-	);
+	ExecuteGeometryDraw(geometryCommand);
 
 	p_drawable.material->Unbind();
 }

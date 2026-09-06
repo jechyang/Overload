@@ -121,6 +121,24 @@ namespace OvRendering::Core
 		);
 
 	protected:
+		// First command boundary: scalar geometry state is captured by value.
+		// The mesh is borrowed, not retained; its storage and GPU data must remain
+		// stable until execution. This is NOT a self-contained frame command:
+		// shaders, textures, uniforms, palettes, viewport and targets are external.
+		// Execute synchronously in the same draw, after feature/material setup and
+		// before cleanup. Cross-frame queuing and worker GL execution are forbidden.
+		struct GeometryDrawCommand
+		{
+			const Data::PipelineState pipelineState;
+			const Resources::IMesh& mesh;
+			const baregl::types::EPrimitiveMode primitiveMode;
+			const uint32_t instances;
+		};
+
+		// Pure CPU preparation; does not retain the Drawable or its Material.
+		static GeometryDrawCommand PrepareGeometryDraw(Data::PipelineState p_pso, const Entities::Drawable& p_drawable);
+		void ExecuteGeometryDraw(const GeometryDrawCommand& p_command);
+
 		Data::FrameDescriptor m_frameDescriptor;
 		Context::Driver& m_driver;
 		baregl::Texture m_emptyTexture2D;
