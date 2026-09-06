@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstdint>
+#include <baregl/ResourceLifetime.h>
 
 namespace baregl::detail
 {
@@ -22,7 +23,7 @@ namespace baregl::detail
 		* Creates an instance of native object for the OpenGL object identified by the given native ID
 		* @param p_id
 		*/
-		NativeObject(NativeID p_id = 0U);
+		NativeObject(ResourceKind kind = ResourceKind::NONE);
 
 		/**
 		* Destroys the native object (no-op)
@@ -55,6 +56,8 @@ namespace baregl::detail
 		NativeID GetID() const;
 
 	protected:
+		void AdoptNativeID();
+		ResourceLifetime m_lifetime;
 		NativeID m_id;
 	};
 }

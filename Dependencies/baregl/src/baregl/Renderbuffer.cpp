@@ -13,15 +13,15 @@
 
 namespace baregl
 {
-	Renderbuffer::Renderbuffer()
+	Renderbuffer::Renderbuffer() : detail::NativeObject(ResourceKind::RENDERBUFFER)
 	{
 		glCreateRenderbuffers(1, &m_id);
+		AdoptNativeID();
 		NOTIFY_RENDERBUFFER_CREATED;
 	}
 
 	Renderbuffer::~Renderbuffer()
 	{
-		glDeleteRenderbuffers(1, &m_id);
 		NOTIFY_RENDERBUFFER_DESTROYED;
 	}
 

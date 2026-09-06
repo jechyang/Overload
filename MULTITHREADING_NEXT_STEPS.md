@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback 已接入 owning 命令与成功完成后的主线程解析；ImGui 拥有型帧快照、编辑器纹理入口迁移与完整/逐面板 UI 录制已验收，统一 RenderFrame 提交、GPU fence 回收与 Editor/Game 整帧捕获入口已验收。Editor/Game 产品循环现默认采用同线程帧提交，拾取/Gizmo/材质拖放使用对应帧输入；即时配置回退及应用退出已验收。阶段 3 已增加固定 RenderThread、GPU 在途容量限制及失败排空，并通过独立真实 GL 验证；尚未接入产品循环，阶段 2/3 整体目标仍未完成，后台 Logger 已接入拥有型消息与产品主线程分发，最新验收见 MULTITHREADING_LOG_DISPATCH_VALIDATION.md。**
+**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback 已接入 owning 命令与成功完成后的主线程解析；ImGui 拥有型帧快照、编辑器纹理入口迁移与完整/逐面板 UI 录制已验收，统一 RenderFrame 提交、GPU fence 回收与 Editor/Game 整帧捕获入口已验收。Editor/Game 产品循环现默认采用同线程帧提交，拾取/Gizmo/材质拖放使用对应帧输入；即时配置回退及应用退出已验收。阶段 3 已增加固定 RenderThread、GPU 在途容量限制及失败排空，并通过独立真实 GL 验证；尚未接入产品循环，阶段 2/3 整体目标仍未完成，后台 Logger 已接入拥有型消息与产品主线程分发，七类 baregl 原生对象已接入 owner 回收与停机句柄失效，最新验收见 MULTITHREADING_RESOURCE_LIFETIME_VALIDATION.md。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -262,6 +262,10 @@
 
 Logger 输出与共享 handler 状态已同步，LogEvent 改为有界拥有型 MainThreadEvent；Editor/Game PreUpdate 分发后台日志，退订和订阅代际阻止旧 UI 回调。Debug/Release 并发日志、真实 Render 日志、实际 Console/Game 及原产品回归通过，见 MULTITHREADING_LOG_DISPATCH_VALIDATION.md。ResourceTracking 和 GPU 最后释放仍需处理，产品尚未开启独立 Render 线程。
 
+### 5.3 已完成第三增量：原生资源最后释放
+
+七类 baregl 对象新增资源域与预分配回收记录，RenderThread 负责后台最后释放的唤醒/删除，以及 GPU 排空后的域关闭与旧 ID 失效。Debug/Release 七类资源压力、队列/真实 UI 及产品图像/交互回归通过。详见 MULTITHREADING_RESOURCE_LIFETIME_VALIDATION.md；ResourceTracking、ImGui 共享 GPU 代际/loader 与产品资源调用归属仍未闭合，不能直接启用产品双线程。
+
 ## 6. 阶段 4：多 Pass/View 并行命令录制
 
 - 使用阶段 0 的任务依赖描述 view/pass 之间的真实数据依赖；各 job 使用私有命令缓冲或独占 arena。
@@ -357,4 +361,4 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 ## 11. 新对话建议起始消息
 
-> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_LOG_DISPATCH_VALIDATION.md，继续完成阶段 2、3：收尾录制期间的 GL 操作归属，固定 Render owner，建立资源/通知归属、有界队列和多帧输入结果传递；验证真实 Game/Render 交叠、窗口/场景/退出和性能。保留源对象销毁后回放、即时/packet/延迟动态图像严格对拍，按可验收增量提交 Git，不包含用户已有修改，后台验证。
+> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_RESOURCE_LIFETIME_VALIDATION.md，继续完成阶段 2、3：收尾录制期间的 GL 操作归属，固定 Render owner，建立资源/通知归属、有界队列和多帧输入结果传递；验证真实 Game/Render 交叠、窗口/场景/退出和性能。保留源对象销毁后回放、即时/packet/延迟动态图像严格对拍，按可验收增量提交 Git，不包含用户已有修改，后台验证。

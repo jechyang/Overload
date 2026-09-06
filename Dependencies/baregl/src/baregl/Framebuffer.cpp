@@ -71,15 +71,16 @@ namespace baregl
 	}
 
 	Framebuffer::Framebuffer(std::string_view p_debugName) :
+		detail::NativeObject(ResourceKind::FRAMEBUFFER),
 		m_debugName{ p_debugName }
 	{
 		glCreateFramebuffers(1, &m_id);
+		AdoptNativeID();
 		NOTIFY_FRAMEBUFFER_CREATED;
 	}
 
 	Framebuffer::~Framebuffer()
 	{
-		glDeleteFramebuffers(1, &m_id);
 		NOTIFY_FRAMEBUFFER_DESTROYED;
 	}
 

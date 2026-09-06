@@ -149,3 +149,7 @@ Debug/Release 使用 --editor --command-list --editor-ui --product-loop，或 --
 ## 日志与主线程通知（阶段 3 第二增量）
 
 Debug/Release --log-dispatch 独立运行，覆盖拥有型主线程事件、六生产者日志顺序、history 并发快照、file 写入、队列积压报告和真实 Render 初始化/任务日志。输出 <配置>-log-dispatch/current。--editor --command-list --editor-ui --product-loop 增加真实 Console 在 PreUpdate 分发的检查；--game-frame --product-loop 增加实际 Game 事件泵验证。先完整构建，按需追加 --vs。详见 MULTITHREADING_LOG_DISPATCH_VALIDATION.md。
+
+## 原生资源最后释放（阶段 3 第三增量）
+
+先重新生成工程并完整构建全部使用方，再运行 Debug/Release --resource-lifetime（可追加 --vs），输出 <配置>-resource-lifetime/current。验证七类实际 GL 对象的 32 轮跨线程最后释放、空闲唤醒、帧 storage 保留、停机 ID 失效和旧 CPU 包装晚释放；保留 --render-thread 与 Editor/Game --product-loop 回归。产品线程接入、ResourceTracking 和 ImGui 后端共享 GPU 代际仍需后续完成，见 MULTITHREADING_RESOURCE_LIFETIME_VALIDATION.md。

@@ -112,15 +112,15 @@ namespace
 
 namespace baregl
 {
-	VertexArray::VertexArray()
+	VertexArray::VertexArray() : detail::NativeObject(ResourceKind::VERTEX_ARRAY)
 	{
 		glCreateVertexArrays(1, &m_id);
+		AdoptNativeID();
 		NOTIFY_VERTEX_ARRAY_CREATED;
 	}
 
 	VertexArray::~VertexArray()
 	{
-		glDeleteVertexArrays(1, &m_id);
 		NOTIFY_VERTEX_ARRAY_DESTROYED;
 	}
 

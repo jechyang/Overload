@@ -43,10 +43,10 @@ namespace baregl
 	struct Texture::Storage
 	{
 		uint32_t id = 0;
-		~Storage() { if (id) glDeleteTextures(1, &id); }
+		ResourceLifetime lifetime{ResourceKind::TEXTURE};
 	};
 
-	uint32_t Texture::Snapshot::GetID() const { return m_storage ? m_storage->id : 0; }
+	uint32_t Texture::Snapshot::GetID() const { return m_storage && m_storage->lifetime.IsContextAlive() ? m_storage->id : 0; }
 	Texture::Snapshot Texture::RetainStorage() const { return Snapshot(m_storage); }
 
 	Texture::Texture(types::ETextureType p_type, std::string_view p_debugName) :
@@ -54,6 +54,7 @@ namespace baregl
 		m_type{ utils::EnumToValue<GLenum>(p_type) }
 	{
 		glCreateTextures(m_type, 1, &m_storage->id);
+		m_storage->lifetime.Adopt(m_storage->id);
 		m_id = m_storage->id;
 		m_debugName = p_debugName;
 		NOTIFY_TEXTURE_CREATED;

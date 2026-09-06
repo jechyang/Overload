@@ -20,14 +20,15 @@
 namespace baregl
 {
 	ShaderProgram::ShaderProgram() :
-		detail::NativeObject(glCreateProgram())
+		detail::NativeObject(ResourceKind::PROGRAM)
 	{
+		m_id = glCreateProgram();
+		AdoptNativeID();
 		NOTIFY_SHADER_PROGRAM_CREATED;
 	}
 
 	ShaderProgram::~ShaderProgram()
 	{
-		glDeleteProgram(m_id);
 		NOTIFY_SHADER_PROGRAM_DESTROYED;
 	}
 

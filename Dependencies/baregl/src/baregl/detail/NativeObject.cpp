@@ -13,13 +13,14 @@
 
 namespace baregl::detail
 {
-	NativeObject::NativeObject(NativeID p_id) :
-		m_id{p_id}
+	NativeObject::NativeObject(ResourceKind kind) :
+		m_lifetime(kind), m_id{0}
 	{
 	}
 
 	NativeID NativeObject::GetID() const
 	{
-		return m_id;
+		return m_lifetime.IsContextAlive() ? m_id : 0;
 	}
+	void NativeObject::AdoptNativeID() { m_lifetime.Adopt(m_id); }
 }

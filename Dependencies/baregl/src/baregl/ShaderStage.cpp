@@ -16,15 +16,16 @@
 namespace baregl
 {
 	ShaderStage::ShaderStage(types::EShaderType p_type) :
-		detail::NativeObject(glCreateShader(utils::EnumToValue<GLenum>(p_type))),
+		detail::NativeObject(ResourceKind::SHADER),
 		m_type{ p_type }
 	{
+		m_id = glCreateShader(utils::EnumToValue<GLenum>(p_type));
+		AdoptNativeID();
 		NOTIFY_SHADER_STAGE_CREATED;
 	}
 
 	ShaderStage::~ShaderStage()
 	{
-		glDeleteShader(m_id);
 		NOTIFY_SHADER_STAGE_DESTROYED;
 	}
 

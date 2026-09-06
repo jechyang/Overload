@@ -13,15 +13,15 @@
 
 namespace baregl
 {
-	Buffer::Buffer()
+	Buffer::Buffer() : detail::NativeObject(ResourceKind::BUFFER)
 	{
 		glCreateBuffers(1, &m_id);
+		AdoptNativeID();
 		NOTIFY_BUFFER_CREATED;
 	}
 
 	Buffer::~Buffer()
 	{
-		glDeleteBuffers(1, &m_id);
 		NOTIFY_BUFFER_DESTROYED;
 	}
 
