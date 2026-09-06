@@ -10,6 +10,7 @@
 #include <map>
 
 #include <OvTools/Eventing/Event.h>
+#include <OvTools/Eventing/MainThreadEvent.h>
 
 #include "OvDebug/ILogHandler.h"
 #include "OvDebug/ConsoleHandler.h"
@@ -90,7 +91,9 @@ namespace OvDebug
 		static void LogToHandlerMap(std::map<std::string, T>& p_map, const LogData& p_data, std::string p_id);
 
 	public:
-		static OvTools::Eventing::Event<const LogData&> LogEvent;
+		// Worker logs enqueue owning messages; pump once per main-thread update.
+		static OvTools::Eventing::MainThreadEvent<LogData> LogEvent;
+		static void DispatchPendingEvents();
 
 	private:
 		static std::map<std::string, ConsoleHandler>	CONSOLE_HANDLER_MAP;

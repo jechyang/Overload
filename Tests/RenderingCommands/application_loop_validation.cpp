@@ -2,11 +2,14 @@
 #ifdef PRODUCT_EDITOR
 #include "../Skinning/editor_validation.cpp"
 #include <OvEditor/Core/Application.h>
+#include <OvEditor/Panels/Console.h>
 #else
 #include "game_frame_validation.cpp"
 #include <OvGame/Core/Application.h>
 #endif
 #undef main
+#include <OvDebug/Logger.h>
+#include <thread>
 int main(int argc,char** argv) try
 {
     if(const int result=ProductFixtureMain(argc,argv))return result;
@@ -19,9 +22,22 @@ int main(int argc,char** argv) try
         auto& product=app.m_editor;auto& context=app.m_context;
 #else
         OvGame::Core::Application app;auto& product=app.m_game;auto& context=app.m_context;
+        int deliveredLogs=0;const auto mainThread=std::this_thread::get_id();
+        const auto logListener=OvDebug::Logger::LogEvent += [&](const auto& data){if(data.message=="background product Game validation"){Require(std::this_thread::get_id()==mainThread,"Game log dispatched on worker");++deliveredLogs;}};
+        std::thread logger([]{OVLOG_INFO("background product Game validation");});logger.join();
+        Require(!deliveredLogs,"Game background notification ran before pump");product.PreUpdate();
+        Require(deliveredLogs==1,"Game PreUpdate did not dispatch background log");OvDebug::Logger::LogEvent-=logListener;
+        std::puts("PASS: real Game PreUpdate delivers worker log on main thread");
 #endif
  #ifdef PRODUCT_EDITOR
         Require(context.sceneManager.LoadScene("crowd.ovscene"),"Application project scene load");product.m_editorActions.StartPlaying();
+        auto& console=product.m_panelsManager.GetPanelAs<OvEditor::Panels::Console>("Console");
+        const auto logsBefore=console.m_logs.size();
+        std::thread logger([]{OVLOG_INFO("background product Console validation");});logger.join();
+        Require(console.m_logs.size()==logsBefore,"worker log touched real Console widgets");
+        product.PreUpdate();
+        Require(console.m_logs.size()==logsBefore+1&&console.m_logs.back().data.message=="background product Console validation","Editor PreUpdate did not deliver background Console message");
+        std::puts("PASS: real Console stays unchanged during worker logging and receives owning message in Editor PreUpdate");
  #endif
         Require(product.IsFrameSubmissionEnabled(),"Application did not enable the product command loop");
         {ProductFenceHook hook(context.window.get(),4);app.Run();Require(ProductFenceHook::count==4,"Application Run did not submit four frames");}

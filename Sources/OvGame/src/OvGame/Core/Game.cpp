@@ -51,6 +51,7 @@ OvGame::Core::Game::~Game()
 void OvGame::Core::Game::PreUpdate()
 {
 	ZoneScoped;
+	OvDebug::Logger::DispatchPendingEvents();
 
 	m_context.device->PollEvents();
 }

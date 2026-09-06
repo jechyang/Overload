@@ -222,6 +222,7 @@ void OvEditor::Core::Editor::SetupUI()
 void OvEditor::Core::Editor::PreUpdate()
 {
 	ZoneScopedN("Editor Pre-Update");
+	OvDebug::Logger::DispatchPendingEvents();
 	m_context.device->PollEvents();
 }
 

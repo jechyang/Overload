@@ -28,7 +28,7 @@ namespace OvDebug
 		/**
 		* Return log queue
 		*/
-		static std::queue<LogData>& GetLogQueue();
+		static std::queue<LogData> GetLogQueue(); // Owning snapshot, safe during logging.
 
 	private:
 

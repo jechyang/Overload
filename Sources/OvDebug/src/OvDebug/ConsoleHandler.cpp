@@ -8,6 +8,9 @@
 #include "OvDebug/ConsoleColor.h"
 
 #include <iostream>
+#include <mutex>
+
+namespace { std::mutex consoleMutex; }
 
 std::string const OvDebug::ConsoleHandler::__DEFAULT_HEADER;
 std::string const OvDebug::ConsoleHandler::__INFO_HEADER = "[INFO] ";
@@ -16,6 +19,7 @@ std::string const OvDebug::ConsoleHandler::__ERROR_HEADER = "[ERROR] ";
 
 void OvDebug::ConsoleHandler::Log(const LogData& p_logData)
 {
+	std::lock_guard lock(consoleMutex);
 	switch (p_logData.logLevel)
 	{
 	case ELogLevel::LOG_DEFAULT:

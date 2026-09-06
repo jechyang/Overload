@@ -28,7 +28,7 @@ namespace OvDebug
 		/**
 		* Returns the log file path
 		*/
-		static std::string& GetLogFilePath();
+		static std::string GetLogFilePath();
 
 		/**
 		* Set log file path

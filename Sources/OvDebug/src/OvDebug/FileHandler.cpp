@@ -13,6 +13,10 @@
 
 #include <fstream>
 #include <iostream>
+#include <mutex>
+#include <filesystem>
+
+namespace { std::mutex fileMutex; }
 
 std::string const OvDebug::FileHandler::__DEFAULT_HEADER;
 std::string const OvDebug::FileHandler::__INFO_HEADER		= "[INFO] ";
@@ -26,6 +30,7 @@ std::string OvDebug::FileHandler::LOG_FILE_PATH = OvTools::Utils::SystemCalls::G
 
 void OvDebug::FileHandler::Log(const LogData& p_logData)
 {
+	std::lock_guard lock(fileMutex);
 	if (!OUTPUT_FILE.is_open())
 	{
 		OUTPUT_FILE.open(LOG_FILE_PATH, std::ios_base::app);
@@ -37,19 +42,20 @@ void OvDebug::FileHandler::Log(const LogData& p_logData)
 		std::cout << "Unable to create log file" << std::endl;
 }
 
-std::string& OvDebug::FileHandler::GetLogFilePath()
+std::string OvDebug::FileHandler::GetLogFilePath()
 {
+	std::lock_guard lock(fileMutex);
 	return LOG_FILE_PATH;
 }
 
 void OvDebug::FileHandler::SetLogFilePath(const std::string& p_path)
 {
-	int i = static_cast<int>(p_path.size() - 1);
-	while (p_path[i] != '/') --i;
-
-	std::string fileName = p_path.substr(i + 1, p_path.size() - 1);
-
-	LOG_FILE_PATH = p_path.substr(0, i + 1) + __APP_LAUNCH_DATE + fileName;
+	const std::filesystem::path path(p_path);
+	if (path.filename().empty()) throw std::invalid_argument("Log file name is empty");
+	const auto destination = (path.parent_path() / (__APP_LAUNCH_DATE + path.filename().string())).string();
+	std::lock_guard lock(fileMutex);
+	OUTPUT_FILE.close(); OUTPUT_FILE.clear();
+	LOG_FILE_PATH = destination;
 }
 
 std::string OvDebug::FileHandler::GetLogHeader(ELogLevel p_logLevel)

@@ -145,3 +145,7 @@ Debug/Release 使用 --editor --command-list --editor-ui --product-loop，或 --
 ## 固定 Render 线程与有界队列（阶段 3 第一增量）
 
 先重新生成工程并完整构建，再运行 Debug/Release --render-thread（可追加 --vs）。该模式独立运行，输出 <配置>-render-thread/current。隐藏窗口由主线程创建并解除 GL 上下文，RenderThread 在固定线程创建 Driver 并执行资源、拥有型帧与清理。覆盖八组真实 UI 图像对拍、GPU 在途背压、任务容量、关闭唤醒、异常/取消/后继失效、上下文退出；保留 --render-frame 原回归。它尚未启用产品双线程，详细边界和后续工作见 MULTITHREADING_RENDER_THREAD_VALIDATION.md。
+
+## 日志与主线程通知（阶段 3 第二增量）
+
+Debug/Release --log-dispatch 独立运行，覆盖拥有型主线程事件、六生产者日志顺序、history 并发快照、file 写入、队列积压报告和真实 Render 初始化/任务日志。输出 <配置>-log-dispatch/current。--editor --command-list --editor-ui --product-loop 增加真实 Console 在 PreUpdate 分发的检查；--game-frame --product-loop 增加实际 Game 事件泵验证。先完整构建，按需追加 --vs。详见 MULTITHREADING_LOG_DISPATCH_VALIDATION.md。
