@@ -309,7 +309,7 @@ namespace baregl
 		// task on every unchanged post-process target; real changes still dispatch.
 		if (IsValid() && p_width && p_height && GetSize() == std::pair{p_width, p_height}) return;
 		return ResourceExecutor::Invoke([&]() -> void {
-			if (!IsValid() || !p_width || !p_height) throw std::invalid_argument("Invalid framebuffer resize");
+			if (!IsValid() || !p_width || !p_height) throw std::invalid_argument("Invalid framebuffer resize: " + m_debugName + " " + std::to_string(p_width) + "x" + std::to_string(p_height));
 			if (GetSize() == std::pair{p_width, p_height}) return;
 			Framebuffer candidate(m_debugName);
 			candidate.m_layers = m_layers;

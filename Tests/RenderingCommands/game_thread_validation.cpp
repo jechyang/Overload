@@ -9,6 +9,7 @@
 #include <deque>
 #include <mutex>
 #include <chrono>
+#include "window_minimize_validation.inl"
 
 using RenderFrame = OvRendering::Data::RenderFrame;
 using List = OvRendering::Data::RenderCommandList;
@@ -20,6 +21,7 @@ std::atomic_size_t overlappingDraws{0}, queries{0};
 std::thread::id renderOwner, producer;
 PFNGLDRAWELEMENTSINSTANCEDPROC originalDraw;
 PFNGLDRAWELEMENTSPROC originalSingleDraw;
+PFNGLDRAWELEMENTSBASEVERTEXPROC originalBaseVertex;
 PFNGLQUERYCOUNTERPROC originalQuery;
 void APIENTRY OwnerDraw(GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instances)
 {
@@ -32,6 +34,12 @@ void APIENTRY OwnerSingleDraw(GLenum mode, GLsizei count, GLenum type, const voi
     Require(std::this_thread::get_id() == renderOwner && glfwGetCurrentContext(), "product draw escaped Render owner");
     if (renderOwner != producer && mainUpdating.load()) ++overlappingDraws;
     originalSingleDraw(mode,count,type,indices);
+}
+void APIENTRY OwnerBaseVertex(GLenum mode, GLsizei count, GLenum type, const void* indices, GLint baseVertex)
+{
+    Require(std::this_thread::get_id() == renderOwner && glfwGetCurrentContext(), "UI draw escaped Render owner");
+    if (renderOwner != producer && mainUpdating.load()) ++overlappingDraws;
+    originalBaseVertex(mode,count,type,indices,baseVertex);
 }
 void APIENTRY OwnerQuery(GLuint id, GLenum target)
 {
@@ -52,6 +60,7 @@ struct OwnerChecks
             renderOwner = std::this_thread::get_id();
             originalDraw = glad_glDrawElementsInstanced; glad_glDrawElementsInstanced = OwnerDraw;
             originalSingleDraw = glad_glDrawElements; glad_glDrawElements = OwnerSingleDraw;
+            originalBaseVertex = glad_glDrawElementsBaseVertex; glad_glDrawElementsBaseVertex = OwnerBaseVertex;
             originalQuery = glad_glQueryCounter; glad_glQueryCounter = OwnerQuery;
         });
     }
@@ -60,7 +69,7 @@ struct OwnerChecks
         if (context.renderThread) context.renderThread->WaitIdle();
         OnOwner(context, [](auto&) {
             beforePresent = {};
-            glad_glDrawElementsInstanced = originalDraw; glad_glDrawElements = originalSingleDraw; glad_glQueryCounter = originalQuery;
+            glad_glDrawElementsInstanced = originalDraw; glad_glDrawElements = originalSingleDraw; glad_glDrawElementsBaseVertex = originalBaseVertex; glad_glQueryCounter = originalQuery;
         });
     }
 };
@@ -192,6 +201,7 @@ int main(int argc, char** argv) try
             Require(context.sceneManager.LoadScene("frame.ovscene"), "threaded scene reload failed"); context.sceneManager.GetCurrentScene()->Play();
             for(int i=0;i<64;++i) { game.PreUpdate(); mainUpdating=true; game.Update(.02f); mainUpdating=false; game.PostUpdate(); }
             game.DrainRenderFrames();
+            WindowMinimizeValidation(game,context);
             RejectProductCall([&]{game.SetFrameSubmissionEnabled(false);}, "threaded Game accepted immediate GL execution on Main");
             auto presented = std::make_shared<std::atomic_int>(0);
             const auto listener=OvDebug::Logger::LogEvent += [&](const auto& log) {

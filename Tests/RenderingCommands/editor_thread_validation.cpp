@@ -20,6 +20,7 @@ std::atomic_size_t overlappingDraws{0}, queries{0};
 std::thread::id renderOwner, producer;
 PFNGLDRAWELEMENTSINSTANCEDPROC originalDraw;
 PFNGLDRAWELEMENTSPROC originalSingleDraw;
+PFNGLDRAWELEMENTSBASEVERTEXPROC originalBaseVertex;
 PFNGLQUERYCOUNTERPROC originalQuery;
 void APIENTRY OwnerDraw(GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instances)
 {
@@ -32,6 +33,12 @@ void APIENTRY OwnerSingleDraw(GLenum mode, GLsizei count, GLenum type, const voi
     Require(std::this_thread::get_id() == renderOwner && glfwGetCurrentContext(), "product draw escaped Render owner");
     if (renderOwner != producer && mainUpdating.load()) ++overlappingDraws;
     originalSingleDraw(mode,count,type,indices);
+}
+void APIENTRY OwnerBaseVertex(GLenum mode, GLsizei count, GLenum type, const void* indices, GLint baseVertex)
+{
+    Require(std::this_thread::get_id() == renderOwner && glfwGetCurrentContext(), "UI draw escaped Render owner");
+    if (renderOwner != producer && mainUpdating.load()) ++overlappingDraws;
+    originalBaseVertex(mode,count,type,indices,baseVertex);
 }
 void APIENTRY OwnerQuery(GLuint id, GLenum target)
 {
@@ -52,6 +59,7 @@ struct OwnerChecks
             renderOwner = std::this_thread::get_id();
             originalDraw = glad_glDrawElementsInstanced; glad_glDrawElementsInstanced = OwnerDraw;
             originalSingleDraw = glad_glDrawElements; glad_glDrawElements = OwnerSingleDraw;
+            originalBaseVertex = glad_glDrawElementsBaseVertex; glad_glDrawElementsBaseVertex = OwnerBaseVertex;
             originalQuery = glad_glQueryCounter; glad_glQueryCounter = OwnerQuery;
         });
     }
@@ -60,7 +68,7 @@ struct OwnerChecks
         if (context.renderThread) context.renderThread->WaitIdle();
         OnOwner(context, [](auto&) {
             beforePresent = {};
-            glad_glDrawElementsInstanced = originalDraw; glad_glDrawElements = originalSingleDraw; glad_glQueryCounter = originalQuery;
+            glad_glDrawElementsInstanced = originalDraw; glad_glDrawElements = originalSingleDraw; glad_glDrawElementsBaseVertex = originalBaseVertex; glad_glQueryCounter = originalQuery;
         });
     }
 };
@@ -174,7 +182,10 @@ void VerifyEditorInteraction(OvEditor::Core::Editor& editor,OvEditor::Core::Cont
     context.sceneManager.GetCurrentScene()->Play();
     std::puts("PASS: threaded product picking/material drop retains its readback after newer recording, rejects double application and replaced scenes");
 }
-int main(int argc,char** argv) try
+#ifndef EDITOR_THREAD_TEST_MAIN
+#define EDITOR_THREAD_TEST_MAIN main
+#endif
+int EDITOR_THREAD_TEST_MAIN(int argc,char** argv) try
 {
     producer=std::this_thread::get_id();
     if (argc > 2 && std::string(argv[2]) == "--capture")

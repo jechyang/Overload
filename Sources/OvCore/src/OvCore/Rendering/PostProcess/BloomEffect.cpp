@@ -116,21 +116,14 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 	OVASSERT(refX > 0 && refY > 0, "Invalid source framebuffer size");
 
 	const auto& bloomSettings = static_cast<const BloomSettings&>(p_settings);
-	const auto preferredPassCount = static_cast<uint32_t>(bloomSettings.passes);
+    const auto preferredPassCount = static_cast<uint32_t>(std::clamp(bloomSettings.passes,
+        static_cast<int>(BloomConstants::kMinPassCount), static_cast<int>(BloomConstants::kMaxPassCount)));
 
-	// We want to make sure we don't downsample too much (shouldn't go past 1x1).
-	const auto maxPassCountForCurrentResolution = std::max(
-		static_cast<uint32_t>(std::log2(refX)),
-		static_cast<uint32_t>(std::log2(refY))
-	);
-
-	const auto maxPassCount = std::clamp(
-		preferredPassCount,
-		BloomConstants::kMinPassCount,
-		std::min(maxPassCountForCurrentResolution, BloomConstants::kMaxPassCount)
-	);
-
-	const auto passCount = std::min(preferredPassCount, maxPassCount);
+    // Thin/first-layout targets can reach one texel on an axis before the other.
+    // Keep at least one valid sampling pass, including for a 1x1 input.
+    const auto maxPassCountForCurrentResolution = std::max(BloomConstants::kMinPassCount,
+        static_cast<uint32_t>(std::log2(std::max(refX, refY))));
+    const auto passCount = std::min(preferredPassCount, maxPassCountForCurrentResolution);
 
 	std::vector<BloomPass> bloomMips;
 	bloomMips.reserve(passCount);
@@ -139,8 +132,8 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 	{
 		// (value >> i) is equivalent to (value / 2^i),
 		// so we essentially get half the resolution each time.
-		const uint16_t width = refX >> (i + 1);
-		const uint16_t height = refY >> (i + 1);
+		const uint16_t width = std::max<uint16_t>(1, refX >> (i + 1));
+		const uint16_t height = std::max<uint16_t>(1, refY >> (i + 1));
 		auto& target = m_bloomSamplingBuffers[i];
 		target.Resize(width, height);
 		bloomMips.emplace_back(width, height, target);

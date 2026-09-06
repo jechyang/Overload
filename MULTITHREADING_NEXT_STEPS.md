@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、1 已验收提交。阶段 2 已完成拥有型场景/编辑器/UI 帧命令、历史失效恢复、GPU 回收和同线程产品交互。阶段 3 已建立固定 Render owner、有界队列、资源/日志/纹理注册表/UI/Tracy 归属，Game 和 Editor 现均可用 render_thread=true 接入实际双线程循环，正常逐帧不再 Wait；Editor 按提交顺序保存和应用每帧交互结果。两配置实际姿态/图像、失败/重启/退出、旧路径及独占连接 Tracy 验收通过，最新报告见 MULTITHREADING_EDITOR_THREAD_VALIDATION.md。render_thread 暂默认 false。阶段 2/3 整体目标尚未完成，下一步完整 UI、多帧输入/Gizmo、窗口/场景/退出压力和独立整帧性能/输入延迟验收。**
+**阶段 0、1 已验收提交。阶段 2 已完成拥有型场景/编辑器/UI 帧命令、历史恢复、GPU 回收和产品交互。阶段 3 的 Game/Editor 均可用 render_thread=true 接入固定 Render owner 与有界队列，正常逐帧不 Wait；资源/日志/纹理注册表/UI/Tracy 归属及按序交互已接入。最新完整 UI、窗口变化、真实最小化/恢复和在途 Gizmo 验收通过，并修复窄视口 Bloom 和最小化状态查询，见 MULTITHREADING_WINDOW_UI_VALIDATION.md。阶段 2/3 整体目标仍未完成：下一步独占统计整帧 CPU/GPU、队列及输入到呈现请求/交互应用延迟，完成最终证据核对并决定默认配置。render_thread 暂默认 false。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -290,6 +290,10 @@ Game Context 可选独立 RenderThread 并安装 ResourceExecutor；Main 更新�
 
 Editor Context 安装固定 Render owner 和资源作用域，实际产品循环按两帧容量提交；每帧 completion/Interaction 独立保留并在 Main 按序应用。延迟 UI 动作按 Main 帧数推进，退出先取消/排空再拆场景/面板。Debug/Release 各 16 帧三视图/UI/姿态对拍、两帧阻塞交叠、实际拾取/材质拖放、场景替换、4 次应用重建和呈现失败及旧 Application 回归通过；独占 Tracy owner 查询与采集解析通过。详见 MULTITHREADING_EDITOR_THREAD_VALIDATION.md。下一步完整 UI、多帧输入/Gizmo、窗口 resize/最小化、场景/退出压力及独立 CPU/GPU、队列和输入延迟验收，暂未完成阶段 2/3 整体目标。
 
+### 5.10 已完成第十增量：完整 UI、窗口和在途输入
+
+完整产品 Canvas 在两配置各 96 帧、12 次场景/窗口/视图变化与播放模式切换下通过，按帧延迟动作与 GPU 退役稳定。真实 press/drag/release 在 Render 积压时按对应帧输入应用，与 Gizmo oracle 一致；Game/Editor 各六次真实离屏最小化/恢复保持前台不变并排空。压力发现并修复 Bloom 窄目标 4x0 和 1x1 pass 边界，五种极小/窄目标两 Context 像素精确一致；修复 IsMinimized 错查最大化标志。ImGui BaseVertex 绘制加入 owner 断言，既有动态命令与 Game/Editor 图像/失败/退出回归通过。见 MULTITHREADING_WINDOW_UI_VALIDATION.md。下一步独占 CPU/GPU、队列和输入延迟计量，再完成最终阶段审计。
+
 ## 6. 阶段 4：多 Pass/View 并行命令录制
 
 - 使用阶段 0 的任务依赖描述 view/pass 之间的真实数据依赖；各 job 使用私有命令缓冲或独占 arena。
@@ -385,4 +389,4 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 ## 11. 新对话建议起始消息
 
-> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_EDITOR_THREAD_VALIDATION.md，继续完成阶段 2、3：Game/Editor 已可选实际双线程，下一步完整 UI、多帧输入/Gizmo、窗口 resize/最小化及场景/退出压力，随后独立量化 CPU/GPU、队列和输入到呈现/交互应用延迟，决定默认配置。保持严格图像及源销毁回放对拍，按可验收增量提交 Git，不包含用户已有修改，后台验证。
+> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_WINDOW_UI_VALIDATION.md，继续完成阶段 2、3：实际双线程、完整 UI/窗口/输入压力已通过，下一步独占比较即时、同线程命令和双线程命令的 CPU/GPU、队列和输入到呈现请求/交互应用延迟；据此决定默认配置，按原要求完成最终证据审计。保留严格图像及源销毁回放对拍，按可验收增量提交 Git，不包含用户已有修改，后台验证。

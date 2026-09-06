@@ -177,3 +177,7 @@ Debug/Release --log-dispatch 独立运行，覆盖拥有型主线程事件、六
 ## Editor 实际双线程与在途交互（阶段 3 第九增量）
 
 完整构建后独立运行 Debug/Release --editor-thread（可追加 --vs），输出 <配置>-editor-thread-command-list-editor-ui/current。创建保存项目并运行旧 Editor 回归，再比较实际 Application 的同线程/Render Context 16 帧三视图、完整测试画布与姿态。覆盖两帧积压交互、拾取/材质拖放、源视图覆盖、场景替换、四次应用重建、实际 Run 退出及呈现失败。生成 exe 可接收输出目录和 --capture，独占连接 Tracy 检查 owner 查询。固定画布图像 oracle 显式排空；自然交叠单独验证，性能/完整 UI/窗口/输入延迟仍待后续验收。见 MULTITHREADING_EDITOR_THREAD_VALIDATION.md。
+
+## 完整 UI、窗口与在途输入（阶段 3 第十增量）
+
+完整构建后运行 Debug/Release --editor-stress（可追加 --vs），输出 <配置>-editor-stress-command-list-editor-ui/current。先复用双线程项目/图像验收，再运行 96 帧真正完整 Canvas、循环面板/视图/场景/窗口尺寸、五种微小 Bloom 目标对拍和 Render 积压时的产品 Gizmo 输入对照。--game-thread 与 --editor-stress 共用 window_minimize_validation.inl，分别执行六次真实离屏无激活 Minimize/Restore，验证状态和在途帧排空。产品 GL hooks 增加 ImGui BaseVertex 绘制。该压力不是性能基准；范围和后续计量见 MULTITHREADING_WINDOW_UI_VALIDATION.md。

@@ -209,7 +209,7 @@ bool OvWindowing::Window::IsMaximized() const
 
 bool OvWindowing::Window::IsMinimized() const
 {
-	return glfwGetWindowAttrib(m_glfwWindow, GLFW_MAXIMIZED) == GLFW_FALSE;
+	return glfwGetWindowAttrib(m_glfwWindow, GLFW_ICONIFIED) == GLFW_TRUE;
 }
 
 bool OvWindowing::Window::IsFocused() const
