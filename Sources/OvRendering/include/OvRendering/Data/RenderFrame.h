@@ -3,12 +3,16 @@
 #include <exception>
 #include <cstdint>
 
+namespace OvRendering::Threading { class RenderThread; }
+
 namespace OvRendering::Data
 {
     // Exclusive producer then GL-owner consumer. The handoff itself requires an
     // external synchronization protocol. All retirement/destruction is GL-owner work.
     class RenderFrame
     {
+        friend class Threading::RenderThread;
+        void InvalidateSubmitted(std::exception_ptr error);
         struct Shared;
         struct Storage;
         std::unique_ptr<Storage> m_storage;

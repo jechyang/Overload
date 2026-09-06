@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback 已接入 owning 命令与成功完成后的主线程解析；ImGui 拥有型帧快照、编辑器纹理入口迁移与完整/逐面板 UI 录制已验收，统一 RenderFrame 提交、GPU fence 回收与 Editor/Game 整帧捕获入口已验收。Editor/Game 产品循环现默认采用同线程帧提交，拾取/Gizmo/材质拖放使用对应帧输入；即时配置回退及应用退出已验收。尚无独立 Render 线程，阶段 2/3 整体目标仍未完成，最新验收见 MULTITHREADING_PRODUCT_FRAME_VALIDATION.md。**
+**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback 已接入 owning 命令与成功完成后的主线程解析；ImGui 拥有型帧快照、编辑器纹理入口迁移与完整/逐面板 UI 录制已验收，统一 RenderFrame 提交、GPU fence 回收与 Editor/Game 整帧捕获入口已验收。Editor/Game 产品循环现默认采用同线程帧提交，拾取/Gizmo/材质拖放使用对应帧输入；即时配置回退及应用退出已验收。阶段 3 已增加固定 RenderThread、GPU 在途容量限制及失败排空，并通过独立真实 GL 验证；尚未接入产品循环，阶段 2/3 整体目标仍未完成，最新验收见 MULTITHREADING_RENDER_THREAD_VALIDATION.md。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -18,7 +18,7 @@
 - Scene::Update 新增接收 JobSystem 的重载，Editor/Game 已使用；连续、无脚本且仅含已核实组件的 Actor 可进行蒙皮批次评估，在下一处任意回调前等待并发布。原串行重载保留。
 - ParseScene 与 FilterDrawables 已按连续块并行、按块序合并，返回前等待所有任务，包括异常展开路径。
 - Parse 串行门槛 max(128, 2×worker)，Filter 为 max(256, 2×worker)；大批次目标约 4×worker 个块。不要未经测量重新调整。
-- **当前 GL 操作仍在主线程；尚无独立 Render 线程，也没有跨帧渲染数据交接。** 当前并行处理依赖场景更新完成后数据稳定。
+- **产品 GL 操作仍在主线程；独立 RenderThread 已具备有界帧交接并在隐藏 GL 测试中运行，产品尚未接入。** 当前并行处理依赖场景更新完成后数据稳定。
 - 每个编辑器视图有独立 renderer。Filter 也会在 DrawFrame 内的反射 pass 调用，不能假设它只在 BeginFrame 运行。
 
 ### 阶段 0 的验收结论
@@ -254,6 +254,10 @@
 
 **验收：** GL 线程归属检查、多帧稳定性、反复切换场景/视图/窗口尺寸、退出压力测试、图像及输入行为对照；Tracy 显示 Game/Render 交叠，统计整帧 CPU/GPU 耗时、队列长度及延迟。
 
+### 5.1 已完成首增量：固定 owner 与有界队列
+
+新增 RenderThread 初始化/资源 Invoke/帧 Submit/Close/Discard/Shutdown；容量包含 GPU 在途，按序非阻塞退役，失败关闭入口并取消/失效后继。Debug/Release 真实 GL 图像与背压、失败、退出测试通过。详见 MULTITHREADING_RENDER_THREAD_VALIDATION.md。产品仍为同线程循环，接下来先处理 ResourceTracking/Logger/UI 通知与资源调用归属，再接入逐帧输入/结果和真实 Game/Render 交叠。
+
 ## 6. 阶段 4：多 Pass/View 并行命令录制
 
 - 使用阶段 0 的任务依赖描述 view/pass 之间的真实数据依赖；各 job 使用私有命令缓冲或独占 arena。
@@ -349,4 +353,4 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 ## 11. 新对话建议起始消息
 
-> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_PRODUCT_FRAME_VALIDATION.md，继续完成阶段 2、3：收尾录制期间的 GL 操作归属，固定 Render owner，建立资源/通知归属、有界队列和多帧输入结果传递；验证真实 Game/Render 交叠、窗口/场景/退出和性能。保留源对象销毁后回放、即时/packet/延迟动态图像严格对拍，按可验收增量提交 Git，不包含用户已有修改，后台验证。
+> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_RENDER_THREAD_VALIDATION.md，继续完成阶段 2、3：收尾录制期间的 GL 操作归属，固定 Render owner，建立资源/通知归属、有界队列和多帧输入结果传递；验证真实 Game/Render 交叠、窗口/场景/退出和性能。保留源对象销毁后回放、即时/packet/延迟动态图像严格对拍，按可验收增量提交 Git，不包含用户已有修改，后台验证。

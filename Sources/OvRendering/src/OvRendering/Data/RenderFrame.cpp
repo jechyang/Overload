@@ -111,6 +111,14 @@ namespace OvRendering::Data
             storage.shared->state.store(State::COMPLETED, std::memory_order_release);
         storage.shared->retired.store(true, std::memory_order_release);
     }
+    void RenderFrame::InvalidateSubmitted(std::exception_ptr error)
+    {
+        if (GetCompletion().IsRetired()) return;
+        auto& storage = *m_storage;
+        if (!storage.shared->error) storage.shared->error = error;
+        storage.commands.InvalidateHistories();
+        storage.shared->state.store(State::FAILED, std::memory_order_release);
+    }
     bool RenderFrame::Poll()
     {
         if (!m_storage || GetCompletion().IsRetired()) return true;
