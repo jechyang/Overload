@@ -26,7 +26,8 @@ namespace baregl
 	{
 		struct Storage;
 	public:
-		// Retains the GL object independently of this wrapper. Final release requires the GL owner.
+		// Managed storage routes final release to its owner; legacy storage still
+		// requires its creating GL thread. The wrapper is not retained.
 		class Snapshot
 		{
 			std::shared_ptr<Storage> m_storage;
@@ -35,6 +36,7 @@ namespace baregl
 		public:
 			Snapshot() = default;
 			uint32_t GetID() const;
+			bool HasOwnerQueue() const;
 		};
 		Snapshot RetainStorage() const;
 

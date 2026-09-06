@@ -57,6 +57,7 @@ namespace baregl::debug
 	void OnShaderStageCreated(const ShaderStage& p_shaderStage) { g_eventHandler->OnShaderStageCreated(p_shaderStage); }
 	void OnShaderStageDestroyed(const ShaderStage& p_shaderStage) { g_eventHandler->OnShaderStageDestroyed(p_shaderStage); }
 	void OnTextureCreated(const Texture& p_texture) { g_eventHandler->OnTextureCreated(p_texture); }
+	void OnTextureUpdated(const Texture& p_texture) { g_eventHandler->OnTextureUpdated(p_texture); }
 	void OnTextureDestroyed(const Texture& p_texture) { g_eventHandler->OnTextureDestroyed(p_texture); }
 	void OnVertexArrayCreated(const VertexArray& p_vertexArray) { g_eventHandler->OnVertexArrayCreated(p_vertexArray); }
 	void OnVertexArrayDestroyed(const VertexArray& p_vertexArray) { g_eventHandler->OnVertexArrayDestroyed(p_vertexArray); }

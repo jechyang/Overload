@@ -52,9 +52,12 @@ void EditorUIValidation(OvEditor::Core::Editor& editor,OvEditor::Core::Context& 
             texture.Allocate({.width=2,.height=2,.minFilter=baregl::types::ETextureFilteringMode::LINEAR,.magFilter=baregl::types::ETextureFilteringMode::LINEAR,.internalFormat=baregl::types::EInternalFormat::RGBA8,.useMipMaps=false});
             std::array<uint8_t,16> texels{255,0,0,255,0,255,0,255,0,0,255,255,255,255,255,255};
             texture.Upload(texels.data(),baregl::types::EFormat::RGBA,baregl::types::EPixelDataType::UNSIGNED_BYTE);id=texture.GetID();
+            debugger.Update(0);
             debugger.m_textureSelector.currentChoice=id;debugger.m_textureSelector.ValueChangedEvent.Invoke(id);
             for(int i=0;i<4;++i){clear();ui.Render();}expected=pixels();pending.emplace(ui.RecordRenderCommands());
         }
+        Require(debugger.m_selectedTexture.has_value(),"resource writer unexpectedly mutated UI selection");
+        debugger.Update(0);
         Require(glIsTexture(id) && !debugger.m_selectedTexture,"debugger did not separate wrapper and storage lifetime");
         clear();pending->Execute(*context.driver);Require(pixels()==expected,"destroyed debugger texture changed pending UI frame");
         pending.reset();Require(!glIsTexture(id),"debugger storage leaked after final frame release");++pairs;

@@ -17,6 +17,7 @@
 #define NOTIFY_SHADER_STAGE_CREATED baregl::debug::OnShaderStageCreated(*this)
 #define NOTIFY_SHADER_STAGE_DESTROYED baregl::debug::OnShaderStageDestroyed(*this)
 #define NOTIFY_TEXTURE_CREATED baregl::debug::OnTextureCreated(*this)
+#define NOTIFY_TEXTURE_UPDATED baregl::debug::OnTextureUpdated(*this)
 #define NOTIFY_TEXTURE_DESTROYED baregl::debug::OnTextureDestroyed(*this)
 #define NOTIFY_VERTEX_ARRAY_CREATED baregl::debug::OnVertexArrayCreated(*this)
 #define NOTIFY_VERTEX_ARRAY_DESTROYED baregl::debug::OnVertexArrayDestroyed(*this)
@@ -45,6 +46,7 @@ namespace baregl::debug
 	void OnShaderStageCreated(const ShaderStage& p_shaderStage);
 	void OnShaderStageDestroyed(const ShaderStage& p_shaderStage);
 	void OnTextureCreated(const Texture& p_texture);
+	void OnTextureUpdated(const Texture& p_texture);
 	void OnTextureDestroyed(const Texture& p_texture);
 	void OnVertexArrayCreated(const VertexArray& p_vertexArray);
 	void OnVertexArrayDestroyed(const VertexArray& p_vertexArray);

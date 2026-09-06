@@ -47,6 +47,7 @@ namespace baregl
 	};
 
 	uint32_t Texture::Snapshot::GetID() const { return m_storage && m_storage->lifetime.IsContextAlive() ? m_storage->id : 0; }
+	bool Texture::Snapshot::HasOwnerQueue() const { return m_storage && m_storage->lifetime.HasOwnerQueue(); }
 	Texture::Snapshot Texture::RetainStorage() const { return Snapshot(m_storage); }
 
 	Texture::Texture(types::ETextureType p_type, std::string_view p_debugName) :
@@ -149,6 +150,7 @@ namespace baregl
 		}
 
 		m_allocated = true;
+		NOTIFY_TEXTURE_UPDATED;
 	}
 
 	bool Texture::IsValid() const

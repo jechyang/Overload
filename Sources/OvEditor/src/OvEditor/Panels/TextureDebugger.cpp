@@ -5,6 +5,7 @@
 */
 
 #include <format>
+#include <stdexcept>
 
 #include <baregl/Texture.h>
 
@@ -60,175 +61,85 @@ struct OvTools::Utils::MappingFor<OvEditor::Panels::EScaleMode, float>
 
 namespace
 {
-	void AddOption(OvUI::Widgets::Selection::ComboBox& p_selector, const baregl::Texture& p_texture)
-	{
-		const auto id = p_texture.GetID();
-		p_selector.choices[id] = std::format(
-			"Texture {}: {}",
-			id,
-			p_texture.GetDebugName()
-		);
-	}
-
-	float CalculateOneToOneScale(const OvMaths::FVector2& p_windowSize, const baregl::Texture& p_texture)
-	{
-		constexpr float kPanelImageMarginX = 45.0f;
-		constexpr float kPanelImageMarginY = 120.0f; // Based on the size of the settings above the image
-
-		const auto& texDesc = p_texture.GetDesc();
-		float safeSizeX = p_windowSize.x - kPanelImageMarginX;
-		float safeSizeY = p_windowSize.y - kPanelImageMarginY;
-
-		return std::min(safeSizeX / texDesc.width, safeSizeY / texDesc.height);
-	}
-
-	OvMaths::FVector2 CalculateImageSize(OvEditor::Panels::EScaleMode p_mode, const OvMaths::FVector2& p_windowSize, const baregl::Texture& p_texture)
-	{
-		if (!p_texture.IsValid()) { return OvMaths::FVector2::Zero; }
-
-		const float scale =
-			p_mode == OvEditor::Panels::EScaleMode::ONE_TO_ONE ?
-			CalculateOneToOneScale(p_windowSize, p_texture) :
-			OvTools::Utils::ToValueImpl<OvEditor::Panels::EScaleMode, float>(p_mode);
-
-		return {
-			p_texture.GetDesc().width * scale,
-			p_texture.GetDesc().height * scale
-		};
-	}
-
-	bool IsValidTexture(const baregl::Texture* p_texture)
-	{
-		return
-			p_texture != nullptr &&
-			p_texture->GetID() != 0 &&
-			// Only 2D textures are supported in the debugger
-			p_texture->GetType() == baregl::types::ETextureType::TEXTURE_2D;
-	}
+    using Entry = OvRendering::Utils::ResourceTracking::TextureRegistryEntryDesc;
+    bool IsValidTexture(const Entry& texture)
+    { return texture.id && texture.storage.GetID() && texture.type == baregl::types::ETextureType::TEXTURE_2D; }
+    OvMaths::FVector2 CalculateImageSize(OvEditor::Panels::EScaleMode mode, const OvMaths::FVector2& windowSize, const Entry& texture)
+    {
+        if (!texture.allocated || !texture.width || !texture.height || !texture.storage.GetID()) return OvMaths::FVector2::Zero;
+        const float scale = mode == OvEditor::Panels::EScaleMode::ONE_TO_ONE ?
+            std::min(std::max(0.f, windowSize.x - 45.f) / texture.width, std::max(0.f, windowSize.y - 120.f) / texture.height) :
+            OvTools::Utils::ToValueImpl<OvEditor::Panels::EScaleMode, float>(mode);
+        return {texture.width * scale, texture.height * scale};
+    }
 }
-
-namespace OvEditor::Panels 
+namespace OvEditor::Panels
 {
-	TextureDebugger::TextureDebugger(
-		const std::string& p_title,
-		bool p_opened,
-		const OvUI::Settings::PanelWindowSettings& p_windowSettings
-	) :
-		PanelWindow(p_title, p_opened, p_windowSettings),
-		m_image(CreateWidget<OvUI::Widgets::Visual::Image>(0, OvMaths::FVector2::Zero)),
-		m_textureSelector(CreateWidget<OvUI::Widgets::Selection::ComboBox>()),
-		m_scaleSelector(CreateWidget<OvUI::Widgets::Selection::ComboBox>())
-	{
-		allowHorizontalScrollbar = true;
-
-		constexpr int kNoneTextureID = 0;
-
-		m_textureSelector.choices = { {kNoneTextureID, "None"} };
-
-		for (auto& textureID : OvRendering::Utils::ResourceTracking::GetTextureIDs())
-		{
-			if (auto texture = OvRendering::Utils::ResourceTracking::GetTexture(textureID); texture.has_value())
-			{
-				if (IsValidTexture(&texture.value()))
-				{
-					AddOption(m_textureSelector, texture.value());
-				}
-			}
-		}
-
-		m_textureSelector.ValueChangedEvent += [this](int p_selectedTextureID)
-		{
-			if (p_selectedTextureID == kNoneTextureID)
-			{
-				m_selectedTexture = std::nullopt;
-				m_image.textureID = { 0U };
-				m_image.size = OvMaths::FVector2::Zero;
-			}
-			else
-			{
-				if (auto texture = OvRendering::Utils::ResourceTracking::GetTexture(p_selectedTextureID))
-				{
-					m_selectedTexture = texture;
-					m_image.textureID = texture->RetainStorage();
-					m_image.size = CalculateImageSize(m_scaleMode, GetSize(), texture.value());
-				}
-			}
-		};
-
-		// Selecting the last texture, by default
-		if (m_textureSelector.choices.size() > 1ULL)
-		{
-			m_textureSelector.currentChoice = m_textureSelector.choices.rbegin()->first;
-			m_textureSelector.ValueChangedEvent.Invoke(m_textureSelector.currentChoice);
-		}
-
-		m_creationListenerID = OvRendering::Utils::ResourceTracking::TextureAddedEvent += [this](const auto& p_desc)
-		{
-			if (IsValidTexture(p_desc.texture))
-			{
-				AddOption(m_textureSelector, *p_desc.texture);
-			}
-		};
-
-		m_destructionListenerID = OvRendering::Utils::ResourceTracking::TextureRemovedEvent += [this](const auto& p_desc)
-		{
-			if (p_desc.id != 0)
-			{
-				m_textureSelector.choices.erase(p_desc.id);
-				if (m_textureSelector.currentChoice == p_desc.id)
-				{
-					m_textureSelector.currentChoice = 0;
-					m_textureSelector.ValueChangedEvent.Invoke(0);
-					m_selectedTexture = std::nullopt;
-				}
-			}
-		};
-
-		auto scaleEntry = [](auto p_mode) {
-			return std::pair{
-				static_cast<int>(p_mode),
-				OvTools::Utils::ToValueImpl<EScaleMode, std::string>(p_mode)
-			};
-		};
-
-		using enum EScaleMode;
-		m_scaleSelector.choices = {
-			scaleEntry(ONE_TO_ONE),
-			scaleEntry(PERCENTAGE_5),
-			scaleEntry(PERCENTAGE_10),
-			scaleEntry(PERCENTAGE_25),
-			scaleEntry(PERCENTAGE_50),
-			scaleEntry(PERCENTAGE_100),
-			scaleEntry(PERCENTAGE_200),
-			scaleEntry(PERCENTAGE_400),
-			scaleEntry(PERCENTAGE_800)
-		};
-		m_scaleSelector.currentChoice = 0;
-		m_scaleSelector.ValueChangedEvent += [this](int p_selectedScale) {
-			m_scaleMode = static_cast<EScaleMode>(p_selectedScale);
-			// Reset the image size if no texture is selected
-			if (m_selectedTexture)
-			{
-				m_image.size = CalculateImageSize(m_scaleMode, GetSize(), m_selectedTexture.value());
-			}
-			else
-			{
-				m_image.size = OvMaths::FVector2::Zero;
-			}
-		};
-	}
-
-	TextureDebugger::~TextureDebugger()
-	{
-		OvRendering::Utils::ResourceTracking::TextureAddedEvent -= m_creationListenerID;
-		OvRendering::Utils::ResourceTracking::TextureRemovedEvent -= m_destructionListenerID;
-	}
-
-	void TextureDebugger::Update(float p_deltaTime)
-	{
-		if (m_selectedTexture)
-		{
-			m_image.size = CalculateImageSize(m_scaleMode, GetSize(), m_selectedTexture.value());
-		}
-	}
+    TextureDebugger::TextureDebugger(const std::string& title, bool opened, const OvUI::Settings::PanelWindowSettings& settings) :
+        PanelWindow(title, opened, settings),
+        m_image(CreateWidget<OvUI::Widgets::Visual::Image>(0, OvMaths::FVector2::Zero)),
+        m_textureSelector(CreateWidget<OvUI::Widgets::Selection::ComboBox>()),
+        m_scaleSelector(CreateWidget<OvUI::Widgets::Selection::ComboBox>())
+    {
+        allowHorizontalScrollbar = true;
+        RefreshTextures(true);
+        m_textureSelector.ValueChangedEvent += [this](int id) {
+            RequireMainThread();
+            SetSelection(id ? OvRendering::Utils::ResourceTracking::GetTexture(id) : std::nullopt);
+        };
+        if (m_textureSelector.choices.size() > 1)
+            m_textureSelector.ValueChangedEvent.Invoke(m_textureSelector.choices.rbegin()->first);
+        auto scaleEntry = [](auto mode) {
+            return std::pair{static_cast<int>(mode), OvTools::Utils::ToValueImpl<EScaleMode, std::string>(mode)};
+        };
+        using enum EScaleMode;
+        m_scaleSelector.choices = {
+            scaleEntry(ONE_TO_ONE), scaleEntry(PERCENTAGE_5), scaleEntry(PERCENTAGE_10),
+            scaleEntry(PERCENTAGE_25), scaleEntry(PERCENTAGE_50), scaleEntry(PERCENTAGE_100),
+            scaleEntry(PERCENTAGE_200), scaleEntry(PERCENTAGE_400), scaleEntry(PERCENTAGE_800)
+        };
+        m_scaleSelector.currentChoice = 0;
+        m_scaleSelector.ValueChangedEvent += [this](int scale) {
+            RequireMainThread(); m_scaleMode = static_cast<EScaleMode>(scale);
+            m_image.size = m_selectedTexture ? CalculateImageSize(m_scaleMode, GetSize(), *m_selectedTexture) : OvMaths::FVector2::Zero;
+        };
+    }
+    void TextureDebugger::RequireMainThread() const
+    {
+        if (std::this_thread::get_id() != m_mainThread) throw std::logic_error("TextureDebugger must be updated on its UI thread");
+    }
+    void TextureDebugger::SetSelection(std::optional<Entry> texture)
+    {
+        if (texture && !IsValidTexture(*texture)) texture.reset();
+        m_selectedTexture = std::move(texture);
+        m_textureSelector.currentChoice = m_selectedTexture ? m_selectedTexture->id : 0;
+        m_image.textureID = m_selectedTexture ? OvUI::Internal::TextureID(m_selectedTexture->storage) : OvUI::Internal::TextureID(0u);
+        m_image.size = m_selectedTexture ? CalculateImageSize(m_scaleMode, GetSize(), *m_selectedTexture) : OvMaths::FVector2::Zero;
+    }
+    void TextureDebugger::RefreshTextures(bool choices)
+    {
+        RequireMainThread();
+        if (choices)
+        {
+            const auto textures = OvRendering::Utils::ResourceTracking::GetTextures();
+            m_textureSelector.choices = {{0, "None"}};
+            std::optional<Entry> selected;
+            for (const auto& texture : textures) if (IsValidTexture(texture))
+            {
+                m_textureSelector.choices[texture.id] = std::format("Texture {}: {}", texture.id, texture.name);
+                if (m_selectedTexture && texture.id == m_selectedTexture->id && texture.generation == m_selectedTexture->generation)
+                    selected = texture;
+            }
+            SetSelection(std::move(selected));
+        }
+        else if (m_selectedTexture)
+            SetSelection(OvRendering::Utils::ResourceTracking::GetTexture(m_selectedTexture->id, m_selectedTexture->generation));
+    }
+    void TextureDebugger::Update(float)
+    {
+        RequireMainThread();
+        // Even closed panels release a removed selection. Visible choices are
+        // rebuilt from one stable registry snapshot, never from writer callbacks.
+        RefreshTextures(IsOpened());
+    }
 }

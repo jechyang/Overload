@@ -368,7 +368,6 @@ void OvEditor::Core::Editor::UpdateEditorPanels(float p_deltaTime)
 		frameInfo.Update(m_lastFocusedView, p_deltaTime);
 	}
 
-	if (textureDebugger.IsOpened())
 	{
 		ZoneScopedN("Texture Debugger Update");
 		textureDebugger.Update(p_deltaTime);

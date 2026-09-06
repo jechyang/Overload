@@ -96,6 +96,9 @@ namespace baregl::debug
 		*/
 		virtual void OnTextureCreated(const Texture& p_texture) = 0;
 
+		// Allocation/resize has published its descriptor. Optional for old handlers.
+		virtual void OnTextureUpdated(const Texture&) {}
+
 		/**
 		* Invoked when a texture is destroyed
 		* @param p_texture

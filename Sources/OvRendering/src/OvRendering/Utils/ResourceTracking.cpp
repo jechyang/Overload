@@ -1,31 +1,25 @@
-/**
-* @project: Overload
-* @author: Overload Tech.
-* @licence: MIT
-*/
-
 #include <OvRendering/Utils/ResourceTracking.h>
-
-#include <unordered_map>
-
 #include <baregl/debug/Debug.h>
-
-#include <OvDebug/Assertion.h>
-
-namespace OvRendering::Utils::ResourceTracking
-{
-	OvTools::Eventing::Event<const ResourceTracking::TextureRegistryEntryDesc&> TextureAddedEvent;
-	OvTools::Eventing::Event<const ResourceTracking::TextureRegistryEntryDesc&> TextureRemovedEvent;
-}
-
+#include <algorithm>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
+#include <stdexcept>
 namespace
 {
-	std::unordered_map<uint32_t, const baregl::Texture*> m_textures;
-	std::vector<uint32_t> m_quickAccessTextureIDs;
-
-	class EventHandler : public baregl::debug::IEventHandler
-	{
-	public:
+    using Entry = OvRendering::Utils::ResourceTracking::TextureRegistryEntryDesc;
+    struct Record { Entry entry; std::thread::id creator; };
+    std::mutex registryMutex;
+    std::unordered_map<const baregl::Texture*, Record> textures;
+    uint64_t nextGeneration = 0;
+    void RequireRetentionThread(const Record& record)
+    {
+        if (!record.entry.storage.HasOwnerQueue() && record.creator != std::this_thread::get_id())
+            throw std::logic_error("Legacy texture storage must stay on its creating GL thread");
+    }
+    class EventHandler final : public baregl::debug::IEventHandler
+    {
+    public:
 		virtual void OnBufferCreated([[maybe_unused]] const baregl::Buffer&) override {}
 		virtual void OnBufferDestroyed([[maybe_unused]] const baregl::Buffer&) override {}
 		virtual void OnFramebufferCreated([[maybe_unused]] const baregl::Framebuffer&) override {}
@@ -39,49 +33,83 @@ namespace
 		virtual void OnVertexArrayCreated([[maybe_unused]] const baregl::VertexArray&) override {}
 		virtual void OnVertexArrayDestroyed([[maybe_unused]] const baregl::VertexArray&) override {}
 
-		virtual void OnTextureCreated(const baregl::Texture& p_texture) override
-		{
-			const auto id = p_texture.GetID();
-			if (id != 0)
-			{
-				m_quickAccessTextureIDs.push_back(id);
-				m_textures[id] = &p_texture;
-				OvRendering::Utils::ResourceTracking::TextureAddedEvent.Invoke({ id, &p_texture });
-			}
-		}
 
-		virtual void OnTextureDestroyed(const baregl::Texture& p_texture) override
-		{
-			const auto id = p_texture.GetID();
-			if (id != 0)
-			{
-				m_quickAccessTextureIDs.erase(std::ranges::find(m_quickAccessTextureIDs, id));
-				m_textures.erase(id);
-				OvRendering::Utils::ResourceTracking::TextureRemovedEvent.Invoke({ id, &p_texture });
-			}
-		}
-	};
+        void OnTextureCreated(const baregl::Texture& texture) override
+        {
+            if (!texture.GetID()) return;
+            Entry entry;
+            entry.id = texture.GetID(); entry.name = texture.GetDebugName();
+            entry.type = texture.GetType(); entry.storage = texture.RetainStorage();
+            // The constructor notifies before Allocate: publish no borrowed or
+            // uninitialized descriptor fields.
+            std::lock_guard lock(registryMutex);
+            entry.generation = ++nextGeneration;
+            textures.emplace(&texture, Record{std::move(entry), std::this_thread::get_id()});
+        }
+        void OnTextureUpdated(const baregl::Texture& texture) override
+        {
+            std::lock_guard lock(registryMutex);
+            if (auto found = textures.find(&texture); found != textures.end())
+            {
+                auto& entry = found->second.entry;
+                entry.width = texture.GetDesc().width; entry.height = texture.GetDesc().height;
+                entry.allocated = texture.IsValid();
+            }
+        }
+        void OnTextureDestroyed(const baregl::Texture& texture) override
+        {
+            // Domain shutdown can already make GetID() zero. The address is an
+            // identity key only; it is never dereferenced after this callback.
+            decltype(textures)::node_type removed;
+            { std::lock_guard lock(registryMutex); removed = textures.extract(&texture); }
+            // Storage release and possible GL diagnostics happen outside the lock.
+        }
+    };
 }
-
 namespace OvRendering::Utils::ResourceTracking
 {
-	void TrackResources()
-	{
-		baregl::debug::SetEventHandler(std::make_unique<EventHandler>());
-	}
-
-	OvTools::Utils::OptRef<const baregl::Texture> GetTexture(uint32_t p_id)
-	{
-		if (m_textures.contains(p_id))
-		{
-			return OvTools::Utils::OptRef<const baregl::Texture>(*m_textures.at(p_id));
-		}
-
-		return std::nullopt;
-	}
-
-	std::span<const uint32_t> GetTextureIDs()
-	{
-		return m_quickAccessTextureIDs;
-	}
+    void TrackResources()
+    {
+        static std::once_flag installed;
+        std::call_once(installed, [] { baregl::debug::SetEventHandler(std::make_unique<EventHandler>()); });
+    }
+    std::optional<TextureRegistryEntryDesc> GetTexture(uint32_t id, uint64_t generation)
+    {
+        std::lock_guard lock(registryMutex);
+        const Record* selected = nullptr;
+        for (const auto& [key, record] : textures)
+        {
+            const auto& entry = record.entry;
+            if (entry.id == id && entry.storage.GetID() && (!generation || generation == entry.generation) &&
+                (!selected || selected->entry.generation < entry.generation)) selected = &record;
+        }
+        if (!selected) return std::nullopt;
+        RequireRetentionThread(*selected);
+        return selected->entry;
+    }
+    std::vector<TextureRegistryEntryDesc> GetTextures()
+    {
+        std::vector<TextureRegistryEntryDesc> result;
+        {
+            std::lock_guard lock(registryMutex);
+            result.reserve(textures.size());
+            for (const auto& [key, record] : textures) if (record.entry.storage.GetID())
+            { RequireRetentionThread(record); result.push_back(record.entry); }
+        }
+        std::ranges::sort(result, {}, &TextureRegistryEntryDesc::generation);
+        return result;
+    }
+    std::vector<uint32_t> GetTextureIDs()
+    {
+        std::vector<std::pair<uint64_t,uint32_t>> ordered;
+        {
+            std::lock_guard lock(registryMutex);
+            for (const auto& [key, record] : textures) if (record.entry.storage.GetID())
+                ordered.emplace_back(record.entry.generation, record.entry.id);
+        }
+        std::ranges::sort(ordered);
+        std::vector<uint32_t> result; result.reserve(ordered.size());
+        for (auto [generation, id] : ordered) result.push_back(id);
+        return result;
+    }
 }

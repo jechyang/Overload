@@ -7,7 +7,8 @@
 #pragma once
 
 #include <baregl/Texture.h>
-#include <OvTools/Utils/OptRef.h>
+#include <OvRendering/Utils/ResourceTracking.h>
+#include <thread>
 #include <OvUI/Widgets/Visual/Image.h>
 #include <OvUI/Widgets/Selection/ComboBox.h>
 #include <OvUI/Panels/PanelWindow.h>
@@ -45,7 +46,7 @@ namespace OvEditor::Panels
 		/**
 		* Destroys the texture debugger.
 		*/
-		virtual ~TextureDebugger();
+		virtual ~TextureDebugger() = default;
 
 		/**
 		* Updates the texture debugger.
@@ -54,12 +55,14 @@ namespace OvEditor::Panels
 		void Update(float p_deltaTime);
 
 	private:
+		void RequireMainThread() const;
+		void RefreshTextures(bool choices);
+		void SetSelection(std::optional<OvRendering::Utils::ResourceTracking::TextureRegistryEntryDesc> texture);
+		const std::thread::id m_mainThread = std::this_thread::get_id();
 		EScaleMode m_scaleMode = EScaleMode::ONE_TO_ONE;
 		OvUI::Widgets::Selection::ComboBox& m_textureSelector;
 		OvUI::Widgets::Selection::ComboBox& m_scaleSelector;
 		OvUI::Widgets::Visual::Image& m_image;
-		OvTools::Eventing::ListenerID m_creationListenerID;
-		OvTools::Eventing::ListenerID m_destructionListenerID;
-		OvTools::Utils::OptRef<const baregl::Texture> m_selectedTexture;
+		std::optional<OvRendering::Utils::ResourceTracking::TextureRegistryEntryDesc> m_selectedTexture;
 	};
 }

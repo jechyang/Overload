@@ -1,45 +1,27 @@
-/**
-* @project: Overload
-* @author: Overload Tech.
-* @licence: MIT
-*/
-
 #pragma once
-
-#include <span>
-
 #include <baregl/Texture.h>
-#include <OvTools/Utils/OptRef.h>
-#include <OvTools/Eventing/Event.h>
-
+#include <optional>
+#include <vector>
 namespace OvRendering::Utils::ResourceTracking
 {
-	/**
-	* Structure describing a texture registry entry.
-	*/
-	struct TextureRegistryEntryDesc
-	{
-		const uint32_t id;
-		const baregl::Texture* texture;
-	};
-
-	extern OvTools::Eventing::Event<const TextureRegistryEntryDesc&> TextureAddedEvent;
-	extern OvTools::Eventing::Event<const TextureRegistryEntryDesc&> TextureRemovedEvent;
-
-	/**
-	* Start tracking resource events
-	*/
-	void TrackResources();
-
-	/**
-	* Returns the texture associated with the given id
-	* @param p_id
-	*/
-	OvTools::Utils::OptRef<const baregl::Texture> GetTexture(uint32_t p_id);
-
-	/**
-	* Returns all the texture ids
-	*/
-	std::span<const uint32_t> GetTextureIDs();
+    // Immutable metadata values at query time, owning GPU storage, no wrapper
+    // borrow. Pixels remain mutable; generation distinguishes reused native IDs.
+    struct TextureRegistryEntryDesc
+    {
+        uint32_t id = 0;
+        uint64_t generation = 0;
+        std::string name;
+        baregl::types::ETextureType type{};
+        uint32_t width = 0, height = 0;
+        bool allocated = false;
+        baregl::Texture::Snapshot storage;
+    };
+    // Install once before starting resource producers. Do not replace baregl's
+    // global event handler while tracking/producers are active.
+    void TrackResources();
+    // Managed storage may be retained by another thread. Legacy retention from
+    // another thread is rejected; legacy copies must stay on their GL owner.
+    std::optional<TextureRegistryEntryDesc> GetTexture(uint32_t id, uint64_t generation = 0);
+    std::vector<TextureRegistryEntryDesc> GetTextures();
+    std::vector<uint32_t> GetTextureIDs(); // CPU values, no borrowed span.
 }
-

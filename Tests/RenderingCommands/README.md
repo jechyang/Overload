@@ -153,3 +153,7 @@ Debug/Release --log-dispatch 独立运行，覆盖拥有型主线程事件、六
 ## 原生资源最后释放（阶段 3 第三增量）
 
 先重新生成工程并完整构建全部使用方，再运行 Debug/Release --resource-lifetime（可追加 --vs），输出 <配置>-resource-lifetime/current。验证七类实际 GL 对象的 32 轮跨线程最后释放、空闲唤醒、帧 storage 保留、停机 ID 失效和旧 CPU 包装晚释放；保留 --render-thread 与 Editor/Game --product-loop 回归。产品线程接入、ResourceTracking 和 ImGui 后端共享 GPU 代际仍需后续完成，见 MULTITHREADING_RESOURCE_LIFETIME_VALIDATION.md。
+
+## 纹理注册表与主线程面板（阶段 3 第四增量）
+
+先完整构建，再运行 Debug/Release --texture-registry（可追加 --vs），输出 <配置>-texture-registry/current。验证固定 Render owner 创建/分配/512 次 resize 与并发稳定查询、storage 回收、legacy 跨线程持有拒绝、域关闭过滤及包装地址复用。Editor --command-list --editor-ui --product-loop 增加真实 TextureDebugger 主线程刷新、后台误用拒绝、注册代际注入与关闭面板释放；临时转移既有唯一 Driver 的上下文，未创建第二个 baregl Context。详见 MULTITHREADING_TEXTURE_REGISTRY_VALIDATION.md。

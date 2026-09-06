@@ -10,6 +10,76 @@
 #undef main
 #include <OvDebug/Logger.h>
 #include <thread>
+#ifdef PRODUCT_EDITOR
+#include <baregl/ResourceLifetime.h>
+#include <future>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <GLFW/glfw3.h>
+#include <OvEditor/Panels/TextureDebugger.h>
+#include "../../Dependencies/baregl/src/baregl/debug/Event.h"
+// The actual Application already owns baregl's single Driver. Transfer its GL
+// context temporarily to a test worker without constructing a second Driver.
+class TextureTestOwner
+{
+    std::mutex mutex;std::condition_variable changed;
+    std::queue<std::function<void()>> tasks;bool closed=false;std::thread worker;
+public:
+    explicit TextureTestOwner(OvWindowing::Window& window)
+    {
+        worker=std::thread([&]{window.MakeCurrentContext();baregl::DeletionQueue deletions;
+            for(;;){std::function<void()> task;{
+                std::unique_lock lock(mutex);changed.wait(lock,[&]{return closed||!tasks.empty();});
+                if(tasks.empty())break;task=std::move(tasks.front());tasks.pop();}
+                deletions.Drain();task();task={};deletions.Drain();}
+            deletions.Close();glfwMakeContextCurrent(nullptr);
+        });
+    }
+    template<class F> auto Invoke(F&& fn)
+    {
+        using Result=std::invoke_result_t<F>;
+        auto task=std::make_shared<std::packaged_task<Result()>>(std::forward<F>(fn));auto result=task->get_future();
+        {std::lock_guard lock(mutex);tasks.emplace([task]{(*task)();});}changed.notify_one();return result.get();
+    }
+    void Shutdown(){if(worker.joinable()){{std::lock_guard lock(mutex);closed=true;}changed.notify_one();worker.join();}}
+    ~TextureTestOwner(){Shutdown();}
+};
+void ValidateTextureDebuggerOwner(OvEditor::Core::Editor& editor, OvEditor::Core::Context& context)
+{
+    auto& debugger=editor.m_panelsManager.GetPanelAs<OvEditor::Panels::TextureDebugger>("Texture Debugger");
+    const auto wasOpened=debugger.IsOpened();const auto original=debugger.m_selectedTexture;
+    struct RestoreContext {OvWindowing::Window& window; ~RestoreContext(){window.MakeCurrentContext();}} restore{*context.window};
+    glfwMakeContextCurrent(nullptr);
+    TextureTestOwner owner(*context.window);
+    auto texture=owner.Invoke([](){return std::make_shared<baregl::Texture>(baregl::types::ETextureType::TEXTURE_2D,"background debugger");});
+    const auto id=texture->GetID();debugger.Open();debugger.Update(0);
+    Require(debugger.m_textureSelector.choices.contains(id),"main UI missed managed texture creation");
+    debugger.m_textureSelector.ValueChangedEvent.Invoke(id);
+    Require(debugger.m_selectedTexture&&!debugger.m_selectedTexture->allocated,"unallocated texture UI metadata invalid");
+    owner.Invoke([&](){texture->Allocate({.width=16,.height=17,.minFilter=baregl::types::ETextureFilteringMode::LINEAR,.internalFormat=baregl::types::EInternalFormat::RGBA8,.useMipMaps=false,.mutableDesc=baregl::data::MutableTextureDesc{}});});
+    Require(!debugger.m_selectedTexture->allocated,"owner mutated live TextureDebugger selection");debugger.Update(0);
+    Require(debugger.m_selectedTexture->width==16&&debugger.m_selectedTexture->height==17,"main UI missed allocation metadata");
+    owner.Invoke([&](){texture->Resize(31,32);});debugger.Update(0);
+    Require(debugger.m_selectedTexture->width==31&&debugger.m_selectedTexture->height==32,"main UI missed resize metadata");
+    bool rejected=false;try{owner.Invoke([&](){debugger.Update(0);});}catch(const std::logic_error&){rejected=true;}
+    Require(rejected,"TextureDebugger accepted update on Render owner");
+    const auto generation=debugger.m_selectedTexture->generation;
+    // Inject re-registration with the same native ID to exercise the generation
+    // boundary deterministically; this does not claim physical GL name reuse.
+    owner.Invoke([&](){baregl::debug::OnTextureDestroyed(*texture);baregl::debug::OnTextureCreated(*texture);baregl::debug::OnTextureUpdated(*texture);});
+    Require(debugger.m_selectedTexture->generation==generation,"writer changed UI generation");debugger.Update(0);
+    Require(!debugger.m_selectedTexture,"stale selection silently followed reused native ID");
+    debugger.m_textureSelector.ValueChangedEvent.Invoke(id);
+    Require(debugger.m_selectedTexture&&debugger.m_selectedTexture->generation>generation,"replacement generation cannot be selected");
+    debugger.Close();texture.reset();Require(debugger.m_selectedTexture.has_value(),"background removal mutated UI widgets");
+    debugger.Update(0);Require(!debugger.m_selectedTexture,"closed panel retained removed texture");owner.Invoke([]{});
+    owner.Invoke([&](){Require(!glIsTexture(id),"real debugger leaked managed texture");});
+    owner.Shutdown();context.window->MakeCurrentContext();context.driver->OnFrameCompleted();
+    debugger.SetOpened(wasOpened);debugger.m_textureSelector.ValueChangedEvent.Invoke(original ? original->id : 0);
+    std::puts("PASS: real TextureDebugger refreshes managed owner create/allocate/resize/remove on main without GL context, rejects worker update and stale registration generation, releases closed-panel selection");
+}
+#endif
 int main(int argc,char** argv) try
 {
     if(const int result=ProductFixtureMain(argc,argv))return result;
@@ -39,6 +109,9 @@ int main(int argc,char** argv) try
         Require(console.m_logs.size()==logsBefore+1&&console.m_logs.back().data.message=="background product Console validation","Editor PreUpdate did not deliver background Console message");
         std::puts("PASS: real Console stays unchanged during worker logging and receives owning message in Editor PreUpdate");
  #endif
+#ifdef PRODUCT_EDITOR
+        ValidateTextureDebuggerOwner(product,context);
+#endif
         Require(product.IsFrameSubmissionEnabled(),"Application did not enable the product command loop");
         {ProductFenceHook hook(context.window.get(),4);app.Run();Require(ProductFenceHook::count==4,"Application Run did not submit four frames");}
         Require(!app.IsRunning()&&!product.m_pendingFrame,"Application did not stop with drained frames");

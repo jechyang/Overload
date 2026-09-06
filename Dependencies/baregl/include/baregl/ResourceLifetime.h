@@ -39,5 +39,6 @@ namespace baregl
         ResourceLifetime& operator=(const ResourceLifetime&) = delete;
         void Adopt(uint32_t id);
         bool IsContextAlive() const noexcept;
+        bool HasOwnerQueue() const noexcept { return static_cast<bool>(m_state); }
     };
 }
