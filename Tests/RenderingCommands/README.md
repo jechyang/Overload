@@ -37,3 +37,20 @@ node Tests\Skinning\run-validation.mjs Release --material
 - 随后执行原几何 256 组和真实蒙皮 24 帧对拍；真实编辑器模式/多视图/切场景继续使用 `--editor`。
 
 独占材质微基准：完整回归编译后，在 `Build/<配置>` 工作目录运行对应 baseline/current 的 `skinning-validation.exe <另建输出目录> --benchmark`。先完成材质自检，再关闭所有 GL 拦截；预热 32 组，测量 256×32 次 SetProperty/Bind/10 uniform 上传/Unbind，输出中位数与 p95。需串行交替跑旧/新程序，不能与构建、编辑器回归或其他 Tracy 客户端同时运行；这不是完整编辑器帧率。
+
+## 材质快照与资源代际（阶段 2 第三增量）
+
+~~~bat
+node Tests\Skinning\run-validation.mjs Debug --snapshots
+node Tests\Skinning\run-validation.mjs Release --snapshots
+~~~
+
+先完整重建对应配置：Shader/Texture 包装布局已改变，不能混入旧 loader 或消费者对象文件。可用已有 --vs 参数指定安装目录。输出为 <配置>-snapshots/{baseline,current}/。
+
+旧 Material/ABaseRenderer 源码取自 8cc2f8c5a9d992809b95d317a70dfbcfc3928442；两程序均编译当前 Shader/Texture.cpp 并链接当前其余库，以保持资源表示一致。原材质/几何/蒙皮文件逐字节对拍；新 Snapshot API 只在 current 运行，并在内部与真实即时全量上传对照。此模式不改原 --material/--geometry/蒙皮模式基准。
+
+- 32 组完整材质快照：支持的全部数值类型、2D/cube、资产/显式裸纹理持有/fallback、pass/feature 与缺失回退。录制不产生 GL 上传；消费结果与即时路径全量上传一致；销毁源 Material、污染原 program 全部参数、改绑别的 program 后，回放 GL 调用和 GPU 数值仍与参考一致。
+- 8 轮成功重载/资产包装销毁/资源回收，旧新代际交替回放 64 张 32×32 RGBA（snapshot-frames.bin），逐像素等于各自的即时参考图。弱引用及旧 GL program/texture 对象检查验证最终回收，另验证 shader 编译失败不发布代际。
+- 类型、未持有纹理、无 fallback 的空 sampler、unsupported 类型和分配失败均在录制时拒绝，不消费 singleUse 属性；移动后空快照拒绝回放。
+
+快照持有整个 shader variant 代际和实际 GPU 纹理，尚不包含 geometry、transform/palette、view/pass/target 或 feature buffers。获取、录制、回放和最终释放仍在 GL owner；回到即时 renderer 必须使其签名缓存失效，不得夹入尚未结束的 Bind/UploadProperties 调用段。默认 renderer 尚未采用完整快照消费，--editor 是新资源表示及原即时链路的集成回归。详细协议、成本和最终证据见 MULTITHREADING_MATERIAL_SNAPSHOT_VALIDATION.md。

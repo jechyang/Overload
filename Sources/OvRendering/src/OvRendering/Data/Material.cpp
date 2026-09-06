@@ -7,6 +7,7 @@
 #include <format>
 #include <cstring>
 #include <ranges>
+#include <stdexcept>
 
 #include <baregl/Buffer.h>
 #include <baregl/Texture.h>
@@ -661,3 +662,59 @@ OvRendering::Data::MaterialSignatureSet OvRendering::Data::Material::CalculateSi
 	return signature;
 }
 
+OvRendering::Data::Material::Snapshot OvRendering::Data::Material::RecordSnapshot(
+	std::optional<const std::string_view> p_pass,
+	OvTools::Utils::OptRef<const Data::FeatureSet> p_featureSetOverride,
+	const std::shared_ptr<baregl::Texture>& p_emptyTexture2D,
+	const std::shared_ptr<baregl::Texture>& p_emptyTextureCube,
+	std::span<const std::shared_ptr<baregl::Texture>> p_retainedTextures)
+{
+	ZoneScopedN("Material Record Snapshot");
+	if (!IsValid()) throw std::invalid_argument("Cannot record an invalid material");
+	Snapshot result;
+	result.m_program = m_shader->RetainVariant(p_pass, p_featureSetOverride.value_or(m_features));
+	result.m_shaderVersion = m_shader->GetVersion();
+	result.m_uniforms.reserve(m_properties.size());
+	std::vector<MaterialProperty*> consume;
+	consume.reserve(m_properties.size());
+	for (auto& [name, property] : m_properties)
+	{
+		const auto command = PrepareUniformUpload(*result.m_program, name, property.value,
+			p_emptyTexture2D.get(), p_emptyTextureCube.get());
+		if (!command) continue;
+		if (std::holds_alternative<std::monostate>(command->value))
+			throw std::invalid_argument("Material snapshot cannot capture an unsupported uniform type");
+		if (auto texture = std::get_if<baregl::Texture*>(&command->value))
+		{
+			if (!*texture)
+				throw std::invalid_argument("Material snapshot requires a texture or owned fallback for every sampler");
+			std::shared_ptr<baregl::Texture> retained;
+			if (auto asset = std::get_if<Resources::Texture*>(&property.value); asset && *asset)
+				retained = (*asset)->RetainTexture();
+			else if (*texture == p_emptyTexture2D.get()) retained = p_emptyTexture2D;
+			else if (*texture == p_emptyTextureCube.get()) retained = p_emptyTextureCube;
+			else
+				for (const auto& candidate : p_retainedTextures)
+					if (candidate.get() == *texture) { retained = candidate; break; }
+			if (!retained || retained.use_count() == 0 || retained.get() != *texture)
+				throw std::invalid_argument("Material snapshot requires ownership of every non-null texture");
+			result.m_textures.push_back(std::move(retained));
+		}
+		result.m_uniforms.push_back(*command);
+		if (property.singleUse) consume.push_back(&property);
+	}
+	if (result.m_uniforms.size() != result.m_program->GetUniforms().size())
+		throw std::invalid_argument("Material snapshot is missing active shader properties; refresh the material after reload");
+	// Current property alternatives are numeric values/matrices and pointers;
+	// restoring defaults allocates nothing. No user callbacks run in this phase.
+	for (auto* property : consume) property->value = property->defaultValue;
+	return result;
+}
+
+void OvRendering::Data::Material::Snapshot::Execute() const
+{
+	ZoneScopedN("Material Replay Snapshot");
+	if (!m_program) throw std::logic_error("Cannot replay a moved-from material snapshot");
+	m_program->Bind();
+	for (const auto& uniform : m_uniforms) Material::ExecuteUniformUpload(*m_program, uniform);
+}

@@ -22,4 +22,15 @@ void OvRendering::Resources::Texture::SetTexture(std::unique_ptr<baregl::Texture
 {
 	OVASSERT(p_texture != nullptr, "Cannot assign an invalid texture!");
 	m_texture = std::move(p_texture);
+	++m_version;
+}
+
+std::shared_ptr<baregl::Texture> OvRendering::Resources::Texture::RetainTexture() const
+{
+	return m_texture;
+}
+
+uint64_t OvRendering::Resources::Texture::GetVersion() const
+{
+	return m_version;
 }

@@ -7,6 +7,7 @@
 #pragma once
 
 #include <optional>
+#include <span>
 #include <type_traits>
 #include <unordered_map>
 #include <variant>
@@ -113,6 +114,45 @@ namespace OvRendering::Data
 		);
 		// Execute on the GL owner with the same program bound and resources stable.
 		static void ExecuteUniformUpload(baregl::ShaderProgram& p_program, const UniformUploadCommand& p_command);
+
+		// A material-only packet with owned values and pinned GPU generations.
+		// Record/replay/destruction are restricted to the GL owner. Replay binds
+		// and uploads every captured uniform. Before returning to an immediate
+		// renderer, invalidate its cached signatures (e.g. start a new frame).
+		// External viewport, target, geometry and feature buffers are not captured.
+		class Snapshot
+		{
+		public:
+			Snapshot(Snapshot&&) noexcept = default;
+			Snapshot& operator=(Snapshot&&) noexcept = default;
+			Snapshot(const Snapshot&) = delete;
+			Snapshot& operator=(const Snapshot&) = delete;
+			void Execute() const;
+			uint64_t GetShaderVersion() const { return m_shaderVersion; }
+
+		private:
+			friend class Material;
+			Snapshot() = default;
+			std::shared_ptr<baregl::ShaderProgram> m_program;
+			std::vector<std::shared_ptr<baregl::Texture>> m_textures;
+			std::vector<UniformUploadCommand> m_uniforms;
+			uint64_t m_shaderVersion = 0;
+		};
+
+		// CPU recording consumes used single-use properties only after the entire
+		// packet is ready. Failure leaves them unchanged and issues no GL calls.
+		// Asset textures are pinned automatically. Non-null raw textures require a
+		// matching owning handle in p_retainedTextures or the fallback arguments;
+		// unowned raw textures are rejected. Handles must own their GPU objects.
+		// Every active sampler needs a texture/fallback; unsupported uniform types
+		// are rejected rather than inheriting mutable GL state.
+		Snapshot RecordSnapshot(
+			std::optional<const std::string_view> p_pass = std::nullopt,
+			OvTools::Utils::OptRef<const Data::FeatureSet> p_featureSetOverride = std::nullopt,
+			const std::shared_ptr<baregl::Texture>& p_emptyTexture2D = {},
+			const std::shared_ptr<baregl::Texture>& p_emptyTextureCube = {},
+			std::span<const std::shared_ptr<baregl::Texture>> p_retainedTextures = {}
+		);
 
 		/**
 		* Creates a material

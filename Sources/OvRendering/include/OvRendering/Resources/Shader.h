@@ -7,6 +7,7 @@
 #pragma once
 
 #include <string>
+#include <cstdint>
 #include <memory>
 #include <unordered_set>
 #include <unordered_map>
@@ -51,6 +52,15 @@ namespace OvRendering::Resources
 			const Data::FeatureSet& p_featureSet = {}
 		);
 
+		// Pins the selected program and its metadata across asset reload/destruction.
+		// The entire variant generation stays alive. Acquire, use and release on
+		// the GL owner before context shutdown; this is not a GPU completion fence.
+		std::shared_ptr<baregl::ShaderProgram> RetainVariant(
+			std::optional<const std::string_view> p_pass = std::nullopt,
+			const Data::FeatureSet& p_featureSet = {}
+		);
+		uint64_t GetVersion() const;
+
 		/**
 		* Returns user-configurable features (declared with #feature).
 		* Engine-controlled features (declared with #engine_feature) are excluded.
@@ -89,6 +99,7 @@ namespace OvRendering::Resources
 		std::unordered_set<std::string> m_passes;
 		Data::FeatureSet m_features;
 		Data::FeatureSet m_engineFeatures;
-		Variants m_variants;
+		std::shared_ptr<Variants> m_variants;
+		uint64_t m_version = 0;
 	};
 }

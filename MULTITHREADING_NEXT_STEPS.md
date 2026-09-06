@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、阶段 1 均已完成约定范围验收并分别提交。阶段 2 已拆分同线程几何、材质绑定与逐 uniform 准备/执行，完整 draw/帧快照及资源在途持有仍待后续迁移；不直接跳到 Render 线程。最新范围与验收见 MULTITHREADING_MATERIAL_COMMAND_VALIDATION.md，几何首增量见 MULTITHREADING_RENDER_COMMAND_VALIDATION.md。**
+**阶段 0、阶段 1 均已完成约定范围验收并分别提交。阶段 2 已完成同线程几何、材质逐 uniform 拆分，以及可选材质快照和 shader/texture 代际持有。默认 renderer 尚未切换为完整 draw/帧快照；下一步迁移 mesh、transform、palette 并接入同线程命令消费，不直接跳到 Render 线程。最新范围与验收见 MULTITHREADING_MATERIAL_SNAPSHOT_VALIDATION.md；此前材质/几何增量分别见对应 COMMAND_VALIDATION 文档。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -151,6 +151,15 @@
 - `Debug/Release --material` 使用 `50194bf` 的旧材质/几何源码对照；仅归零旧材质副本的未初始化 hash seed。42 组材质/GPU 状态与 GL 调用序列、几何及蒙皮图像对拍，另检查源对象销毁和 CPU 准备；最终集成/构建/测量见 MULTITHREADING_MATERIAL_COMMAND_VALIDATION.md。
 - 下一增量：聚合完整 draw 参数快照、资源版本持有和单次属性批量消费边界，再逐类迁移 transform/palette/view/pass/target。仍不引入 Render 线程。
 
+### 4.3 第三增量：材质快照与 shader/texture 代际持有
+
+- 新增可移动的 Material::Snapshot：CPU 录制捕获选定 program、全部支持的活动 uniform 值和纹理 owning 句柄；Execute 不访问源 Material 或资产包装对象。默认 renderer 仍使用第二增量即时接口，此包尚未聚合完整 draw。
+- Shader::RetainVariant 持有整组 variant 代际；新代际及 pass/feature 元数据全部准备后交换发布。Texture::RetainTexture 持有实际 GPU 纹理；loader 重载创建新对象。成功替换递增资产局部版本，旧资源活到最后一份持有释放。
+- 成功录制后一次性恢复已用 singleUse 属性，缺失 uniform 不消费；类型、所有权、分配失败均不消费。活动 sampler 必须有纹理或 owning fallback，unsupported uniform 类型拒绝；裸纹理必须提供匹配的 owning 句柄。原即时路径的异常前缀消费不变。
+- 获取、录制、回放和最终释放均限定 GL owner 且早于上下文销毁；shared_ptr 不提供并发资源修改安全或 GPU fence。快照回放后返回即时 renderer 须使签名缓存失效；不能直接夹入保留旧缓存的 DrawEntity 序列。
+- Debug/Release --snapshots：以 8cc2f8c 的即时 Material/ABaseRenderer 对拍，资源表示使用当前源码；原 42 组材质、256 组几何及 24 帧蒙皮精确一致。新 API 另有 32 组全类型 GL 调用/数值对照、8 轮重载/销毁/回收、64 帧旧新代际交替回放、录制回滚边界。真实 Editor、完整构建与 10 项复制通过，详见 MULTITHREADING_MATERIAL_SNAPSHOT_VALIDATION.md。
+- 下一增量：mesh/GPU geometry 持有、transform 值快照、独占 palette，并接入真实 DrawEntity 同线程消费。随后迁移 view/pass/target/feature buffers，闭合帧完成及缓存协议。当前仍无 Render 线程或跨帧队列。
+
 ## 5. 阶段 3：Game/Render 双线程（A 形态）
 
 **目标：让固定 Render 线程消费稳定帧数据，Game/Main 线程负责应用更新与必要的平台/UI 事件。**
@@ -201,10 +210,10 @@
 ### 工作区
 
 - 原基准为 73ae710a57889bfde94184c3c8f073228e998144；工作分支 main。
-- 按用户要求分阶段提交：阶段 0 为 30eb8fe，阶段 1 为 4f8da08，阶段 2 几何首增量为 50194bf，材质第二增量为本文件所属的新提交。后续每个独立可验收增量完成检查后单独提交。
+- 按用户要求分阶段提交：阶段 0 为 30eb8fe，阶段 1 为 4f8da08，阶段 2 几何首增量为 50194bf，材质第二增量为 8cc2f8c，材质快照第三增量为本文件所属的新提交。后续每个独立可验收增量完成检查后单独提交。
 - 仅提交多线程实现、测试与验收文档。Editor.cpp 的既有注释修改通过按 hunk 暂存排除；ItemPicker、SkeletalData、OvUI、.zcode 等其他用户改动仍留在工作树。
 - 历史验收是在包含这些既有用户改动的工作区中完成，不声称逐个检出了补提交来复现历史构建。Tests/Skinning 的旧源码基准仍固定为原基准，不因补提交而变化。
-- 未创建额外任务或推送远程。阶段 2 已建立几何与材质逐属性边界，继续按独立增量推进。
+- 未创建额外任务或推送远程。阶段 2 已建立几何、材质逐属性及可选材质持有快照，继续按独立增量推进。
 
 ### 构建（已实际验证的入口）
 
@@ -233,7 +242,8 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 - 第三增量最新报告：`MULTITHREADING_SKINNING_STAGE1_COMPLETION.md`；新增 `Debug/Release --editor`。可打开项目：`Build/JobsValidation/Skinning/Release-editor/current/SkinningProject/SkinningProject.ovproject`。测试会重新生成该专用项目。
 - 最新正式构建为 `msbuild-debug-skinning-stage1-retry.log`、`msbuild-release-skinning-stage1-final.log`，复制为 `skinning-stage1-build-artifacts.json`；最终独占性能 `skinning-stage1-perf-*`，Tracy 为 `tracy-skinning-stage1-release*`。
 - 阶段 2 首增量使用 `Debug/Release --geometry`，输出 `Build/JobsValidation/Skinning/<配置>-geometry/`；详情见 `Tests/RenderingCommands/README.md`。新构建日志后缀为 `geometry-stage2`，编辑器回归日志为 `geometry-editor-{debug,release}.log`，不将并发构建/验收期间的耗时作为性能基线。
-- 阶段 2 第二增量使用 `Debug/Release --material`，输出 `<配置>-material/`；最终构建日志后缀为 `material-final`，最终编辑器日志为 `material-editor-{debug,release}-final.log`，复制核对为 `material-final-build-artifacts.json`。微基准见 `material-stage2-perf-payload.json`；首稿 `material-stage2` 构建及性能日志不作为最终产物证据。最新状态以 MULTITHREADING_MATERIAL_COMMAND_VALIDATION.md 为准。
+- 阶段 2 第二增量使用 `Debug/Release --material`，输出 `<配置>-material/`；最终构建日志后缀为 `material-final`，最终编辑器日志为 `material-editor-{debug,release}-final.log`，复制核对为 `material-final-build-artifacts.json`。微基准见 `material-stage2-perf-payload.json`；首稿 `material-stage2` 构建及性能日志不作为最终产物证据。该增量状态见 MULTITHREADING_MATERIAL_COMMAND_VALIDATION.md。
+- 阶段 2 第三增量使用 Debug/Release --snapshots，输出 <配置>-snapshots/；最终构建日志后缀 snapshot-final，快照/编辑器日志为 snapshot-{debug,release}-final.log 和 snapshot-editor-{debug,release}-final.log，复制核对为 snapshot-final-build-artifacts.json。最新范围以 MULTITHREADING_MATERIAL_SNAPSHOT_VALIDATION.md 为准。
 
 ### 只在需要时阅读的证据
 
@@ -249,4 +259,4 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 ## 11. 新对话建议起始消息
 
-> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_MATERIAL_COMMAND_VALIDATION.md，以已提交的几何/材质逐属性命令为基线，继续阶段 2 下一个独立增量：聚合完整 draw 参数快照、资源版本持有和单次属性批量消费边界，先同线程对拍再单独 git 提交。保留已有用户改动、旧路径对照和多视图语义；不要将 Actor/组件 vector 的裸引用浅拷贝跨帧，不直接引入 Render 线程。后台验证优先，不操作 VS2022 界面。
+> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_MATERIAL_SNAPSHOT_VALIDATION.md，以已提交的几何/材质持有快照为基线，继续阶段 2 下一个独立增量：迁移 mesh/GPU geometry、transform 与独占 palette，接入真实 DrawEntity 同线程命令消费，先对拍再单独 git 提交。随后闭合 view/pass/target/feature buffers、缓存失效与帧完成边界。保留已有用户改动、旧路径对照和多视图语义；不要将 Actor/组件 vector 的裸引用浅拷贝跨帧，不直接引入 Render 线程。后台验证优先，不操作 VS2022 界面。

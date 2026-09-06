@@ -73,3 +73,5 @@ Release 在本用例下同属约 0.7 μs，不据此宣称加速；Debug 仍有�
 ## 下一增量
 
 在已拆开的准备/执行入口上，定义完整 draw 参数快照及资源版本持有；为批量录制明确单次属性的提交/消费边界。随后继续迁移 transform、palette、view/pass 常量和目标命令。在所有权与消费完成协议闭合前，保持同线程，不引入 Render 线程。
+
+后续进展：第三增量已增加可选材质聚合快照、shader/texture 代际持有及录制事务边界；详见 MULTITHREADING_MATERIAL_SNAPSHOT_VALIDATION.md。默认 renderer 的完整 draw/帧迁移仍待后续实施，本报告保留第二增量验收时的历史范围。

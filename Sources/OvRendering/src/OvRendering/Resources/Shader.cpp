@@ -27,11 +27,11 @@ baregl::ShaderProgram& OvRendering::Resources::Shader::GetVariant(std::optional<
 
 	const std::string pass{ p_pass.value_or("") };
 
-	auto passIt = m_variants.find(pass);
-	if (passIt == m_variants.end())
+	auto passIt = m_variants->find(pass);
+	if (passIt == m_variants->end())
 	{
-		auto defaultPassIt = m_variants.find("");
-		OVASSERT(defaultPassIt != m_variants.end() && defaultPassIt->second.contains({}), "No default program found for the default pass");
+		auto defaultPassIt = m_variants->find("");
+		OVASSERT(defaultPassIt != m_variants->end() && defaultPassIt->second.contains({}), "No default program found for the default pass");
 		return *defaultPassIt->second.at({});
 	}
 
@@ -73,31 +73,36 @@ OvRendering::Resources::Shader::Shader(
 void OvRendering::Resources::Shader::SetVariants(Variants&& p_variants, Data::FeatureSet p_engineFeatures)
 {
 	ValidateVariants(p_variants);
-	m_variants = std::move(p_variants);
-	m_engineFeatures = std::move(p_engineFeatures);
-
-	m_passes.clear();
-	m_features.clear();
-
-	// Find all passes & user features based on the compiled variants (engine features are excluded)
-	for (const auto& [pass, featureVariants] : m_variants)
+	// Build the new generation completely before publishing any of its metadata.
+	std::unordered_set<std::string> passes;
+	Data::FeatureSet features;
+	for (const auto& [pass, featureVariants] : p_variants)
 	{
-		m_passes.insert(pass);
-
+		passes.insert(pass);
 		for (const auto& featureSet : featureVariants | std::views::keys)
-		{
 			for (const auto& feature : featureSet)
-			{
-				if (!m_engineFeatures.contains(feature))
-				{
-					m_features.insert(feature);
-				}
-			}
-		}
+				if (!p_engineFeatures.contains(feature)) features.insert(feature);
 	}
+	auto generation = std::make_shared<Variants>(std::move(p_variants));
+	m_passes.swap(passes);
+	m_features.swap(features);
+	m_engineFeatures.swap(p_engineFeatures);
+	m_variants.swap(generation);
+	++m_version;
+}
+
+std::shared_ptr<baregl::ShaderProgram> OvRendering::Resources::Shader::RetainVariant(
+	std::optional<const std::string_view> p_pass, const Data::FeatureSet& p_featureSet)
+{
+	return { m_variants, &GetVariant(p_pass, p_featureSet) };
+}
+
+uint64_t OvRendering::Resources::Shader::GetVersion() const
+{
+	return m_version;
 }
 
 const OvRendering::Resources::Shader::Variants& OvRendering::Resources::Shader::GetVariants() const
 {
-	return m_variants;
+	return *m_variants;
 }
