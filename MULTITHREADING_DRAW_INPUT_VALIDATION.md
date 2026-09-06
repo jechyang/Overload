@@ -2,6 +2,8 @@
 
 日期：2026-09-06。前置提交：b1128a7（材质快照与 shader/texture 代际持有）。
 
+本文件记录第四增量验收时的范围。后续同次 draw packet 集成、反射/阴影/后处理持有及最新限制见 MULTITHREADING_DRAW_PACKET_VALIDATION.md。
+
 ## 生产路径的变化
 
 标准 Mesh 的 VAO、顶点/索引缓冲及 bounds 移入共享的 GeometryStorage；Mesh::RetainGeometry 返回只读 IMesh 持有句柄。几何一经构造不再更新，Model 重载/销毁 Mesh 包装对象后，已持有的几何继续有效。保持 Mesh 不可复制；其内部布局改变，所有依赖模块必须重建。

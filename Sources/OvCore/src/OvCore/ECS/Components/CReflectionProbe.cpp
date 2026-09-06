@@ -5,6 +5,7 @@
 */
 
 #include <format>
+#include <cstring>
 #include <tinyxml2.h>
 
 #include <OvCore/ECS/Actor.h>
@@ -423,7 +424,7 @@ void OvCore::ECS::Components::CReflectionProbe::_AllocateResources()
 	}
 }
 
-void OvCore::ECS::Components::CReflectionProbe::_PrepareUBO()
+OvCore::ECS::Components::CReflectionProbe::UniformData OvCore::ECS::Components::CReflectionProbe::CaptureUniformData() const
 {
 	const auto& probePosition = owner.transform.GetWorldPosition() + m_capturePosition;
 	const auto& boxPosition = owner.transform.GetWorldPosition();
@@ -456,7 +457,16 @@ void OvCore::ECS::Components::CReflectionProbe::_PrepareUBO()
 
 	static_assert(sizeof(uboDataPage) == kUBOSize, "UBO data size mismatch");
 
-	m_uniformBuffer->Upload(&uboDataPage);
+	UniformData result;
+	static_assert(sizeof(result) == sizeof(uboDataPage));
+	std::memcpy(result.data(), &uboDataPage, result.size());
+	return result;
+}
+
+void OvCore::ECS::Components::CReflectionProbe::_PrepareUBO()
+{
+	const auto data = CaptureUniformData();
+	m_uniformBuffer->Upload(data.data());
 }
 
 std::vector<uint32_t> OvCore::ECS::Components::CReflectionProbe::_GetCaptureFaceIndices()

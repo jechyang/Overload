@@ -50,6 +50,9 @@ int main(int argc, char** argv) try
     auto& view = editor.m_panelsManager.GetPanelAs<OvEditor::Panels::SceneView>("Scene View");
     auto& asset = editor.m_panelsManager.GetPanelAs<OvEditor::Panels::AssetView>("Asset View");
     for (auto* panel : std::array<OvEditor::Panels::AView*, 3>{&game, &view, &asset}) { panel->Open(); panel->SetSize({320, 260}); }
+#ifdef DRAW_PACKETS_TEST
+    for (auto* panel : std::array<OvEditor::Panels::AView*, 3>{&game, &view, &asset}) panel->m_renderer->SetDrawRecordingEnabled(true);
+#endif
     context.uiManager->Render(); // Initialize ImGui font/frame state for the real view renderers.
     auto* model = context.modelManager.GetResource(":Models/Mannequin.fbx");
     auto* material = context.materialManager.GetResource(":Materials/Default.ovmat");

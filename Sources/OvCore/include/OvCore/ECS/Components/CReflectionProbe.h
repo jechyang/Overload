@@ -6,6 +6,9 @@
 
 #pragma once
 
+#include <array>
+#include <cstddef>
+
 #include <baregl/Framebuffer.h>
 #include <baregl/Texture.h>
 #include <baregl/Buffer.h>
@@ -164,6 +167,10 @@ namespace OvCore::ECS::Components
 		* Returns the last complete cubemap captured by the reflection probe
 		*/
 		std::shared_ptr<baregl::Texture> GetCubemap() const;
+
+		// CPU snapshot of the padding-sensitive reflection UBO.
+		using UniformData = std::array<std::byte, 124>;
+		UniformData CaptureUniformData() const;
 
 		/**
 		* Serialize the component

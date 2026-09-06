@@ -208,5 +208,6 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 	const auto bloomTex = m_bloomOutputBuffer.GetAttachment<baregl::Texture>(baregl::types::EFramebufferAttachment::COLOR);
 	m_bloomMaterial.SetProperty("_BloomTexture", &bloomTex.value().get());
 	m_bloomMaterial.SetProperty("_BloomStrength", std::min(bloomSettings.intensity * 0.04f, 1.0f));
-	m_renderer.Blit(p_pso, p_src, p_dst, m_bloomMaterial);
+	const std::array bloomOwners{m_bloomOutputBuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)};
+	m_renderer.BlitWithRetainedTextures(p_pso, p_src, p_dst, m_bloomMaterial, DEFAULT, bloomOwners);
 }

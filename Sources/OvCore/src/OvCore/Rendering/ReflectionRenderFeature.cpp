@@ -211,8 +211,26 @@ void OvCore::Rendering::ReflectionRenderFeature::OnBeforeDraw(OvRendering::Data:
 
 	SendProbeData(material, targetProbe);
 
-	if (targetProbe)
+	if (m_renderer.IsRecordingDraw())
 	{
-		BindProbe(targetProbe.value());
+		m_renderer.RetainDrawTexture(targetProbe ? targetProbe->GetCubemap() : nullptr);
+		if (targetProbe)
+		{
+			const auto data = targetProbe->CaptureUniformData();
+			m_renderer.RecordDrawOperation([this, data] { ExecuteProbeData(data); });
+		}
 	}
+	else if (targetProbe) BindProbe(targetProbe.value());
+}
+
+void OvCore::Rendering::ReflectionRenderFeature::ExecuteProbeData(const ECS::Components::CReflectionProbe::UniformData& p_data)
+{
+	if (!m_recordedProbeBuffer)
+	{
+		auto buffer = std::make_unique<baregl::Buffer>();
+		buffer->Allocate(p_data.size(), baregl::types::EAccessSpecifier::STREAM_DRAW);
+		m_recordedProbeBuffer = std::move(buffer);
+	}
+	m_recordedProbeBuffer->Upload(p_data.data());
+	m_recordedProbeBuffer->Bind(baregl::types::EBufferType::UNIFORM, 1);
 }

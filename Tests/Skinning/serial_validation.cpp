@@ -272,7 +272,7 @@ void StateValidation(const std::filesystem::path& dir)
     std::printf("PASS: %zu snapshots, 32 playback/rate scenarios, shared resources and lifetimes\n", snapshots);
 }
 
-void ImageValidation(const std::filesystem::path& dir, bool trace)
+void ImageValidation(const std::filesystem::path& dir, bool trace, bool recordDraws = false)
 {
     OvWindowing::Settings::DeviceSettings ds; ds.contextMajorVersion = 4; ds.contextMinorVersion = 5;
     OvWindowing::Context::Device device(ds);
@@ -293,6 +293,7 @@ void ImageValidation(const std::filesystem::path& dir, bool trace)
     skin.owner.AddComponent<CMaterialRenderer>().FillWithMaterial(material);
     skin.owner.GetComponent<CModelRenderer>()->SetFrustumBehaviour(CModelRenderer::EFrustumBehaviour::DISABLED);
     OvCore::Rendering::SceneRenderer renderer(driver);
+    renderer.SetDrawRecordingEnabled(recordDraws);
     OvRendering::Entities::Camera camera;
     const auto bounds = mannequin->GetBoundingSphere();
     camera.SetPosition(bounds.position + FVector3{0, 0, std::max(bounds.radius * 2.8f, 2.0f)});

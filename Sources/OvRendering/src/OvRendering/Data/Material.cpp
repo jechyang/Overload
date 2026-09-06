@@ -4,6 +4,7 @@
 * @licence: MIT
 */
 
+#include <algorithm>
 #include <format>
 #include <cstring>
 #include <ranges>
@@ -669,18 +670,41 @@ OvRendering::Data::Material::Snapshot OvRendering::Data::Material::RecordSnapsho
 	const std::shared_ptr<baregl::Texture>& p_emptyTextureCube,
 	std::span<const std::shared_ptr<baregl::Texture>> p_retainedTextures)
 {
+	return RecordCachedSnapshot(p_pass, p_featureSetOverride, p_emptyTexture2D, p_emptyTextureCube, p_retainedTextures, nullptr, true, true);
+}
+
+OvRendering::Data::Material::Snapshot OvRendering::Data::Material::RecordCachedSnapshot(
+	std::optional<const std::string_view> p_pass,
+	OvTools::Utils::OptRef<const Data::FeatureSet> p_featureSetOverride,
+	const std::shared_ptr<baregl::Texture>& p_emptyTexture2D,
+	const std::shared_ptr<baregl::Texture>& p_emptyTextureCube,
+	std::span<const std::shared_ptr<baregl::Texture>> p_retainedTextures,
+	const Snapshot* p_previous, bool p_uploadStable, bool p_uploadSingleUse)
+{
 	ZoneScopedN("Material Record Snapshot");
 	if (!IsValid()) throw std::invalid_argument("Cannot record an invalid material");
 	Snapshot result;
 	result.m_program = m_shader->RetainVariant(p_pass, p_featureSetOverride.value_or(m_features));
 	result.m_shaderVersion = m_shader->GetVersion();
+	if ((!p_uploadStable || !p_uploadSingleUse) && (!p_previous || p_previous->m_program != result.m_program))
+		throw std::invalid_argument("Cached snapshot requires the same retained program");
 	result.m_uniforms.reserve(m_properties.size());
 	std::vector<MaterialProperty*> consume;
 	consume.reserve(m_properties.size());
 	for (auto& [name, property] : m_properties)
 	{
-		const auto command = PrepareUniformUpload(*result.m_program, name, property.value,
-			p_emptyTexture2D.get(), p_emptyTextureCube.get());
+		const bool upload = property.singleUse ? p_uploadSingleUse : p_uploadStable;
+		std::optional<UniformUploadCommand> command;
+		if (upload)
+		{
+			if (auto prepared = PrepareUniformUpload(*result.m_program, name, property.value, p_emptyTexture2D.get(), p_emptyTextureCube.get())) command.emplace(*prepared);
+		}
+		else
+		{
+			const auto found = std::find_if(p_previous->m_uniforms.begin(), p_previous->m_uniforms.end(),
+				[&name](const auto& value) { return value.name == name; });
+			if (found != p_previous->m_uniforms.end()) command.emplace(*found);
+		}
 		if (!command) continue;
 		if (std::holds_alternative<std::monostate>(command->value))
 			throw std::invalid_argument("Material snapshot cannot capture an unsupported uniform type");
@@ -689,7 +713,12 @@ OvRendering::Data::Material::Snapshot OvRendering::Data::Material::RecordSnapsho
 			if (!*texture)
 				throw std::invalid_argument("Material snapshot requires a texture or owned fallback for every sampler");
 			std::shared_ptr<baregl::Texture> retained;
-			if (auto asset = std::get_if<Resources::Texture*>(&property.value); asset && *asset)
+			if (!upload)
+			{
+				for (const auto& candidate : p_previous->m_textures)
+					if (candidate.get() == *texture) { retained = candidate; break; }
+			}
+			else if (auto asset = std::get_if<Resources::Texture*>(&property.value); asset && *asset)
 				retained = (*asset)->RetainTexture();
 			else if (*texture == p_emptyTexture2D.get()) retained = p_emptyTexture2D;
 			else if (*texture == p_emptyTextureCube.get()) retained = p_emptyTextureCube;
@@ -697,11 +726,11 @@ OvRendering::Data::Material::Snapshot OvRendering::Data::Material::RecordSnapsho
 				for (const auto& candidate : p_retainedTextures)
 					if (candidate.get() == *texture) { retained = candidate; break; }
 			if (!retained || retained.use_count() == 0 || retained.get() != *texture)
-				throw std::invalid_argument("Material snapshot requires ownership of every non-null texture");
+				throw std::invalid_argument(std::format("Material snapshot requires ownership of texture {}", name));
 			result.m_textures.push_back(std::move(retained));
 		}
 		result.m_uniforms.push_back(*command);
-		if (property.singleUse) consume.push_back(&property);
+		if (upload && property.singleUse) consume.push_back(&property);
 	}
 	if (result.m_uniforms.size() != result.m_program->GetUniforms().size())
 		throw std::invalid_argument("Material snapshot is missing active shader properties; refresh the material after reload");

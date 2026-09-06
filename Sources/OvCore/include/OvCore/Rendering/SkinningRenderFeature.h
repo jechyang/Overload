@@ -23,6 +23,8 @@ namespace OvCore::Rendering
 	class SkinningRenderFeature : public OvRendering::Features::ARenderFeature
 	{
 	public:
+		bool SupportsDrawRecording() const override { return typeid(*this) == typeid(SkinningRenderFeature); }
+
 		static constexpr uint32_t kDefaultBufferBindingPoint = 1;
 
 		/**

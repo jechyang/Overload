@@ -7,6 +7,7 @@
 #pragma once
 
 #include <map>
+#include <functional>
 #include <memory>
 #include <typeindex>
 
@@ -63,6 +64,13 @@ namespace OvRendering::Core
 			const Entities::Drawable& p_drawable
 		) override;
 
+		// Optional, same-draw recording/consumption. Toggle outside a frame on the GL owner.
+		// External frame/pass state and dynamic texture contents must remain stable.
+		void SetDrawRecordingEnabled(bool p_enabled);
+		bool IsRecordingDraw() const { return m_recording != nullptr; }
+		void RecordDrawOperation(std::function<void()> p_operation);
+		void RetainDrawTexture(std::shared_ptr<baregl::Texture> p_texture);
+
 		/**
 		* Add a render feature to the renderer
 		* @param p_args (Parameter pack forwared to the render feature constructor)
@@ -110,6 +118,23 @@ namespace OvRendering::Core
 		std::multimap<uint32_t, std::pair<std::string, std::unique_ptr<Core::ARenderPass>>> m_passes;
 
 	private:
+		struct DrawRecording
+		{
+			std::vector<std::function<void()>> operations;
+			std::vector<std::shared_ptr<baregl::Texture>> textures;
+		};
+		struct DrawPacket
+		{
+			GeometryDrawCommand geometry;
+			std::shared_ptr<const Data::Material::Snapshot> material;
+			DrawRecording features;
+		};
+		void ExecuteDrawPacket(const DrawPacket& p_packet);
+		bool m_drawRecordingEnabled = false;
+		DrawRecording* m_recording = nullptr;
+		std::shared_ptr<baregl::Texture> m_recordingFallback2D;
+		std::shared_ptr<baregl::Texture> m_recordingFallbackCube;
+		std::shared_ptr<const Data::Material::Snapshot> m_recordedMaterial;
 		OvTools::Utils::OptRef<Core::ARenderPass> m_currentPass;
 	};
 }

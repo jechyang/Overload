@@ -86,12 +86,16 @@ void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
 	m_exposureMaterial.SetProperty("_Progressive", static_cast<int>(autoExposureSettings.progressive && !m_firstFrame), true);
 	m_exposureMaterial.SetProperty("_SpeedUp", autoExposureSettings.speedUp, true);
 	m_exposureMaterial.SetProperty("_SpeedDown", autoExposureSettings.speedDown, true);
-	m_renderer.Blit(p_pso, previousExposure, currentExposure, m_exposureMaterial);
+	const std::array luminanceOwners{m_luminanceBuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)};
+	m_renderer.BlitWithRetainedTextures(p_pso, previousExposure, currentExposure, m_exposureMaterial,
+		OvRendering::Settings::EBlitFlags::DEFAULT, luminanceOwners);
 
 	// Apply the exposure to the final image
 	const auto exposureTex = currentExposure.GetAttachment<baregl::Texture>(baregl::types::EFramebufferAttachment::COLOR);
 	m_compensationMaterial.SetProperty("_ExposureTexture", &exposureTex.value().get(), true);
-	m_renderer.Blit(p_pso, p_src, p_dst, m_compensationMaterial);
+	const std::array exposureOwners{currentExposure.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)};
+	m_renderer.BlitWithRetainedTextures(p_pso, p_src, p_dst, m_compensationMaterial,
+		OvRendering::Settings::EBlitFlags::DEFAULT, exposureOwners);
 
 	m_firstFrame = false;
 }

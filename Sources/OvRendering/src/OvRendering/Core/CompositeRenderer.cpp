@@ -6,6 +6,7 @@
 
 #include <functional>
 #include <ranges>
+#include <stdexcept>
 #include <tracy/Tracy.hpp>
 
 #include <OvRendering/Core/CompositeRenderer.h>
@@ -21,6 +22,7 @@ void OvRendering::Core::CompositeRenderer::BeginFrame(const Data::FrameDescripto
 	ZoneScoped;
 	TracyGpuZone("BeginFrame");
 
+	m_recordedMaterial.reset();
 	ABaseRenderer::BeginFrame(p_frameDescriptor);
 
 	for (const auto& feature : m_features | std::views::values)
@@ -58,7 +60,8 @@ void OvRendering::Core::CompositeRenderer::DrawFrame()
 
 		if (m_currentPass->IsEnabled())
 		{
-			m_currentPass->Draw(pso);
+			try { m_currentPass->Draw(pso); }
+			catch (...) { m_currentPass.reset(); throw; }
 		}
 
 		m_currentPass.reset();
@@ -87,6 +90,7 @@ void OvRendering::Core::CompositeRenderer::EndFrame()
 	}
 
 	ClearDescriptors();
+	m_recordedMaterial.reset();
 	ABaseRenderer::EndFrame();
 }
 
@@ -107,6 +111,50 @@ void OvRendering::Core::CompositeRenderer::DrawEntity(
 	const auto& currentPass = m_currentPass.value();
 	const auto& passTypeId = typeid(currentPass);
 
+	if (m_drawRecordingEnabled)
+	{
+		if (m_recording) throw std::logic_error("Nested draw recording is unsupported");
+		if (typeid(p_drawable.mesh.value()) != typeid(Resources::Mesh))
+			throw std::invalid_argument("Draw packets require standard retained Mesh geometry");
+		for (const auto& feature : m_features | std::views::values)
+			if (feature->IsEnabledFor(passTypeId) && !feature->SupportsDrawRecording())
+				throw std::invalid_argument("Enabled feature has not opted into draw recording");
+		DrawRecording recording;
+		OvTools::Utils::OptRef<const RetainedTexturesDescriptor> retained;
+		if (p_drawable.TryGetDescriptor<RetainedTexturesDescriptor>(retained)) recording.textures = retained->textures;
+		m_recording = &recording;
+		try
+		{
+			for (const auto& feature : m_features | std::views::values)
+				if (feature->IsEnabledFor(passTypeId)) feature->OnBeforeDraw(p_pso, p_drawable);
+			const auto features = p_drawable.featureSetOverride.has_value() ?
+				OvTools::Utils::OptRef<const Data::FeatureSet>(p_drawable.featureSetOverride.value()) : std::nullopt;
+			const auto binding = p_drawable.material->PrepareBinding(p_drawable.pass, features,
+				m_recordingFallback2D.get(), m_recordingFallbackCube.get(), m_previousMaterialSignature);
+			const bool stable = !m_previousMaterialSignature || binding.signature.stablePropertySignature != m_previousMaterialSignature->stablePropertySignature;
+			const bool once = !m_previousMaterialSignature || binding.signature.singleUsePropertySignature != m_previousMaterialSignature->singleUsePropertySignature;
+			auto geometry = PrepareGeometryDraw(p_pso, p_drawable);
+			auto material = std::make_shared<Data::Material::Snapshot>(p_drawable.material->RecordCachedSnapshot(
+				p_drawable.pass, features, m_recordingFallback2D, m_recordingFallbackCube,
+				recording.textures, m_recordedMaterial.get(), stable, once));
+			DrawPacket packet{ std::move(geometry), material, std::move(recording) };
+			m_recording = nullptr;
+			ExecuteDrawPacket(packet);
+			m_recordedMaterial = std::move(material);
+			m_previousMaterialSignature = binding.signature;
+		}
+		catch (...)
+		{
+			m_recording = nullptr;
+			m_previousMaterialSignature.reset();
+			m_recordedMaterial.reset();
+			throw;
+		}
+		for (const auto& feature : m_features | std::views::values)
+			if (feature->IsEnabledFor(passTypeId)) feature->OnAfterDraw(p_drawable);
+		return;
+	}
+
 	for (const auto& feature : m_features | std::views::values)
 	{
 		if (feature->IsEnabledFor(passTypeId))
@@ -124,4 +172,45 @@ void OvRendering::Core::CompositeRenderer::DrawEntity(
 			feature->OnAfterDraw(p_drawable);
 		}
 	}
+}
+
+void OvRendering::Core::CompositeRenderer::SetDrawRecordingEnabled(bool p_enabled)
+{
+	if (IsDrawing() || m_recording) throw std::logic_error("Toggle draw recording outside a frame");
+	if (p_enabled && !m_recordingFallback2D)
+	{
+		auto texture2D = std::make_shared<baregl::Texture>(baregl::types::ETextureType::TEXTURE_2D);
+		auto textureCube = std::make_shared<baregl::Texture>(baregl::types::ETextureType::TEXTURE_CUBE);
+		const baregl::data::TextureDesc desc{ .width = 1, .height = 1,
+			.minFilter = baregl::types::ETextureFilteringMode::NEAREST, .magFilter = baregl::types::ETextureFilteringMode::NEAREST,
+			.horizontalWrap = baregl::types::ETextureWrapMode::REPEAT, .verticalWrap = baregl::types::ETextureWrapMode::REPEAT,
+			.internalFormat = baregl::types::EInternalFormat::RGBA8, .useMipMaps = false };
+		const std::array<uint8_t, 4> white{255,255,255,255};
+		const std::array<uint8_t, 24> black{};
+		texture2D->Allocate(desc); texture2D->Upload(white.data(), baregl::types::EFormat::RGBA, baregl::types::EPixelDataType::UNSIGNED_BYTE);
+		textureCube->Allocate(desc); textureCube->Upload(black.data(), baregl::types::EFormat::RGBA, baregl::types::EPixelDataType::UNSIGNED_BYTE);
+		m_recordingFallback2D = std::move(texture2D); m_recordingFallbackCube = std::move(textureCube);
+	}
+	m_drawRecordingEnabled = p_enabled;
+	m_previousMaterialSignature.reset(); m_recordedMaterial.reset();
+}
+
+void OvRendering::Core::CompositeRenderer::RecordDrawOperation(std::function<void()> p_operation)
+{
+	if (!m_recording || !p_operation) throw std::logic_error("No active draw recording");
+	m_recording->operations.push_back(std::move(p_operation));
+}
+
+void OvRendering::Core::CompositeRenderer::RetainDrawTexture(std::shared_ptr<baregl::Texture> p_texture)
+{
+	if (!m_recording) throw std::logic_error("No active draw recording");
+	if (p_texture) m_recording->textures.push_back(std::move(p_texture));
+}
+
+void OvRendering::Core::CompositeRenderer::ExecuteDrawPacket(const DrawPacket& p_packet)
+{
+	ZoneScopedN("Execute Draw Packet");
+	for (const auto& operation : p_packet.features.operations) operation();
+	p_packet.material->Execute();
+	ExecuteGeometryDraw(p_packet.geometry);
 }

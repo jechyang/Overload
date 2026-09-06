@@ -25,6 +25,8 @@ namespace OvCore::Rendering
 	class ReflectionRenderFeature : public OvRendering::Features::ARenderFeature
 	{
 	public:
+		bool SupportsDrawRecording() const override { return typeid(*this) == typeid(ReflectionRenderFeature); }
+
 		/**
 		* Provided by the scene renderer, this descriptor contains
 		* reflection probes to evaluate and provide to the drawables.
@@ -68,6 +70,10 @@ namespace OvCore::Rendering
 		void BindProbe(
 			const OvCore::ECS::Components::CReflectionProbe& p_reflectionProbe
 		);
+
+	private:
+		void ExecuteProbeData(const ECS::Components::CReflectionProbe::UniformData& p_data);
+		std::unique_ptr<baregl::Buffer> m_recordedProbeBuffer;
 
 	protected:
 		virtual void OnBeginFrame(const OvRendering::Data::FrameDescriptor& p_frameDescriptor) override;

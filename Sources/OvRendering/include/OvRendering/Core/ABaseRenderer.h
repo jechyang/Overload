@@ -7,6 +7,7 @@
 #pragma once
 
 #include <atomic>
+#include <span>
 
 #include <OvRendering/Core/IRenderer.h>
 #include <OvRendering/Data/FrameInfo.h>
@@ -103,6 +104,13 @@ namespace OvRendering::Core
 			OvRendering::Settings::EBlitFlags p_flags = OvRendering::Settings::EBlitFlags::DEFAULT
 		);
 
+		// Own additional sampler inputs for the duration of this synchronous blit.
+		// Attachment contents and the destination remain externally ordered.
+		void BlitWithRetainedTextures(
+			Data::PipelineState p_pso, baregl::Framebuffer& p_src, baregl::Framebuffer& p_dst,
+			Data::Material& p_material, Settings::EBlitFlags p_flags,
+			std::span<const std::shared_ptr<baregl::Texture>> p_textures);
+
 		/**
 		* Returns true if the entity is drawable. Should be used before submitting an entity.
 		* @param p_drawable
@@ -119,6 +127,11 @@ namespace OvRendering::Core
 			OvRendering::Data::PipelineState p_pso,
 			const Entities::Drawable& p_drawable
 		);
+
+		struct RetainedTexturesDescriptor
+		{
+			std::vector<std::shared_ptr<baregl::Texture>> textures;
+		};
 
 	protected:
 		// First command boundary: scalar geometry state is captured by value.

@@ -66,3 +66,5 @@ node Tests\Skinning\run-validation.mjs Release --editor
 批次回归现另检查可选 SkinningUpdateStats 的小批次、门槛、任务计数与暂停后重置。蒙皮热区改为只读 span 采样及直接 TRS 矩阵表达式，保持运算顺序；Debug 与 Release 均保留批次默认路径及原阈值，完整结果见 MULTITHREADING_SKINNING_STAGE1_COMPLETION.md。
 
 若 vswhere 在受限环境下返回空，可设置 VSINSTALLDIR，或添加 `--vs "C:/Program Files/Microsoft Visual Studio/2022/Community"`。脚本不会修改系统工具链设置。性能结论只使用没有其他构建、测试或 Tracy 客户端同时运行的日志。
+
+阶段 2 的可选聚合绘制回归使用 `Debug/Release --draw-packets` 和 `Debug/Release --editor --draw-packets`，后者在真实三视图开启同次 draw 录制并生成独立测试项目。必须先完整重建。协议与输出见 Tests/RenderingCommands/README.md 和 MULTITHREADING_DRAW_PACKET_VALIDATION.md。

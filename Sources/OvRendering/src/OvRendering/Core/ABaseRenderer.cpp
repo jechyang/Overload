@@ -147,6 +147,14 @@ void OvRendering::Core::ABaseRenderer::Blit(
 	OvRendering::Settings::EBlitFlags p_flags
 )
 {
+	BlitWithRetainedTextures(p_pso, p_src, p_dst, p_material, p_flags, {});
+}
+
+void OvRendering::Core::ABaseRenderer::BlitWithRetainedTextures(
+	Data::PipelineState p_pso, baregl::Framebuffer& p_src, baregl::Framebuffer& p_dst,
+	Data::Material& p_material, Settings::EBlitFlags p_flags,
+	std::span<const std::shared_ptr<baregl::Texture>> p_textures)
+{
 	ZoneScoped;
 
 	const auto [srcWidth, srcHeight] = p_src.GetSize();
@@ -166,6 +174,10 @@ void OvRendering::Core::ABaseRenderer::Blit(
 	OvRendering::Entities::Drawable blit;
 	blit.mesh = m_unitQuad;
 	blit.material = p_material;
+	RetainedTexturesDescriptor retained{ { p_textures.begin(), p_textures.end() } };
+	if (OvRendering::Settings::IsFlagSet(OvRendering::Settings::EBlitFlags::FILL_INPUT_TEXTURE, p_flags))
+		retained.textures.push_back(p_src.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR));
+	if (!retained.textures.empty()) blit.AddDescriptor<RetainedTexturesDescriptor>(std::move(retained));
 
 	if (OvRendering::Settings::IsFlagSet(OvRendering::Settings::EBlitFlags::USE_MATERIAL_STATE_MASK, p_flags))
 	{

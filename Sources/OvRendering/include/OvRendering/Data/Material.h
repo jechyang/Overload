@@ -154,6 +154,17 @@ namespace OvRendering::Data
 			std::span<const std::shared_ptr<baregl::Texture>> p_retainedTextures = {}
 		);
 
+		// Carry forward unuploaded groups from the same-program previous snapshot.
+		// The caller derives group flags from PrepareBinding signatures; reused
+		// single-use values stay captured without consuming their defaults again.
+		Snapshot RecordCachedSnapshot(
+			std::optional<const std::string_view> p_pass,
+			OvTools::Utils::OptRef<const Data::FeatureSet> p_featureSetOverride,
+			const std::shared_ptr<baregl::Texture>& p_emptyTexture2D,
+			const std::shared_ptr<baregl::Texture>& p_emptyTextureCube,
+			std::span<const std::shared_ptr<baregl::Texture>> p_retainedTextures,
+			const Snapshot* p_previous, bool p_uploadStable, bool p_uploadSingleUse);
+
 		/**
 		* Creates a material
 		* @param p_shader

@@ -10,15 +10,17 @@ if (!['Debug', 'Release'].includes(config)) throw Error('Expected Debug or Relea
 const asan = process.argv.includes('--asan');
 const parallel = process.argv.includes('--parallel');
 const editor = process.argv.includes('--editor');
+const drawPackets = process.argv.includes('--draw-packets');
 const drawInputs = process.argv.includes('--draw-inputs');
 const snapshots = process.argv.includes('--snapshots') || drawInputs;
 const material = process.argv.includes('--material') || snapshots;
 const geometry = process.argv.includes('--geometry') || material;
 if (geometry && (editor || parallel || asan || process.argv.includes('--current'))) throw Error('--geometry requires a baseline/current comparison');
+if (drawPackets && (geometry || parallel || asan || process.argv.includes('--current'))) throw Error('--draw-packets runs separately from other test modes except --editor');
 if (editor && (parallel || asan)) throw Error('--editor runs separately from --parallel/--asan');
 const mutexDeque = process.argv.includes('--mutex-deque');
-const currentOnly = asan || parallel || editor || process.argv.includes('--current');
-const output = path.join(root, 'Build/JobsValidation/Skinning', config + (drawInputs ? '-draw-inputs' : snapshots ? '-snapshots' : material ? '-material' : geometry ? '-geometry' : '') + (editor ? '-editor' : parallel ? '-parallel' : '') + (mutexDeque ? '-mutex' : '') + (asan ? '-asan' : ''));
+const currentOnly = asan || parallel || editor || drawPackets || process.argv.includes('--current');
+const output = path.join(root, 'Build/JobsValidation/Skinning', config + (drawPackets ? '-draw-packets' : drawInputs ? '-draw-inputs' : snapshots ? '-snapshots' : material ? '-material' : geometry ? '-geometry' : '') + (editor ? '-editor' : parallel ? '-parallel' : '') + (mutexDeque ? '-mutex' : '') + (asan ? '-asan' : ''));
 fs.mkdirSync(output, { recursive: true });
 const baseline = drawInputs ? 'b1128a77b55b9d96c554aad63e743056e481f2cf' : snapshots ? '8cc2f8c5a9d992809b95d317a70dfbcfc3928442' : material ? '50194bfe7ee94eac37d63bbf84779c7c68b390e4' : geometry ? '4f8da08b854a7d57e3a2b0ce08f3d8a05039d7d9' : '73ae710a57889bfde94184c3c8f073228e998144';
 const header = 'Sources/OvCore/include/OvCore/ECS/Components/CSkinnedMeshRenderer.h';
@@ -34,7 +36,7 @@ const sdkVersion = fs.readdirSync(path.join(sdk, 'Include')).filter(x => fs.exis
 const compiler = path.join(msvc, 'bin/Hostx64/x64/cl.exe');
 const engineLibs = ['assimp','baregl','bullet3','freetype','glfw','ImGui','lua','OvAudio','OvCore','OvDebug','OvMaths','OvPhysics','OvRendering','OvTools','OvUI','OvWindowing','soloud','tinyxml2','tracy'];
 const depIncludes = ['baregl/include','ImGui/include','lua/include','sol/include','tinyxml2/include','tracy','glfw/include','bullet3/src','soloud/include','assimp/include'];
-const manifest = { baseline, config, drawInputs, snapshots, material, geometry, editor, parallel, mutexDeque, asan, compiler, sdkVersion, results: [] };
+const manifest = { baseline, config, drawPackets, drawInputs, snapshots, material, geometry, editor, parallel, mutexDeque, asan, compiler, sdkVersion, results: [] };
 fs.rmSync(path.join(output, 'result.json'), { force: true }); // Never leave a stale success after a failed rerun.
 
 function run(file, args, cwd, log, timeout = 120000) {
@@ -77,7 +79,21 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
     const original = 'Sources/OvRendering/include/OvRendering/Core/ABaseRenderer.h';
     const dest = path.join(overlay, 'OvRendering/Core/ABaseRenderer.h');
     fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.writeFileSync(dest, cp.execFileSync('git', ['-c', 'safe.directory=' + root.split(path.sep).join('/'), 'show', baseline + ':' + original], { cwd: root, windowsHide: true }));
+    let legacy = cp.execFileSync('git', ['-c', 'safe.directory=' + root.split(path.sep).join('/'), 'show', baseline + ':' + original], { cwd: root, windowsHide: true, encoding: 'utf8' });
+    const current = fs.readFileSync(path.join(root, original), 'utf8');
+    // Add declarations only; keep the baseline instance/vtable/geometry layout.
+    const blitStart = current.indexOf('\t\tvoid BlitWithRetainedTextures(');
+    const blitEnd = current.indexOf(');', blitStart) + 2;
+    const ownersStart = current.indexOf('\t\tstruct RetainedTexturesDescriptor');
+    const ownersEnd = current.indexOf('};', ownersStart) + 2;
+    legacy = '#include <span>\n' + legacy.replace('\tprotected:', current.slice(blitStart, blitEnd) + '\n' + current.slice(ownersStart, ownersEnd) + '\n\tprotected:');
+    fs.writeFileSync(dest, legacy);
+  }
+  if (drawPackets) {
+    const original = 'Sources/OvCore/include/OvCore/ECS/Components/CReflectionProbe.h';
+    const dest = path.join(overlay, 'OvCore/ECS/Components/CReflectionProbe.h');
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, fs.readFileSync(path.join(root, original), 'utf8').replaceAll('private:', 'public:'));
   }
   const extraSources = [];
   const editorObjects = [];
@@ -90,9 +106,17 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
     }
     const rendererSource = 'Sources/OvRendering/src/OvRendering/Core/ABaseRenderer.cpp';
     const rendererCopy = path.join(dir, 'ABaseRenderer.cpp');
-    fs.writeFileSync(rendererCopy, variant === 'baseline'
-      ? cp.execFileSync('git', ['-c', `safe.directory=${root.replaceAll('\\','/')}`, 'show', `${baseline}:${rendererSource}`], { cwd: root, windowsHide: true })
-      : fs.readFileSync(path.join(root, rendererSource)));
+    let rendererText = variant === 'baseline'
+      ? cp.execFileSync('git', ['-c', `safe.directory=${root.replaceAll('\\','/')}`, 'show', `${baseline}:${rendererSource}`], { cwd: root, windowsHide: true, encoding: 'utf8' })
+      : fs.readFileSync(path.join(root, rendererSource), 'utf8');
+    if (variant === 'baseline') {
+      const current = fs.readFileSync(path.join(root, rendererSource), 'utf8');
+      const begin = current.indexOf('void OvRendering::Core::ABaseRenderer::BlitWithRetainedTextures(');
+      const end = current.indexOf('bool OvRendering::Core::ABaseRenderer::IsDrawable', begin);
+      if (begin < 0 || end < begin) throw Error('Missing retained blit helper boundary');
+      rendererText += '\n' + current.slice(begin, end);
+    }
+    fs.writeFileSync(rendererCopy, rendererText);
     extraSources.push(rendererCopy);
     if (material) {
       const materialSource = 'Sources/OvRendering/src/OvRendering/Data/Material.cpp';
@@ -106,7 +130,25 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
         if (!text.includes('MaterialSignatureSet signature;')) throw Error('Legacy hash seed normalization no longer matches');
         text = text.replace('MaterialSignatureSet signature;', 'MaterialSignatureSet signature{};');
       }
-      fs.writeFileSync(materialCopy, text);
+      if (variant === 'baseline') {
+        // Current CompositeRenderer links the opt-in snapshot helpers even when
+        // disabled. Supply only missing helper definitions; keep old Bind/Upload.
+        const current = fs.readFileSync(path.join(root, materialSource), 'utf8');
+        const names = ['OvRendering::Data::Material::BindingCommand OvRendering::Data::Material::PrepareBinding(',
+          'void OvRendering::Data::Material::ExecuteBinding(',
+          'std::optional<OvRendering::Data::Material::UniformUploadCommand> OvRendering::Data::Material::PrepareUniformUpload(',
+          'void OvRendering::Data::Material::ExecuteUniformUpload(',
+          'OvRendering::Data::Material::Snapshot OvRendering::Data::Material::RecordSnapshot(',
+          'OvRendering::Data::Material::Snapshot OvRendering::Data::Material::RecordCachedSnapshot(',
+          'void OvRendering::Data::Material::Snapshot::Execute()'];
+        for (let i = 0; i < names.length; ++i) if (!text.includes(names[i])) {
+          const begin = current.indexOf(names[i]);
+          const end = current.indexOf('\n}', begin) + 2;
+          if (begin < 0 || end < begin) throw Error('Missing snapshot helper boundary');
+          text += '\n' + current.slice(begin, end);
+        }
+      }
+      fs.writeFileSync(materialCopy, '#include <algorithm>\n#include <cstring>\n#include <stdexcept>\n' + text);
       extraSources.push(materialCopy);
       if (snapshots) {
         // Both immediate-path oracles use the current resource representation.
@@ -154,11 +196,11 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
   }
   const args = ['/nologo','/std:c++20','/EHsc','/W3','/WX',config === 'Debug' ? '/MDd' : '/MD',config === 'Debug' ? '/Od' : '/O2','/bigobj','/Gy','/Zi',
     '/DTRACY_ENABLE','/DTRACY_ON_DEMAND','/DTRACY_MEMORY_ENABLE','/DLUA_SCRIPTING','/DSOL_NO_LUA_HPP',config === 'Debug' ? '/D_DEBUG' : '/DNDEBUG',
-    ...((variant === 'current' || geometry) ? ['/DSKINNING_NEW_PATH'] : []), ...(geometry && variant === 'current' ? ['/DGEOMETRY_COMMANDS_NEW_PATH'] : []), ...(material && variant === 'current' ? ['/DMATERIAL_COMMANDS_NEW_PATH'] : []), ...(snapshots && variant === 'current' ? ['/DSNAPSHOT_NEW_PATH'] : []), ...(drawInputs && variant === 'current' ? ['/DDRAW_INPUTS_NEW_PATH'] : []), ...(mutexDeque ? ['/DOVTOOLS_JOBS_USE_MUTEX_DEQUE'] : []), ...(asan ? ['/fsanitize=address', '/D_DISABLE_VECTOR_ANNOTATION', '/D_DISABLE_STRING_ANNOTATION'] : []),
+    ...((variant === 'current' || geometry) ? ['/DSKINNING_NEW_PATH'] : []), ...((geometry || drawPackets) && variant === 'current' ? ['/DGEOMETRY_COMMANDS_NEW_PATH'] : []), ...((material || drawPackets) && variant === 'current' ? ['/DMATERIAL_COMMANDS_NEW_PATH'] : []), ...((snapshots || drawPackets) && variant === 'current' ? ['/DSNAPSHOT_NEW_PATH'] : []), ...((drawInputs || drawPackets) && variant === 'current' ? ['/DDRAW_INPUTS_NEW_PATH'] : []), ...(drawPackets ? ['/DDRAW_PACKETS_TEST'] : []), ...(mutexDeque ? ['/DOVTOOLS_JOBS_USE_MUTEX_DEQUE'] : []), ...(asan ? ['/fsanitize=address', '/D_DISABLE_VECTOR_ANNOTATION', '/D_DISABLE_STRING_ANNOTATION'] : []),
     '/I' + overlay, '/I' + path.join(msvc,'include'), ...['ucrt','shared','um','winrt'].map(x => '/I' + path.join(sdk,'Include',sdkVersion,x)),
     ...fs.readdirSync(path.join(root,'Sources')).filter(x => x.startsWith('Ov')).map(x => '/I' + path.join(root,'Sources',x,'include')),
     ...depIncludes.map(x => '/I' + path.join(root,'Dependencies',x)),
-    '/Fo' + dir + '/', '/Fd' + path.join(dir,'compile.pdb'), '/Fe' + exe, path.join(root, drawInputs ? 'Tests/RenderingCommands/draw_input_validation.cpp' : snapshots ? 'Tests/RenderingCommands/snapshot_validation.cpp' : material ? 'Tests/RenderingCommands/material_validation.cpp' : geometry ? 'Tests/RenderingCommands/geometry_validation.cpp' : editor ? 'Tests/Skinning/editor_validation.cpp' : parallel ? 'Tests/Skinning/parallel_validation.cpp' : 'Tests/Skinning/serial_validation.cpp'), cpp, scene, ...extraSources,
+    '/Fo' + dir + '/', '/Fd' + path.join(dir,'compile.pdb'), '/Fe' + exe, path.join(root, drawPackets && !editor ? 'Tests/RenderingCommands/packet_validation.cpp' : drawInputs ? 'Tests/RenderingCommands/draw_input_validation.cpp' : snapshots ? 'Tests/RenderingCommands/snapshot_validation.cpp' : material ? 'Tests/RenderingCommands/material_validation.cpp' : geometry ? 'Tests/RenderingCommands/geometry_validation.cpp' : editor ? 'Tests/Skinning/editor_validation.cpp' : parallel ? 'Tests/Skinning/parallel_validation.cpp' : 'Tests/Skinning/serial_validation.cpp'), cpp, scene, ...extraSources,
     path.join(root, 'Sources/OvTools/src/OvTools/Jobs/JobSystem.cpp'),
     '/link', '/LIBPATH:' + path.join(msvc,'lib/x64'), ...['ucrt','um'].map(x => '/LIBPATH:' + path.join(sdk,'Lib',sdkVersion,x,'x64')),
     ...editorObjects,

@@ -19,6 +19,8 @@ namespace OvRendering::Features
 	class LightingRenderFeature : public ARenderFeature
 	{
 	public:
+		bool SupportsDrawRecording() const override { return typeid(*this) == typeid(LightingRenderFeature); }
+
 		// TODO: Consider not using references here, but copying the light instead (should be fairly cheap and doesn't require to keep an instance outside of the scope)
 		using LightSet = std::vector<std::reference_wrapper<OvRendering::Entities::Light>>;
 

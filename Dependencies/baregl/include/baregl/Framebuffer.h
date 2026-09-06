@@ -109,6 +109,10 @@ namespace baregl
 			uint32_t p_index = 0
 		) const;
 
+		// Owns the attachment object, not a frozen copy of its rendered contents.
+		// Acquire/use/release on the context owner; writes/resizes still need ordering.
+		std::shared_ptr<Texture> RetainTextureAttachment(types::EFramebufferAttachment p_attachment, uint32_t p_index = 0) const;
+
 		/**
 		* Selects which color attachment to draw to.
 		* @param p_index index of the color attachment, if set to std::nullopt, no color will be drawn.

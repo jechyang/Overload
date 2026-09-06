@@ -110,5 +110,10 @@ void OvCore::Rendering::EngineBufferRenderFeature::ExecuteDrawUpload(const DrawU
 void OvCore::Rendering::EngineBufferRenderFeature::OnBeforeDraw(OvRendering::Data::PipelineState& p_pso, const OvRendering::Entities::Drawable& p_drawable)
 {
 	(void)p_pso;
-	if (const auto command = PrepareDrawUpload(p_drawable)) ExecuteDrawUpload(*command);
+	if (const auto command = PrepareDrawUpload(p_drawable))
+	{
+		if (m_renderer.IsRecordingDraw())
+			m_renderer.RecordDrawOperation([this, value = *command] { ExecuteDrawUpload(value); });
+		else ExecuteDrawUpload(*command);
+	}
 }

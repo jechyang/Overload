@@ -69,3 +69,22 @@ node Tests\Skinning\run-validation.mjs Release --draw-inputs
 需要检查新增上传成本时，在 Build/<配置> 工作目录串行交替运行 baseline/current 的 skinning-validation.exe <另建输出目录> --benchmark。用 45 骨骼、两个稳定数组交替制造缓存 miss，32 次预热，256×32 次实际 palette 上传；计时期间关闭 GL 拦截，不能与构建或其它验证并发。它衡量 CPU/驱动上传开销，不代表整帧或 GPU 渲染时间。
 
 独立几何持有仅适用于标准 Mesh，自定义 IMesh/派生 Mesh 在生产几何命令中仍借用。模型/palette 命令仍依赖执行 feature 的 UBO/SSBO 及外部 view/pass/target 状态，材质快照尚未统一接入完整 draw。详见 MULTITHREADING_DRAW_INPUT_VALIDATION.md。
+
+## 同次 draw packet（阶段 2 第五增量）
+
+~~~bat
+node Tests\Skinning\run-validation.mjs Debug --draw-packets
+node Tests\Skinning\run-validation.mjs Release --draw-packets
+node Tests\Skinning\run-validation.mjs Debug --editor --draw-packets
+node Tests\Skinning\run-validation.mjs Release --editor --draw-packets
+~~~
+
+先完整重建对应配置（CompositeRenderer 布局和 feature 虚表已变）；可追加 --vs 参数。输出为 <配置>-draw-packets/current/ 和 <配置>-draw-packets-editor/current/，与旧模式隔离。--draw-packets 仅可与 --editor 组合，不可与旧基准/ASan/parallel 模式混用。
+
+packet_validation.cpp 在真实 CompositeRenderer 上切换即时/录制：12 组反射常量/cubemap、定向光深度/矩阵、模型/palette、singleUse 缓存，逐字节比较图像及实际 GL draw 的顺序/管线/模型/tint；检查未知 feature、已批准 feature 的派生类、自定义 Mesh、未持有 raw sampler 拒绝和下一帧恢复、附件最终回收。随后比较 24 帧真实 Mannequin/Standard/SceneRenderer 图像。生成纹理的测试只放宽 CReflectionProbe 私有字段访问权限，不改变布局或生产路径。
+
+--editor --draw-packets 将真实 Scene/Game/Asset 三个 renderer 全部开启录制，保留自动曝光/Bloom 后处理，执行既有项目、模式、同视图消费顺序和切场景/resize 验收。默认产品模式仍关闭录制。
+
+为了让早期旧源码基准链接当前 CompositeRenderer/后处理，兼容副本补充缺失的新材质辅助函数和 BlitWithRetainedTextures 非虚接口；旧 Bind/UploadProperties/DrawEntity 保留，基准提交不变。基类新增声明不改变旧实例/虚表布局，几何嵌套定义仍匹配基准。
+
+本阶段 packet 只在同次 draw 同步消费，资源持有不冻结动态纹理，也未持有完整 view/pass/target/lighting 状态。详细失败协议、证据和后续工作见 MULTITHREADING_DRAW_PACKET_VALIDATION.md。

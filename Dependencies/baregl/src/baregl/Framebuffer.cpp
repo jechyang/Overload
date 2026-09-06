@@ -148,6 +148,15 @@ namespace baregl
 		return std::nullopt;
 	}
 
+	std::shared_ptr<Texture> Framebuffer::RetainTextureAttachment(types::EFramebufferAttachment p_attachment, uint32_t p_index) const
+	{
+		const auto key = utils::EnumToValue<GLenum>(p_attachment) + static_cast<GLenum>(p_index);
+		const auto it = m_attachments.find(key);
+		if (it != m_attachments.end())
+			if (const auto texture = std::get_if<std::shared_ptr<Texture>>(&it->second)) return *texture;
+		return {};
+	}
+
 	void Framebuffer::Resize(uint16_t p_width, uint16_t p_height)
 	{
 		BAREGL_ASSERT(IsValid(), "Cannot resize an invalid framebuffer");

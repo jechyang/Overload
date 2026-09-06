@@ -61,6 +61,8 @@ void OvCore::Rendering::ShadowRenderFeature::OnBeforeDraw(OvRendering::Data::Pip
 
 			material.SetProperty("_ShadowMap", &shadowTex.value().get(), true);
 			material.SetProperty("_LightSpaceMatrix", light.lightSpaceMatrix.value(), true);
+			if (m_renderer.IsRecordingDraw())
+				m_renderer.RetainDrawTexture(light.shadowBuffer->RetainTextureAttachment(baregl::types::EFramebufferAttachment::DEPTH));
 
 			++lightIndex;
 		}

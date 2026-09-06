@@ -7,6 +7,7 @@
 #include <string>
 #include <tracy/Tracy.hpp>
 
+#include <OvRendering/Core/CompositeRenderer.h>
 #include <OvCore/Rendering/SkinningDrawableDescriptor.h>
 #include <OvCore/Rendering/SkinningRenderFeature.h>
 #include <OvCore/Rendering/SkinningUtils.h>
@@ -64,6 +65,12 @@ void OvCore::Rendering::SkinningRenderFeature::OnBeforeDraw(
 )
 {
 	(void)p_pso;
+	if (m_renderer.IsRecordingDraw())
+	{
+		auto snapshot = std::make_shared<PaletteSnapshot>(RecordPalette(p_drawable));
+		m_renderer.RecordDrawOperation([this, snapshot] { ExecutePaletteSnapshot(*snapshot); });
+		return;
+	}
 
 	OvTools::Utils::OptRef<const SkinningDrawableDescriptor> skinningDescriptor;
 	const bool hasSkinningDescriptor = p_drawable.TryGetDescriptor<SkinningDrawableDescriptor>(skinningDescriptor);

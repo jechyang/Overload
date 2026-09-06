@@ -24,6 +24,8 @@ namespace OvCore::Rendering
 	class EngineBufferRenderFeature : public OvRendering::Features::ARenderFeature
 	{
 	public:
+		bool SupportsDrawRecording() const override { return typeid(*this) == typeid(EngineBufferRenderFeature); }
+
 		/**
 		* Constructor
 		* @param p_renderer
