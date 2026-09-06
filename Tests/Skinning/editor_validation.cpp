@@ -25,6 +25,7 @@ void Save(Scene& scene, const std::filesystem::path& path)
 std::vector<unsigned char> ViewPixels(OvEditor::Panels::AView& view)
 {
     view.Render();
+    Require(view.m_image->textureID.id == view.m_framebuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)->GetID(), "view image retained a stale attachment after resize");
     const auto [width, height] = view.GetSafeSize();
     Require(width > 0 && height > 0, "view has no render target");
     std::vector<unsigned char> pixels(size_t(width) * height * 4);

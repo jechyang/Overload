@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <memory>
 #include <baregl/detail/NativeObject.h>
 #include <baregl/types/EInternalFormat.h>
 
@@ -56,6 +57,8 @@ namespace baregl
 		* @param p_height
 		*/
 		void Resize(uint16_t p_width, uint16_t p_height);
+
+		std::shared_ptr<Renderbuffer> CreateResizedStorage(uint16_t p_width, uint16_t p_height) const;
 
 		/**
 		* Returns the width of the framebuffer

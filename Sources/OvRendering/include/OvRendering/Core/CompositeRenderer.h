@@ -125,6 +125,7 @@ namespace OvRendering::Core
 		};
 		struct DrawPacket
 		{
+			PassStateCommand state;
 			GeometryDrawCommand geometry;
 			std::shared_ptr<const Data::Material::Snapshot> material;
 			DrawRecording features;

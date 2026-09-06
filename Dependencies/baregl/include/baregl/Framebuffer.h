@@ -36,6 +36,8 @@ namespace baregl
 	*/
 	class Framebuffer final : public detail::NativeObject
 	{
+		struct SnapshotData;
+		void ApplyAttachments();
 	public:
 		template<typename T>
 		static constexpr bool IsSupportedAttachmentType =
@@ -76,7 +78,8 @@ namespace baregl
 		bool IsValid() const;
 
 		/**
-		* Resizes all attachments to match the given width and height.
+		* Publishes new empty attachment storage of the given size. Old snapshots keep
+		* the previous storage. Reacquire borrowed attachments/IDs after a size change.
 		* @param p_width
 		* @param p_height
 		*/
@@ -108,6 +111,24 @@ namespace baregl
 			baregl::types::EFramebufferAttachment p_attachment,
 			uint32_t p_index = 0
 		) const;
+
+		// CPU capture of attachment identities, layers, dimensions and read/draw selection.
+		// Replay lazily creates an independent FBO on the GL owner. Contents still require
+		// ordered writes; resize publishes new storage without changing existing snapshots.
+		class Snapshot
+		{
+		public:
+			Snapshot() = default;
+			void Bind() const;
+			uint32_t GetID() const; // Realizes the FBO; GL owner only.
+			std::pair<uint16_t, uint16_t> GetSize() const;
+		private:
+			explicit Snapshot(std::shared_ptr<SnapshotData> p_data) : m_data(std::move(p_data)) {}
+			std::shared_ptr<SnapshotData> m_data;
+			friend class Framebuffer;
+		};
+		Snapshot RecordTarget() const;
+		static void BindDefault();
 
 		// Owns the attachment object, not a frozen copy of its rendered contents.
 		// Acquire/use/release on the context owner; writes/resizes still need ordering.
@@ -168,5 +189,9 @@ namespace baregl
 		bool m_valid = false;
 		std::string m_debugName;
 		std::unordered_map<uint32_t, FramebufferAttachment> m_attachments;
+		std::unordered_map<uint32_t, std::optional<uint32_t>> m_layers;
+		std::optional<uint32_t> m_drawBuffer = 0;
+		std::optional<uint32_t> m_readBuffer = 0;
+		mutable std::shared_ptr<SnapshotData> m_snapshot;
 	};
 }

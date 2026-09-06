@@ -71,10 +71,7 @@ void OvRendering::Core::ABaseRenderer::BeginFrame(const Data::FrameDescriptor& p
 
 	m_frameDescriptor = p_frameDescriptor;
 
-	if (p_frameDescriptor.outputBuffer)
-	{
-		p_frameDescriptor.outputBuffer.value().Bind();
-	}
+	BindTarget(p_frameDescriptor.outputBuffer ? &p_frameDescriptor.outputBuffer.value() : nullptr);
 
 	m_basePipelineState = m_driver.CreatePipelineState();
 	SetViewport(0, 0, p_frameDescriptor.renderWidth, p_frameDescriptor.renderHeight);
@@ -98,10 +95,7 @@ void OvRendering::Core::ABaseRenderer::EndFrame()
 
 	OVASSERT(s_isDrawing, "Cannot call EndFrame() before calling BeginFrame()");
 
-	if (m_frameDescriptor.outputBuffer)
-	{
-		m_frameDescriptor.outputBuffer.value().Unbind();
-	}
+	BindTarget(nullptr);
 
 	m_isDrawing = false;
 	s_isDrawing.store(false);
@@ -125,6 +119,7 @@ bool OvRendering::Core::ABaseRenderer::IsDrawing() const
 
 void OvRendering::Core::ABaseRenderer::SetViewport(uint32_t p_x, uint32_t p_y, uint32_t p_width, uint32_t p_height)
 {
+	m_passState.viewport = { p_x, p_y, p_width, p_height };
 	m_driver.SetViewport(p_x, p_y, p_width, p_height);
 }
 
@@ -136,7 +131,7 @@ void OvRendering::Core::ABaseRenderer::Clear(
 )
 {
 	ZoneScoped;
-	m_driver.Clear(p_colorBuffer, p_depthBuffer, p_stencilBuffer, p_color);
+	ExecuteClear(PrepareClear(p_colorBuffer, p_depthBuffer, p_stencilBuffer, p_color));
 }
 
 void OvRendering::Core::ABaseRenderer::Blit(
@@ -193,7 +188,7 @@ void OvRendering::Core::ABaseRenderer::BlitWithRetainedTextures(
 		blit.stateMask.depthTest = false;
 	}
 
-	p_dst.Bind();
+	BindTarget(&p_dst);
 
 	if (OvRendering::Settings::IsFlagSet(OvRendering::Settings::EBlitFlags::UPDATE_VIEWPORT_SIZE, p_flags))
 	{
@@ -202,7 +197,7 @@ void OvRendering::Core::ABaseRenderer::BlitWithRetainedTextures(
 	}
 
 	DrawEntity(p_pso, blit);
-	p_dst.Unbind();
+	BindTarget(nullptr);
 }
 
 bool OvRendering::Core::ABaseRenderer::IsDrawable(const Entities::Drawable& p_drawable) const
@@ -305,4 +300,37 @@ void OvRendering::Core::ABaseRenderer::DrawEntity(
 	ExecuteGeometryDraw(geometryCommand);
 
 	p_drawable.material->Unbind();
+}
+
+void OvRendering::Core::ABaseRenderer::BindTarget(baregl::Framebuffer* p_target)
+{
+	auto target = p_target ? std::optional{p_target->RecordTarget()} : std::nullopt;
+	if (p_target) p_target->Bind();
+	else baregl::Framebuffer::BindDefault();
+	m_passState.target = std::move(target);
+}
+
+OvRendering::Core::ABaseRenderer::PassStateCommand OvRendering::Core::ABaseRenderer::RecordPassState() const
+{
+	return m_passState;
+}
+
+void OvRendering::Core::ABaseRenderer::ExecutePassState(const PassStateCommand& p_command)
+{
+	if (p_command.target) p_command.target->Bind();
+	else baregl::Framebuffer::BindDefault();
+	const auto& viewport = p_command.viewport;
+	m_driver.SetViewport(viewport.x, viewport.y, viewport.width, viewport.height);
+}
+
+OvRendering::Core::ABaseRenderer::ClearCommand OvRendering::Core::ABaseRenderer::PrepareClear(
+	bool p_colorBuffer, bool p_depthBuffer, bool p_stencilBuffer, const OvMaths::FVector4& p_color) const
+{
+	return { RecordPassState(), p_colorBuffer, p_depthBuffer, p_stencilBuffer, p_color };
+}
+
+void OvRendering::Core::ABaseRenderer::ExecuteClear(const ClearCommand& p_command)
+{
+	ExecutePassState(p_command.state);
+	m_driver.Clear(p_command.colorBuffer, p_command.depthBuffer, p_command.stencilBuffer, p_command.color);
 }

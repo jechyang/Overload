@@ -103,3 +103,11 @@ node Tests\Skinning\run-validation.mjs Release --editor --frame-inputs
 frame_input_validation.cpp 在创建 GL 上下文前准备相机/时间与灯光载荷；销毁源 Camera/Transform/Light/Frustum 后检查 GPU 字节，覆盖 UBO 上传范围与时间保留、灯光 frustum/空集合/分配失败、buffer 脱离 feature 的存活与最终释放。24 组相机切换场景对比即时与录制图像；录制分支故意污染相机/时间 UBO 和灯光绑定，确认 draw 还原捕获值并保留显式灯光覆盖。另运行原 packet 与真实 Mannequin 图像对拍。
 
 --editor --frame-inputs 在实际三视图开启录制，保留调试假灯光与后处理，运行既有模式/多视图/切场景/resize。LightingDescriptor 仍有 shadow 等帧内借用者，LightBindingCommand 不冻结 buffer 内容，详见 MULTITHREADING_FRAME_INPUT_VALIDATION.md。
+
+## 目标、viewport 与 clear（阶段 2 第七增量）
+
+使用 Debug/Release --target-state 及 --editor --target-state（可追加 --vs）。先完整重建 baregl 和 renderer 使用方。新测试包含无当前 GL 上下文捕获、旧目标 resize/销毁后清理、cubemap 六面读写选择、共享附件/采样状态、最终回收及真实 draw 目标/viewport 污染恢复对拍，并复用 frame-inputs/packet/Mannequin 回归。Editor 新增 UI 纹理 ID 与当前附件一致性断言。
+
+为了施加 Driver 缓存能识别的管线状态，专项测试仅放宽 Driver 私有访问并同时编译当前 Driver.cpp；不改变生产 ABI。历史 renderer 副本追加当前 PassStateCommand 成员以匹配实例布局，旧嵌套几何类型、虚表和即时绘制逻辑不变。
+
+目标快照只固定配置/存储身份，不冻结像素；当前仍同线程消费。协议、测试入口和证据见 MULTITHREADING_TARGET_STATE_VALIDATION.md。

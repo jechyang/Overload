@@ -55,7 +55,7 @@ void OvRendering::Core::CompositeRenderer::DrawFrame()
 	{
 		m_currentPass = pass.second.get();
 
-		m_frameDescriptor.outputBuffer.value().Bind();
+		BindTarget(m_frameDescriptor.outputBuffer ? &m_frameDescriptor.outputBuffer.value() : nullptr);
 		SetViewport(0, 0, m_frameDescriptor.renderWidth, m_frameDescriptor.renderHeight);
 
 		if (m_currentPass->IsEnabled())
@@ -137,7 +137,7 @@ void OvRendering::Core::CompositeRenderer::DrawEntity(
 			auto material = std::make_shared<Data::Material::Snapshot>(p_drawable.material->RecordCachedSnapshot(
 				p_drawable.pass, features, m_recordingFallback2D, m_recordingFallbackCube,
 				recording.textures, m_recordedMaterial.get(), stable, once));
-			DrawPacket packet{ std::move(geometry), material, std::move(recording) };
+			DrawPacket packet{ RecordPassState(), std::move(geometry), material, std::move(recording) };
 			m_recording = nullptr;
 			ExecuteDrawPacket(packet);
 			m_recordedMaterial = std::move(material);
@@ -209,6 +209,7 @@ void OvRendering::Core::CompositeRenderer::RetainDrawTexture(std::shared_ptr<bar
 
 void OvRendering::Core::CompositeRenderer::ExecuteDrawPacket(const DrawPacket& p_packet)
 {
+	ExecutePassState(p_packet.state);
 	ZoneScopedN("Execute Draw Packet");
 	for (const auto& operation : p_packet.features.operations) operation();
 	p_packet.material->Execute();

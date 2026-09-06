@@ -128,6 +128,30 @@ namespace OvRendering::Core
 			const Entities::Drawable& p_drawable
 		);
 
+		struct ViewportCommand
+		{
+			uint32_t x = 0, y = 0, width = 0, height = 0;
+		};
+		struct PassStateCommand
+		{
+			std::optional<baregl::Framebuffer::Snapshot> target;
+			ViewportCommand viewport;
+		};
+		struct ClearCommand
+		{
+			PassStateCommand state;
+			bool colorBuffer, depthBuffer, stencilBuffer;
+			OvMaths::FVector4 color;
+		};
+		// Select via this API while drawing. Recording copies CPU state only.
+		// Execution and final resource release currently require the GL owner.
+		void BindTarget(baregl::Framebuffer* p_target);
+		PassStateCommand RecordPassState() const;
+		void ExecutePassState(const PassStateCommand& p_command);
+		ClearCommand PrepareClear(bool p_colorBuffer, bool p_depthBuffer, bool p_stencilBuffer,
+			const OvMaths::FVector4& p_color = OvMaths::FVector4::Zero) const;
+		void ExecuteClear(const ClearCommand& p_command);
+
 		struct RetainedTexturesDescriptor
 		{
 			std::vector<std::shared_ptr<baregl::Texture>> textures;
@@ -162,6 +186,8 @@ namespace OvRendering::Core
 		OvRendering::Data::PipelineState m_basePipelineState;
 		bool m_isDrawing;
 		std::optional<OvRendering::Data::MaterialSignatureSet> m_previousMaterialSignature = std::nullopt;
+
+		PassStateCommand m_passState;
 
 	private:
 		static std::atomic_bool s_isDrawing;

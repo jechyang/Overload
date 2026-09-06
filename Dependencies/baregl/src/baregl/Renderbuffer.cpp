@@ -75,4 +75,10 @@ namespace baregl
 		BAREGL_ASSERT(IsValid(), "Cannot get height of an invalid renderbuffer");
 		return m_height;
 	}
+	std::shared_ptr<Renderbuffer> Renderbuffer::CreateResizedStorage(uint16_t p_width, uint16_t p_height) const
+	{
+		auto result = std::make_shared<Renderbuffer>();
+		result->Allocate(p_width, p_height, m_format);
+		return result;
+	}
 }

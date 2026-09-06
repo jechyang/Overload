@@ -69,11 +69,11 @@ void OvCore::Rendering::ShadowRenderPass::Draw(OvRendering::Data::PipelineState 
 
 					engineBufferRenderFeature.SetCamera(light.shadowCamera.value());
 
-					light.shadowBuffer->Bind();
+					m_renderer.BindTarget(light.shadowBuffer.get());
 					m_renderer.SetViewport(0, 0, light.shadowMapResolution, light.shadowMapResolution);
 					m_renderer.Clear(true, true, true);
 					_DrawShadows(pso, scene);
-					light.shadowBuffer->Unbind();
+					m_renderer.BindTarget(nullptr);
 
 					engineBufferRenderFeature.SetCamera(frameDescriptor.camera.value());
 				}
@@ -87,7 +87,7 @@ void OvCore::Rendering::ShadowRenderPass::Draw(OvRendering::Data::PipelineState 
 
 	if (auto output = frameDescriptor.outputBuffer)
 	{
-		output.value().Bind();
+		m_renderer.BindTarget(&output.value());
 	}
 
 	m_renderer.SetViewport(0, 0, frameDescriptor.renderWidth, frameDescriptor.renderHeight);

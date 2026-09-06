@@ -70,7 +70,7 @@ void OvCore::Rendering::ReflectionRenderPass::Draw(OvRendering::Data::PipelineSt
 
 		reflectionCamera.SetFov(90.0f);
 		const auto [width, height] = targetFramebuffer.GetSize();
-		targetFramebuffer.Bind();
+		m_renderer.BindTarget(&targetFramebuffer);
 		m_renderer.SetViewport(0, 0, width, height);
 
 		// Iterating over the given face indices, which determine if we 
@@ -81,6 +81,7 @@ void OvCore::Rendering::ReflectionRenderPass::Draw(OvRendering::Data::PipelineSt
 			reflectionCamera.CacheMatrices(width, height);
 			engineBufferRenderFeature.SetCamera(reflectionCamera);
 			targetFramebuffer.SetTargetDrawBuffer(faceIndex);
+			m_renderer.BindTarget(&targetFramebuffer);
 			m_renderer.Clear(true, true, true);
 			_DrawReflections(p_pso, reflectionCamera);
 
@@ -91,7 +92,7 @@ void OvCore::Rendering::ReflectionRenderPass::Draw(OvRendering::Data::PipelineSt
 			}
 		}
 
-		targetFramebuffer.Unbind();
+		m_renderer.BindTarget(nullptr);
 	}
 
 	// Once we are done rendering all reflection probes,
@@ -101,7 +102,7 @@ void OvCore::Rendering::ReflectionRenderPass::Draw(OvRendering::Data::PipelineSt
 
 	if (auto output = frameDescriptor.outputBuffer)
 	{
-		output.value().Bind();
+		m_renderer.BindTarget(&output.value());
 	}
 
 	m_renderer.SetViewport(0, 0, frameDescriptor.renderWidth, frameDescriptor.renderHeight);

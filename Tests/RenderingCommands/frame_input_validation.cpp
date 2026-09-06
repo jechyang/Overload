@@ -153,6 +153,7 @@ void FramePacketValidation(const std::filesystem::path& dir)
     std::puts("PASS: 24 camera/light immediate-packet image pairs, perspective/orthographic/cubemap camera switches, GPU contamination recovery and explicit light override/restore");
 }
 
+#ifndef FRAME_INPUT_VALIDATION_NO_MAIN
 int main(int argc,char** argv) try
 {
     std::setvbuf(stdout,nullptr,_IONBF,0);_set_abort_behavior(0,_WRITE_ABORT_MSG|_CALL_REPORTFAULT);
@@ -166,3 +167,5 @@ int main(int argc,char** argv) try
     std::puts("PASS: 24 real Mannequin immediate/packet frames exactly match");return 0;
 }
 catch(const std::exception& e){allocationFailureCountdown=-1;std::fprintf(stderr,"FAIL: %s\n",e.what());return 1;}
+
+#endif

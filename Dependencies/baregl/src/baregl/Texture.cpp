@@ -214,6 +214,18 @@ namespace baregl
 		}
 	}
 
+	std::shared_ptr<Texture> Texture::CreateResizedStorage(uint32_t p_width, uint32_t p_height) const
+	{
+		auto desc = GetDesc();
+		desc.width = p_width;
+		desc.height = p_height;
+		if (desc.mutableDesc) desc.mutableDesc->data = nullptr;
+		auto result = std::make_shared<Texture>(GetType(), m_debugName);
+		result->Allocate(desc);
+		result->SetBorderColor(m_borderColor);
+		return result;
+	}
+
 	const baregl::data::TextureDesc& Texture::GetDesc() const
 	{
 		BAREGL_ASSERT(IsValid(), "Cannot get the descriptor of a texture before it has been allocated");
@@ -240,6 +252,7 @@ namespace baregl
 	{
 		BAREGL_ASSERT(IsValid(), "Cannot set border color for a texture before it has been allocated");
 		glTextureParameterfv(m_id, GL_TEXTURE_BORDER_COLOR, &p_color.x);
+		m_borderColor = p_color;
 	}
 
 	const std::string& Texture::GetDebugName() const

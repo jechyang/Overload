@@ -5,6 +5,7 @@
 */
 
 #include <baregl/Framebuffer.h>
+#include <stdexcept>
 
 #include <baregl/debug/Assert.h>
 #include <baregl/debug/Event.h>
@@ -36,6 +37,8 @@ namespace baregl
 		const auto attachmentIndex = utils::EnumToValue<GLenum>(p_attachment) + static_cast<GLenum>(p_index);
 		glNamedFramebufferRenderbuffer(m_id, attachmentIndex, GL_RENDERBUFFER, p_toAttach->GetID());
 		m_attachments[attachmentIndex] = p_toAttach;
+		m_layers[attachmentIndex] = p_layer;
+		m_snapshot.reset();
 	}
 
 	template<>
@@ -63,6 +66,8 @@ namespace baregl
 		}
 
 		m_attachments[attachmentIndex] = p_toAttach;
+		m_layers[attachmentIndex] = p_layer;
+		m_snapshot.reset();
 	}
 
 	Framebuffer::Framebuffer(std::string_view p_debugName) :
@@ -157,21 +162,115 @@ namespace baregl
 		return {};
 	}
 
+	void Framebuffer::ApplyAttachments()
+	{
+		for (const auto& [key, attachment] : m_attachments)
+		{
+			if (const auto texture = std::get_if<std::shared_ptr<Texture>>(&attachment))
+			{
+				const auto layer = m_layers.at(key);
+				if (layer) glNamedFramebufferTextureLayer(m_id, key, (*texture)->GetID(), 0, *layer);
+				else glNamedFramebufferTexture(m_id, key, (*texture)->GetID(), 0);
+			}
+			else glNamedFramebufferRenderbuffer(m_id, key, GL_RENDERBUFFER,
+				std::get<std::shared_ptr<Renderbuffer>>(attachment)->GetID());
+		}
+		glNamedFramebufferDrawBuffer(m_id, m_drawBuffer ? GL_COLOR_ATTACHMENT0 + *m_drawBuffer : GL_NONE);
+		glNamedFramebufferReadBuffer(m_id, m_readBuffer ? GL_COLOR_ATTACHMENT0 + *m_readBuffer : GL_NONE);
+	}
+
+	struct Framebuffer::SnapshotData
+	{
+		std::unordered_map<uint32_t, FramebufferAttachment> attachments;
+		std::unordered_map<uint32_t, std::optional<uint32_t>> layers;
+		std::optional<uint32_t> drawBuffer, readBuffer;
+		std::pair<uint16_t, uint16_t> size;
+		std::string debugName;
+		std::unique_ptr<Framebuffer> realized;
+	};
+
+	Framebuffer::Snapshot Framebuffer::RecordTarget() const
+	{
+		if (!IsValid()) throw std::logic_error("Cannot record an invalid framebuffer");
+		if (!m_snapshot)
+		{
+			auto data = std::make_shared<SnapshotData>();
+			data->attachments = m_attachments;
+			data->layers = m_layers;
+			data->drawBuffer = m_drawBuffer;
+			data->readBuffer = m_readBuffer;
+			data->size = GetSize();
+			data->debugName = m_debugName;
+			m_snapshot = std::move(data);
+		}
+		return Snapshot{ m_snapshot };
+	}
+
+	uint32_t Framebuffer::Snapshot::GetID() const
+	{
+		if (!m_data) throw std::logic_error("Empty framebuffer snapshot");
+		if (!m_data->realized)
+		{
+			auto target = std::make_unique<Framebuffer>(m_data->debugName);
+			target->m_attachments = m_data->attachments;
+			target->m_layers = m_data->layers;
+			target->m_drawBuffer = m_data->drawBuffer;
+			target->m_readBuffer = m_data->readBuffer;
+			target->ApplyAttachments();
+			if (!target->Validate()) throw std::runtime_error("Recorded framebuffer is incomplete");
+			m_data->realized = std::move(target);
+		}
+		return m_data->realized->GetID();
+	}
+
+	void Framebuffer::Snapshot::Bind() const
+	{
+		glBindFramebuffer(GL_FRAMEBUFFER, GetID());
+	}
+
+	std::pair<uint16_t, uint16_t> Framebuffer::Snapshot::GetSize() const
+	{
+		if (!m_data) throw std::logic_error("Empty framebuffer snapshot");
+		return m_data->size;
+	}
+
+	void Framebuffer::BindDefault()
+	{
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	}
+
 	void Framebuffer::Resize(uint16_t p_width, uint16_t p_height)
 	{
-		BAREGL_ASSERT(IsValid(), "Cannot resize an invalid framebuffer");
-
-		for (auto& attachment : m_attachments)
+		if (!IsValid() || !p_width || !p_height) throw std::invalid_argument("Invalid framebuffer resize");
+		if (GetSize() == std::pair{p_width, p_height}) return;
+		Framebuffer candidate(m_debugName);
+		candidate.m_layers = m_layers;
+		candidate.m_drawBuffer = m_drawBuffer;
+		candidate.m_readBuffer = m_readBuffer;
+		std::unordered_map<const Texture*, std::shared_ptr<Texture>> textures;
+		std::unordered_map<const Renderbuffer*, std::shared_ptr<Renderbuffer>> renderbuffers;
+		for (const auto& [key, attachment] : m_attachments)
 		{
-			if (const auto pval = std::get_if<std::shared_ptr<Texture>>(&attachment.second); pval && *pval)
+			if (const auto texture = std::get_if<std::shared_ptr<Texture>>(&attachment))
 			{
-				(*pval)->Resize(p_width, p_height);
+				auto& replacement = textures[texture->get()];
+				if (!replacement) replacement = (*texture)->CreateResizedStorage(p_width, p_height);
+				candidate.m_attachments.emplace(key, replacement);
 			}
-			else if (const auto* pval = std::get_if<std::shared_ptr<Renderbuffer>>(&attachment.second); pval && *pval)
+			else
 			{
-				(*pval)->Resize(p_width, p_height);
+				const auto& renderbuffer = std::get<std::shared_ptr<Renderbuffer>>(attachment);
+				auto& replacement = renderbuffers[renderbuffer.get()];
+				if (!replacement) replacement = renderbuffer->CreateResizedStorage(p_width, p_height);
+				candidate.m_attachments.emplace(key, replacement);
 			}
 		}
+		candidate.ApplyAttachments();
+		if (!candidate.Validate()) throw std::runtime_error("Resized framebuffer is incomplete");
+		// Preserve this FBO's native identity; publish only after allocation and validation.
+		m_attachments.swap(candidate.m_attachments);
+		ApplyAttachments();
+		m_snapshot.reset();
 	}
 
 	void Framebuffer::SetTargetDrawBuffer(std::optional<uint32_t> p_index)
@@ -187,6 +286,8 @@ namespace baregl
 		{
 			glNamedFramebufferDrawBuffer(m_id, GL_NONE);
 		}
+		if (m_drawBuffer != p_index) m_snapshot.reset();
+		m_drawBuffer = p_index;
 	}
 
 	void Framebuffer::SetTargetReadBuffer(std::optional<uint32_t> p_index)
@@ -202,6 +303,8 @@ namespace baregl
 		{
 			glNamedFramebufferReadBuffer(m_id, GL_NONE);
 		}
+		if (m_readBuffer != p_index) m_snapshot.reset();
+		m_readBuffer = p_index;
 	}
 
 	std::pair<uint16_t, uint16_t> Framebuffer::GetSize() const

@@ -124,7 +124,7 @@ void OvEditor::Rendering::PickingRenderPass::Draw(OvRendering::Data::PipelineSta
 
 	m_actorPickingFramebuffer.Resize(frameDescriptor.renderWidth, frameDescriptor.renderHeight);
 
-	m_actorPickingFramebuffer.Bind();
+	m_renderer.BindTarget(&m_actorPickingFramebuffer);
 	
 	auto pso = m_renderer.CreatePipelineState();
 
@@ -150,11 +150,11 @@ void OvEditor::Rendering::PickingRenderPass::Draw(OvRendering::Data::PipelineSta
 		);
 	}
 
-	m_actorPickingFramebuffer.Unbind();
+	m_renderer.BindTarget(nullptr);
 
 	if (auto output = frameDescriptor.outputBuffer)
 	{
-		output.value().Bind();
+		m_renderer.BindTarget(&output.value());
 	}
 }
 

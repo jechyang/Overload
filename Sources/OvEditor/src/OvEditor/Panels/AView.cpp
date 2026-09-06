@@ -63,6 +63,7 @@ void OvEditor::Panels::AView::Render()
 		FrameMarkStart(name.c_str());
 
 		m_framebuffer.Resize(winWidth, winHeight);
+		m_image->textureID.id = m_framebuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)->GetID();
 
 		InitFrame();
 

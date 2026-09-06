@@ -14,6 +14,7 @@
 #include <baregl/types/ETextureType.h>
 
 #include <optional>
+#include <memory>
 #include <string>
 
 namespace baregl
@@ -93,6 +94,9 @@ namespace baregl
 		*/
 		void Resize(uint32_t p_width, uint32_t p_height);
 
+		// Allocate empty storage with the same format/sampling state; leave this texture intact.
+		std::shared_ptr<Texture> CreateResizedStorage(uint32_t p_width, uint32_t p_height) const;
+
 		/**
 		* Returns the texture descriptor structure.
 		*/
@@ -119,5 +123,6 @@ namespace baregl
 		data::TextureDesc m_desc;
 		bool m_allocated = false;
 		std::string m_debugName;
+		math::Vec4 m_borderColor{0, 0, 0, 0};
 	};
 }
