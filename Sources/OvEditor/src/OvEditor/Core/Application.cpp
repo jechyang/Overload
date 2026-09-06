@@ -13,6 +13,7 @@ OvEditor::Core::Application::Application(const std::filesystem::path& p_projectF
 	m_context(p_projectFolder),
 	m_editor(m_context)
 {
+    m_editor.SetFrameSubmissionEnabled(m_context.projectSettings.GetOrDefault<bool>("render_commands", true));
 }
 
 OvEditor::Core::Application::~Application()

@@ -295,10 +295,7 @@ void ExpandTreeNode(OvUI::Widgets::Layout::TreeNode& p_toExpand)
 	}
 }
 
-std::vector<OvUI::Widgets::Layout::TreeNode*> nodesToCollapse;
-std::vector<OvUI::Widgets::Layout::TreeNode*> founds;
-
-void ExpandTreeNodeAndEnable(OvUI::Widgets::Layout::TreeNode& p_toExpand)
+void ExpandTreeNodeAndEnable(OvUI::Widgets::Layout::TreeNode& p_toExpand, std::vector<OvUI::Widgets::Layout::TreeNode*>& nodesToCollapse)
 {
 	if (!p_toExpand.IsOpened())
 	{
@@ -312,7 +309,7 @@ void ExpandTreeNodeAndEnable(OvUI::Widgets::Layout::TreeNode& p_toExpand)
 	{
 		if (auto parent = dynamic_cast<OvUI::Widgets::Layout::TreeNode*>(p_toExpand.GetParent()); parent)
 		{
-			ExpandTreeNodeAndEnable(*parent);
+			ExpandTreeNodeAndEnable(*parent, nodesToCollapse);
 		}
 	}
 }
@@ -324,6 +321,7 @@ OvEditor::Panels::Hierarchy::Hierarchy
 	const OvUI::Settings::PanelWindowSettings& p_windowSettings
 ) :
 	PanelWindow(p_title, p_opened, p_windowSettings),
+    m_sceneManager(EDITOR_CONTEXT(sceneManager)),
 	m_actions(CreateWidget<OvUI::Widgets::Layout::Group>()),
 	m_actors(CreateWidget<OvUI::Widgets::Layout::Group>())
 {
@@ -336,7 +334,7 @@ OvEditor::Panels::Hierarchy::Hierarchy
 	auto& searchBar = OvCore::Helpers::GUIDrawer::DrawSearchBar(m_actions, searchIconID);
 	searchBar.ContentChangedEvent += [this](const std::string& p_content)
 	{
-		founds.clear();
+        std::vector<OvUI::Widgets::Layout::TreeNode*> founds;
 		auto content = p_content;
 		std::transform(content.begin(), content.end(), content.begin(), ::tolower);
 
@@ -368,19 +366,19 @@ OvEditor::Panels::Hierarchy::Hierarchy
 			{
 				if (auto parent = dynamic_cast<OvUI::Widgets::Layout::TreeNode*>(node->GetParent()); parent)
 				{
-					ExpandTreeNodeAndEnable(*parent);
+					ExpandTreeNodeAndEnable(*parent, m_nodesToCollapse);
 				}
 			}
 		}
 
 		if (p_content.empty())
 		{
-			for (auto node : nodesToCollapse)
+			for (auto node : m_nodesToCollapse)
 			{
 				node->Close();
 			}
 
-			nodesToCollapse.clear();
+			m_nodesToCollapse.clear();
 		}
 	};
 
@@ -400,18 +398,28 @@ OvEditor::Panels::Hierarchy::Hierarchy
 
 	AddPlugin<ActorContextualMenu>(nullptr, nullptr);
 
-	// TODO: This code is unsafe, if the hierarchy gets deleted before the last actor gets deleted, this might crash
+    // EditorActions owns its events and dies before panels; external sources are explicitly disconnected.
 	EDITOR_EVENT(ActorUnselectedEvent) += std::bind(&Hierarchy::UnselectActorsWidgets, this);
-	EDITOR_CONTEXT(sceneManager).SceneUnloadEvent += std::bind(&Hierarchy::Clear, this);
-	OvCore::ECS::Actor::CreatedEvent += std::bind(&Hierarchy::AddActorByInstance, this, std::placeholders::_1);
-	OvCore::ECS::Actor::DestroyedEvent += std::bind(&Hierarchy::DeleteActorByInstance, this, std::placeholders::_1);
+	m_unloadListener = m_sceneManager.SceneUnloadEvent += std::bind(&Hierarchy::Clear, this);
+	m_createdListener = OvCore::ECS::Actor::CreatedEvent += std::bind(&Hierarchy::AddActorByInstance, this, std::placeholders::_1);
+	m_destroyedListener = OvCore::ECS::Actor::DestroyedEvent += std::bind(&Hierarchy::DeleteActorByInstance, this, std::placeholders::_1);
 	EDITOR_EVENT(ActorSelectedEvent) += std::bind(&Hierarchy::SelectActorByInstance, this, std::placeholders::_1);
-	OvCore::ECS::Actor::AttachEvent += std::bind(&Hierarchy::AttachActorToParent, this, std::placeholders::_1);
-	OvCore::ECS::Actor::DettachEvent += std::bind(&Hierarchy::DetachFromParent, this, std::placeholders::_1);
+	m_attachListener = OvCore::ECS::Actor::AttachEvent += std::bind(&Hierarchy::AttachActorToParent, this, std::placeholders::_1);
+	m_detachListener = OvCore::ECS::Actor::DettachEvent += std::bind(&Hierarchy::DetachFromParent, this, std::placeholders::_1);
+}
+
+OvEditor::Panels::Hierarchy::~Hierarchy()
+{
+    m_sceneManager.SceneUnloadEvent -= m_unloadListener;
+    OvCore::ECS::Actor::CreatedEvent -= m_createdListener;
+    OvCore::ECS::Actor::DestroyedEvent -= m_destroyedListener;
+    OvCore::ECS::Actor::AttachEvent -= m_attachListener;
+    OvCore::ECS::Actor::DettachEvent -= m_detachListener;
 }
 
 void OvEditor::Panels::Hierarchy::Clear()
 {
+    m_nodesToCollapse.clear();
 	EDITOR_EXEC(UnselectActor());
 
 	m_actors.RemoveAllWidgets();
@@ -499,6 +507,7 @@ void OvEditor::Panels::Hierarchy::DeleteActorByInstance(OvCore::ECS::Actor& p_ac
 	{
 		if (result->second)
 		{
+            std::erase(m_nodesToCollapse, result->second);
 			result->second->Destroy();
 		}
 

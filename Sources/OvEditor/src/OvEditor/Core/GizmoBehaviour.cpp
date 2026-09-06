@@ -26,6 +26,7 @@ OvMaths::FVector3 SnapValue(OvMaths::FVector3 p_value, float p_step)
 
 bool OvEditor::Core::GizmoBehaviour::IsSnappedBehaviourEnabled() const
 {
+    if (m_snapSettings) return m_snapSettings->enabled;
 	using namespace OvWindowing::Inputs;
 
 	const auto& inputManager = EDITOR_CONTEXT(inputManager);
@@ -153,7 +154,7 @@ void OvEditor::Core::GizmoBehaviour::ApplyTranslation(const OvMaths::FMatrix4& p
 
 	if (IsSnappedBehaviourEnabled())
 	{
-		translationVector = SnapValue(translationVector, OvEditor::Settings::EditorSettings::TranslationSnapUnit);
+		translationVector = SnapValue(translationVector, (m_snapSettings ? m_snapSettings->translation : static_cast<float>(OvEditor::Settings::EditorSettings::TranslationSnapUnit)));
 	}
 
 	OvMaths::FVector3 projectedPoint = planePoint + direction * OvMaths::FVector3::Dot(translationVector, direction);
@@ -174,7 +175,7 @@ void OvEditor::Core::GizmoBehaviour::ApplyRotation(const OvMaths::FMatrix4& p_vi
 
 	if (IsSnappedBehaviourEnabled())
 	{
-		rotationCoefficient = SnapValue(rotationCoefficient, OvEditor::Settings::EditorSettings::RotationSnapUnit);
+		rotationCoefficient = SnapValue(rotationCoefficient, (m_snapSettings ? m_snapSettings->rotation : static_cast<float>(OvEditor::Settings::EditorSettings::RotationSnapUnit)));
 	}
 
 	auto rotationToApply = OvMaths::FQuaternion(OvMaths::FVector3(GetFakeDirection() * rotationCoefficient));
@@ -245,7 +246,7 @@ void OvEditor::Core::GizmoBehaviour::ApplyScale(const OvMaths::FMatrix4& p_viewM
 
 	if (IsSnappedBehaviourEnabled())
 	{
-		scaleDeltaCoefficient = SnapValue(scaleDeltaCoefficient, OvEditor::Settings::EditorSettings::ScalingSnapUnit);
+		scaleDeltaCoefficient = SnapValue(scaleDeltaCoefficient, (m_snapSettings ? m_snapSettings->scale : static_cast<float>(OvEditor::Settings::EditorSettings::ScalingSnapUnit)));
 	}
 
 	const auto originScale = m_originalTransform.GetWorldScale();
@@ -260,8 +261,10 @@ void OvEditor::Core::GizmoBehaviour::ApplyScale(const OvMaths::FMatrix4& p_viewM
 	m_target->transform.SetWorldScale(newScale);
 }
 
-void OvEditor::Core::GizmoBehaviour::ApplyOperation(const OvMaths::FMatrix4& p_viewMatrix, const OvMaths::FMatrix4& p_projectionMatrix, const OvMaths::FVector3& p_cameraPosition, const OvMaths::FVector2& p_viewSize)
+void OvEditor::Core::GizmoBehaviour::ApplyOperation(const OvMaths::FMatrix4& p_viewMatrix, const OvMaths::FMatrix4& p_projectionMatrix, const OvMaths::FVector3& p_cameraPosition, const OvMaths::FVector2& p_viewSize, std::optional<SnapSettings> p_snapping)
 {
+    m_snapSettings = p_snapping;
+    struct Reset { std::optional<SnapSettings>& value; ~Reset() { value.reset(); } } reset{m_snapSettings};
 	switch (m_currentOperation)
 	{
 	case EGizmoOperation::TRANSLATE:

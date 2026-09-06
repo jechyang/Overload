@@ -95,6 +95,9 @@ void RenderCurrentScene(
 
 void OvGame::Core::Game::Update(float p_deltaTime)
 {
+    if (m_pendingFrame) throw std::logic_error("Previous Game frame has not been submitted");
+    std::optional<OvRendering::Data::RenderFrame> frame;
+    if (m_frameSubmissionEnabled) frame.emplace(++m_recordedFrameID);
 	if (auto currentScene = m_context.sceneManager.GetCurrentScene())
 	{
 		{
@@ -121,10 +124,13 @@ void OvGame::Core::Game::Update(float p_deltaTime)
 			m_context.audioEngine->Update();
 		}
 
-		RenderCurrentScene(m_sceneRenderer, m_context);
-
-		auto [windowWidth, windowHeight] = m_context.window->GetSize();
-		m_context.framebuffer->BlitToBackBuffer(windowWidth, windowHeight);
+        if (frame) frame->Append(RecordSceneCommands());
+        else
+        {
+            RenderCurrentScene(m_sceneRenderer, m_context);
+            const auto [windowWidth, windowHeight] = m_context.window->GetSize();
+            m_context.framebuffer->BlitToBackBuffer(windowWidth, windowHeight);
+        }
 	}
 
 	m_context.sceneManager.Update();
@@ -140,22 +146,51 @@ void OvGame::Core::Game::Update(float p_deltaTime)
 		auto& frameInfo = frameInfoRenderFeature.GetFrameInfo();
 		m_frameInfo.Update(frameInfo);
 		#endif
-		m_context.uiManager->Render();
+        if (frame) frame->Append(m_context.uiManager->RecordRenderCommands());
+        else m_context.uiManager->Render();
 	}
+    if (frame) { frame->Seal(); m_pendingFrame.emplace(std::move(*frame)); }
 }
 
 void OvGame::Core::Game::PostUpdate()
 {
-	ZoneScoped;
+    ZoneScoped;
+    if (m_frameSubmissionEnabled)
+    {
+        if (!m_pendingFrame) throw std::logic_error("Game frame was not prepared");
+        auto frame = std::move(*m_pendingFrame); m_pendingFrame.reset();
+        frame.Submit(*m_context.driver, [&] { m_context.window->SwapBuffers(); });
+        frame.Wait();
+        m_context.inputManager->ClearEvents();
+        frame.GetCompletion().RethrowIfFailed();
+    }
+    else
+    {
+        m_context.window->SwapBuffers();
+        m_context.inputManager->ClearEvents();
+        m_context.driver->OnFrameCompleted();
+    }
+}
 
-	m_context.window->SwapBuffers();
-	m_context.inputManager->ClearEvents();
-	m_context.driver->OnFrameCompleted();
+void OvGame::Core::Game::SetFrameSubmissionEnabled(bool enabled)
+{
+    if (m_pendingFrame) throw std::logic_error("Cannot switch Game submission mode during a frame");
+    m_sceneRenderer.SetDrawRecordingEnabled(enabled);
+    m_context.uiManager->SetCommandRecordingEnabled(enabled);
+    m_frameSubmissionEnabled = enabled;
 }
 
 OvRendering::Data::RenderFrame OvGame::Core::Game::RecordRenderFrame()
 {
     OvRendering::Data::RenderFrame frame(++m_recordedFrameID);
+    frame.Append(RecordSceneCommands());
+    if (m_showDebugInformation) frame.Append(m_context.uiManager->RecordRenderCommands());
+    frame.Seal();
+    return frame;
+}
+
+OvRendering::Data::RenderCommandList OvGame::Core::Game::RecordSceneCommands()
+{
     m_sceneRenderer.SetDrawRecordingEnabled(true);
     m_sceneRenderer.BeginCommandRecording();
     try
@@ -171,7 +206,7 @@ OvRendering::Data::RenderFrame OvGame::Core::Game::RecordRenderFrame()
                     0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
             });
         }
-        frame.Append(m_sceneRenderer.FinishCommandRecording());
+        return m_sceneRenderer.FinishCommandRecording();
     }
     catch (...)
     {
@@ -180,7 +215,4 @@ OvRendering::Data::RenderFrame OvGame::Core::Game::RecordRenderFrame()
         m_sceneRenderer.CancelCommandRecording();
         std::rethrow_exception(error);
     }
-    if (m_showDebugInformation) frame.Append(m_context.uiManager->RecordRenderCommands());
-    frame.Seal();
-    return frame;
 }

@@ -1,3 +1,4 @@
+#include "editor_product_validation.inl"
 void EditorFrameValidation(OvEditor::Core::Editor& editor,OvEditor::Core::Context& context,const std::filesystem::path& dir)
 {
     auto& ui=*context.uiManager;ui.EnableEditorLayoutSave(false);ImGui::GetIO().ConfigInputTextCursorBlink=false;
@@ -49,6 +50,8 @@ void EditorFrameValidation(OvEditor::Core::Editor& editor,OvEditor::Core::Contex
         Require(latest.Submit(*context.driver,[&]{context.window->SwapBuffers();}),"latest Editor frame submit");latest.Wait();
         Require(latest.GetCompletion().PresentationRequested()&&editor.CompleteRenderFrame(latest.GetCompletion()),"latest presented frame completion");
     }
+    EditorProductValidation(editor,context);
+    EditorInteractionValidation(editor,context);
     ui.SetCanvas(editor.m_canvas);ui.SetCommandRecordingEnabled(false);
     for(auto [window,wasOpen]:opened)if(wasOpen)window->Open();else window->Close();
     Require(glGetError()==GL_NO_ERROR,"Editor aggregate GL error");

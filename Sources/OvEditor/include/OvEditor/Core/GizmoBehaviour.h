@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <optional>
 #include <OvMaths/FTransform.h>
 #include <OvMaths/FVector2.h>
 
@@ -24,6 +25,7 @@ namespace OvEditor::Core
 	class GizmoBehaviour
 	{
 	public:
+        struct SnapSettings { bool enabled; float translation, rotation, scale; };
 		enum class EDirection
 		{
 			X,
@@ -57,7 +59,7 @@ namespace OvEditor::Core
 		* @param p_cameraPosition
 		* @param p_viewSize
 		*/
-		void ApplyOperation(const OvMaths::FMatrix4& p_viewMatrix, const OvMaths::FMatrix4& p_projectionMatrix, const OvMaths::FVector3& p_cameraPosition, const OvMaths::FVector2& p_viewSize);
+		void ApplyOperation(const OvMaths::FMatrix4& p_viewMatrix, const OvMaths::FMatrix4& p_projectionMatrix, const OvMaths::FVector3& p_cameraPosition, const OvMaths::FVector2& p_viewSize, std::optional<SnapSettings> p_snapping = std::nullopt);
 
 		/**
 		* Set the given mouse position as the current mouse position and update the previous mouse position
@@ -135,6 +137,7 @@ namespace OvEditor::Core
 		void ApplyScale(const OvMaths::FMatrix4& p_viewMatrix, const OvMaths::FMatrix4& p_projectionMatrix, const OvMaths::FVector3& p_cameraPosition, const OvMaths::FVector2& p_viewSize);
 
 	private:
+        std::optional<SnapSettings> m_snapSettings;
 		bool m_firstMouse = true;
 		bool m_firstPick = true;
 		float m_distanceToActor = 0.0f;

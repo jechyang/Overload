@@ -36,6 +36,7 @@ namespace OvEditor::Panels
 		/**
 		* Clear hierarchy nodes
 		*/
+        ~Hierarchy() override;
 		void Clear();
 
 		/**
@@ -84,6 +85,9 @@ namespace OvEditor::Panels
 		OvTools::Eventing::Event<OvCore::ECS::Actor&> ActorUnselectedEvent;
 
 	private:
+        OvCore::SceneSystem::SceneManager& m_sceneManager;
+        uint64_t m_createdListener = 0, m_destroyedListener = 0, m_attachListener = 0, m_detachListener = 0, m_unloadListener = 0;
+        std::vector<OvUI::Widgets::Layout::TreeNode*> m_nodesToCollapse;
 		std::unordered_map<OvCore::ECS::Actor*, OvUI::Widgets::Layout::TreeNode*> m_widgetActorLink;
 		OvUI::Internal::WidgetContainer& m_actions;
 		OvUI::Internal::WidgetContainer& m_actors;

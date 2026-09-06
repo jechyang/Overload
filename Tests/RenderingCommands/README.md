@@ -135,3 +135,9 @@ editor_command_validation.inl 验证真实 DebugSceneRenderer 的六组调试/�
 先完整构建，再运行 Debug/Release --render-frame、--game-frame，以及 --editor --command-list --editor-ui；必要时添加 --vs。前两个模式独立运行，分别输出 <配置>-render-frame/current 和 <配置>-game-frame/current。Game 测试链接生产 Game 对象，仅隔离项目目录与隐藏窗口；Editor 模式增加实际三视图加 UI 的整帧图像比较。
 
 测试覆盖整帧完成、GPU fence 保留/回收、失败/取消/析构/移动、嵌套历史及后继无需等待前帧 GPU 回收、实际 UI/场景/目标销毁后的回放。旧 UI 与动态命令回归继续使用 --ui-commands、--command-list。协议、确定性输入与验收范围见 MULTITHREADING_RENDER_FRAME_VALIDATION.md；没有跨线程许可或性能收益断言。
+
+## 产品帧循环与交互（阶段 2 第十四增量）
+
+Debug/Release 使用 --editor --command-list --editor-ui --product-loop，或 --game-frame --product-loop；先完整构建并按需追加 --vs。输出目录在原组合后追加 -product-loop。链接真实 Application/Editor/Game 对象，先完成保存项目和整帧回归，再运行实际 Application.Run、模式/配置切换与准备后退出。
+
+测试覆盖八帧动态模拟/视图对拍、一帧一次 fence、输入清理、重复与帧内切换拒绝、帧完成后延迟操作；Editor 另有对应帧鼠标/readback/Gizmo/材质拖放与场景/目标删除检查。头文件覆盖只放宽测试访问权限；私有方法通过实际 UI 事件触发，不修改生产链接名。详细协议与范围见 MULTITHREADING_PRODUCT_FRAME_VALIDATION.md。

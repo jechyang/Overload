@@ -1,10 +1,15 @@
+#pragma push_macro("main")
+#undef main
 #define main SerialValidationMain
 #include "../Skinning/serial_validation.cpp"
 #undef main
+#pragma pop_macro("main")
 #include <OvGame/Core/Game.h>
 #include <OvCore/ECS/Components/CCamera.h>
 #include <tinyxml2.h>
 #include <imgui.h>
+#include <sstream>
+#include "product_loop_validation.inl"
 void RenderCurrentScene(OvCore::Rendering::SceneRenderer&,const OvGame::Core::Context&);
 int main(int argc,char** argv) try
 {
@@ -37,6 +42,26 @@ int main(int argc,char** argv) try
             evidence.write(reinterpret_cast<const char*>(actual.data()),static_cast<std::streamsize>(actual.size()));++pairs;
         }
     }
+    std::vector<std::string> states;std::vector<std::vector<uint8_t>> loopImages;
+    game.m_showDebugInformation=false;
+    for(bool owned:{false,true})
+    {
+        game.SetFrameSubmissionEnabled(owned);Require(context.sceneManager.LoadScene("frame.ovscene"),"Game loop scene reload");context.sceneManager.GetCurrentScene()->Play();ProductFenceHook hook;
+        for(int i=0;i<8;++i)
+        {
+            game.PreUpdate();game.Update(.02f);std::ostringstream pose(std::ios::binary);for(auto* actor:context.sceneManager.GetCurrentScene()->GetActors())if(auto skin=actor->GetComponent<Skin>())Snapshot(pose,*skin);
+            if(owned){Require(pose.str()==states[i],"Game product loop advanced pose differently");RejectProductCall([&]{game.Update(.02f);},"double Game update accepted");RejectProductCall([&]{game.SetFrameSubmissionEnabled(false);},"Game switched mode mid-frame");}else states.push_back(pose.str());
+            context.window->KeyPressedEvent.Invoke(int(OvWindowing::Inputs::EKey::KEY_SPACE));auto done=owned?game.m_pendingFrame->GetCompletion():OvRendering::Data::RenderFrame::Completion{};
+            game.PostUpdate();Require(!context.inputManager->IsKeyPressed(OvWindowing::Inputs::EKey::KEY_SPACE),"Game events survived PostUpdate");
+            if(owned)Require(done.Succeeded()&&!game.m_pendingFrame,"Game frame did not retire once");
+            const auto [w,h]=context.framebuffer->GetSize();std::vector<uint8_t> image(size_t(w)*h*4);context.framebuffer->RecordTarget().ReadRGBA8(image);
+            if(owned)Require(image==loopImages[i],"Game product loop image differs");else loopImages.push_back(std::move(image));
+        }
+        Require(ProductFenceHook::count==(owned?8:0),"Game fence count differs from owned frame count");
+    }
+    Require(states.front()!=states.back() && loopImages.front()!=loopImages.back(),"Game product sequence did not animate");
+    game.SetFrameSubmissionEnabled(false);
+    std::puts("PASS: real Game Update/PostUpdate modes: 8 exact moving pose/view pairs, one fence/frame, event clearing, duplicate/mid-frame switch rejection");
     {auto cancelled=game.RecordRenderFrame();auto done=cancelled.GetCompletion();cancelled.Cancel();Require(done.IsRetired()&&!done.Succeeded(),"Game cancelled frame success");}
     {auto recovered=game.RecordRenderFrame();Require(recovered.Submit(*context.driver,[&]{context.window->SwapBuffers();}),"Game presentation after cancellation");recovered.Wait();Require(recovered.GetCompletion().Succeeded()&&recovered.GetCompletion().PresentationRequested(),"Game presentation completion");}
     // Destroy the source framebuffer/scene and resize its replacement before consuming the captured blit.

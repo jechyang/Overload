@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback 已接入 owning 命令与成功完成后的主线程解析；ImGui 拥有型帧快照、编辑器纹理入口迁移与完整/逐面板 UI 录制已验收，统一 RenderFrame 提交、GPU fence 回收与 Editor/Game 整帧捕获入口已验收。产品循环接入与逐帧输入/拾取仍待收尾，尚无独立 Render 线程。阶段 2、3 均未全部完成，最新验收见 MULTITHREADING_RENDER_FRAME_VALIDATION.md。**
+**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback 已接入 owning 命令与成功完成后的主线程解析；ImGui 拥有型帧快照、编辑器纹理入口迁移与完整/逐面板 UI 录制已验收，统一 RenderFrame 提交、GPU fence 回收与 Editor/Game 整帧捕获入口已验收。Editor/Game 产品循环现默认采用同线程帧提交，拾取/Gizmo/材质拖放使用对应帧输入；即时配置回退及应用退出已验收。尚无独立 Render 线程，阶段 2/3 整体目标仍未完成，最新验收见 MULTITHREADING_PRODUCT_FRAME_VALIDATION.md。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -233,6 +233,14 @@
 - Debug/Release 各三组实际 Editor 三视图+UI、六组实际 Game 有/无 UI 图像精确一致；帧失败/取消/轮询/回收/历史、源场景/目标/UI 销毁、原 Editor/动态命令/UI 回归通过。完整协议及证据见 MULTITHREADING_RENDER_FRAME_VALIDATION.md。
 - 下一增量接入可切换的完整产品循环并明确逐帧输入/拾取，再落实固定 Render owner、资源操作与通知归属、有界队列和真实交叠。当前无独立 Render 线程，也无新增性能收益结论；阶段 2、3 尚未全部完成。
 
+### 4.14 第十四增量：产品循环与逐帧交互
+
+- Application 默认启用拥有型帧循环，render_commands=false 保留即时对照。Update 录制、PostUpdate 提交/呈现/回收并清输入；Game 保持延迟切场景的原边界，Editor 帧完成后应用拾取和延迟 UI 操作。
+- Scene View 持有对应帧鼠标、视口、相机、按钮、GUID/Gizmo/吸附参数与 readback；材质拖放保留到本帧完成。拒绝未完成、失败/取消、重复、删除/切场景等不适用结果；Gizmo 目标删除会停止操作。
+- 实际 Application 重建测试发现并修复 Hierarchy 析构后全局 Actor 回调。Scene View 与 Hierarchy 退订外部事件，层级搜索缓存按面板管理。
+- 两配置 Editor/Game 各八帧真实 Update/PostUpdate 姿态/图像对拍及动画变化、实际四帧 Application.Run、即时回退、未提交退出、交互/Gizmo/拖放和原整帧/UI/项目回归通过。详情见 MULTITHREADING_PRODUCT_FRAME_VALIDATION.md。
+- 当前是阶段 2 同线程产品路径，仍逐帧 Wait，且 Editor 只接受单个待提交帧。下一步固定 Render owner、资源/通知归属、有界队列、多帧输入结果和真实交叠验收；阶段 3 尚未完成。
+
 ## 5. 阶段 3：Game/Render 双线程（A 形态）
 
 **目标：让固定 Render 线程消费稳定帧数据，Game/Main 线程负责应用更新与必要的平台/UI 事件。**
@@ -341,4 +349,4 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 ## 11. 新对话建议起始消息
 
-> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_RENDER_FRAME_VALIDATION.md，继续完成阶段 2、3：接入完整产品循环与逐帧输入/拾取，收尾录制期间的 GL 操作归属；再实现固定 Render owner、有界队列、资源归属和真实 Game/Render 交叠。保留源对象销毁后回放、即时/packet/延迟动态图像严格对拍，按可验收增量提交 Git，不包含用户已有修改，后台验证。
+> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_PRODUCT_FRAME_VALIDATION.md，继续完成阶段 2、3：收尾录制期间的 GL 操作归属，固定 Render owner，建立资源/通知归属、有界队列和多帧输入结果传递；验证真实 Game/Render 交叠、窗口/场景/退出和性能。保留源对象销毁后回放、即时/packet/延迟动态图像严格对拍，按可验收增量提交 Git，不包含用户已有修改，后台验证。

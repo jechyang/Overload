@@ -1,6 +1,9 @@
+#pragma push_macro("main")
+#undef main
 #define main SerialValidationMain
 #include "serial_validation.cpp"
 #undef main
+#pragma pop_macro("main")
 #include <sstream>
 #include <tinyxml2.h>
 #include <OvEditor/Core/Editor.h>

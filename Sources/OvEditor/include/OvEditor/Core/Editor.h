@@ -8,6 +8,8 @@
 
 #include <memory>
 #include <OvRendering/Data/RenderFrame.h>
+#include <OvEditor/Panels/SceneView.h>
+#include <optional>
 
 #include <OvEditor/Core/Context.h>
 #include <OvEditor/Core/EditorActions.h>
@@ -91,6 +93,8 @@ namespace OvEditor::Core
 		// Same-thread frame handoff. Complete before recording another frame to apply picking.
 		OvRendering::Data::RenderFrame RecordRenderFrame(float p_deltaTime);
 		bool CompleteRenderFrame(const OvRendering::Data::RenderFrame::Completion& completion);
+        void SetFrameSubmissionEnabled(bool enabled);
+        bool IsFrameSubmissionEnabled() const { return m_frameSubmissionEnabled; }
 
 		/**
 		* Render the editor UI using ImGui
@@ -107,7 +111,9 @@ namespace OvEditor::Core
 	private:
 		uint64_t m_elapsedFrames = 0;
 		uint64_t m_recordedFrameID = 0;
-		bool m_recordedSceneView = false;
+        bool m_frameSubmissionEnabled = false;
+        std::optional<OvRendering::Data::RenderFrame> m_pendingFrame;
+        std::shared_ptr<Panels::SceneView::Interaction> m_recordedInteraction;
 		OvRendering::Data::RenderFrame::Completion m_latestFrameCompletion;
 		OvUI::Modules::Canvas m_canvas;
 		OvEditor::Core::Context& m_context;

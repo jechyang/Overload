@@ -12,6 +12,7 @@
 OvGame::Core::Application::Application() :
 	m_game(m_context)
 {
+    m_game.SetFrameSubmissionEnabled(m_context.projectSettings.GetOrDefault<bool>("render_commands", true));
 
 }
 

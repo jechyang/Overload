@@ -20,6 +20,7 @@
 
 #include <OvUI/Modules/Canvas.h>
 #include <OvRendering/Data/RenderFrame.h>
+#include <optional>
 
 namespace OvGame::Core
 {
@@ -58,8 +59,13 @@ namespace OvGame::Core
 
 		// Capture already-updated scene/debug UI; the GL owner submits and presents.
 		OvRendering::Data::RenderFrame RecordRenderFrame();
+        void SetFrameSubmissionEnabled(bool enabled);
+        bool IsFrameSubmissionEnabled() const { return m_frameSubmissionEnabled; }
 
 	private:
+        OvRendering::Data::RenderCommandList RecordSceneCommands();
+        bool m_frameSubmissionEnabled = false;
+        std::optional<OvRendering::Data::RenderFrame> m_pendingFrame;
 		uint64_t m_recordedFrameID = 0;
 		OvGame::Core::Context& m_context;
 		OvUI::Modules::Canvas m_canvas;
