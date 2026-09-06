@@ -18,6 +18,14 @@ OvEditor::Rendering::DebugModelRenderFeature::DebugModelRenderFeature(
 
 void OvEditor::Rendering::DebugModelRenderFeature::DrawModelWithSingleMaterial(OvRendering::Data::PipelineState p_pso, OvRendering::Resources::Model& p_model, OvRendering::Data::Material& p_material, const OvMaths::FMatrix4& p_modelMatrix)
 {
+    DrawModelWithRetainedTextures(p_pso, p_model, p_material, p_modelMatrix, {});
+}
+
+void OvEditor::Rendering::DebugModelRenderFeature::DrawModelWithRetainedTextures(
+    OvRendering::Data::PipelineState p_pso, OvRendering::Resources::Model& p_model,
+    OvRendering::Data::Material& p_material, const OvMaths::FMatrix4& p_modelMatrix,
+    std::vector<std::shared_ptr<baregl::Texture>> p_textures)
+{
 	auto stateMask = p_material.GenerateStateMask();
 
 	auto engineDrawableDescriptor = OvCore::Rendering::EngineDrawableDescriptor{
@@ -32,6 +40,7 @@ void OvEditor::Rendering::DebugModelRenderFeature::DrawModelWithSingleMaterial(O
 		element.material = p_material;
 		element.stateMask = stateMask;
 		element.AddDescriptor(engineDrawableDescriptor);
+		if (!p_textures.empty()) element.AddDescriptor<OvRendering::Core::ABaseRenderer::RetainedTexturesDescriptor>({p_textures});
 
 		m_renderer.DrawEntity(p_pso, element);
 	}

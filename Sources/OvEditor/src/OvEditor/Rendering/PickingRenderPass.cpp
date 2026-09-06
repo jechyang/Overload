@@ -78,11 +78,15 @@ OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Rendering::Picki
 	uint32_t p_y
 )
 {
-	uint8_t pixel[3];
+    if (m_readback) return m_readback->Resolve(p_scene, p_x, p_y);
+    if (m_renderer.IsRecordingCommands()) return std::nullopt;
+    const auto [width, height] = m_actorPickingFramebuffer.GetSize();
+    if (p_x >= width || p_y >= height) return std::nullopt;
+	uint8_t pixel[4]{};
 
 	m_actorPickingFramebuffer.ReadPixels(
 		p_x, p_y, 1, 1,
-		baregl::types::EPixelDataFormat::RGB,
+		baregl::types::EPixelDataFormat::RGBA,
 		baregl::types::EPixelDataType::UNSIGNED_BYTE,
 		pixel
 	);
@@ -107,6 +111,24 @@ OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Rendering::Picki
 	return std::nullopt;
 }
 
+OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Rendering::PickingRenderPass::Readback::Resolve(
+    const OvCore::SceneSystem::Scene& p_scene, uint32_t p_x, uint32_t p_y) const
+{
+    if (!IsReady() || scene != p_scene.GetLifetimeToken() || p_x >= width || p_y >= height) return std::nullopt;
+    const auto* pixel = pixels.data() + (size_t(p_y) * width + p_x) * 4;
+    const uint32_t actorID = (uint32_t(pixel[2]) << 16) | (uint32_t(pixel[1]) << 8) | pixel[0];
+    if (const auto found = actors.find(actorID); found != actors.end())
+    {
+        if (auto* actor = p_scene.FindActorByID(actorID); actor && actor->GetGUID() == found->second)
+            return OvTools::Utils::OptRef(*actor);
+        return std::nullopt;
+    }
+    if (pixel[0] == 255 && pixel[1] == 255 && pixel[2] >= 252 && pixel[2] <= 254 &&
+        gizmoActorGUID && p_scene.FindActorByGUID(gizmoActorGUID))
+        return static_cast<OvEditor::Core::GizmoBehaviour::EDirection>(pixel[2] - 252);
+    return std::nullopt;
+}
+
 void OvEditor::Rendering::PickingRenderPass::Draw(OvRendering::Data::PipelineState p_pso)
 {
 	ZoneScoped;
@@ -122,6 +144,7 @@ void OvEditor::Rendering::PickingRenderPass::Draw(OvRendering::Data::PipelineSta
 	auto& frameDescriptor = m_renderer.GetFrameDescriptor();
 	auto& scene = sceneDescriptor.scene;
 
+	m_readback.reset();
 	m_actorPickingFramebuffer.Resize(frameDescriptor.renderWidth, frameDescriptor.renderHeight);
 
 	m_renderer.BindTarget(&m_actorPickingFramebuffer);
@@ -149,6 +172,23 @@ void OvEditor::Rendering::PickingRenderPass::Draw(OvRendering::Data::PipelineSta
 			debugSceneDescriptor.gizmoOperation
 		);
 	}
+
+    if (m_renderer.IsRecordingCommands())
+    {
+        auto readback = std::make_shared<Readback>();
+        readback->completion = m_renderer.GetCommandCompletion();
+        readback->scene = scene.GetLifetimeToken();
+        readback->gizmoActorGUID = debugSceneDescriptor.selectedActor ? debugSceneDescriptor.selectedActor->GetGUID() : 0;
+        readback->gizmoOperation = debugSceneDescriptor.gizmoOperation;
+        readback->width = frameDescriptor.renderWidth;
+        readback->height = frameDescriptor.renderHeight;
+        readback->pixels.resize(size_t(readback->width) * readback->height * 4);
+        for (const auto* actor : scene.GetActors())
+            readback->actors.emplace(static_cast<uint32_t>(actor->GetID()), actor->GetGUID());
+        const auto target = m_actorPickingFramebuffer.RecordTarget();
+        m_renderer.SubmitRenderOperation([readback, target](auto&) { target.ReadRGBA8(readback->pixels); });
+        m_readback = std::move(readback);
+    }
 
 	m_renderer.BindTarget(nullptr);
 

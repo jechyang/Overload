@@ -75,10 +75,29 @@ void OvEditor::Panels::AView::Render()
 
 		m_renderer->BeginFrame(frameDescriptor);
 		DrawFrame();
+		if (!m_renderer->IsRecordingCommands()) CompleteRender();
 		m_renderer->EndFrame();
 		FrameMarkEnd(name.c_str());
-		EDITOR_CONTEXT(driver)->OnFrameCompleted();
+		m_renderer->SubmitRenderOperation([](auto& driver) { driver.OnFrameCompleted(); });
 	}
+}
+
+OvRendering::Data::RenderCommandList OvEditor::Panels::AView::RecordRenderCommands()
+{
+    m_renderer->SetDrawRecordingEnabled(true);
+    m_renderer->BeginCommandRecording();
+    try
+    {
+        Render();
+        return m_renderer->FinishCommandRecording();
+    }
+    catch (...)
+    {
+        const auto error = std::current_exception();
+        try { if (m_renderer->IsDrawing()) m_renderer->EndFrame(); } catch (...) {}
+        m_renderer->CancelCommandRecording();
+        std::rethrow_exception(error);
+    }
 }
 
 void OvEditor::Panels::AView::DrawFrame()

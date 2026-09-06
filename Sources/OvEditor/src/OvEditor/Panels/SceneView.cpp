@@ -168,6 +168,10 @@ OvCore::Rendering::SceneRenderer::SceneDescriptor OvEditor::Panels::SceneView::C
 void OvEditor::Panels::SceneView::DrawFrame()
 {
 	OvEditor::Panels::AViewControllable::DrawFrame();
+}
+
+void OvEditor::Panels::SceneView::CompleteRender()
+{
 	HandleActorPicking();
 }
 
@@ -267,11 +271,21 @@ OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Panels::SceneVie
 
 	auto& actorPickingFeature = m_renderer->GetPass<OvEditor::Rendering::PickingRenderPass>("Picking");
 
-	return actorPickingFeature.ReadbackPickingResult(
+    const auto readback = actorPickingFeature.GetRecordedReadback();
+    const auto [width, height] = GetSafeSize();
+    if (readback && readback->GetSize() != std::pair<uint32_t, uint32_t>{width, height}) return std::nullopt;
+	auto result = actorPickingFeature.ReadbackPickingResult(
 		scene,
 		static_cast<uint32_t>(mouseX),
 		static_cast<uint32_t>(mouseY)
 	);
+    if (readback && result && std::holds_alternative<Core::GizmoBehaviour::EDirection>(*result))
+    {
+        if (!EDITOR_EXEC(IsAnyActorSelected()) ||
+            EDITOR_EXEC(GetSelectedActor()).GetGUID() != readback->GetGizmoActorGUID() ||
+            m_currentOperation != readback->GetGizmoOperation()) return std::nullopt;
+    }
+    return result;
 }
 
 void OvEditor::Panels::SceneView::OnSceneDropped(const std::string& p_path)

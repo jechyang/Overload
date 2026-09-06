@@ -20,6 +20,7 @@
 #include <baregl/Texture.h>
 
 #include <memory>
+#include <span>
 #include <optional>
 #include <unordered_map>
 #include <variant>
@@ -120,6 +121,8 @@ namespace baregl
 		public:
 			Snapshot() = default;
 			void Bind() const;
+			// GL owner only. Tightly packed full image; restores read target and pack state.
+			void ReadRGBA8(std::span<uint8_t> p_pixels) const;
 			uint32_t GetID() const; // Realizes the FBO; GL owner only.
 			std::pair<uint16_t, uint16_t> GetSize() const;
 		private:

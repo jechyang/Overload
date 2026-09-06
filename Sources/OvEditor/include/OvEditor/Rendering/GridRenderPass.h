@@ -27,6 +27,7 @@ namespace OvEditor::Rendering
 	class GridRenderPass : public OvRendering::Core::ARenderPass
 	{
 	public:
+		bool SupportsCommandRecording() const override { return typeid(*this) == typeid(GridRenderPass); }
 		struct GridDescriptor
 		{
 			OvMaths::FVector3 gridColor;

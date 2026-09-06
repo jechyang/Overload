@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback、ImGui 和正式帧完成仍待闭合，尚无独立 Render 线程。阶段 2、3 均未全部完成，最新验收见 MULTITHREADING_TEMPORAL_HISTORY_VALIDATION.md。**
+**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback 已接入 owning 命令与成功完成后的主线程解析；ImGui 和正式帧完成仍待闭合，尚无独立 Render 线程。阶段 2、3 均未全部完成，最新验收见 MULTITHREADING_EDITOR_COMMAND_VALIDATION.md。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -203,6 +203,14 @@
 - ReflectionRenderPass 在推进捕获面前登记；失败后重置双缓冲和有效标记，并强制完整六面重建，包含 ON_DEMAND 请求。AutoExposureEffect 在选择历史缓冲前登记；失败后重置 ping-pong、计时和首帧标记。
 - Debug/Release 命令状态测试、24 帧渐变曝光/按需逐面反射的取消、部分执行失败、析构放弃、后继失效恢复，均与即时基准精确对拍通过。完整构建、旧路径与编辑器回归结果见 MULTITHREADING_TEMPORAL_HISTORY_VALIDATION.md。
 - 这不是 Material singleUse 或场景更新的通用回滚，也不是 GPU fence/跨线程提交队列。下一步继续 Editor debug/picking/readback、ImGui 稳定数据和帧完成，再实现阶段 3 固定 Render owner、有界队列与真实交叠。
+
+### 4.10 第十增量：编辑器调试与拾取命令
+
+- Grid、调试相机/反射/灯光/Actor、描边/Gizmo 与 Picking 已接入整帧命令。调试反射拥有常量 buffer 和 cubemap，调试假灯光 fallback 也纳入提交顺序。
+- Picking 录制独立 RGBA 图像、Actor ID/GUID、场景运行身份与 Gizmo 上下文，消费只持有目标与结果存储；列表成功完成后主线程才解析。取消/失败/源对象销毁、切场景、删除 Actor、越界、尺寸和选择变化均有拒绝边界。
+- AView::RecordRenderCommands 返回拥有资源的视图命令，SceneView::CompleteRender 在成功消费后执行主线程交互；默认产品仍即时运行。Framebuffer 快照读回隔离并恢复 PBO、pack 布局和读目标。
+- 使用 --editor --command-list 验收真实调试/picking 源对象销毁回放，以及 Scene/Game/Asset 即时与延迟视图对拍。完整结果和成本边界见 MULTITHREADING_EDITOR_COMMAND_VALIDATION.md。
+- 拾取当前下载完整图像且同步读回，尚未使用 PBO；没有独立 Render 线程。下一步闭合 ImGui 稳定 draw data/纹理与正式帧完成，再完成阶段 3 资源归属、有界队列、真实交叠和交互/窗口/退出/性能验收。
 
 ## 5. 阶段 3：Game/Render 双线程（A 形态）
 

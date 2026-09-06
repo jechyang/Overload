@@ -16,6 +16,7 @@ namespace OvRendering::Features
 	class DebugShapeRenderFeature : public ARenderFeature
 	{
 	public:
+		bool SupportsCommandRecording() const override { return typeid(*this) == typeid(DebugShapeRenderFeature); }
 		/**
 		* Constructor
 		* @param p_renderer

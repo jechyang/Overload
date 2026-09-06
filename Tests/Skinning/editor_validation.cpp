@@ -24,7 +24,18 @@ void Save(Scene& scene, const std::filesystem::path& path)
 
 std::vector<unsigned char> ViewPixels(OvEditor::Panels::AView& view)
 {
+#ifdef EDITOR_COMMANDS_TEST
+    view.m_renderer->SetDrawRecordingEnabled(false);
     view.Render();
+    const auto [referenceWidth,referenceHeight]=view.GetSafeSize();
+    std::vector<uint8_t> reference(size_t(referenceWidth)*referenceHeight*4);
+    view.m_framebuffer.RecordTarget().ReadRGBA8(reference);
+    auto commands=view.RecordRenderCommands();
+    commands.Execute(*EDITOR_CONTEXT(driver));
+    view.CompleteRender();
+#else
+    view.Render();
+#endif
     Require(view.m_image->textureID.id == view.m_framebuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)->GetID(), "view image retained a stale attachment after resize");
     const auto [width, height] = view.GetSafeSize();
     Require(width > 0 && height > 0, "view has no render target");
@@ -32,8 +43,15 @@ std::vector<unsigned char> ViewPixels(OvEditor::Panels::AView& view)
     view.m_framebuffer.Bind();
     glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
     view.m_framebuffer.Unbind();
+#ifdef EDITOR_COMMANDS_TEST
+    Require(pixels==reference,"real view immediate/delayed command images differ");
+#endif
     return pixels;
 }
+
+#ifdef EDITOR_COMMANDS_TEST
+#include "../RenderingCommands/editor_command_validation.inl"
+#endif
 
 int main(int argc, char** argv) try
 {
@@ -59,6 +77,14 @@ int main(int argc, char** argv) try
     auto* material = context.materialManager.GetResource(":Materials/Default.ovmat");
     Require(model && material, "project engine assets");
     asset.SetResource(OvEditor::Panels::AssetView::ViewableResource{model});
+#ifdef EDITOR_COMMANDS_TEST
+    EditorCommandValidation(context, model, material, argv[1]);
+    // Fix temporal inputs for exact immediate/delayed Asset View comparisons.
+    for(auto* stack:asset.GetScene()->GetFastAccessComponents().postProcessStacks)
+    {auto settings=stack->GetAutoExposureSettings();settings.progressive=false;stack->SetAutoExposureSettings(settings);}
+    for(auto* probe:asset.GetScene()->GetFastAccessComponents().reflectionProbes)
+        probe->SetCaptureSpeed(OvCore::ECS::Components::CReflectionProbe::ECaptureSpeed::SIX_FACES);
+#endif
     const auto bounds = model->GetBoundingSphere();
     const auto cameraPosition = bounds.position + FVector3{0, bounds.radius * 7.0f, std::max(bounds.radius * 13.0f, 2.0f)};
     const auto cameraRotation = FQuaternion(FVector3{28, 180, 0});

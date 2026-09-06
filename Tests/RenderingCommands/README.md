@@ -114,7 +114,7 @@ frame_input_validation.cpp 在创建 GL 上下文前准备相机/时间与灯光
 
 ## 帧命令序列（阶段 2 第八增量）
 
-Debug/Release --command-list 覆盖拥有资源的序列、源对象销毁后消费、录制与执行失败/取消、普通 Mannequin 及动态阴影/反射/曝光/Bloom/Tonemapping/FXAA 对拍。可追加 --vs；先完整重建 renderer/feature/pass 使用方。该模式不接受 --editor，Editor 此时只运行 --editor --draw-packets 回归。
+Debug/Release --command-list 覆盖拥有资源的序列、源对象销毁后消费、录制与执行失败/取消、普通 Mannequin 及动态阴影/反射/曝光/Bloom/Tonemapping/FXAA 对拍。可追加 --vs；先完整重建 renderer/feature/pass 使用方。该增量当时只覆盖 SceneRenderer；第十增量已增加 --editor --command-list，见下文。
 
 动态用例验证自动曝光设置确实关闭渐变，并将即时重复、同次 packet、延迟帧逐字节比较。失败/取消只终止 GPU 命令，不回滚全部 CPU 准备历史；正式帧交接前仍需闭合该协议。完整范围见 MULTITHREADING_COMMAND_LIST_VALIDATION.md。
 
@@ -123,3 +123,9 @@ Debug/Release --command-list 覆盖拥有资源的序列、源对象销毁后消
 --command-list 增加 History 顺序依赖、取消/录制失败/执行异常/未消费析构、跨历史失效传播、即时路径拒绝超车，以及移动/源游标销毁回归。真实动态场景每帧注入失败，开启渐变曝光、ON_DEMAND + ONE_FACE 反射，恢复后的 24 帧与即时基准严格逐字节比较。
 
 先完整重建使用 CReflectionProbe/AutoExposureEffect 的模块。GPU 所有权约束未放宽；后继必须丢弃并重新准备。协议与证据见 MULTITHREADING_TEMPORAL_HISTORY_VALIDATION.md。
+
+## 编辑器整帧与拾取（阶段 2 第十增量）
+
+Debug/Release --editor --command-list 现在运行真正的视图整帧收集与延迟消费。先完整重建对应配置，再通过 --vs 指定 VS2022（若自动发现不可用）。输出与旧 --editor --draw-packets 模式隔离。
+
+editor_command_validation.inl 验证真实 DebugSceneRenderer 的六组调试/拾取即时对拍、源对象销毁、实际 Actor/Gizmo 解析、场景/删除/坐标拒绝、失败帧不发布、零录制读回及 PBO/pack 状态恢复。原 editor_validation.cpp 在新模式下增加每次真实视图的即时/延迟对照；Asset View 固定渐变曝光与反射时间输入。见 MULTITHREADING_EDITOR_COMMAND_VALIDATION.md。

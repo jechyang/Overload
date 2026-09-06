@@ -15,7 +15,10 @@ namespace OvEditor::Rendering
 	*/
 	class DebugModelRenderFeature : public OvRendering::Features::ARenderFeature
 	{
-	public:
+    public:
+        void DrawModelWithRetainedTextures(OvRendering::Data::PipelineState p_pso,
+            OvRendering::Resources::Model& p_model, OvRendering::Data::Material& p_material,
+            const OvMaths::FMatrix4& p_modelMatrix, std::vector<std::shared_ptr<baregl::Texture>> p_textures);
 		/**
 		* Constructor
 		* @param p_renderer

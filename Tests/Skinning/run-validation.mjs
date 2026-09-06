@@ -20,7 +20,6 @@ const material = process.argv.includes('--material') || snapshots;
 const geometry = process.argv.includes('--geometry') || material;
 if (geometry && (editor || parallel || asan || process.argv.includes('--current'))) throw Error('--geometry requires a baseline/current comparison');
 if (drawPackets && (geometry || parallel || asan || process.argv.includes('--current'))) throw Error('--draw-packets runs separately from other test modes except --editor');
-if (commandList && editor) throw Error('--command-list currently validates SceneRenderer; use --editor --draw-packets for the editor regression');
 if (editor && (parallel || asan)) throw Error('--editor runs separately from --parallel/--asan');
 const mutexDeque = process.argv.includes('--mutex-deque');
 const currentOnly = asan || parallel || editor || drawPackets || process.argv.includes('--current');
@@ -189,7 +188,7 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
   if (editor) {
     // Access-only overlays for state inspection; the editor mode/view code is
     // linked from the actual solution objects. No test branches in production.
-    for (const name of ['Core/Editor.h', 'Panels/AView.h']) {
+    for (const name of ['Core/Editor.h', 'Panels/AView.h', 'Rendering/PickingRenderPass.h']) {
       const dest = path.join(overlay, 'OvEditor', name);
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.writeFileSync(dest, fs.readFileSync(path.join(root, 'Sources/OvEditor/include/OvEditor', name), 'utf8').replaceAll('private:', 'public:').replaceAll('protected:', 'public:'));
@@ -214,7 +213,7 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
   }
   const args = ['/nologo','/std:c++20','/EHsc','/W3','/WX',config === 'Debug' ? '/MDd' : '/MD',config === 'Debug' ? '/Od' : '/O2','/bigobj','/Gy','/Zi',
     '/DTRACY_ENABLE','/DTRACY_ON_DEMAND','/DTRACY_MEMORY_ENABLE','/DLUA_SCRIPTING','/DSOL_NO_LUA_HPP',config === 'Debug' ? '/D_DEBUG' : '/DNDEBUG',
-    ...((variant === 'current' || geometry) ? ['/DSKINNING_NEW_PATH'] : []), ...((geometry || drawPackets) && variant === 'current' ? ['/DGEOMETRY_COMMANDS_NEW_PATH'] : []), ...((material || drawPackets) && variant === 'current' ? ['/DMATERIAL_COMMANDS_NEW_PATH'] : []), ...((snapshots || drawPackets) && variant === 'current' ? ['/DSNAPSHOT_NEW_PATH'] : []), ...((drawInputs || drawPackets) && variant === 'current' ? ['/DDRAW_INPUTS_NEW_PATH'] : []), ...(drawPackets ? ['/DDRAW_PACKETS_TEST'] : []), ...(mutexDeque ? ['/DOVTOOLS_JOBS_USE_MUTEX_DEQUE'] : []), ...(asan ? ['/fsanitize=address', '/D_DISABLE_VECTOR_ANNOTATION', '/D_DISABLE_STRING_ANNOTATION'] : []),
+    ...((variant === 'current' || geometry) ? ['/DSKINNING_NEW_PATH'] : []), ...((geometry || drawPackets) && variant === 'current' ? ['/DGEOMETRY_COMMANDS_NEW_PATH'] : []), ...((material || drawPackets) && variant === 'current' ? ['/DMATERIAL_COMMANDS_NEW_PATH'] : []), ...((snapshots || drawPackets) && variant === 'current' ? ['/DSNAPSHOT_NEW_PATH'] : []), ...((drawInputs || drawPackets) && variant === 'current' ? ['/DDRAW_INPUTS_NEW_PATH'] : []), ...(drawPackets ? ['/DDRAW_PACKETS_TEST'] : []), ...(commandList && editor ? ['/DEDITOR_COMMANDS_TEST'] : []), ...(mutexDeque ? ['/DOVTOOLS_JOBS_USE_MUTEX_DEQUE'] : []), ...(asan ? ['/fsanitize=address', '/D_DISABLE_VECTOR_ANNOTATION', '/D_DISABLE_STRING_ANNOTATION'] : []),
     '/I' + overlay, '/I' + path.join(msvc,'include'), ...['ucrt','shared','um','winrt'].map(x => '/I' + path.join(sdk,'Include',sdkVersion,x)),
     ...fs.readdirSync(path.join(root,'Sources')).filter(x => x.startsWith('Ov')).map(x => '/I' + path.join(root,'Sources',x,'include')),
     ...depIncludes.map(x => '/I' + path.join(root,'Dependencies',x)),

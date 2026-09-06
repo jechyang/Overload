@@ -587,6 +587,7 @@ void OvCore::SceneSystem::Scene::OnSerialize(tinyxml2::XMLDocument & p_doc, tiny
 
 void OvCore::SceneSystem::Scene::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_root)
 {
+	m_lifetimeToken = std::make_shared<const uint8_t>(0);
 	tinyxml2::XMLNode* actorsRoot = p_root->FirstChildElement("actors");
 
 	if (actorsRoot)

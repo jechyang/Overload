@@ -7,6 +7,7 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
 #include <functional>
 #include <string>
 #include <vector>
@@ -68,7 +69,13 @@ namespace OvCore::SceneSystem
 		/**
 		* Handle the memory de-allocation of every actors
 		*/
-		~Scene();
+        ~Scene();
+        Scene(const Scene&) = delete;
+        Scene& operator=(const Scene&) = delete;
+        // Runtime identity, independent of serialized actor IDs and allocator reuse.
+        // Retaining the token does not keep this Scene or its actors alive.
+        using LifetimeToken = std::shared_ptr<const uint8_t>;
+        LifetimeToken GetLifetimeToken() const { return m_lifetimeToken; }
 
 		/**
 		* Add a default camera to the scene
@@ -256,6 +263,7 @@ namespace OvCore::SceneSystem
 		void EndBatchActorCreation(bool p_startCreatedActors);
 		ECS::Actor* InstantiatePrefabInternal(const std::string& p_prefabPath, OvTools::Utils::OptRef<ECS::Actor> p_parent);
 
+		LifetimeToken m_lifetimeToken = std::make_shared<const uint8_t>(0);
 		int64_t m_availableID = 1;
 		bool m_isPlaying = false;
 		bool m_batchActorCreation = false;

@@ -114,6 +114,7 @@ namespace
 class DebugCamerasRenderPass : public OvRendering::Core::ARenderPass
 {
 public:
+	bool SupportsCommandRecording() const override { return typeid(*this) == typeid(DebugCamerasRenderPass); }
 	DebugCamerasRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) : OvRendering::Core::ARenderPass(p_renderer)
 	{
 		m_fakeLightsBuffer = CreateDebugLightBuffer();
@@ -144,7 +145,7 @@ protected:
 		if (lightingRenderFeature)
 			lightingRenderFeature->BindOverride(m_fakeLightsBuffer);
 		else
-			m_fakeLightsBuffer->Bind(baregl::types::EBufferType::SHADER_STORAGE, 0);
+			m_renderer.SubmitRenderOperation([buffer = m_fakeLightsBuffer](auto&) { buffer->Bind(baregl::types::EBufferType::SHADER_STORAGE, 0); });
 
 		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
 
@@ -177,6 +178,7 @@ private:
 class DebugReflectionProbesRenderPass : public OvRendering::Core::ARenderPass
 {
 public:
+	bool SupportsCommandRecording() const override { return typeid(*this) == typeid(DebugReflectionProbesRenderPass); }
 	DebugReflectionProbesRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) : OvRendering::Core::ARenderPass(p_renderer)
 	{
 		m_fakeLightsBuffer = CreateDebugLightBuffer();
@@ -208,7 +210,7 @@ protected:
 		if (lightingRenderFeature)
 			lightingRenderFeature->BindOverride(m_fakeLightsBuffer);
 		else
-			m_fakeLightsBuffer->Bind(baregl::types::EBufferType::SHADER_STORAGE, 0);
+			m_renderer.SubmitRenderOperation([buffer = m_fakeLightsBuffer](auto&) { buffer->Bind(baregl::types::EBufferType::SHADER_STORAGE, 0); });
 
 		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
 		auto& reflectionRenderFeature = m_renderer.GetFeature<OvCore::Rendering::ReflectionRenderFeature>();
@@ -234,7 +236,7 @@ protected:
 				reflectionRenderFeature.BindProbe(*reflectionProbe);
 
 				m_renderer.GetFeature<OvEditor::Rendering::DebugModelRenderFeature>()
-					.DrawModelWithSingleMaterial(p_pso, model, m_reflectiveMaterial, modelMatrix);
+					.DrawModelWithRetainedTextures(p_pso, model, m_reflectiveMaterial, modelMatrix, {reflectionProbe->GetCubemap()});
 			}
 		}
 
@@ -253,6 +255,7 @@ private:
 class DebugLightsRenderPass : public OvRendering::Core::ARenderPass
 {
 public:
+	bool SupportsCommandRecording() const override { return typeid(*this) == typeid(DebugLightsRenderPass); }
 	DebugLightsRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) : OvRendering::Core::ARenderPass(p_renderer)
 	{
 		m_lightMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Billboard"));
@@ -305,6 +308,7 @@ private:
 class DebugActorRenderPass : public OvRendering::Core::ARenderPass
 {
 public:
+	bool SupportsCommandRecording() const override { return typeid(*this) == typeid(DebugActorRenderPass); }
 	DebugActorRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) : OvRendering::Core::ARenderPass(p_renderer),
 		m_debugShapeFeature(m_renderer.GetFeature<OvRendering::Features::DebugShapeRenderFeature>())
 	{

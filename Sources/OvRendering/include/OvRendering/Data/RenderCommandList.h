@@ -18,6 +18,20 @@ namespace OvRendering::Data
     {
     public:
         enum class State { RECORDING, READY, EXECUTING, COMPLETED, FAILED, CANCELLED };
+        // Safe to poll from the producer after ownership transfer. This observes
+        // CPU command completion, not a GPU fence or a completed presentation.
+        class Completion
+        {
+            friend class RenderCommandList;
+        public:
+            Completion() = default;
+            bool Succeeded() const
+            { return m_state && m_state->load(std::memory_order_acquire) == State::COMPLETED; }
+        private:
+            explicit Completion(std::shared_ptr<std::atomic<State>> state) : m_state(std::move(state)) {}
+            std::shared_ptr<std::atomic<State>> m_state;
+        };
+        Completion GetCompletion() const { return Completion(m_completion); }
         using Operation = std::function<void(Context::Driver&)>;
         // Producer-owned history cursor. Only the shared status/epoch is touched by
         // the consumer; it never retains or calls the scene/effect owning this cursor.

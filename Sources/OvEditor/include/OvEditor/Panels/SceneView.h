@@ -32,6 +32,7 @@ namespace OvEditor::Panels
 		* Update the scene view
 		*/
 		virtual void Update(float p_deltaTime) override;
+		void CompleteRender() override;
 
 		/**
 		* Prepare the renderer for rendering

@@ -54,7 +54,12 @@ namespace OvEditor::Panels
 		/**
 		* Render the view
 		*/
-		void Render();
+        void Render();
+        // CPU preparation plus retained GPU commands. Resource creation/resize still
+        // requires the GL owner until the render-thread resource queue is integrated.
+        OvRendering::Data::RenderCommandList RecordRenderCommands();
+        // Main/UI thread only, after successful consumption of the recorded view.
+        virtual void CompleteRender() {}
 
 		/**
 		* Draw the frame (m_renderer->Draw() if not overriden)

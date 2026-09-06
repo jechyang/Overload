@@ -157,6 +157,8 @@ namespace OvRendering::Core
 		void BeginCommandRecording();
 		Data::RenderCommandList FinishCommandRecording();
 		void CancelCommandRecording();
+        Data::RenderCommandList::Completion GetCommandCompletion() const
+        { return m_commands ? m_commands->GetCompletion() : Data::RenderCommandList::Completion{}; }
 		bool IsRecordingCommands() const { return m_commands != nullptr; }
         // Returns true if the effect must initialize its temporal history again.
         bool UseRenderHistory(Data::RenderCommandList::History& p_history)

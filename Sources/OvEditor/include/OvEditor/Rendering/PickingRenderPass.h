@@ -28,11 +28,32 @@ namespace OvEditor::Rendering
 	class PickingRenderPass : public OvRendering::Core::ARenderPass
 	{
 	public:
+		bool SupportsCommandRecording() const override { return typeid(*this) == typeid(PickingRenderPass); }
 		using PickingResult =
 			std::optional<
 			std::variant<OvTools::Utils::OptRef<OvCore::ECS::Actor>,
 			OvEditor::Core::GizmoBehaviour::EDirection>
 		>;
+
+        class Readback
+        {
+            friend class PickingRenderPass;
+        public:
+            bool IsReady() const { return completion.Succeeded(); }
+            std::pair<uint32_t, uint32_t> GetSize() const { return {width, height}; }
+            uint64_t GetGizmoActorGUID() const { return gizmoActorGUID; }
+            OvEditor::Core::EGizmoOperation GetGizmoOperation() const { return gizmoOperation; }
+            PickingResult Resolve(const OvCore::SceneSystem::Scene& p_scene, uint32_t p_x, uint32_t p_y) const;
+        private:
+            OvRendering::Data::RenderCommandList::Completion completion;
+            OvCore::SceneSystem::Scene::LifetimeToken scene;
+            uint32_t width = 0, height = 0;
+            uint64_t gizmoActorGUID = 0;
+            OvEditor::Core::EGizmoOperation gizmoOperation = OvEditor::Core::EGizmoOperation::TRANSLATE;
+            std::vector<uint8_t> pixels;
+            std::unordered_map<uint32_t, uint64_t> actors;
+        };
+        std::shared_ptr<const Readback> GetRecordedReadback() const { return m_readback; }
 
 		/**
 		* Constructor
@@ -66,6 +87,7 @@ namespace OvEditor::Rendering
 		);
 
 	private:
+		std::shared_ptr<Readback> m_readback;
 		baregl::Framebuffer m_actorPickingFramebuffer;
 		OvCore::Resources::Material m_actorPickingFallbackMaterial;
 		OvCore::Resources::Material m_reflectionProbeMaterial;

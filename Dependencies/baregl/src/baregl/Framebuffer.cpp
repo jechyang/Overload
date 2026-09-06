@@ -234,6 +234,34 @@ namespace baregl
 		return m_data->size;
 	}
 
+    void Framebuffer::Snapshot::ReadRGBA8(std::span<uint8_t> p_pixels) const
+    {
+        const auto [width, height] = GetSize();
+        if (!width || !height || p_pixels.size() != size_t(width) * height * 4)
+            throw std::invalid_argument("Invalid readback storage size");
+        const auto target = GetID();
+        GLint readTarget, packBuffer, alignment, rowLength, skipRows, skipPixels;
+        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readTarget);
+        glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &packBuffer);
+        glGetIntegerv(GL_PACK_ALIGNMENT, &alignment);
+        glGetIntegerv(GL_PACK_ROW_LENGTH, &rowLength);
+        glGetIntegerv(GL_PACK_SKIP_ROWS, &skipRows);
+        glGetIntegerv(GL_PACK_SKIP_PIXELS, &skipPixels);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, target);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+        glPixelStorei(GL_PACK_SKIP_ROWS, 0);
+        glPixelStorei(GL_PACK_SKIP_PIXELS, 0);
+        glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, p_pixels.data());
+        glPixelStorei(GL_PACK_ALIGNMENT, alignment);
+        glPixelStorei(GL_PACK_ROW_LENGTH, rowLength);
+        glPixelStorei(GL_PACK_SKIP_ROWS, skipRows);
+        glPixelStorei(GL_PACK_SKIP_PIXELS, skipPixels);
+        glBindBuffer(GL_PIXEL_PACK_BUFFER, packBuffer);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, readTarget);
+    }
+
 	void Framebuffer::BindDefault()
 	{
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);

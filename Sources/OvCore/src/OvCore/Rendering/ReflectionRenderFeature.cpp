@@ -151,7 +151,7 @@ OvCore::Rendering::ReflectionRenderFeature::ReflectionRenderFeature(
 
 void OvCore::Rendering::ReflectionRenderFeature::PrepareProbe(OvCore::ECS::Components::CReflectionProbe& p_reflectionProbe)
 {
-	p_reflectionProbe._PrepareUBO();
+	if (!m_renderer.IsRecordingCommands()) p_reflectionProbe._PrepareUBO();
 }
 
 void OvCore::Rendering::ReflectionRenderFeature::SendProbeData(
@@ -168,7 +168,15 @@ void OvCore::Rendering::ReflectionRenderFeature::SendProbeData(
 
 void OvCore::Rendering::ReflectionRenderFeature::BindProbe(const OvCore::ECS::Components::CReflectionProbe& p_reflectionProbe)
 {
-	p_reflectionProbe._GetUniformBuffer().Bind(baregl::types::EBufferType::UNIFORM, 1);
+    if (m_renderer.IsRecordingCommands())
+    {
+        const auto data = p_reflectionProbe.CaptureUniformData();
+        m_renderer.SubmitRenderOperation([buffer = m_recordedProbeBuffer, data](auto&) {
+            buffer->Upload(data.data());
+            buffer->Bind(baregl::types::EBufferType::UNIFORM, 1);
+        });
+    }
+    else p_reflectionProbe._GetUniformBuffer().Bind(baregl::types::EBufferType::UNIFORM, 1);
 }
 
 void OvCore::Rendering::ReflectionRenderFeature::OnBeginFrame(const OvRendering::Data::FrameDescriptor& p_frameDescriptor)
