@@ -75,6 +75,10 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 	sceneManager(projectAssetsPath.string(), engineAssetsPath.string()),
 	projectSettings(projectFile.string())
 {
+	/* Job system (provided first: renderers fetch it per frame) */
+	jobSystem = std::make_unique<OvTools::Jobs::JobSystem>();
+	ServiceLocator::Provide<OvTools::Jobs::JobSystem>(*jobSystem);
+
 	if (!IsProjectSettingsIntegrityVerified())
 	{
 		ResetProjectSettings();

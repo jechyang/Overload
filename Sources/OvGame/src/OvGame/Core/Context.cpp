@@ -53,6 +53,10 @@ OvGame::Core::Context::Context() :
 	projectSettings((std::filesystem::current_path() / "Data" / "User" / "Game.ini").string()),
 	sceneManager(projectAssetsPath.string(), engineAssetsPath.string())
 {
+	/* Job system (provided first: renderers fetch it per frame) */
+	jobSystem = std::make_unique<OvTools::Jobs::JobSystem>();
+	ServiceLocator::Provide<OvTools::Jobs::JobSystem>(*jobSystem);
+
 	ModelManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	TextureManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	ShaderManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);

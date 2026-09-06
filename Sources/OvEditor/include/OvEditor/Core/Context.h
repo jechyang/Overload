@@ -23,6 +23,7 @@
 #include <OvEditor/Core/EditorResources.h>
 #include <OvPhysics/Core/PhysicsEngine.h>
 #include <OvTools/Filesystem/IniFile.h>
+#include <OvTools/Jobs/JobSystem.h>
 #include <OvWindowing/Window.h>
 #include <OvUI/Core/UIManager.h>
 #include <OvWindowing/Context/Device.h>
@@ -76,6 +77,13 @@ namespace OvEditor::Core
 		const std::filesystem::path engineAssetsPath;
 		const std::filesystem::path projectAssetsPath;
 		const std::filesystem::path editorAssetsPath;
+
+		/**
+		* Job system used by the renderers for parallel CPU-side work.
+		* Declared before every other service so that it outlives them
+		* (members are destroyed in reverse declaration order)
+		*/
+		std::unique_ptr<OvTools::Jobs::JobSystem> jobSystem;
 
 		std::unique_ptr<OvWindowing::Context::Device> device;
 		std::unique_ptr<OvWindowing::Window> window;

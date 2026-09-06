@@ -25,6 +25,7 @@
 #include <OvAudio/Core/AudioEngine.h>
 
 #include <OvTools/Filesystem/IniFile.h>
+#include <OvTools/Jobs/JobSystem.h>
 
 namespace OvGame::Core
 {
@@ -47,6 +48,13 @@ namespace OvGame::Core
 	public:
 		const std::filesystem::path engineAssetsPath;
 		const std::filesystem::path projectAssetsPath;
+
+		/**
+		* Job system used by the renderers for parallel CPU-side work.
+		* Declared before every other service so that it outlives them
+		* (members are destroyed in reverse declaration order)
+		*/
+		std::unique_ptr<OvTools::Jobs::JobSystem> jobSystem;
 
 		std::unique_ptr<OvWindowing::Context::Device> device;
 		std::unique_ptr<OvWindowing::Window> window;
