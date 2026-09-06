@@ -158,7 +158,7 @@ void OvCore::ECS::Components::CPostProcessStack::SetBloomSettings(const OvCore::
 
 void OvCore::ECS::Components::CPostProcessStack::SetAutoExposureSettings(const OvCore::Rendering::PostProcess::AutoExposureSettings& p_settings)
 {
-	m_settings.Set<Rendering::PostProcess::AutoExposureSettings>(p_settings);
+	m_settings.Set<Rendering::PostProcess::AutoExposureEffect>(p_settings);
 }
 
 void OvCore::ECS::Components::CPostProcessStack::SetTonemappingSettings(const OvCore::Rendering::PostProcess::TonemappingSettings& p_settings)

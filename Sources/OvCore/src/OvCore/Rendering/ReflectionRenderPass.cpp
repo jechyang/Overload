@@ -73,7 +73,7 @@ void OvCore::Rendering::ReflectionRenderPass::Draw(OvRendering::Data::PipelineSt
 		m_renderer.BindTarget(&targetFramebuffer);
 		m_renderer.SetViewport(0, 0, width, height);
 
-		// Iterating over the given face indices, which determine if we 
+		// Iterating over the given face indices, which determine if we
 		// are rendering progressively (less than 6 faces per frame) or immediately (6 faces at once).
 		for (auto faceIndex : faceIndices)
 		{
@@ -88,7 +88,13 @@ void OvCore::Rendering::ReflectionRenderPass::Draw(OvRendering::Data::PipelineSt
 			// If we just drew the last face, we notify the reflection probe that the cubemap is complete.
 			if (faceIndex == 5)
 			{
-				reflectionProbe._NotifyCubemapComplete();
+				if (m_renderer.IsRecordingCommands())
+				{
+					const auto texture = targetFramebuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR);
+					m_renderer.SubmitRenderOperation([texture](auto&) { texture->GenerateMipmaps(); });
+					reflectionProbe._NotifyCubemapComplete(false);
+				}
+				else reflectionProbe._NotifyCubemapComplete();
 			}
 		}
 

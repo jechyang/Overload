@@ -1,3 +1,6 @@
+#include <OvCore/ECS/Components/CDirectionalLight.h>
+#include <OvCore/ECS/Components/CReflectionProbe.h>
+#include <OvCore/ECS/Components/CPostProcessStack.h>
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -272,7 +275,7 @@ void StateValidation(const std::filesystem::path& dir)
     std::printf("PASS: %zu snapshots, 32 playback/rate scenarios, shared resources and lifetimes\n", snapshots);
 }
 
-void ImageValidation(const std::filesystem::path& dir, bool trace, bool recordDraws = false)
+void ImageValidation(const std::filesystem::path& dir, bool trace, bool recordDraws = false, bool recordCommands = false, bool dynamicPasses = false)
 {
     OvWindowing::Settings::DeviceSettings ds; ds.contextMajorVersion = 4; ds.contextMinorVersion = 5;
     OvWindowing::Context::Device device(ds);
@@ -289,11 +292,23 @@ void ImageValidation(const std::filesystem::path& dir, bool trace, bool recordDr
     Require(mannequin && mannequin->IsSkinned() && !mannequin->GetAnimations().empty() && shader, "animated render assets missing");
     Scene scene(assets, assets);
     auto& skin = Add(scene, mannequin); skin.SetAnimation(std::optional<uint32_t>{0u});
+    if (dynamicPasses)
+    {
+        auto& light=scene.CreateActor("dynamic light").AddComponent<OvCore::ECS::Components::CDirectionalLight>();
+        light.GetData().castShadows=true;light.GetData().shadowMapResolution=128;light.owner.transform.SetLocalRotation(FQuaternion({30,45,0}));
+        auto& probe=scene.CreateActor("dynamic probe").AddComponent<OvCore::ECS::Components::CReflectionProbe>();
+        probe.SetCubemapResolution(16);probe.SetCaptureSpeed(OvCore::ECS::Components::CReflectionProbe::ECaptureSpeed::SIX_FACES);
+        probe.SetInfluencePolicy(OvCore::ECS::Components::CReflectionProbe::EInfluencePolicy::GLOBAL);
+        auto& stack=scene.CreateActor("dynamic effects").AddComponent<OvCore::ECS::Components::CPostProcessStack>();
+        auto exposure=stack.GetAutoExposureSettings();exposure.progressive=false;stack.SetAutoExposureSettings(exposure);
+        Require(!stack.GetAutoExposureSettings().progressive,"auto-exposure setter did not update active effect settings");
+        auto bloom=stack.GetBloomSettings();bloom.passes=3;stack.SetBloomSettings(bloom);
+    }
     OvCore::Resources::Material material; material.SetShader(shader);
     skin.owner.AddComponent<CMaterialRenderer>().FillWithMaterial(material);
     skin.owner.GetComponent<CModelRenderer>()->SetFrustumBehaviour(CModelRenderer::EFrustumBehaviour::DISABLED);
     OvCore::Rendering::SceneRenderer renderer(driver);
-    renderer.SetDrawRecordingEnabled(recordDraws);
+    renderer.SetDrawRecordingEnabled(recordDraws || recordCommands);
     OvRendering::Entities::Camera camera;
     const auto bounds = mannequin->GetBoundingSphere();
     camera.SetPosition(bounds.position + FVector3{0, 0, std::max(bounds.radius * 2.8f, 2.0f)});
@@ -307,9 +322,12 @@ void ImageValidation(const std::filesystem::path& dir, bool trace, bool recordDr
         skin.SetTime(skin.GetAnimationDurationSeconds() * float(i) / 24.0f);
         const auto version = skin.GetPoseVersion();
         renderer.AddDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>({.scene=scene, .fallbackMaterial=material});
+        if (recordCommands) renderer.BeginCommandRecording();
         renderer.BeginFrame(frame); renderer.DrawFrame();
+        if (recordCommands) { renderer.EndFrame(); auto commands=renderer.FinishCommandRecording(); commands.Execute(driver); framebuffer.Bind(); }
         std::vector<unsigned char> pixels(320 * 240 * 4); glReadPixels(0, 0, 320, 240, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-        renderer.EndFrame(); TracyGpuCollect;
+        if (!recordCommands) renderer.EndFrame(); else framebuffer.Unbind();
+        TracyGpuCollect;
         Require(version == skin.GetPoseVersion(), "render advanced pose");
         images.write(reinterpret_cast<const char*>(pixels.data()), static_cast<std::streamsize>(pixels.size()));
         if (!previous.empty() && pixels != previous) ++changedFrames;

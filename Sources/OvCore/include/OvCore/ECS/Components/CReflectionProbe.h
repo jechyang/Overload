@@ -194,6 +194,7 @@ namespace OvCore::ECS::Components
 
 	private:
 		void _NotifyCubemapComplete();
+		void _NotifyCubemapComplete(bool p_generateMipmaps);
 		void _AllocateResources();
 		void _PrepareUBO();
 		std::vector<uint32_t> _GetCaptureFaceIndices();

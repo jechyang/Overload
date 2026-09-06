@@ -22,23 +22,42 @@ void OvRendering::Core::CompositeRenderer::BeginFrame(const Data::FrameDescripto
 	ZoneScoped;
 	TracyGpuZone("BeginFrame");
 
-	m_recordedMaterial.reset();
-	ABaseRenderer::BeginFrame(p_frameDescriptor);
-
-	for (const auto& feature : m_features | std::views::values)
+	try
 	{
-		if (feature->IsEnabled())
+		if (IsRecordingCommands() && !m_drawRecordingEnabled)
+			throw std::logic_error("Command recording requires retained draw packets");
+		if (IsRecordingCommands())
 		{
-			feature->OnBeginFrame(p_frameDescriptor);
+			for (const auto& feature : m_features | std::views::values)
+				if (feature->IsEnabled() && !feature->SupportsCommandRecording())
+					throw std::invalid_argument("Enabled feature has not opted into command recording");
+			for (const auto& pass : m_passes | std::views::values)
+				if (pass.second->IsEnabled() && !pass.second->SupportsCommandRecording())
+					throw std::invalid_argument("Enabled pass has not opted into command recording");
+		}
+		m_recordedMaterial.reset();
+		ABaseRenderer::BeginFrame(p_frameDescriptor);
+
+		for (const auto& feature : m_features | std::views::values)
+		{
+			if (feature->IsEnabled())
+			{
+				feature->OnBeginFrame(p_frameDescriptor);
+			}
+		}
+
+		for (const auto& pass : m_passes | std::views::values)
+		{
+			if (pass.second->IsEnabled())
+			{
+				pass.second->OnBeginFrame(p_frameDescriptor);
+			}
 		}
 	}
-
-	for (const auto& pass : m_passes | std::views::values)
+	catch (...)
 	{
-		if (pass.second->IsEnabled())
-		{
-			pass.second->OnBeginFrame(p_frameDescriptor);
-		}
+		if (m_commands) m_commands->FailRecording();
+		throw;
 	}
 }
 
@@ -61,7 +80,7 @@ void OvRendering::Core::CompositeRenderer::DrawFrame()
 		if (m_currentPass->IsEnabled())
 		{
 			try { m_currentPass->Draw(pso); }
-			catch (...) { m_currentPass.reset(); throw; }
+			catch (...) { m_currentPass.reset(); if (m_commands) m_commands->FailRecording(); throw; }
 		}
 
 		m_currentPass.reset();
@@ -73,25 +92,39 @@ void OvRendering::Core::CompositeRenderer::EndFrame()
 	ZoneScoped;
 	TracyGpuZone("EndFrame");
 
-	for (const auto& pass : m_passes | std::views::values)
+	try
 	{
-		if (pass.second->IsEnabled())
+		for (const auto& pass : m_passes | std::views::values)
 		{
-			pass.second->OnEndFrame();
+			if (pass.second->IsEnabled())
+			{
+				pass.second->OnEndFrame();
+			}
 		}
-	}
 
-	for (const auto& feature : m_features | std::views::values)
+		for (const auto& feature : m_features | std::views::values)
+		{
+			if (feature->IsEnabled())
+			{
+				feature->OnEndFrame();
+			}
+		}
+
+		ClearDescriptors();
+		m_recordedMaterial.reset();
+		ABaseRenderer::EndFrame();
+	}
+	catch (...)
 	{
-		if (feature->IsEnabled())
+		if (m_commands)
 		{
-			feature->OnEndFrame();
+			m_commands->FailRecording();
+			ClearDescriptors();
+			m_recordedMaterial.reset();
+			if (IsDrawing()) ABaseRenderer::EndFrame();
 		}
+		throw;
 	}
-
-	ClearDescriptors();
-	m_recordedMaterial.reset();
-	ABaseRenderer::EndFrame();
 }
 
 void OvRendering::Core::CompositeRenderer::DrawEntity(
@@ -139,13 +172,24 @@ void OvRendering::Core::CompositeRenderer::DrawEntity(
 				recording.textures, m_recordedMaterial.get(), stable, once));
 			DrawPacket packet{ RecordPassState(), std::move(geometry), material, std::move(recording) };
 			m_recording = nullptr;
-			ExecuteDrawPacket(packet);
+			if (IsRecordingCommands())
+			{
+				SubmitRenderOperation([packet = std::move(packet)](Context::Driver& driver) {
+					ExecutePassState(driver, packet.state);
+					for (const auto& operation : packet.features.operations) operation();
+					packet.material->Execute();
+					const auto& geometry = packet.geometry;
+					driver.Draw(geometry.pipelineState, geometry.mesh, geometry.primitiveMode, geometry.instances);
+				});
+			}
+			else ExecuteDrawPacket(packet);
 			m_recordedMaterial = std::move(material);
 			m_previousMaterialSignature = binding.signature;
 		}
 		catch (...)
 		{
 			m_recording = nullptr;
+			if (m_commands) m_commands->FailRecording();
 			m_previousMaterialSignature.reset();
 			m_recordedMaterial.reset();
 			throw;
@@ -164,7 +208,7 @@ void OvRendering::Core::CompositeRenderer::DrawEntity(
 	}
 
 	ABaseRenderer::DrawEntity(p_pso, p_drawable);
-	
+
 	for (const auto& feature : m_features | std::views::values)
 	{
 		if (feature->IsEnabledFor(passTypeId))

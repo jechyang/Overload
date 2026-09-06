@@ -37,7 +37,7 @@ bool IsLightInFrustum(const OvRendering::Entities::Light& p_light, const OvRende
 
 void OvRendering::Features::LightingRenderFeature::Bind() const
 {
-	m_lightBuffer->Bind(baregl::types::EBufferType::SHADER_STORAGE, m_bufferBindingPoint);
+	m_renderer.SubmitRenderOperation([buffer = m_lightBuffer, binding = m_bufferBindingPoint](auto&) { buffer->Bind(baregl::types::EBufferType::SHADER_STORAGE, binding); });
 	m_boundLightBuffer = m_lightBuffer;
 }
 
@@ -86,15 +86,21 @@ void OvRendering::Features::LightingRenderFeature::ExecuteLightBinding(const Lig
 
 void OvRendering::Features::LightingRenderFeature::BindOverride(std::shared_ptr<baregl::Buffer> p_buffer)
 {
-	ExecuteLightBinding({p_buffer, m_bufferBindingPoint});
+	if (!p_buffer) throw std::invalid_argument("Light binding requires an owned buffer");
+	m_renderer.SubmitRenderOperation([command = LightBindingCommand{p_buffer, m_bufferBindingPoint}](auto&) { ExecuteLightBinding(command); });
 	m_boundLightBuffer = std::move(p_buffer);
 }
 
 void OvRendering::Features::LightingRenderFeature::OnBeginFrame(const Data::FrameDescriptor& p_frameDescriptor)
 {
 	OVASSERT(m_renderer.HasDescriptor<LightingDescriptor>(), "Cannot find LightingDescriptor attached to this renderer");
-	const auto command = PrepareLightingUpload(m_renderer.GetDescriptor<LightingDescriptor>(), p_frameDescriptor.camera.value());
-	ExecuteLightingUpload(command);
+	auto command = PrepareLightingUpload(m_renderer.GetDescriptor<LightingDescriptor>(), p_frameDescriptor.camera.value());
+	m_renderer.SubmitRenderOperation([buffer = m_lightBuffer, binding = m_bufferBindingPoint, command = std::move(command)](auto&) {
+		const auto matrices = std::span{command.matrices};
+		if (buffer->Allocate(matrices.size_bytes(), baregl::types::EAccessSpecifier::STREAM_DRAW)) buffer->Upload(matrices.data());
+		buffer->Bind(baregl::types::EBufferType::SHADER_STORAGE, binding);
+	});
+	m_boundLightBuffer = m_lightBuffer;
 }
 
 void OvRendering::Features::LightingRenderFeature::OnBeforeDraw(Data::PipelineState&, const Entities::Drawable&)
@@ -108,6 +114,6 @@ void OvRendering::Features::LightingRenderFeature::OnBeforeDraw(Data::PipelineSt
 
 void OvRendering::Features::LightingRenderFeature::OnEndFrame()
 {
-	m_lightBuffer->Unbind();
+	m_renderer.SubmitRenderOperation([buffer = m_lightBuffer](auto&) { buffer->Unbind(); });
 	m_boundLightBuffer.reset();
 }

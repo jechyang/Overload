@@ -35,6 +35,9 @@ namespace OvRendering::Core
 		*/
 		virtual ~ARenderPass() = default;
 
+		// All GPU work must be submitted as owned operations for delayed consumption.
+		virtual bool SupportsCommandRecording() const { return false; }
+
 		/**
 		* Enable (or disable) the render pass.
 		*/

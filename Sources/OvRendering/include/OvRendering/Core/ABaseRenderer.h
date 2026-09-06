@@ -11,6 +11,7 @@
 
 #include <OvRendering/Core/IRenderer.h>
 #include <OvRendering/Data/FrameInfo.h>
+#include <OvRendering/Data/RenderCommandList.h>
 #include <OvRendering/Resources/IMesh.h>
 #include <OvRendering/Resources/Texture.h>
 #include <OvRendering/Entities/Drawable.h>
@@ -152,6 +153,14 @@ namespace OvRendering::Core
 			const OvMaths::FVector4& p_color = OvMaths::FVector4::Zero) const;
 		void ExecuteClear(const ClearCommand& p_command);
 
+		// Record one or more complete views before handing off the owned sequence.
+		void BeginCommandRecording();
+		Data::RenderCommandList FinishCommandRecording();
+		void CancelCommandRecording();
+		bool IsRecordingCommands() const { return m_commands != nullptr; }
+		void SubmitRenderOperation(Data::RenderCommandList::Operation p_operation);
+		static void ExecutePassState(Context::Driver& p_driver, const PassStateCommand& p_command);
+
 		struct RetainedTexturesDescriptor
 		{
 			std::vector<std::shared_ptr<baregl::Texture>> textures;
@@ -188,6 +197,7 @@ namespace OvRendering::Core
 		std::optional<OvRendering::Data::MaterialSignatureSet> m_previousMaterialSignature = std::nullopt;
 
 		PassStateCommand m_passState;
+		std::unique_ptr<Data::RenderCommandList> m_commands;
 
 	private:
 		static std::atomic_bool s_isDrawing;

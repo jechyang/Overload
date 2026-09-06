@@ -35,7 +35,7 @@ namespace
 	constexpr auto kBlackPixel = std::to_array<uint8_t, 6 * 4>({ 0 });
 }
 
-OvRendering::Core::ABaseRenderer::ABaseRenderer(Context::Driver& p_driver) : 
+OvRendering::Core::ABaseRenderer::ABaseRenderer(Context::Driver& p_driver) :
 	m_driver(p_driver),
 	m_isDrawing(false),
 	m_emptyTexture2D{ baregl::types::ETextureType::TEXTURE_2D },
@@ -120,7 +120,7 @@ bool OvRendering::Core::ABaseRenderer::IsDrawing() const
 void OvRendering::Core::ABaseRenderer::SetViewport(uint32_t p_x, uint32_t p_y, uint32_t p_width, uint32_t p_height)
 {
 	m_passState.viewport = { p_x, p_y, p_width, p_height };
-	m_driver.SetViewport(p_x, p_y, p_width, p_height);
+	SubmitRenderOperation([=](Context::Driver& driver) { driver.SetViewport(p_x, p_y, p_width, p_height); });
 }
 
 void OvRendering::Core::ABaseRenderer::Clear(
@@ -131,7 +131,11 @@ void OvRendering::Core::ABaseRenderer::Clear(
 )
 {
 	ZoneScoped;
-	ExecuteClear(PrepareClear(p_colorBuffer, p_depthBuffer, p_stencilBuffer, p_color));
+	const auto command = PrepareClear(p_colorBuffer, p_depthBuffer, p_stencilBuffer, p_color);
+	SubmitRenderOperation([command](Context::Driver& driver) {
+		ExecutePassState(driver, command.state);
+		driver.Clear(command.colorBuffer, command.depthBuffer, command.stencilBuffer, command.color);
+	});
 }
 
 void OvRendering::Core::ABaseRenderer::Blit(
@@ -270,6 +274,7 @@ void OvRendering::Core::ABaseRenderer::DrawEntity(
 
 	OVASSERT(IsDrawable(p_drawable), "Submitted an entity that isn't properly configured!");
 
+	if (IsRecordingCommands()) throw std::logic_error("Immediate geometry path cannot record owned frame commands");
 	const auto geometryCommand = PrepareGeometryDraw(p_pso, p_drawable);
 
 	const auto signature = p_drawable.material->Bind(
@@ -305,7 +310,10 @@ void OvRendering::Core::ABaseRenderer::DrawEntity(
 void OvRendering::Core::ABaseRenderer::BindTarget(baregl::Framebuffer* p_target)
 {
 	auto target = p_target ? std::optional{p_target->RecordTarget()} : std::nullopt;
-	if (p_target) p_target->Bind();
+	if (m_commands) SubmitRenderOperation([target](Context::Driver&) {
+		if (target) target->Bind(); else baregl::Framebuffer::BindDefault();
+	});
+	else if (p_target) p_target->Bind();
 	else baregl::Framebuffer::BindDefault();
 	m_passState.target = std::move(target);
 }
@@ -317,10 +325,15 @@ OvRendering::Core::ABaseRenderer::PassStateCommand OvRendering::Core::ABaseRende
 
 void OvRendering::Core::ABaseRenderer::ExecutePassState(const PassStateCommand& p_command)
 {
+	ExecutePassState(m_driver, p_command);
+}
+
+void OvRendering::Core::ABaseRenderer::ExecutePassState(Context::Driver& p_driver, const PassStateCommand& p_command)
+{
 	if (p_command.target) p_command.target->Bind();
 	else baregl::Framebuffer::BindDefault();
 	const auto& viewport = p_command.viewport;
-	m_driver.SetViewport(viewport.x, viewport.y, viewport.width, viewport.height);
+	p_driver.SetViewport(viewport.x, viewport.y, viewport.width, viewport.height);
 }
 
 OvRendering::Core::ABaseRenderer::ClearCommand OvRendering::Core::ABaseRenderer::PrepareClear(
@@ -333,4 +346,37 @@ void OvRendering::Core::ABaseRenderer::ExecuteClear(const ClearCommand& p_comman
 {
 	ExecutePassState(p_command.state);
 	m_driver.Clear(p_command.colorBuffer, p_command.depthBuffer, p_command.stencilBuffer, p_command.color);
+}
+
+void OvRendering::Core::ABaseRenderer::BeginCommandRecording()
+{
+	if (IsDrawing() || m_commands) throw std::logic_error("Begin command recording outside a frame");
+	m_commands = std::make_unique<Data::RenderCommandList>();
+}
+
+OvRendering::Data::RenderCommandList OvRendering::Core::ABaseRenderer::FinishCommandRecording()
+{
+	if (IsDrawing() || !m_commands) throw std::logic_error("Finish recording after EndFrame");
+	m_commands->Seal();
+	auto result = std::move(*m_commands);
+	m_commands.reset();
+	return result;
+}
+
+void OvRendering::Core::ABaseRenderer::CancelCommandRecording()
+{
+	if (IsDrawing() || !m_commands) throw std::logic_error("Cancel recording after EndFrame");
+	if (m_commands->GetState() != Data::RenderCommandList::State::FAILED) m_commands->Cancel();
+	m_commands.reset();
+}
+
+void OvRendering::Core::ABaseRenderer::SubmitRenderOperation(Data::RenderCommandList::Operation p_operation)
+{
+	if (!p_operation) throw std::invalid_argument("Empty render operation");
+	if (m_commands)
+	{
+		if (m_commands->GetState() == Data::RenderCommandList::State::FAILED) return; // Permit CPU EndFrame cleanup.
+		m_commands->Append(std::move(p_operation));
+	}
+	else p_operation(m_driver);
 }

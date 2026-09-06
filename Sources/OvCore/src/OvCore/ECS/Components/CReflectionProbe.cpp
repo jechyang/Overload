@@ -345,6 +345,11 @@ void OvCore::ECS::Components::CReflectionProbe::OnInspector(OvUI::Internal::Widg
 
 void OvCore::ECS::Components::CReflectionProbe::_NotifyCubemapComplete()
 {
+	_NotifyCubemapComplete(true);
+}
+
+void OvCore::ECS::Components::CReflectionProbe::_NotifyCubemapComplete(bool p_generateMipmaps)
+{
 	if (m_captureRequest)
 	{
 		m_captureRequest.reset(); // Discard the capture request after processing it.
@@ -356,7 +361,7 @@ void OvCore::ECS::Components::CReflectionProbe::_NotifyCubemapComplete()
 
 	// Once the cubemap is complete, we can generate the mipmaps
 	// that will be used to sample the average color of the cubemap (diffuse IBL).
-	m_cubemapIterator[kBackBufferIndex]->GenerateMipmaps();
+	if (p_generateMipmaps) m_cubemapIterator[kBackBufferIndex]->GenerateMipmaps();
 
 	// When using double buffering (i.e. progressive capture), we need to
 	// update which buffer is the back buffer and which one is the complete buffer (presented to shaders).
@@ -444,7 +449,7 @@ OvCore::ECS::Components::CReflectionProbe::UniformData OvCore::ECS::Components::
 		std::byte padding1[3];
 		bool local;
 		std::byte padding2[3];
-	} uboDataPage{ 
+	} uboDataPage{
 		.position = probePosition,
 		.rotation = probeRotationMatrix,
 		.boxCenter = boxPosition,
@@ -483,7 +488,7 @@ std::vector<uint32_t> OvCore::ECS::Components::CReflectionProbe::_GetCaptureFace
 		{
 			return 6; // Capture all faces immediately
 		}
-		
+
 		if (captureRequested || m_refreshMode == ERefreshMode::REALTIME)
 		{
 			return static_cast<uint32_t>(m_captureSpeed);

@@ -15,6 +15,7 @@ namespace OvRendering::Features
 	class FrameInfoRenderFeature : public OvRendering::Features::ARenderFeature
 	{
 	public:
+		bool SupportsCommandRecording() const override { return SupportsDrawRecording(); }
 		bool SupportsDrawRecording() const override { return typeid(*this) == typeid(FrameInfoRenderFeature); }
 
 		/**

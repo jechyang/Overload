@@ -46,6 +46,7 @@ namespace OvRendering::Features
 		// Opt-in contract: OnBeforeDraw records owned inputs, no GL or source captures.
 		// OnAfterDraw still runs synchronously while the Drawable is alive.
 		virtual bool SupportsDrawRecording() const { return false; }
+		virtual bool SupportsCommandRecording() const { return false; }
 
 		/**
 		* Returns true if the render feature has a policy that allows it to be executed (not NEVER).

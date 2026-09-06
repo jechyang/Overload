@@ -25,6 +25,7 @@ namespace OvCore::Rendering
 	class ShadowRenderPass : public OvRendering::Core::ARenderPass
 	{
 	public:
+		bool SupportsCommandRecording() const override { return typeid(*this) == typeid(ShadowRenderPass); }
 		/**
 		* Constructor
 		* @param p_renderer

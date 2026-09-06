@@ -113,6 +113,7 @@ void TargetPacketValidation(const std::filesystem::path& dir)
     Require(glGetError()==GL_NO_ERROR && images.good(),"target packet GL/output failure");std::puts("PASS: 16 target/viewport immediate-packet image pairs with resize and GPU binding contamination");
 }
 
+#ifndef TARGET_STATE_VALIDATION_NO_MAIN
 int main(int argc,char** argv) try
 {
     std::setvbuf(stdout,nullptr,_IONBF,0);_set_abort_behavior(0,_WRITE_ABORT_MSG|_CALL_REPORTFAULT);
@@ -124,3 +125,5 @@ int main(int argc,char** argv) try
     Require(read(immediate/"frames.bin")==read(recorded/"frames.bin"),"SceneRenderer target state images differ");std::puts("PASS: 24 real Mannequin immediate/packet frames exactly match");return 0;
 }
 catch(const std::exception& e){allocationFailureCountdown=-1;std::fprintf(stderr,"FAIL: %s\n",e.what());return 1;}
+
+#endif

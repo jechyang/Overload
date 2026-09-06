@@ -19,6 +19,7 @@ namespace OvCore::Rendering
 	class PostProcessRenderPass : public OvRendering::Core::ARenderPass
 	{
 	public:
+		bool SupportsCommandRecording() const override { return typeid(*this) == typeid(PostProcessRenderPass); }
 		/**
 		* Constructor of the post-process render pass
 		* @param p_renderer

@@ -21,15 +21,34 @@ namespace
 		sizeof(OvMaths::FVector3) +	// Camera position
 		sizeof(float) +				// Elapsed time
 		sizeof(OvMaths::FMatrix4);	// User matrix
+	using EngineFeature = OvCore::Rendering::EngineBufferRenderFeature;
+	void UploadCamera(baregl::Buffer& buffer, const EngineFeature::CameraUploadCommand& command)
+	{
+		static_assert(sizeof(command) == 140);
+		buffer.Upload(&command, baregl::data::BufferMemoryRange{.offset = sizeof(OvMaths::FMatrix4), .size = sizeof(command)});
+	}
+	void UploadFrame(baregl::Buffer& buffer, const EngineFeature::FrameUploadCommand& command)
+	{
+		static_assert(sizeof(command) == 144);
+		static_assert(offsetof(EngineFeature::FrameUploadCommand, elapsedTime) == 140);
+		buffer.Upload(&command, baregl::data::BufferMemoryRange{.offset = sizeof(OvMaths::FMatrix4), .size = sizeof(command)});
+		buffer.Bind(baregl::types::EBufferType::UNIFORM, 0);
+	}
+	void UploadDraw(baregl::Buffer& buffer, const EngineFeature::DrawUploadCommand& command)
+	{
+		buffer.Upload(&command.modelMatrix, baregl::data::BufferMemoryRange{.offset = 0, .size = sizeof(command.modelMatrix)});
+		buffer.Upload(&command.userMatrix, baregl::data::BufferMemoryRange{.offset = kUBOSize - sizeof(command.userMatrix), .size = sizeof(command.userMatrix)});
+	}
+
 }
 
 OvCore::Rendering::EngineBufferRenderFeature::EngineBufferRenderFeature(
 	OvRendering::Core::CompositeRenderer& p_renderer,
 	OvRendering::Features::EFeatureExecutionPolicy p_executionPolicy
-) : 
+) :
 	ARenderFeature(p_renderer, p_executionPolicy)
 {
-	m_engineBuffer = std::make_unique<baregl::Buffer>();
+	m_engineBuffer = std::make_shared<baregl::Buffer>();
 	m_engineBuffer->Allocate(kUBOSize, baregl::types::EAccessSpecifier::STREAM_DRAW);
 	m_startTime = std::chrono::high_resolution_clock::now();
 }
@@ -50,26 +69,18 @@ OvCore::Rendering::EngineBufferRenderFeature::PrepareFrameUpload(const OvRenderi
 
 void OvCore::Rendering::EngineBufferRenderFeature::ExecuteCameraUpload(const CameraUploadCommand& p_command)
 {
-	ZoneScopedN("Execute Engine Camera Upload");
-	static_assert(sizeof(CameraUploadCommand) == 140);
-	m_engineBuffer->Upload(&p_command, baregl::data::BufferMemoryRange{
-		.offset = sizeof(OvMaths::FMatrix4), .size = sizeof(p_command) });
+	UploadCamera(*m_engineBuffer, p_command);
 }
 
 void OvCore::Rendering::EngineBufferRenderFeature::ExecuteFrameUpload(const FrameUploadCommand& p_command)
 {
-	ZoneScopedN("Execute Engine Frame Upload");
-	static_assert(sizeof(FrameUploadCommand) == 144);
-	static_assert(offsetof(FrameUploadCommand, elapsedTime) == 140);
-	m_engineBuffer->Upload(&p_command, baregl::data::BufferMemoryRange{
-		.offset = sizeof(OvMaths::FMatrix4), .size = sizeof(p_command) });
-	m_engineBuffer->Bind(baregl::types::EBufferType::UNIFORM, 0);
+	UploadFrame(*m_engineBuffer, p_command);
 }
 
 void OvCore::Rendering::EngineBufferRenderFeature::SetCamera(const OvRendering::Entities::Camera& p_camera)
 {
 	const auto command = PrepareCameraUpload(p_camera);
-	ExecuteCameraUpload(command);
+	m_renderer.SubmitRenderOperation([buffer = m_engineBuffer, command](auto&) { UploadCamera(*buffer, command); });
 	if (m_frameUpload) m_frameUpload->camera = command;
 }
 
@@ -79,13 +90,13 @@ void OvCore::Rendering::EngineBufferRenderFeature::OnBeginFrame(const OvRenderin
 	const auto currentTime = std::chrono::high_resolution_clock::now();
 	const auto elapsed = std::chrono::duration_cast<std::chrono::duration<float>>(currentTime - m_startTime);
 	const auto command = PrepareFrameUpload(p_frameDescriptor.camera.value(), elapsed.count());
-	ExecuteFrameUpload(command);
+	m_renderer.SubmitRenderOperation([buffer = m_engineBuffer, command](auto&) { UploadFrame(*buffer, command); });
 	m_frameUpload = command;
 }
 
 void OvCore::Rendering::EngineBufferRenderFeature::OnEndFrame()
 {
-	m_engineBuffer->Unbind();
+	m_renderer.SubmitRenderOperation([buffer = m_engineBuffer](auto&) { buffer->Unbind(); });
 	m_frameUpload.reset();
 }
 
@@ -101,15 +112,7 @@ OvCore::Rendering::EngineBufferRenderFeature::PrepareDrawUpload(const OvRenderin
 
 void OvCore::Rendering::EngineBufferRenderFeature::ExecuteDrawUpload(const DrawUploadCommand& p_command)
 {
-	ZoneScopedN("Execute Engine Draw Upload");
-	m_engineBuffer->Upload(&p_command.modelMatrix, baregl::data::BufferMemoryRange{
-		.offset = 0,
-		.size = sizeof(p_command.modelMatrix)
-	});
-	m_engineBuffer->Upload(&p_command.userMatrix, baregl::data::BufferMemoryRange{
-		.offset = kUBOSize - sizeof(p_command.userMatrix),
-		.size = sizeof(p_command.userMatrix)
-	});
+	UploadDraw(*m_engineBuffer, p_command);
 }
 
 void OvCore::Rendering::EngineBufferRenderFeature::OnBeforeDraw(OvRendering::Data::PipelineState& p_pso, const OvRendering::Entities::Drawable& p_drawable)
@@ -119,9 +122,9 @@ void OvCore::Rendering::EngineBufferRenderFeature::OnBeforeDraw(OvRendering::Dat
 	if (m_renderer.IsRecordingDraw())
 	{
 		if (!m_frameUpload) throw std::logic_error("Draw recording requires an active engine frame payload");
-		m_renderer.RecordDrawOperation([this, frame = *m_frameUpload, command] {
-			ExecuteFrameUpload(frame);
-			if (command) ExecuteDrawUpload(*command);
+		m_renderer.RecordDrawOperation([buffer = m_engineBuffer, frame = *m_frameUpload, command] {
+			UploadFrame(*buffer, frame);
+			if (command) UploadDraw(*buffer, *command);
 		});
 	}
 	else if (command) ExecuteDrawUpload(*command);

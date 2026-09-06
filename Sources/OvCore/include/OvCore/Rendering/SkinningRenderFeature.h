@@ -23,6 +23,7 @@ namespace OvCore::Rendering
 	class SkinningRenderFeature : public OvRendering::Features::ARenderFeature
 	{
 	public:
+		bool SupportsCommandRecording() const override { return SupportsDrawRecording(); }
 		bool SupportsDrawRecording() const override { return typeid(*this) == typeid(SkinningRenderFeature); }
 
 		static constexpr uint32_t kDefaultBufferBindingPoint = 1;
@@ -69,6 +70,7 @@ namespace OvCore::Rendering
 		virtual void OnBeforeDraw(OvRendering::Data::PipelineState& p_pso, const OvRendering::Entities::Drawable& p_drawable) override;
 
 	private:
+		static void ExecuteRetainedPalette(const PaletteSnapshot& p_snapshot, baregl::Buffer& p_buffer, baregl::Buffer& p_identity, uint32_t p_bindingPoint);
 		void UploadPalette(const PaletteSnapshot& p_snapshot);
 		void BindIdentityPalette() const;
 		baregl::Buffer& GetCurrentSkinningBuffer() const;
@@ -100,8 +102,8 @@ namespace OvCore::Rendering
 
 		uint32_t m_bufferBindingPoint;
 		mutable uint32_t m_skinningBufferIndex = kSkinningBufferRingSize - 1;
-		std::array<std::unique_ptr<baregl::Buffer>, kSkinningBufferRingSize> m_skinningBuffers;
-		std::unique_ptr<baregl::Buffer> m_identityBuffer;
+		std::array<std::shared_ptr<baregl::Buffer>, kSkinningBufferRingSize> m_skinningBuffers;
+		std::shared_ptr<baregl::Buffer> m_identityBuffer;
 
 		UploadedPaletteState m_lastUploaded;
 		mutable BoundPaletteState m_bound;

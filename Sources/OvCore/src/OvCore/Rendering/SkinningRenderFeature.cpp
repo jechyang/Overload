@@ -27,10 +27,10 @@ OvCore::Rendering::SkinningRenderFeature::SkinningRenderFeature(
 {
 	for (auto& skinningBuffer : m_skinningBuffers)
 	{
-		skinningBuffer = std::make_unique<baregl::Buffer>();
+		skinningBuffer = std::make_shared<baregl::Buffer>();
 	}
 
-	m_identityBuffer = std::make_unique<baregl::Buffer>();
+	m_identityBuffer = std::make_shared<baregl::Buffer>();
 }
 
 uint32_t OvCore::Rendering::SkinningRenderFeature::GetBufferBindingPoint() const
@@ -49,8 +49,10 @@ void OvCore::Rendering::SkinningRenderFeature::OnBeginFrame(const OvRendering::D
 	if (m_identityBuffer->GetSize() == 0)
 	{
 		const auto identity = OvMaths::FMatrix4::Transpose(OvMaths::FMatrix4::Identity);
-		m_identityBuffer->Allocate(sizeof(OvMaths::FMatrix4), baregl::types::EAccessSpecifier::STATIC_DRAW);
-		m_identityBuffer->Upload(&identity);
+		m_renderer.SubmitRenderOperation([buffer = m_identityBuffer, identity](auto&) {
+			buffer->Allocate(sizeof(identity), baregl::types::EAccessSpecifier::STATIC_DRAW);
+			buffer->Upload(&identity);
+		});
 	}
 }
 
@@ -68,7 +70,10 @@ void OvCore::Rendering::SkinningRenderFeature::OnBeforeDraw(
 	if (m_renderer.IsRecordingDraw())
 	{
 		auto snapshot = std::make_shared<PaletteSnapshot>(RecordPalette(p_drawable));
-		m_renderer.RecordDrawOperation([this, snapshot] { ExecutePaletteSnapshot(*snapshot); });
+		m_lastUploaded = {}; m_bound = {};
+		m_renderer.RecordDrawOperation([snapshot, buffer = m_skinningBuffers[m_skinningBufferIndex], identity = m_identityBuffer, binding = m_bufferBindingPoint] {
+			ExecuteRetainedPalette(*snapshot, *buffer, *identity, binding);
+		});
 		return;
 	}
 
@@ -176,5 +181,19 @@ void OvCore::Rendering::SkinningRenderFeature::ExecutePaletteSnapshot(const Pale
 	{
 		UploadPalette(p_snapshot);
 		GetCurrentSkinningBuffer().Bind(baregl::types::EBufferType::SHADER_STORAGE, m_bufferBindingPoint);
+	}
+}
+
+void OvCore::Rendering::SkinningRenderFeature::ExecuteRetainedPalette(
+	const PaletteSnapshot& p_snapshot, baregl::Buffer& p_buffer, baregl::Buffer& p_identity, uint32_t p_bindingPoint)
+{
+	if (!p_snapshot.enabled) return;
+	if (p_snapshot.matrices.empty()) p_identity.Bind(baregl::types::EBufferType::SHADER_STORAGE, p_bindingPoint);
+	else
+	{
+		const auto size = p_snapshot.matrices.size() * sizeof(OvMaths::FMatrix4);
+		if (p_buffer.GetSize() < size) p_buffer.Allocate(size, baregl::types::EAccessSpecifier::STREAM_DRAW);
+		p_buffer.Upload(p_snapshot.matrices.data(), baregl::data::BufferMemoryRange{.offset = 0, .size = size});
+		p_buffer.Bind(baregl::types::EBufferType::SHADER_STORAGE, p_bindingPoint);
 	}
 }

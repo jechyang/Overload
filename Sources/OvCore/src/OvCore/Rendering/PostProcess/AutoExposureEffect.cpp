@@ -61,7 +61,7 @@ void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
 	m_renderer.Blit(p_pso, p_src, m_luminanceBuffer, m_luminanceMaterial,
 		OvRendering::Settings::EBlitFlags::DEFAULT & ~OvRendering::Settings::EBlitFlags::RESIZE_DST_TO_MATCH_SRC);
 	const auto luminanceTex = m_luminanceBuffer.GetAttachment<baregl::Texture>(baregl::types::EFramebufferAttachment::COLOR);
-	luminanceTex.value().get().GenerateMipmaps();
+	m_renderer.SubmitRenderOperation([texture = m_luminanceBuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)](auto&) { texture->GenerateMipmaps(); });
 
 	float elapsedTime = 1.0f;
 	auto currentTime = std::chrono::high_resolution_clock::now();

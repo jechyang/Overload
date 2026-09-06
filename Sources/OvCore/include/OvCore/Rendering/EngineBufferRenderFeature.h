@@ -24,6 +24,7 @@ namespace OvCore::Rendering
 	class EngineBufferRenderFeature : public OvRendering::Features::ARenderFeature
 	{
 	public:
+		bool SupportsCommandRecording() const override { return SupportsDrawRecording(); }
 		bool SupportsDrawRecording() const override { return typeid(*this) == typeid(EngineBufferRenderFeature); }
 
 		/**
@@ -77,7 +78,7 @@ namespace OvCore::Rendering
 
 	protected:
 		std::chrono::high_resolution_clock::time_point m_startTime;
-		std::unique_ptr<baregl::Buffer> m_engineBuffer;
+		std::shared_ptr<baregl::Buffer> m_engineBuffer;
 		std::optional<FrameUploadCommand> m_frameUpload;
 	};
 }

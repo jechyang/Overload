@@ -111,3 +111,9 @@ frame_input_validation.cpp 在创建 GL 上下文前准备相机/时间与灯光
 为了施加 Driver 缓存能识别的管线状态，专项测试仅放宽 Driver 私有访问并同时编译当前 Driver.cpp；不改变生产 ABI。历史 renderer 副本追加当前 PassStateCommand 成员以匹配实例布局，旧嵌套几何类型、虚表和即时绘制逻辑不变。
 
 目标快照只固定配置/存储身份，不冻结像素；当前仍同线程消费。协议、测试入口和证据见 MULTITHREADING_TARGET_STATE_VALIDATION.md。
+
+## 帧命令序列（阶段 2 第八增量）
+
+Debug/Release --command-list 覆盖拥有资源的序列、源对象销毁后消费、录制与执行失败/取消、普通 Mannequin 及动态阴影/反射/曝光/Bloom/Tonemapping/FXAA 对拍。可追加 --vs；先完整重建 renderer/feature/pass 使用方。该模式不接受 --editor，Editor 此时只运行 --editor --draw-packets 回归。
+
+动态用例验证自动曝光设置确实关闭渐变，并将即时重复、同次 packet、延迟帧逐字节比较。失败/取消只终止 GPU 命令，不回滚全部 CPU 准备历史；正式帧交接前仍需闭合该协议。完整范围见 MULTITHREADING_COMMAND_LIST_VALIDATION.md。

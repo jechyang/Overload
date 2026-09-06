@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、阶段 1 已完成约定范围验收并提交。阶段 2 已建立默认关闭的同次 draw packet、相机/灯光输入和 target/viewport/clear 快照，resize 发布新附件并保留旧命令存储；Debug/Release 专项、真实三视图及旧路径对照通过。完整 pass 命令序列、动态资源内容生产顺序、UI/debug/picking/readback 和帧完成仍待闭合，尚不能跨帧交接。阶段 2、3 均未全部完成，最新验收见 MULTITHREADING_TARGET_STATE_VALIDATION.md。**
+**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态 pass 准备状态的取消/失败恢复、Editor debug/picking/readback、ImGui 和正式帧完成仍待闭合，尚无独立 Render 线程。阶段 2、3 均未全部完成，最新验收见 MULTITHREADING_COMMAND_LIST_VALIDATION.md。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -190,6 +190,13 @@
 - Debug/Release 各 16 轮销毁/resize 后回放、无 GL 上下文捕获、cubemap 选择与回收、16 组目标图像对拍通过；原帧输入/packet/Mannequin、真实 Editor 三视图与旧 draw-inputs、完整构建和复制通过，详见 MULTITHREADING_TARGET_STATE_VALIDATION.md。
 - 配置持有不冻结像素内容。生产仍同次 draw 消费；下一步将动态上传与 pass 写入/读取汇入完整命令序列、明确完成边界并消除执行端借用，再迁移 UI/debug/picking。阶段 2 和阶段 3 尚未全部完成。
 
+### 4.8 第八增量：拥有资源的帧命令序列
+
+- RenderCommandList 支持按序录制、封口、转移、单次消费、失败/取消终态和前缀计数。ABaseRenderer 收集目标/viewport/clear，CompositeRenderer 将 owning draw 包加入序列；启用的 feature/pass 必须显式 opt-in，录制失败不能封口。
+- Engine/Skinning/Reflection 录制不再捕获 feature this；CPU 值与 GPU buffer 由操作持有。帧上传/灯光覆盖与恢复、palette、反射和自动曝光 mipmap 按生产顺序提交。
+- 每配置 8 组销毁所有源对象后的回放、GPU 副作用拦截、取消/异常/分配失败、普通 24 帧 Mannequin 及真实阴影/六面反射/曝光/Bloom/Tonemapping/FXAA 的 24 帧即时/packet/延迟对拍通过。动态测试发现并修复 SetAutoExposureSettings 写错 Effect 键，保留严格逐字节对拍。详见 MULTITHREADING_COMMAND_LIST_VALIDATION.md。
+- 当前完成状态仅表示 CPU 提交结束。生产资源创建与部分元数据/埋点仍依赖 GL owner；取消不回滚 dynamic pass 的 CPU 准备历史。下一步闭合这些状态及 Editor debug/picking/readback、ImGui 和帧完成，再进入固定 Render 线程与有界队列。旧 Editor 仅同次 packet 回归通过。
+
 ## 5. 阶段 3：Game/Render 双线程（A 形态）
 
 **目标：让固定 Render 线程消费稳定帧数据，Game/Main 线程负责应用更新与必要的平台/UI 事件。**
@@ -240,7 +247,7 @@
 ### 工作区
 
 - 原基准为 73ae710a57889bfde94184c3c8f073228e998144；工作分支 main。
-- 按用户要求分阶段提交：阶段 0 为 30eb8fe，阶段 1 为 4f8da08，阶段 2 几何首增量为 50194bf，材质第二增量为 8cc2f8c，材质快照第三增量为 b1128a7，几何/模型/palette 第四增量为 abf6b13，同次 draw packet 第五增量为 2648d43，相机/灯光第六增量为 24cabec，目标/viewport/clear 第七增量为本文件所属的新提交。后续每个独立可验收增量完成检查后单独提交。
+- 按用户要求分阶段提交：阶段 0 为 30eb8fe，阶段 1 为 4f8da08，阶段 2 几何首增量为 50194bf，材质第二增量为 8cc2f8c，材质快照第三增量为 b1128a7，几何/模型/palette 第四增量为 abf6b13，同次 draw packet 第五增量为 2648d43，相机/灯光第六增量为 24cabec，目标/viewport/clear 第七增量为 c82d4fa，帧命令序列第八增量为本文件所属的新提交。后续每个独立可验收增量完成检查后单独提交。
 - 仅提交多线程实现、测试与验收文档。Editor.cpp 的既有注释修改通过按 hunk 暂存排除；ItemPicker、SkeletalData、OvUI、.zcode 等其他用户改动仍留在工作树。
 - 历史验收是在包含这些既有用户改动的工作区中完成，不声称逐个检出了补提交来复现历史构建。Tests/Skinning 的旧源码基准仍固定为原基准，不因补提交而变化。
 - 未创建额外任务或推送远程。阶段 2 已建立可选同次 draw packet，继续按独立增量推进。
@@ -282,6 +289,8 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 - 阶段 2 第七增量使用 Debug/Release --target-state 及 --editor --target-state，输出 <配置>-target-state/ 与 <配置>-target-state-editor/。构建为 msbuild-debug-target-state-final.log、msbuild-release-target-state.log，专项/编辑器/旧回归日志为 target-state-*.log，复制 target-state-build-artifacts.json。
 
+- 阶段 2 第八增量使用 Debug/Release --command-list，输出 <配置>-command-list/。最终构建日志 command-list-final，专项、旧回归、Editor 原 packet 日志分别为 command-list-{debug,release}.log、command-list-regression-*.log、command-list-editor-*.log；复制 command-list-build-artifacts.json。
+
 ### 只在需要时阅读的证据
 
 - MULTITHREADING_PLAN.md：阶段 0 协议与完整 checklist。
@@ -296,4 +305,4 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 ## 11. 新对话建议起始消息
 
-> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_TARGET_STATE_VALIDATION.md，从已完成的同次 draw packet、帧输入和目标配置快照继续阶段 2：建立完整命令序列，闭合动态资源写入/读取、执行消费者寿命和帧完成，再迁移 UI/debug/picking/readback，随后完成阶段 3 固定 Render 线程、有界帧队列及 Game/Render 交叠验收。按可验收增量独立 Git 提交，保留用户修改，后台验证，不操作 VS2022 界面。
+> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_COMMAND_LIST_VALIDATION.md，继续完成阶段 2、3：闭合动态 pass 取消/失败后的准备状态；迁移 Editor debug/picking/readback、ImGui 和帧完成；再实现固定 Render owner、有界队列、资源归属和真实 Game/Render 交叠。保留源对象销毁后回放、即时/packet/延迟动态图像严格对拍，按可验收增量提交 Git，不包含用户已有修改，后台验证。

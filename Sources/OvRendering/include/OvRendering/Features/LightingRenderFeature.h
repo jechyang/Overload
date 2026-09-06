@@ -19,6 +19,7 @@ namespace OvRendering::Features
 	class LightingRenderFeature : public ARenderFeature
 	{
 	public:
+		bool SupportsCommandRecording() const override { return SupportsDrawRecording(); }
 		bool SupportsDrawRecording() const override { return typeid(*this) == typeid(LightingRenderFeature); }
 
 		// Light upload preparation copies values; other descriptor consumers (e.g.

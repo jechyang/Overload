@@ -145,6 +145,8 @@ OvCore::Rendering::ReflectionRenderFeature::ReflectionRenderFeature(
 ) :
 	ARenderFeature(p_renderer, p_executionPolicy)
 {
+	m_recordedProbeBuffer = std::make_shared<baregl::Buffer>();
+	m_recordedProbeBuffer->Allocate(sizeof(ECS::Components::CReflectionProbe::UniformData), baregl::types::EAccessSpecifier::STREAM_DRAW);
 }
 
 void OvCore::Rendering::ReflectionRenderFeature::PrepareProbe(OvCore::ECS::Components::CReflectionProbe& p_reflectionProbe)
@@ -180,7 +182,7 @@ void OvCore::Rendering::ReflectionRenderFeature::OnBeginFrame(const OvRendering:
 
 	for (auto& probe : reflectionDescriptor.reflectionProbes)
 	{
-		PrepareProbe(probe.get());
+		if (!m_renderer.IsRecordingCommands()) PrepareProbe(probe.get());
 	}
 }
 
@@ -217,7 +219,10 @@ void OvCore::Rendering::ReflectionRenderFeature::OnBeforeDraw(OvRendering::Data:
 		if (targetProbe)
 		{
 			const auto data = targetProbe->CaptureUniformData();
-			m_renderer.RecordDrawOperation([this, data] { ExecuteProbeData(data); });
+			m_renderer.RecordDrawOperation([buffer = m_recordedProbeBuffer, data] {
+				buffer->Upload(data.data());
+				buffer->Bind(baregl::types::EBufferType::UNIFORM, 1);
+			});
 		}
 	}
 	else if (targetProbe) BindProbe(targetProbe.value());

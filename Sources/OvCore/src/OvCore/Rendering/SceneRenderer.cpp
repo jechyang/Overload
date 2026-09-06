@@ -70,6 +70,7 @@ namespace
 	class OpaqueRenderPass : public SceneRenderPass
 	{
 	public:
+		bool SupportsCommandRecording() const override { return typeid(*this) == typeid(OpaqueRenderPass); }
 		OpaqueRenderPass(OvRendering::Core::CompositeRenderer& p_renderer, bool p_stencilWrite = false) :
 			SceneRenderPass(p_renderer, p_stencilWrite)
 		{
@@ -95,6 +96,7 @@ namespace
 	class TransparentRenderPass : public SceneRenderPass
 	{
 	public:
+		bool SupportsCommandRecording() const override { return typeid(*this) == typeid(TransparentRenderPass); }
 		TransparentRenderPass(OvRendering::Core::CompositeRenderer& p_renderer, bool p_stencilWrite = false) :
 			SceneRenderPass(p_renderer, p_stencilWrite) {
 		}
@@ -119,6 +121,7 @@ namespace
 	class UIRenderPass : public SceneRenderPass
 	{
 	public:
+		bool SupportsCommandRecording() const override { return typeid(*this) == typeid(UIRenderPass); }
 		UIRenderPass(OvRendering::Core::CompositeRenderer& p_renderer, bool p_stencilWrite = false) :
 			SceneRenderPass(p_renderer, p_stencilWrite) {
 		}
@@ -411,7 +414,7 @@ void OvCore::Rendering::SceneRenderer::BeginFrame(const OvRendering::Data::Frame
 	});
 
 	// Default filtered drawables descriptor using the main camera (used by most render passes).
-	// Some other render passes can decide to filter the drawables themselves, using the 
+	// Some other render passes can decide to filter the drawables themselves, using the
 	// SceneDrawablesDescriptor instead of the SceneFilteredDrawablesDescriptor one.
 	AddDescriptor<SceneFilteredDrawablesDescriptor>({
 		FilterDrawables(

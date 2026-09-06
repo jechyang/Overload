@@ -25,6 +25,7 @@ namespace OvCore::Rendering
 	class ReflectionRenderFeature : public OvRendering::Features::ARenderFeature
 	{
 	public:
+		bool SupportsCommandRecording() const override { return SupportsDrawRecording(); }
 		bool SupportsDrawRecording() const override { return typeid(*this) == typeid(ReflectionRenderFeature); }
 
 		/**
@@ -73,7 +74,7 @@ namespace OvCore::Rendering
 
 	private:
 		void ExecuteProbeData(const ECS::Components::CReflectionProbe::UniformData& p_data);
-		std::unique_ptr<baregl::Buffer> m_recordedProbeBuffer;
+		std::shared_ptr<baregl::Buffer> m_recordedProbeBuffer;
 
 	protected:
 		virtual void OnBeginFrame(const OvRendering::Data::FrameDescriptor& p_frameDescriptor) override;
