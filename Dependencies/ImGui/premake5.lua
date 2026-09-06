@@ -16,11 +16,13 @@ project "ImGui"
 		-- Dependencies
 		dependdir .. "freetype/include",
 		dependdir .. "glfw/include",
+		dependdir .. "baregl/include",
 
 		-- Current Project
 		"include"
 	}
 
+	links { "baregl" }
 	defines { "IMGUI_ENABLE_FREETYPE" }
 
 	filter { "configurations:Debug" }

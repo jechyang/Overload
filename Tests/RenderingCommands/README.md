@@ -157,3 +157,7 @@ Debug/Release --log-dispatch 独立运行，覆盖拥有型主线程事件、六
 ## 纹理注册表与主线程面板（阶段 3 第四增量）
 
 先完整构建，再运行 Debug/Release --texture-registry（可追加 --vs），输出 <配置>-texture-registry/current。验证固定 Render owner 创建/分配/512 次 resize 与并发稳定查询、storage 回收、legacy 跨线程持有拒绝、域关闭过滤及包装地址复用。Editor --command-list --editor-ui --product-loop 增加真实 TextureDebugger 主线程刷新、后台误用拒绝、注册代际注入与关闭面板释放；临时转移既有唯一 Driver 的上下文，未创建第二个 baregl Context。详见 MULTITHREADING_TEXTURE_REGISTRY_VALIDATION.md。
+
+## ImGui GPU 代际与 loader（阶段 3 第五增量）
+
+重新生成工程并完整构建后运行 Debug/Release --imgui-lifetime（可追加 --vs），输出 <配置>-imgui-lifetime/current。覆盖 32 组真实 UI 精确图像、managed backend/atlas/快照无上下文析构、owner 实际删除、旧快照释放与新后端重叠、编译/链接失败回收/状态恢复和域关闭后的零惰性上传。ImGui 现在复用引擎 GLAD，不独立初始化或关闭 loader。协议、限制及原 UI/Render/产品回归见 MULTITHREADING_IMGUI_LIFETIME_VALIDATION.md。

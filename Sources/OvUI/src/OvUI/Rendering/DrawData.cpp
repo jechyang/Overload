@@ -220,6 +220,7 @@ namespace OvUI::Rendering
         if(!m_storage) return;
         if(m_storage->consumed) throw std::logic_error("ImGui draw data was already consumed");
         m_storage->consumed=true;
+        ImGui_ImplOpenGL3_ValidateRenderState(m_storage->backend);
         for(auto& list:m_storage->lists) for(size_t i=0;i<list->commands.size();++i)
         {
             auto& binding=list->bindings[i];

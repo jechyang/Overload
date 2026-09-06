@@ -152,38 +152,10 @@
 #pragma GCC diagnostic ignored "-Wstrict-overflow"          // warning: assuming signed overflow does not occur when simplifying division / ..when changing X +- C1 cmp C2 to X cmp C2 -+ C1
 #endif
 
-// GL includes
-#if defined(IMGUI_IMPL_OPENGL_ES2)
-#if (defined(__APPLE__) && (TARGET_OS_IOS || TARGET_OS_TV))
-#include <OpenGLES/ES2/gl.h>    // Use GL ES 2
-#else
-#include <GLES2/gl2.h>          // Use GL ES 2
-#endif
-#if defined(__EMSCRIPTEN__)
-#ifndef GL_GLEXT_PROTOTYPES
-#define GL_GLEXT_PROTOTYPES
-#endif
-#include <GLES2/gl2ext.h>
-#endif
-#elif defined(IMGUI_IMPL_OPENGL_ES3)
-#if (defined(__APPLE__) && (TARGET_OS_IOS || TARGET_OS_TV))
-#include <OpenGLES/ES3/gl.h>    // Use GL ES 3
-#else
-#include <GLES3/gl3.h>          // Use GL ES 3
-#endif
-#elif !defined(IMGUI_IMPL_OPENGL_LOADER_CUSTOM)
-// Modern desktop OpenGL doesn't have a standard portable header file to load OpenGL function pointers.
-// Helper libraries are often used for this purpose! Here we are using our own minimal custom loader based on gl3w.
-// In the rest of your app/engine, you can use another loader of your choice (gl3w, glew, glad, glbinding, glext, glLoadGen, etc.).
-// If you happen to be developing a new feature for this backend (imgui_impl_opengl3.cpp):
-// - You may need to regenerate imgui_impl_opengl3_loader.h to add new symbols. See https://github.com/dearimgui/gl3w_stripped
-//   Typically you would run: python3 ./gl3w_gen.py --output ../imgui/backends/imgui_impl_opengl3_loader.h --ref ../imgui/backends/imgui_impl_opengl3.cpp ./extra_symbols.txt
-// - You can temporarily use an unstripped version. See https://github.com/dearimgui/gl3w_stripped/releases
-// Changes to this backend using new APIs should be accompanied by a regenerated stripped loader version.
-#define IMGL3W_IMPL
-#define IMGUI_IMPL_OPENGL_LOADER_IMGL3W
-#include "imgui_impl_opengl3_loader.h"
-#endif
+// Overload owns one baregl context and initializes GLAD before this backend.
+// Share that dispatch table; backend/snapshot destruction must never unload it.
+#include <baregl/detail/glad/glad.h>
+#include <baregl/ResourceLifetime.h>
 
 // Vertex arrays are not supported on ES2/WebGL1 unless Emscripten which uses an extension
 #ifndef IMGUI_IMPL_OPENGL_ES2
@@ -233,21 +205,12 @@
 #endif
 
 // OpenGL Data
-static unsigned int g_BackendInstances = 0;
-static unsigned int g_DeviceGenerations = 0;
-static void ImGui_ImplOpenGL3_ShutdownLoader();
 struct ImGui_ImplOpenGL3_DeviceGeneration
 {
-    GLuint shader = 0, vertices = 0, indices = 0;
-    ImGui_ImplOpenGL3_DeviceGeneration() { ++g_DeviceGenerations; }
-    ~ImGui_ImplOpenGL3_DeviceGeneration()
-    {
-        if (vertices) glDeleteBuffers(1, &vertices);
-        if (indices) glDeleteBuffers(1, &indices);
-        if (shader) glDeleteProgram(shader);
-        --g_DeviceGenerations;
-        ImGui_ImplOpenGL3_ShutdownLoader();
-    }
+    baregl::ResourceLifetime shader{baregl::ResourceKind::PROGRAM};
+    baregl::ResourceLifetime vertices{baregl::ResourceKind::BUFFER};
+    baregl::ResourceLifetime indices{baregl::ResourceKind::BUFFER};
+    bool IsAlive() const { return shader.IsContextAlive(); }
 };
 
 struct ImGui_ImplOpenGL3_Data
@@ -316,24 +279,9 @@ struct ImGui_ImplOpenGL3_VtxAttribState
 bool ImGui_ImplOpenGL3_InitLoader();
 bool ImGui_ImplOpenGL3_InitLoader()
 {
-    // Lazily initialize our loader if not already done
-    // (to facilitate handling multiple DLL boundaries and multiple context shutdowns we call this from all main entry points)
-#ifdef IMGUI_IMPL_OPENGL_LOADER_IMGL3W
-    if (glGetIntegerv == nullptr && imgl3wInit() != 0)
-    {
-        fprintf(stderr, "Failed to initialize OpenGL loader!\n");
-        return false;
-    }
-#endif
-    return true;
-}
-
-static void ImGui_ImplOpenGL3_ShutdownLoader()
-{
-    if (g_BackendInstances || g_DeviceGenerations) return;
-#ifdef IMGUI_IMPL_OPENGL_LOADER_IMGL3W
-    imgl3wShutdown();
-#endif
+    // Driver initialization owns loading and publishes the table before use.
+    // No backend reference counters, reload, or shutdown can race a retained draw.
+    return glGetIntegerv != nullptr;
 }
 
 // Functions
@@ -451,7 +399,6 @@ bool    ImGui_ImplOpenGL3_Init(const char* glsl_version)
 #endif
 
     ImGui_ImplOpenGL3_InitMultiViewportSupport();
-    ++g_BackendInstances;
 
     return true;
 }
@@ -471,9 +418,7 @@ void    ImGui_ImplOpenGL3_Shutdown()
     io.BackendFlags &= ~(ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures | ImGuiBackendFlags_RendererHasViewports);
     platform_io.ClearRendererHandlers();
     IM_DELETE(bd);
-    --g_BackendInstances;
 
-    ImGui_ImplOpenGL3_ShutdownLoader();
 }
 
 void    ImGui_ImplOpenGL3_NewFrame()
@@ -752,7 +697,7 @@ struct ImGui_ImplOpenGL3_RenderState { ImGui_ImplOpenGL3_Data data; };
 std::shared_ptr<ImGui_ImplOpenGL3_RenderState> ImGui_ImplOpenGL3_CaptureRenderState()
 {
     const auto* bd = ImGui_ImplOpenGL3_GetBackendData();
-    if (!bd || !bd->Retained) throw std::logic_error("ImGui device objects must be initialized before capture");
+    if (!bd || !bd->Retained || !bd->Retained->IsAlive()) throw std::logic_error("ImGui device objects must be initialized before capture");
     auto state = std::make_shared<ImGui_ImplOpenGL3_RenderState>();
     state->data.GlVersion = bd->GlVersion;
     state->data.GlProfileIsES2 = bd->GlProfileIsES2;
@@ -782,17 +727,24 @@ void ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
     ImGui_ImplOpenGL3_RenderDrawDataWithState(draw_data, ImGui_ImplOpenGL3_GetBackendData());
 }
 
+void ImGui_ImplOpenGL3_ValidateRenderState(const std::shared_ptr<ImGui_ImplOpenGL3_RenderState>& state)
+{
+    if (!state || !state->data.Retained || !state->data.Retained->IsAlive())
+        throw std::logic_error("ImGui device generation belongs to a closed GL resource domain");
+}
+
 void ImGui_ImplOpenGL3_RenderDrawDataRetained(ImDrawData* draw_data,
     const std::shared_ptr<ImGui_ImplOpenGL3_RenderState>& state)
 {
-    if (!state || draw_data->Textures) throw std::invalid_argument("Retained ImGui draw data contains borrowed texture updates");
+    ImGui_ImplOpenGL3_ValidateRenderState(state);
+    if (!draw_data || draw_data->Textures) throw std::invalid_argument("Retained ImGui draw data contains borrowed texture updates");
     ImGui_ImplOpenGL3_RenderDrawDataWithState(draw_data, &state->data);
 }
 
 static void ImGui_ImplOpenGL3_DestroyTexture(ImTextureData* tex)
 {
-    GLuint gl_tex_id = (GLuint)(intptr_t)tex->TexID;
-    glDeleteTextures(1, &gl_tex_id);
+    delete static_cast<baregl::ResourceLifetime*>(tex->BackendUserData);
+    tex->BackendUserData = nullptr;
 
     // Clear identifiers and mark as destroyed (in order to allow e.g. calling InvalidateDeviceObjects while running)
     tex->SetTexID(ImTextureID_Invalid);
@@ -819,6 +771,7 @@ void ImGui_ImplOpenGL3_UpdateTexture(ImTextureData* tex)
         IM_ASSERT(tex->TexID == ImTextureID_Invalid && tex->BackendUserData == nullptr);
         IM_ASSERT(tex->Format == ImTextureFormat_RGBA32);
         const void* pixels = tex->GetPixels();
+        auto lifetime = std::make_unique<baregl::ResourceLifetime>(baregl::ResourceKind::TEXTURE);
         GLuint gl_texture_id = 0;
 
         // Upload texture to graphics system
@@ -826,6 +779,7 @@ void ImGui_ImplOpenGL3_UpdateTexture(ImTextureData* tex)
         GLint last_texture;
         GL_CALL(glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture));
         GL_CALL(glGenTextures(1, &gl_texture_id));
+        lifetime->Adopt(gl_texture_id);
         GL_CALL(glBindTexture(GL_TEXTURE_2D, gl_texture_id));
         GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
         GL_CALL(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
@@ -834,6 +788,7 @@ void ImGui_ImplOpenGL3_UpdateTexture(ImTextureData* tex)
         GL_CALL(glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex->Width, tex->Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels));
 
         // Store identifiers
+        tex->BackendUserData = lifetime.release();
         tex->SetTexID((ImTextureID)(intptr_t)gl_texture_id);
         tex->SetStatus(ImTextureStatus_OK);
 
@@ -920,17 +875,35 @@ bool    ImGui_ImplOpenGL3_CreateDeviceObjects()
 
     auto generation = std::make_shared<ImGui_ImplOpenGL3_DeviceGeneration>();
 
-    // Backup GL state
-    GLint last_texture, last_array_buffer;
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture);
-    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &last_array_buffer);
+    struct RestoreState
+    {
+        GLint texture, arrayBuffer, unpackBuffer = 0, vertexArray = 0;
+        bool hasUnpack;
+        explicit RestoreState(bool unpack) : hasUnpack(unpack)
+        {
+            glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture);
+            glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &arrayBuffer);
 #ifdef IMGUI_IMPL_OPENGL_MAY_HAVE_BIND_BUFFER_PIXEL_UNPACK
-    GLint last_pixel_unpack_buffer = 0;
-    if (bd->GlVersion >= 210) { glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &last_pixel_unpack_buffer); glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0); }
+            if (hasUnpack) glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &unpackBuffer);
 #endif
 #ifdef IMGUI_IMPL_OPENGL_USE_VERTEX_ARRAY
-    GLint last_vertex_array;
-    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &last_vertex_array);
+            glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vertexArray);
+#endif
+        }
+        ~RestoreState()
+        {
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glBindBuffer(GL_ARRAY_BUFFER, arrayBuffer);
+#ifdef IMGUI_IMPL_OPENGL_MAY_HAVE_BIND_BUFFER_PIXEL_UNPACK
+            if (hasUnpack) glBindBuffer(GL_PIXEL_UNPACK_BUFFER, unpackBuffer);
+#endif
+#ifdef IMGUI_IMPL_OPENGL_USE_VERTEX_ARRAY
+            glBindVertexArray(vertexArray);
+#endif
+        }
+    } restore(bd->GlVersion >= 210);
+#ifdef IMGUI_IMPL_OPENGL_MAY_HAVE_BIND_BUFFER_PIXEL_UNPACK
+    if (bd->GlVersion >= 210) glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 #endif
 
     // Parse GLSL version string
@@ -1063,65 +1036,59 @@ bool    ImGui_ImplOpenGL3_CreateDeviceObjects()
 
     // Create shaders
     const GLchar* vertex_shader_with_version[2] = { bd->GlslVersionString, vertex_shader };
+    baregl::ResourceLifetime vertexLifetime{baregl::ResourceKind::SHADER};
     GLuint vert_handle;
     GL_CALL(vert_handle = glCreateShader(GL_VERTEX_SHADER));
+    vertexLifetime.Adopt(vert_handle);
     glShaderSource(vert_handle, 2, vertex_shader_with_version, nullptr);
     glCompileShader(vert_handle);
     if (!CheckShader(vert_handle, "vertex shader"))
         return false;
 
     const GLchar* fragment_shader_with_version[2] = { bd->GlslVersionString, fragment_shader };
+    baregl::ResourceLifetime fragmentLifetime{baregl::ResourceKind::SHADER};
     GLuint frag_handle;
     GL_CALL(frag_handle = glCreateShader(GL_FRAGMENT_SHADER));
+    fragmentLifetime.Adopt(frag_handle);
     glShaderSource(frag_handle, 2, fragment_shader_with_version, nullptr);
     glCompileShader(frag_handle);
     if (!CheckShader(frag_handle, "fragment shader"))
         return false;
 
     // Link
-    bd->ShaderHandle = glCreateProgram();
-    glAttachShader(bd->ShaderHandle, vert_handle);
-    glAttachShader(bd->ShaderHandle, frag_handle);
-    glLinkProgram(bd->ShaderHandle);
-    if (!CheckProgram(bd->ShaderHandle, "shader program"))
+    const GLuint program = glCreateProgram();
+    generation->shader.Adopt(program);
+    glAttachShader(program, vert_handle);
+    glAttachShader(program, frag_handle);
+    glLinkProgram(program);
+    if (!CheckProgram(program, "shader program"))
         return false;
 
-    glDetachShader(bd->ShaderHandle, vert_handle);
-    glDetachShader(bd->ShaderHandle, frag_handle);
-    glDeleteShader(vert_handle);
-    glDeleteShader(frag_handle);
+    glDetachShader(program, vert_handle);
+    glDetachShader(program, frag_handle);
 
-    bd->AttribLocationTex = glGetUniformLocation(bd->ShaderHandle, "Texture");
-    bd->AttribLocationProjMtx = glGetUniformLocation(bd->ShaderHandle, "ProjMtx");
-    bd->AttribLocationVtxPos = (GLuint)glGetAttribLocation(bd->ShaderHandle, "Position");
-    bd->AttribLocationVtxUV = (GLuint)glGetAttribLocation(bd->ShaderHandle, "UV");
-    bd->AttribLocationVtxColor = (GLuint)glGetAttribLocation(bd->ShaderHandle, "Color");
+    bd->AttribLocationTex = glGetUniformLocation(program, "Texture");
+    bd->AttribLocationProjMtx = glGetUniformLocation(program, "ProjMtx");
+    bd->AttribLocationVtxPos = (GLuint)glGetAttribLocation(program, "Position");
+    bd->AttribLocationVtxUV = (GLuint)glGetAttribLocation(program, "UV");
+    bd->AttribLocationVtxColor = (GLuint)glGetAttribLocation(program, "Color");
 
     // Create buffers
-    glGenBuffers(1, &bd->VboHandle);
-    glGenBuffers(1, &bd->ElementsHandle);
-
-    generation->shader = bd->ShaderHandle;
-    generation->vertices = bd->VboHandle;
-    generation->indices = bd->ElementsHandle;
+    GLuint vertices = 0, indices = 0;
+    glGenBuffers(1, &vertices);
+    generation->vertices.Adopt(vertices);
+    glGenBuffers(1, &indices);
+    generation->indices.Adopt(indices);
+    bd->ShaderHandle = program;
+    bd->VboHandle = vertices;
+    bd->ElementsHandle = indices;
     bd->Retained = std::move(generation);
-
-    // Restore modified GL state
-    glBindTexture(GL_TEXTURE_2D, last_texture);
-    glBindBuffer(GL_ARRAY_BUFFER, last_array_buffer);
-#ifdef IMGUI_IMPL_OPENGL_MAY_HAVE_BIND_BUFFER_PIXEL_UNPACK
-    if (bd->GlVersion >= 210) { glBindBuffer(GL_PIXEL_UNPACK_BUFFER, last_pixel_unpack_buffer); }
-#endif
-#ifdef IMGUI_IMPL_OPENGL_USE_VERTEX_ARRAY
-    glBindVertexArray(last_vertex_array);
-#endif
 
     return true;
 }
 
 void    ImGui_ImplOpenGL3_DestroyDeviceObjects()
 {
-    ImGui_ImplOpenGL3_InitLoader();
     ImGui_ImplOpenGL3_Data* bd = ImGui_ImplOpenGL3_GetBackendData();
     bd->Retained.reset();
     bd->VboHandle = bd->ElementsHandle = bd->ShaderHandle = 0;
