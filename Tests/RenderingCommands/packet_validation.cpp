@@ -182,6 +182,7 @@ void main(){color=vec4((texture(_EnvironmentMap,vec3(1,0,0)).rgb*brightness+vec3
     std::puts("PASS: 12 immediate/packet image and ordered draw-state pairs, reflection UBO/cubemap + directional shadow + skinning + sticky single-use cache, failure recovery and attachment retirement");
 }
 
+#ifndef DRAW_PACKET_VALIDATION_NO_MAIN
 int main(int argc,char** argv) try
 {
     std::setvbuf(stdout,nullptr,_IONBF,0);_set_abort_behavior(0,_WRITE_ABORT_MSG|_CALL_REPORTFAULT);
@@ -196,3 +197,5 @@ int main(int argc,char** argv) try
     std::puts("PASS: 24 real Mannequin/Standard/SceneRenderer immediate/packet frames exactly match");return 0;
 }
 catch(const std::exception& e){allocationFailureCountdown=-1;std::fprintf(stderr,"FAIL: %s\n",e.what());return 1;}
+
+#endif

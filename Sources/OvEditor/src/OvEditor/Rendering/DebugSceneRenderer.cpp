@@ -95,9 +95,9 @@ namespace
 		}.GenerateMatrix();
 	}
 
-	std::unique_ptr<baregl::Buffer> CreateDebugLightBuffer()
+	std::shared_ptr<baregl::Buffer> CreateDebugLightBuffer()
 	{
-		auto lightBuffer = std::make_unique<baregl::Buffer>();
+		auto lightBuffer = std::make_shared<baregl::Buffer>();
 
 		const auto lightMatrices = std::to_array<OvMaths::FMatrix4>({
 			CreateDebugDirectionalLight(),
@@ -141,12 +141,10 @@ protected:
 		};
 
 		// Override the light buffer with fake lights
-		m_fakeLightsBuffer->Bind(
-			baregl::types::EBufferType::SHADER_STORAGE,
-			lightingRenderFeature ?
-			lightingRenderFeature->GetBufferBindingPoint() :
-			0
-		);
+		if (lightingRenderFeature)
+			lightingRenderFeature->BindOverride(m_fakeLightsBuffer);
+		else
+			m_fakeLightsBuffer->Bind(baregl::types::EBufferType::SHADER_STORAGE, 0);
 
 		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
 
@@ -173,7 +171,7 @@ protected:
 
 private:
 	OvCore::Resources::Material m_cameraMaterial;
-	std::unique_ptr<baregl::Buffer> m_fakeLightsBuffer;
+	std::shared_ptr<baregl::Buffer> m_fakeLightsBuffer;
 };
 
 class DebugReflectionProbesRenderPass : public OvRendering::Core::ARenderPass
@@ -207,12 +205,10 @@ protected:
 		};
 
 		// Override the light buffer with fake lights
-		m_fakeLightsBuffer->Bind(
-			baregl::types::EBufferType::SHADER_STORAGE,
-			lightingRenderFeature ?
-			lightingRenderFeature->GetBufferBindingPoint() :
-			0
-		);
+		if (lightingRenderFeature)
+			lightingRenderFeature->BindOverride(m_fakeLightsBuffer);
+		else
+			m_fakeLightsBuffer->Bind(baregl::types::EBufferType::SHADER_STORAGE, 0);
 
 		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
 		auto& reflectionRenderFeature = m_renderer.GetFeature<OvCore::Rendering::ReflectionRenderFeature>();
@@ -251,7 +247,7 @@ protected:
 
 private:
 	OvCore::Resources::Material m_reflectiveMaterial;
-	std::unique_ptr<baregl::Buffer> m_fakeLightsBuffer;
+	std::shared_ptr<baregl::Buffer> m_fakeLightsBuffer;
 };
 
 class DebugLightsRenderPass : public OvRendering::Core::ARenderPass

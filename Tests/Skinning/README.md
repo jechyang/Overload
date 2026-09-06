@@ -68,3 +68,5 @@ node Tests\Skinning\run-validation.mjs Release --editor
 若 vswhere 在受限环境下返回空，可设置 VSINSTALLDIR，或添加 `--vs "C:/Program Files/Microsoft Visual Studio/2022/Community"`。脚本不会修改系统工具链设置。性能结论只使用没有其他构建、测试或 Tracy 客户端同时运行的日志。
 
 阶段 2 的可选聚合绘制回归使用 `Debug/Release --draw-packets` 和 `Debug/Release --editor --draw-packets`，后者在真实三视图开启同次 draw 录制并生成独立测试项目。必须先完整重建。协议与输出见 Tests/RenderingCommands/README.md 和 MULTITHREADING_DRAW_PACKET_VALIDATION.md。
+
+相机/时间与灯光输入回归新增 `Debug/Release --frame-inputs` 和 `Debug/Release --editor --frame-inputs`，输出独立的 `-frame-inputs` 目录；包含上一阶段 packet 检查。先完整重建，协议见 MULTITHREADING_FRAME_INPUT_VALIDATION.md。

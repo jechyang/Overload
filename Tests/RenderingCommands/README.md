@@ -88,3 +88,18 @@ packet_validation.cpp 在真实 CompositeRenderer 上切换即时/录制：12 �
 为了让早期旧源码基准链接当前 CompositeRenderer/后处理，兼容副本补充缺失的新材质辅助函数和 BlitWithRetainedTextures 非虚接口；旧 Bind/UploadProperties/DrawEntity 保留，基准提交不变。基类新增声明不改变旧实例/虚表布局，几何嵌套定义仍匹配基准。
 
 本阶段 packet 只在同次 draw 同步消费，资源持有不冻结动态纹理，也未持有完整 view/pass/target/lighting 状态。详细失败协议、证据和后续工作见 MULTITHREADING_DRAW_PACKET_VALIDATION.md。
+
+## 相机/时间与灯光输入（阶段 2 第六增量）
+
+~~~bat
+node Tests\Skinning\run-validation.mjs Debug --frame-inputs
+node Tests\Skinning\run-validation.mjs Release --frame-inputs
+node Tests\Skinning\run-validation.mjs Debug --editor --frame-inputs
+node Tests\Skinning\run-validation.mjs Release --editor --frame-inputs
+~~~
+
+先完整重建 EngineBufferRenderFeature / LightingRenderFeature 的消费者，必要时添加 --vs。输出 <配置>-frame-inputs/current/ 与 <配置>-frame-inputs-editor/current/；该模式包含 packet 回归，不与旧基准或并行/ASan 模式混用。
+
+frame_input_validation.cpp 在创建 GL 上下文前准备相机/时间与灯光载荷；销毁源 Camera/Transform/Light/Frustum 后检查 GPU 字节，覆盖 UBO 上传范围与时间保留、灯光 frustum/空集合/分配失败、buffer 脱离 feature 的存活与最终释放。24 组相机切换场景对比即时与录制图像；录制分支故意污染相机/时间 UBO 和灯光绑定，确认 draw 还原捕获值并保留显式灯光覆盖。另运行原 packet 与真实 Mannequin 图像对拍。
+
+--editor --frame-inputs 在实际三视图开启录制，保留调试假灯光与后处理，运行既有模式/多视图/切场景/resize。LightingDescriptor 仍有 shadow 等帧内借用者，LightBindingCommand 不冻结 buffer 内容，详见 MULTITHREADING_FRAME_INPUT_VALIDATION.md。

@@ -2,6 +2,8 @@
 
 日期：2026-09-06。前置提交：abf6b13（几何持有与模型/palette 上传快照）。
 
+本文件保留第五增量验收时的范围；相机/时间与灯光输入的后续迁移及当前限制见 MULTITHREADING_FRAME_INPUT_VALIDATION.md。
+
 ## 已实现范围
 
 CompositeRenderer 增加 SetDrawRecordingEnabled，默认关闭，须在帧外由 GL owner 切换。开启后，真实 DrawEntity 先录制 feature 操作、完整材质快照和几何命令，录制全部成功后，在同次调用中按原 feature 顺序执行，再执行材质和几何。OnAfterDraw 仍同步读取存活的 Drawable。原即时路径继续作为默认和对照。

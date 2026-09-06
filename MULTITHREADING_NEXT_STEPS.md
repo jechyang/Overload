@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、阶段 1 已完成约定范围验收并提交。阶段 2 已增加默认关闭的同次 draw packet：聚合几何、材质、模型/palette 以及反射/阴影/后处理纹理持有，真实 SceneRenderer 和编辑器三视图开启录制的验收通过。外部 view/pass/target/lighting 及动态纹理内容仍依赖原同步链路，尚不能跨帧交接。下一步迁移这些帧状态，不直接跳到 Render 线程。最新验收见 MULTITHREADING_DRAW_PACKET_VALIDATION.md。**
+**阶段 0、阶段 1 已完成约定范围验收并提交。阶段 2 已建立默认关闭的同次 draw packet，新增相机/时间值快照、灯光 CPU 上传载荷及 GPU 绑定持有，保留编辑器假灯光覆盖；Debug/Release 专项及真实三视图验收通过。target/viewport/pass/clear、动态 buffer/texture 内容版本及帧完成仍待迁移，尚不能跨帧交接。最新验收见 MULTITHREADING_FRAME_INPUT_VALIDATION.md。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -176,6 +176,13 @@
 - Debug/Release 各 12 组反射/阴影/蒙皮/缓存图像与实际 draw 状态对照、24 帧真实 Mannequin 即时/录制对拍、拒绝及恢复/回收检查通过。真实 Editor 三视图全部开启录制，模式/切场景/resize 通过；旧 draw-inputs/material 对照、完整构建和 10 项复制通过，详见 MULTITHREADING_DRAW_PACKET_VALIDATION.md。
 - 当前仍是同次 draw 的同步执行，feature 消费者及 view/pass/target/lighting 必须存活稳定，OnAfterDraw 仍同步。未新增 Render 线程或跨帧队列，没有本阶段整帧收益结论。下一增量先迁移相机/视图/灯光常量及 pass/viewport/target，再闭合动态资源生产顺序、UI/debug/picking 和帧完成。
 
+### 4.6 第六增量：相机/时间与灯光输入
+
+- EngineBufferRenderFeature 增加 140 字节相机与 144 字节帧常量载荷，CPU 准备不保留 Camera/Transform；真实 BeginFrame、SetCamera 已接入。录制 draw 捕获当前 camera/time 并恢复 UBO，反射/阴影的 SetCamera 保持时间不变，EndFrame 清除选择。
+- LightingRenderFeature 将剔除/矩阵打包与 GPU 上传分离；载荷独占矩阵。录制捕获当前灯光 buffer/binding point 的持有，保留每帧一次上传。BindOverride/Bind 显式选择覆盖/场景灯光，两处编辑器调试覆盖已迁移。
+- Debug/Release 各 32 份销毁相机后的 UBO 字节/范围对照、灯光 frustum/空集合/失败/销毁后回放/最终回收、24 组相机切换与 GPU 污染恢复图像通过。原 packet/Mannequin、真实 Editor 三视图、旧 draw-inputs 对拍、完整构建和 10 项复制通过。详见 MULTITHREADING_FRAME_INPUT_VALIDATION.md。
+- 灯光 binding 只持有 GPU 对象，不冻结下一帧重写的内容；LightingDescriptor 仍被 shadow pass 借用，FrameDescriptor 仍借用 camera/target。下一增量迁移 pass/viewport/target/clear，再闭合动态资源版本和帧完成；仍无 Render 线程或跨帧队列。
+
 ## 5. 阶段 3：Game/Render 双线程（A 形态）
 
 **目标：让固定 Render 线程消费稳定帧数据，Game/Main 线程负责应用更新与必要的平台/UI 事件。**
@@ -226,7 +233,7 @@
 ### 工作区
 
 - 原基准为 73ae710a57889bfde94184c3c8f073228e998144；工作分支 main。
-- 按用户要求分阶段提交：阶段 0 为 30eb8fe，阶段 1 为 4f8da08，阶段 2 几何首增量为 50194bf，材质第二增量为 8cc2f8c，材质快照第三增量为 b1128a7，几何/模型/palette 第四增量为 abf6b13，同次 draw packet 第五增量为本文件所属的新提交。后续每个独立可验收增量完成检查后单独提交。
+- 按用户要求分阶段提交：阶段 0 为 30eb8fe，阶段 1 为 4f8da08，阶段 2 几何首增量为 50194bf，材质第二增量为 8cc2f8c，材质快照第三增量为 b1128a7，几何/模型/palette 第四增量为 abf6b13，同次 draw packet 第五增量为 2648d43，相机/灯光第六增量为本文件所属的新提交。后续每个独立可验收增量完成检查后单独提交。
 - 仅提交多线程实现、测试与验收文档。Editor.cpp 的既有注释修改通过按 hunk 暂存排除；ItemPicker、SkeletalData、OvUI、.zcode 等其他用户改动仍留在工作树。
 - 历史验收是在包含这些既有用户改动的工作区中完成，不声称逐个检出了补提交来复现历史构建。Tests/Skinning 的旧源码基准仍固定为原基准，不因补提交而变化。
 - 未创建额外任务或推送远程。阶段 2 已建立可选同次 draw packet，继续按独立增量推进。
@@ -262,7 +269,9 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 - 阶段 2 第三增量使用 Debug/Release --snapshots，输出 <配置>-snapshots/；最终构建日志后缀 snapshot-final，快照/编辑器日志为 snapshot-{debug,release}-final.log 和 snapshot-editor-{debug,release}-final.log，复制核对为 snapshot-final-build-artifacts.json。该增量范围见 MULTITHREADING_MATERIAL_SNAPSHOT_VALIDATION.md。
 - 阶段 2 第四增量使用 Debug/Release --draw-inputs，输出 <配置>-draw-inputs/；构建日志后缀 draw-inputs-stage2，最终对拍 draw-inputs-{debug,release}-final.log，Editor 日志 draw-inputs-editor-{debug,release}.log，复制 draw-inputs-build-artifacts.json，独占微基准 draw-inputs-palette-perf.json。该增量历史范围见 MULTITHREADING_DRAW_INPUT_VALIDATION.md。
 
-- 阶段 2 第五增量使用 Debug/Release --draw-packets 和 --editor --draw-packets；输出 <配置>-draw-packets/、<配置>-draw-packets-editor/。最终构建后缀 draw-packets-final，验收 packet-{debug,release}.log、packet-editor-{debug,release}.log，复制 draw-packets-build-artifacts.json；详细协议与限制以 MULTITHREADING_DRAW_PACKET_VALIDATION.md 为准。
+- 阶段 2 第五增量使用 Debug/Release --draw-packets 和 --editor --draw-packets；输出 <配置>-draw-packets/、<配置>-draw-packets-editor/。最终构建后缀 draw-packets-final，验收 packet-{debug,release}.log、packet-editor-{debug,release}.log，复制 draw-packets-build-artifacts.json；第五增量历史协议见 MULTITHREADING_DRAW_PACKET_VALIDATION.md。
+
+- 阶段 2 第六增量使用 Debug/Release --frame-inputs 和 --editor --frame-inputs，输出 <配置>-frame-inputs/、<配置>-frame-inputs-editor/。构建后缀 frame-inputs-final，验证 frame-inputs-{debug,release}.log / frame-inputs-editor-{debug,release}.log，复制 frame-inputs-build-artifacts.json；当前协议见 MULTITHREADING_FRAME_INPUT_VALIDATION.md。
 
 ### 只在需要时阅读的证据
 
@@ -278,4 +287,4 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 ## 11. 新对话建议起始消息
 
-> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_DRAW_PACKET_VALIDATION.md，以默认关闭的同次 draw packet 为基线，继续阶段 2 下一个独立增量：迁移 view/projection/camera/time、lighting 常量和 pass/viewport/target 状态，再逐步闭合动态纹理生产顺序及 UI/debug/picking/帧完成。保持原即时对照、缓存和多视图语义，先同线程验证后单独 git 提交。当前 packet 依赖存活的 feature 消费者与外部帧状态，不能直接跨帧或交给 Render 线程。保留用户修改，后台验证，不操作 VS2022 界面。
+> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_FRAME_INPUT_VALIDATION.md，以同次 draw packet、相机/时间值快照和灯光上传/绑定持有为基线，继续阶段 2 下一个独立增量：拆分 pass/viewport/target/clear 的准备与执行，明确目标及附件所有权、resize 和反射/阴影/后处理生产顺序，再处理动态资源内容版本及帧完成。保持即时对照、多视图与灯光覆盖语义，同线程验收后独立 git 提交。GPU 绑定持有不冻结内容，当前包仍不能跨帧或交给 Render 线程。保留用户修改，后台验证，不操作 VS2022 界面。

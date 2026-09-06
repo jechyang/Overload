@@ -21,7 +21,8 @@ namespace OvRendering::Features
 	public:
 		bool SupportsDrawRecording() const override { return typeid(*this) == typeid(LightingRenderFeature); }
 
-		// TODO: Consider not using references here, but copying the light instead (should be fairly cheap and doesn't require to keep an instance outside of the scope)
+		// Light upload preparation copies values; other descriptor consumers (e.g.
+		// shadow passes) still borrow these lights for the active frame.
 		using LightSet = std::vector<std::reference_wrapper<OvRendering::Entities::Light>>;
 
 		struct LightingDescriptor
@@ -52,12 +53,33 @@ namespace OvRendering::Features
 		*/
 		uint32_t GetBufferBindingPoint() const;
 
+		struct LightingUploadCommand
+		{
+			std::vector<OvMaths::FMatrix4> matrices;
+		};
+		static LightingUploadCommand PrepareLightingUpload(const LightingDescriptor& p_lights, const Entities::Camera& p_camera);
+		void ExecuteLightingUpload(const LightingUploadCommand& p_command);
+
+		// Same-draw binding ownership. Buffer contents must stay stable through execution.
+		// Acquire, execute and finally release on the GL owner before context shutdown.
+		struct LightBindingCommand
+		{
+			std::shared_ptr<baregl::Buffer> buffer;
+			uint32_t bindingPoint;
+		};
+		LightBindingCommand RecordLightBinding() const;
+		static void ExecuteLightBinding(const LightBindingCommand& p_command);
+		// Explicit override used by editor debug passes; Bind() restores scene lighting.
+		void BindOverride(std::shared_ptr<baregl::Buffer> p_buffer);
+
 	protected:
 		virtual void OnBeginFrame(const Data::FrameDescriptor& p_frameDescriptor) override;
 		virtual void OnEndFrame() override;
+		void OnBeforeDraw(Data::PipelineState& p_pso, const Entities::Drawable& p_drawable) override;
 
 	private:
 		uint32_t m_bufferBindingPoint;
-		std::unique_ptr<baregl::Buffer> m_lightBuffer;
+		std::shared_ptr<baregl::Buffer> m_lightBuffer;
+		mutable std::shared_ptr<baregl::Buffer> m_boundLightBuffer;
 	};
 }

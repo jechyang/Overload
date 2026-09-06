@@ -42,7 +42,25 @@ namespace OvCore::Rendering
 		*/
 		void SetCamera(const OvRendering::Entities::Camera& p_camera);
 
-		// CPU-only, owned per-draw payload. View/camera/time and target remain external.
+		// Capture already cached camera matrices without retaining the Camera/Transform.
+		struct CameraUploadCommand
+		{
+			OvMaths::FMatrix4 viewMatrix;
+			OvMaths::FMatrix4 projectionMatrix;
+			OvMaths::FVector3 cameraPosition;
+		};
+		struct FrameUploadCommand
+		{
+			CameraUploadCommand camera;
+			float elapsedTime;
+		};
+		static CameraUploadCommand PrepareCameraUpload(const OvRendering::Entities::Camera& p_camera);
+		static FrameUploadCommand PrepareFrameUpload(const OvRendering::Entities::Camera& p_camera, float p_elapsedTime);
+		// GPU-only replay; does not change the camera/time selected for future draws.
+		void ExecuteCameraUpload(const CameraUploadCommand& p_command);
+		void ExecuteFrameUpload(const FrameUploadCommand& p_command);
+
+		// CPU-only, owned per-draw payload. Target/pass state remains external.
 		struct DrawUploadCommand
 		{
 			OvMaths::FMatrix4 modelMatrix;
@@ -60,5 +78,6 @@ namespace OvCore::Rendering
 	protected:
 		std::chrono::high_resolution_clock::time_point m_startTime;
 		std::unique_ptr<baregl::Buffer> m_engineBuffer;
+		std::optional<FrameUploadCommand> m_frameUpload;
 	};
 }

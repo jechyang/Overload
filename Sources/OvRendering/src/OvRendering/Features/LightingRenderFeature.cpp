@@ -5,6 +5,8 @@
 */
 
 #include <cmath>
+#include <stdexcept>
+#include <tracy/Tracy.hpp>
 
 #include "OvRendering/Features/LightingRenderFeature.h"
 #include "OvRendering/Core/CompositeRenderer.h"
@@ -17,7 +19,7 @@ OvRendering::Features::LightingRenderFeature::LightingRenderFeature(
 	ARenderFeature(p_renderer, p_executionPolicy),
 	m_bufferBindingPoint(p_bufferBindingPoint)
 {
-	m_lightBuffer = std::make_unique<baregl::Buffer>();
+	m_lightBuffer = std::make_shared<baregl::Buffer>();
 }
 
 bool IsLightInFrustum(const OvRendering::Entities::Light& p_light, const OvRendering::Data::Frustum& p_frustum)
@@ -36,6 +38,7 @@ bool IsLightInFrustum(const OvRendering::Entities::Light& p_light, const OvRende
 void OvRendering::Features::LightingRenderFeature::Bind() const
 {
 	m_lightBuffer->Bind(baregl::types::EBufferType::SHADER_STORAGE, m_bufferBindingPoint);
+	m_boundLightBuffer = m_lightBuffer;
 }
 
 uint32_t OvRendering::Features::LightingRenderFeature::GetBufferBindingPoint() const
@@ -43,39 +46,68 @@ uint32_t OvRendering::Features::LightingRenderFeature::GetBufferBindingPoint() c
 	return m_bufferBindingPoint;
 }
 
+OvRendering::Features::LightingRenderFeature::LightingUploadCommand
+OvRendering::Features::LightingRenderFeature::PrepareLightingUpload(const LightingDescriptor& p_lights, const Entities::Camera& p_camera)
+{
+	ZoneScopedN("Prepare Lighting Upload");
+	LightingUploadCommand command;
+	command.matrices.reserve(p_lights.lights.size());
+	const auto frustum = p_lights.frustumOverride ? p_lights.frustumOverride : p_camera.GetLightFrustum();
+	for (auto light : p_lights.lights)
+	{
+		if (!frustum || IsLightInFrustum(light.get(), frustum.value()))
+			command.matrices.push_back(light.get().GenerateMatrix());
+	}
+	return command;
+}
+
+void OvRendering::Features::LightingRenderFeature::ExecuteLightingUpload(const LightingUploadCommand& p_command)
+{
+	ZoneScopedN("Execute Lighting Upload");
+	const auto matrices = std::span{p_command.matrices};
+	if (m_lightBuffer->Allocate(matrices.size_bytes(), baregl::types::EAccessSpecifier::STREAM_DRAW))
+		m_lightBuffer->Upload(matrices.data());
+	Bind();
+}
+
+OvRendering::Features::LightingRenderFeature::LightBindingCommand
+OvRendering::Features::LightingRenderFeature::RecordLightBinding() const
+{
+	if (!m_boundLightBuffer) throw std::logic_error("Light binding requires an active frame or explicit binding");
+	return { m_boundLightBuffer, m_bufferBindingPoint };
+}
+
+void OvRendering::Features::LightingRenderFeature::ExecuteLightBinding(const LightBindingCommand& p_command)
+{
+	if (!p_command.buffer || p_command.buffer.use_count() == 0)
+		throw std::invalid_argument("Light binding requires an owned buffer");
+	p_command.buffer->Bind(baregl::types::EBufferType::SHADER_STORAGE, p_command.bindingPoint);
+}
+
+void OvRendering::Features::LightingRenderFeature::BindOverride(std::shared_ptr<baregl::Buffer> p_buffer)
+{
+	ExecuteLightBinding({p_buffer, m_bufferBindingPoint});
+	m_boundLightBuffer = std::move(p_buffer);
+}
+
 void OvRendering::Features::LightingRenderFeature::OnBeginFrame(const Data::FrameDescriptor& p_frameDescriptor)
 {
 	OVASSERT(m_renderer.HasDescriptor<LightingDescriptor>(), "Cannot find LightingDescriptor attached to this renderer");
+	const auto command = PrepareLightingUpload(m_renderer.GetDescriptor<LightingDescriptor>(), p_frameDescriptor.camera.value());
+	ExecuteLightingUpload(command);
+}
 
-	auto& lightDescriptor = m_renderer.GetDescriptor<LightingDescriptor>();
-	auto& frameDescriptor = m_renderer.GetFrameDescriptor();
-
-	std::vector<OvMaths::FMatrix4> lightMatrices;
-	lightMatrices.reserve(lightDescriptor.lights.size());
-
-	auto frustum = lightDescriptor.frustumOverride ?
-		lightDescriptor.frustumOverride :
-		frameDescriptor.camera->GetLightFrustum();
-
-	for (auto light : lightDescriptor.lights)
+void OvRendering::Features::LightingRenderFeature::OnBeforeDraw(Data::PipelineState&, const Entities::Drawable&)
+{
+	if (m_renderer.IsRecordingDraw())
 	{
-		if (!frustum || IsLightInFrustum(light.get(), frustum.value()))
-		{
-			lightMatrices.push_back(light.get().GenerateMatrix());
-		}
+		const auto command = RecordLightBinding();
+		m_renderer.RecordDrawOperation([command] { ExecuteLightBinding(command); });
 	}
-
-	const auto lightMatricesView = std::span{ lightMatrices };
-
-	if (m_lightBuffer->Allocate(lightMatricesView.size_bytes(), baregl::types::EAccessSpecifier::STREAM_DRAW))
-	{
-		m_lightBuffer->Upload(lightMatricesView.data());
-	}
-
-	Bind();
 }
 
 void OvRendering::Features::LightingRenderFeature::OnEndFrame()
 {
 	m_lightBuffer->Unbind();
+	m_boundLightBuffer.reset();
 }
