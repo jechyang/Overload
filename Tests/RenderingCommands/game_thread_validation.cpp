@@ -141,7 +141,10 @@ void SetThreadMode(const std::filesystem::path& project, bool enabled)
     OvTools::Filesystem::IniFile settings((project/"Game.ini").string());
     settings.Remove("render_thread"); settings.Add("render_thread", enabled); settings.Rewrite();
 }
-int main(int argc, char** argv) try
+#ifndef GAME_THREAD_TEST_MAIN
+#define GAME_THREAD_TEST_MAIN main
+#endif
+int GAME_THREAD_TEST_MAIN(int argc, char** argv) try
 {
     producer = std::this_thread::get_id();
     if (argc > 2 && std::string(argv[2]) == "--capture")

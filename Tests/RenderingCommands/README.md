@@ -181,3 +181,23 @@ Debug/Release --log-dispatch 独立运行，覆盖拥有型主线程事件、六
 ## 完整 UI、窗口与在途输入（阶段 3 第十增量）
 
 完整构建后运行 Debug/Release --editor-stress（可追加 --vs），输出 <配置>-editor-stress-command-list-editor-ui/current。先复用双线程项目/图像验收，再运行 96 帧真正完整 Canvas、循环面板/视图/场景/窗口尺寸、五种微小 Bloom 目标对拍和 Render 积压时的产品 Gizmo 输入对照。--game-thread 与 --editor-stress 共用 window_minimize_validation.inl，分别执行六次真实离屏无激活 Minimize/Restore，验证状态和在途帧排空。产品 GL hooks 增加 ImGui BaseVertex 绘制。该压力不是性能基准；范围和后续计量见 MULTITHREADING_WINDOW_UI_VALIDATION.md。
+
+## Tracy Unicode 线程名（阶段 3 第十一增量）
+
+--gpu-profiling 额外运行每配置 224 次真实外部线程名查询，在 C locale 下检查 ASCII、中文、补充平面字符、255 字节边界、超长/空/不存在的线程回退。原 GPU owner/query/TLS 重启与失败检查保持。详见 MULTITHREADING_TRACY_THREAD_NAME_VALIDATION.md。
+
+## 产品帧性能、队列与延迟（阶段 3 第十二增量）
+
+完整构建后独占运行 Debug/Release --game-benchmark 或 --editor-benchmark（可追加 --vs）。不得同时跑另一个引擎、性能测试、编译或 Tracy 客户端。输出分别为 <配置>-game-benchmark/current 和 <配置>-editor-benchmark-command-list-editor-ui/current。每次运行重新生成测试项目；基准包含实际 Application/Update/PostUpdate、场景/视图与 UI，按正序/逆序交替运行即时、同线程命令、双线程命令三种模式。
+
+普通负载每组 384 帧，前 64 帧预热；三次重复。Editor 另对同线程/双线程命令执行真实拾取读回负载，各 224 帧，前 32 帧预热。计时 hook 只存在于当前生产源码的测试副本中，稳态不增加 glFinish；GPU 查询在整批排空后读取。Debug 完整基准可能超过五分钟，入口给性能模式预留十分钟，其他回归仍使用原超时。
+
+~~~text
+node Tests/RenderingCommands/analyze-product-benchmark.mjs <输出目录>/product-frame-metrics.csv
+node Tests/RenderingCommands/capture-product-benchmark.mjs game
+node Tests/RenderingCommands/capture-product-benchmark.mjs editor
+tracy-csvexport -u -f Benchmark <capture.tracy> > <events.csv>
+node Tests/RenderingCommands/analyze-product-tracy.mjs <events.csv>
+~~~
+
+采集先完成项目夹具，再等待 TRACE READY 连接；连接后的计量另存 product-frame-metrics-connected.csv。两个分析器分别验证时序/帧 ID/两帧容量/交叠，以及完整 Tracy case/线程身份/真实 Update 与 Render 的交叠。GPU 原始时间戳用 BigInt 处理。正式未连接数据与连接数据不得混算；GPU 时间线跨度不是忙碌占用率，呈现返回不是屏幕显示，交互观察不是物理输入设备延迟。指标定义、默认配置决定及结果见 MULTITHREADING_FRAME_PERFORMANCE_VALIDATION.md。

@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、1 已验收提交。阶段 2 已完成拥有型场景/编辑器/UI 帧命令、历史恢复、GPU 回收和产品交互。阶段 3 的 Game/Editor 均可用 render_thread=true 接入固定 Render owner 与有界队列，正常逐帧不 Wait；资源/日志/纹理注册表/UI/Tracy 归属及按序交互已接入。最新完整 UI、窗口变化、真实最小化/恢复和在途 Gizmo 验收通过，并修复窄视口 Bloom 和最小化状态查询，见 MULTITHREADING_WINDOW_UI_VALIDATION.md。长基准另发现并修复 Tracy Windows Unicode 外部线程名越界复制，Debug/Release 专项与完整 Game 长采集通过，见 MULTITHREADING_TRACY_THREAD_NAME_VALIDATION.md。阶段 2/3 整体目标仍待性能/延迟最终汇总、完整编辑器 Tracy 采集及最终证据审计。render_thread 默认保留 false，由项目显式开启。**
+**阶段 0、1 已验收提交。阶段 2 已完成拥有型场景/编辑器/UI 帧命令、历史恢复、GPU 回收和产品交互。阶段 3 的 Game/Editor 均可用 render_thread=true 接入固定 Render owner 与有界队列，正常逐帧不 Wait；资源/日志/纹理注册表/UI/Tracy 归属及按序交互已接入。最新完整 UI、窗口变化、真实最小化/恢复和在途 Gizmo 验收通过，并修复窄视口 Bloom 和最小化状态查询，见 MULTITHREADING_WINDOW_UI_VALIDATION.md。长基准另发现并修复 Tracy Windows Unicode 外部线程名越界复制，Debug/Release 专项与完整 Game 长采集通过，见 MULTITHREADING_TRACY_THREAD_NAME_VALIDATION.md。两配置独占性能/延迟共 48 个 case、13,824 个统计帧通过，Game/Editor 完整 Tracy 交叠已验证，见 MULTITHREADING_FRAME_PERFORMANCE_VALIDATION.md。阶段 2/3 剩余最终证据审计与结案提交。render_thread 默认保留 false，由项目显式开启。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -297,6 +297,10 @@ Editor Context 安装固定 Render owner 和资源作用域，实际产品循环
 ### 5.11 已完成第十一增量：Tracy Unicode 线程名稳定性
 
 长采集发现 Windows 外部线程名 wcstombs 失败被当作超大复制长度，导致 Tracy Symbol Worker 异常并暂停应用。改为检查 HRESULT、明确 UTF-8 转换、失败回退与 LocalFree。Debug/Release 各 224 次真实名称查询及原 GPU/TLS 生命周期回归通过，完整构建零警告零错误；修复后的 Game 九个长采集 case 完整可解析，每组双线程有 383/384 个 Update 与 Render 交叠。见 MULTITHREADING_TRACY_THREAD_NAME_VALIDATION.md。下一步完成 Editor 长采集、最终性能/延迟汇总与阶段审计。
+
+### 5.12 已完成第十二增量：产品性能、队列与延迟
+
+真实 Game/Editor 对照即时、同线程命令与双线程命令，两配置共 48 个 case、13,824 个预热后样本；另行独占连接 Tracy，完整验证 Game 九组与 Editor 十五组，真实 Update/Render 跨线程交叠和同线程零交叠对照均通过。GPU 原始时间戳按 BigInt 处理，两帧接收容量、队列等待、呈现返回、GPU 退役、Main 观察及交互应用逐帧核对。Release 双线程相对同线程命令吞吐提高约 Game 48%、三视图 38%、拾取 33%，但仍有即时路径成本和交互延迟取舍；决定默认保留 render_thread=false。统计范围、来源与限制见 MULTITHREADING_FRAME_PERFORMANCE_VALIDATION.md。剩余按原始要求完成最终审计与结案。
 
 ## 6. 阶段 4：多 Pass/View 并行命令录制
 
