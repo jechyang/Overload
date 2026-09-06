@@ -4,9 +4,11 @@
 
 ## 从这里开始
 
-**阶段 0、1 已验收提交。阶段 2 已完成拥有型场景/编辑器/UI 帧命令、历史恢复、GPU 回收和产品交互。阶段 3 的 Game/Editor 均可用 render_thread=true 接入固定 Render owner 与有界队列，正常逐帧不 Wait；资源/日志/纹理注册表/UI/Tracy 归属及按序交互已接入。最新完整 UI、窗口变化、真实最小化/恢复和在途 Gizmo 验收通过，并修复窄视口 Bloom 和最小化状态查询，见 MULTITHREADING_WINDOW_UI_VALIDATION.md。长基准另发现并修复 Tracy Windows Unicode 外部线程名越界复制，Debug/Release 专项与完整 Game 长采集通过，见 MULTITHREADING_TRACY_THREAD_NAME_VALIDATION.md。两配置独占性能/延迟共 48 个 case、13,824 个统计帧通过，Game/Editor 完整 Tracy 交叠已验证，见 MULTITHREADING_FRAME_PERFORMANCE_VALIDATION.md。阶段 2/3 剩余最终证据审计与结案提交。render_thread 默认保留 false，由项目显式开启。**
+**阶段 0、1、2、3 已完成约定范围验收。Game/Editor 可选固定 Render owner，拥有型场景/多视图/UI 帧、资源回收、窗口/输入/退出和真实交叠均已闭合；最新性能验收为两配置 48 个 case、13,824 个统计帧，24 个完整 Tracy case。独占长采集发现的 Unicode 线程名崩溃已修复。最终要求核对见 MULTITHREADING_STAGE23_COMPLETION.md，计量与默认配置决定见 MULTITHREADING_FRAME_PERFORMANCE_VALIDATION.md。render_thread 默认保留 false，项目可显式开启；吞吐收益与交互延迟成本均已量化。本次阶段 2/3 任务结案，阶段 4 的多 Pass/View 并行录制属于后续独立工作。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
+
+阶段 2、3 下列各增量保留实施当时的历史状态；其中“下一步/尚未完成”不表示这些工作现在仍然待办，当前结论以顶部状态和最终验收报告为准。
 
 总体路线：CPU 任务系统 → 蒙皮评估并行 → 可交接的渲染命令 → Game/Render 双线程（A 形态）→ 多 Pass/View 并行命令录制 → RHI/Vulkan → 视瓶颈演进到 fiber/job graph。
 
@@ -302,6 +304,10 @@ Editor Context 安装固定 Render owner 和资源作用域，实际产品循环
 
 真实 Game/Editor 对照即时、同线程命令与双线程命令，两配置共 48 个 case、13,824 个预热后样本；另行独占连接 Tracy，完整验证 Game 九组与 Editor 十五组，真实 Update/Render 跨线程交叠和同线程零交叠对照均通过。GPU 原始时间戳按 BigInt 处理，两帧接收容量、队列等待、呈现返回、GPU 退役、Main 观察及交互应用逐帧核对。Release 双线程相对同线程命令吞吐提高约 Game 48%、三视图 38%、拾取 33%，但仍有即时路径成本和交互延迟取舍；决定默认保留 render_thread=false。统计范围、来源与限制见 MULTITHREADING_FRAME_PERFORMANCE_VALIDATION.md。剩余按原始要求完成最终审计与结案。
 
+### 5.13 最终审计：阶段 2、3 结案
+
+按第 4、5 节原始要求逐项核对命令所有权、排序/多视图/历史、GPU 完成与删除、GL/平台/UI 归属、有界背压、JobSystem 等待关系、窗口/输入/退出、图像与性能证据，均已闭合。22 组已有专项/集成回归记录、最新两配置完整构建与 10 项复制一致性、48 个性能 case 和 24 个完整 Tracy case 已核对。默认配置与适用边界明确，详见 MULTITHREADING_STAGE23_COMPLETION.md。本任务到阶段 3 完成，不自动将下列阶段 4–6 计为已实现。
+
 ## 6. 阶段 4：多 Pass/View 并行命令录制
 
 - 使用阶段 0 的任务依赖描述 view/pass 之间的真实数据依赖；各 job 使用私有命令缓冲或独占 arena。
@@ -342,7 +348,7 @@ Editor Context 安装固定 Render owner 和资源作用域，实际产品循环
 - 按用户要求分阶段提交：阶段 0 为 30eb8fe，阶段 1 为 4f8da08，阶段 2 几何首增量为 50194bf，材质第二增量为 8cc2f8c，材质快照第三增量为 b1128a7，几何/模型/palette 第四增量为 abf6b13，同次 draw packet 第五增量为 2648d43，相机/灯光第六增量为 24cabec，目标/viewport/clear 第七增量为 c82d4fa，帧命令序列第八增量为本文件所属的新提交。后续每个独立可验收增量完成检查后单独提交。
 - 仅提交多线程实现、测试与验收文档。Editor.cpp 的既有注释修改通过按 hunk 暂存排除；ItemPicker、SkeletalData、OvUI、.zcode 等其他用户改动仍留在工作树。
 - 历史验收是在包含这些既有用户改动的工作区中完成，不声称逐个检出了补提交来复现历史构建。Tests/Skinning 的旧源码基准仍固定为原基准，不因补提交而变化。
-- 未创建额外任务或推送远程。阶段 2 已建立可选同次 draw packet，继续按独立增量推进。
+- 未创建额外任务或推送远程。阶段 2、3 已完成，最后两个实现/计量增量为 c697649、cd419de，最终审计随本文件所属提交保存。
 
 ### 构建（已实际验证的入口）
 
@@ -369,7 +375,7 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 - Debug/Release 场景证据和新阶段的性能数据要区分是否连接 Tracy、对象构成与 worker 数，不能混用来计算加速比。
 
 - 第三增量最新报告：`MULTITHREADING_SKINNING_STAGE1_COMPLETION.md`；新增 `Debug/Release --editor`。可打开项目：`Build/JobsValidation/Skinning/Release-editor/current/SkinningProject/SkinningProject.ovproject`。测试会重新生成该专用项目。
-- 最新正式构建为 `msbuild-debug-skinning-stage1-retry.log`、`msbuild-release-skinning-stage1-final.log`，复制为 `skinning-stage1-build-artifacts.json`；最终独占性能 `skinning-stage1-perf-*`，Tracy 为 `tracy-skinning-stage1-release*`。
+- 阶段 1 当时最终正式构建为 `msbuild-debug-skinning-stage1-retry.log`、`msbuild-release-skinning-stage1-final.log`，复制为 `skinning-stage1-build-artifacts.json`；最终独占性能 `skinning-stage1-perf-*`，Tracy 为 `tracy-skinning-stage1-release*`。
 - 阶段 2 首增量使用 `Debug/Release --geometry`，输出 `Build/JobsValidation/Skinning/<配置>-geometry/`；详情见 `Tests/RenderingCommands/README.md`。新构建日志后缀为 `geometry-stage2`，编辑器回归日志为 `geometry-editor-{debug,release}.log`，不将并发构建/验收期间的耗时作为性能基线。
 - 阶段 2 第二增量使用 `Debug/Release --material`，输出 `<配置>-material/`；最终构建日志后缀为 `material-final`，最终编辑器日志为 `material-editor-{debug,release}-final.log`，复制核对为 `material-final-build-artifacts.json`。微基准见 `material-stage2-perf-payload.json`；首稿 `material-stage2` 构建及性能日志不作为最终产物证据。该增量状态见 MULTITHREADING_MATERIAL_COMMAND_VALIDATION.md。
 - 阶段 2 第三增量使用 Debug/Release --snapshots，输出 <配置>-snapshots/；最终构建日志后缀 snapshot-final，快照/编辑器日志为 snapshot-{debug,release}-final.log 和 snapshot-editor-{debug,release}-final.log，复制核对为 snapshot-final-build-artifacts.json。该增量范围见 MULTITHREADING_MATERIAL_SNAPSHOT_VALIDATION.md。
@@ -397,4 +403,4 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 ## 11. 新对话建议起始消息
 
-> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_WINDOW_UI_VALIDATION.md，继续完成阶段 2、3：实际双线程、完整 UI/窗口/输入压力已通过，下一步独占比较即时、同线程命令和双线程命令的 CPU/GPU、队列和输入到呈现请求/交互应用延迟；据此决定默认配置，按原要求完成最终证据审计。保留严格图像及源销毁回放对拍，按可验收增量提交 Git，不包含用户已有修改，后台验证。
+> 阅读 MULTITHREADING_STAGE23_COMPLETION.md、MULTITHREADING_FRAME_PERFORMANCE_VALIDATION.md 和本文件。阶段 2、3 已完成验收和分阶段提交，render_thread 默认保留 false，由项目显式开启。若继续推进，按第 6 节开始阶段 4：先核对 pass/view 依赖、录制端缓存与稳定资源读期，再做可对拍的最小并行录制增量；保留当前即时/同线程命令/双线程对照。保留用户已有修改，继续分阶段 Git 提交和后台验证。
