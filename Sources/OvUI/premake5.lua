@@ -17,9 +17,11 @@ project "OvUI"
 	includedirs {
 		-- Dependencies
 		dependdir .. "ImGui/include",
+		dependdir .. "baregl/include",
 
 		-- Overload SDK
 		"%{wks.location}/Sources/OvMaths/include",
+		"%{wks.location}/Sources/OvRendering/include",
 		"%{wks.location}/Sources/OvTools/include",
 		"%{wks.location}/Sources/OvDebug/include",
 		"%{wks.location}/Sources/OvWindowing/include",

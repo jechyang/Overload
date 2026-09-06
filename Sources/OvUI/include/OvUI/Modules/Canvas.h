@@ -57,6 +57,9 @@ namespace OvUI::Modules
 		*/
 		void Draw() override;
 
+		// Build CPU draw data; renderer initialization can be performed separately.
+		bool BuildFrame(bool p_beginRendererFrame);
+
 	private:
 		std::vector<std::reference_wrapper<Panels::APanel>> m_panels;
 		bool m_isDockspace = false;

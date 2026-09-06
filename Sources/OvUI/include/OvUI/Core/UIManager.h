@@ -7,6 +7,9 @@
 #pragma once
 
 #include <optional>
+#include <OvRendering/Data/RenderCommandList.h>
+#include <OvUI/Rendering/DrawData.h>
+#include <baregl/Framebuffer.h>
 #include <string>
 #include <unordered_map>
 
@@ -147,9 +150,17 @@ namespace OvUI::Core
 		* Render ImGui current frane
 		* @note Should be called once per frame
 		*/
-		void Render();
+        void Render();
+        // Enable/disable and final release require the GL owner. Once enabled,
+        // the recorder itself issues no GPU operations. Widget callbacks still obey
+        // their existing main-thread/GL-owner requirements.
+        void SetCommandRecordingEnabled(bool p_enabled);
+        OvRendering::Data::RenderCommandList RecordRenderCommands(
+            std::optional<baregl::Framebuffer::Snapshot> p_target = std::nullopt,
+            std::span<const std::shared_ptr<baregl::Texture>> p_textures = {});
 
 	private:
+		std::unique_ptr<Rendering::DrawDataRecorder> m_recorder;
 		OvWindowing::Window& m_window;
 		OvTools::Eventing::ListenerID m_contentScaleChangedListener;
 		bool m_dockingState = false;

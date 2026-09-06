@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback 已接入 owning 命令与成功完成后的主线程解析；ImGui 和正式帧完成仍待闭合，尚无独立 Render 线程。阶段 2、3 均未全部完成，最新验收见 MULTITHREADING_EDITOR_COMMAND_VALIDATION.md。**
+**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback 已接入 owning 命令与成功完成后的主线程解析；ImGui 拥有型帧快照与 Image/ButtonImage 入口已通过独立验收，编辑器其余裸纹理 ID 迁移、全 UI 录制和正式帧完成仍待闭合，尚无独立 Render 线程。阶段 2、3 均未全部完成，最新验收见 MULTITHREADING_IMGUI_SNAPSHOT_VALIDATION.md。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -211,6 +211,13 @@
 - AView::RecordRenderCommands 返回拥有资源的视图命令，SceneView::CompleteRender 在成功消费后执行主线程交互；默认产品仍即时运行。Framebuffer 快照读回隔离并恢复 PBO、pack 布局和读目标。
 - 使用 --editor --command-list 验收真实调试/picking 源对象销毁回放，以及 Scene/Game/Asset 即时与延迟视图对拍。完整结果和成本边界见 MULTITHREADING_EDITOR_COMMAND_VALIDATION.md。
 - 拾取当前下载完整图像且同步读回，尚未使用 PBO；没有独立 Render 线程。下一步闭合 ImGui 稳定 draw data/纹理与正式帧完成，再完成阶段 3 资源归属、有界队列、真实交叠和交互/窗口/退出/性能验收。
+
+### 4.11 第十一增量：ImGui 拥有型帧快照基础设施
+
+- DrawDataRecorder 复制顶点/索引/命令/视口参数，绑定 owning 纹理；执行不访问源 ImGui context/draw data/widget。后端 GPU 设备代际独立持有，字体像素按代际复制并在消费端上传；未知回调和无所有者纹理拒绝。
+- UIManager 增加命令录制入口，Canvas 分离 CPU 构建与 GL 初始化；Image/ButtonImage 可携带纹理所有者，模式切回即时前清理字体逻辑 ID。原产品默认即时路径保持。
+- Debug/Release 各 8 组大网格/裁剪/高 DPI/销毁后精确对拍、8 帧字体更新与重建的逆序回放、unpack 状态恢复、失败/取消/回收及真实 UIManager 控件通过。完整构建、10 项复制与两配置实际 Editor 回归通过，详见 MULTITHREADING_IMGUI_SNAPSHOT_VALIDATION.md。
+- **整个编辑器 UI 尚未完成迁移。** 下一步逐个迁移 AView、Toolbar、AssetBrowser、搜索/对象字段、树节点、HeaderAction 和 TextureDebugger 的裸 ID，验证全 UI 命令模式；再闭合正式 frame completion 和固定 Render owner/有界队列。资源创建/resize/最终释放仍有 GL owner 约束，无阶段 3 并行或性能结论。
 
 ## 5. 阶段 3：Game/Render 双线程（A 形态）
 

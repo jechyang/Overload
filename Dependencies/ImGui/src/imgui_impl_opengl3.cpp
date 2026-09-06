@@ -1,3 +1,4 @@
+#include <stdexcept>
 // dear imgui: Renderer Backend for modern OpenGL with shaders / programmatic pipeline
 // - Desktop GL: 2.x 3.x 4.x
 // - Embedded GL: ES 2.0 (WebGL 1.0), ES 3.0 (WebGL 2.0)
@@ -232,31 +233,48 @@
 #endif
 
 // OpenGL Data
+static unsigned int g_BackendInstances = 0;
+static unsigned int g_DeviceGenerations = 0;
+static void ImGui_ImplOpenGL3_ShutdownLoader();
+struct ImGui_ImplOpenGL3_DeviceGeneration
+{
+    GLuint shader = 0, vertices = 0, indices = 0;
+    ImGui_ImplOpenGL3_DeviceGeneration() { ++g_DeviceGenerations; }
+    ~ImGui_ImplOpenGL3_DeviceGeneration()
+    {
+        if (vertices) glDeleteBuffers(1, &vertices);
+        if (indices) glDeleteBuffers(1, &indices);
+        if (shader) glDeleteProgram(shader);
+        --g_DeviceGenerations;
+        ImGui_ImplOpenGL3_ShutdownLoader();
+    }
+};
+
 struct ImGui_ImplOpenGL3_Data
 {
-    GLuint          GlVersion;               // Extracted at runtime using GL_MAJOR_VERSION, GL_MINOR_VERSION queries (e.g. 320 for GL 3.2)
-    char            GlslVersionString[32];   // Specified by user or detected based on compile time GL settings.
-    bool            GlProfileIsES2;
-    bool            GlProfileIsES3;
-    bool            GlProfileIsCompat;
-    GLint           GlProfileMask;
-    GLint           MaxTextureSize;
-    GLuint          ShaderHandle;
-    GLint           AttribLocationTex;       // Uniforms location
-    GLint           AttribLocationProjMtx;
-    GLuint          AttribLocationVtxPos;    // Vertex attributes location
-    GLuint          AttribLocationVtxUV;
-    GLuint          AttribLocationVtxColor;
-    unsigned int    VboHandle, ElementsHandle;
-    GLsizeiptr      VertexBufferSize;
-    GLsizeiptr      IndexBufferSize;
-    bool            HasPolygonMode;
-    bool            HasBindSampler;
-    bool            HasClipOrigin;
-    bool            UseBufferSubData;
+    GLuint          GlVersion{};               // Extracted at runtime using GL_MAJOR_VERSION, GL_MINOR_VERSION queries (e.g. 320 for GL 3.2)
+    char            GlslVersionString[32]{};   // Specified by user or detected based on compile time GL settings.
+    bool            GlProfileIsES2{};
+    bool            GlProfileIsES3{};
+    bool            GlProfileIsCompat{};
+    GLint           GlProfileMask{};
+    GLint           MaxTextureSize{};
+    GLuint          ShaderHandle{};
+    GLint           AttribLocationTex{};       // Uniforms location
+    GLint           AttribLocationProjMtx{};
+    GLuint          AttribLocationVtxPos{};    // Vertex attributes location
+    GLuint          AttribLocationVtxUV{};
+    GLuint          AttribLocationVtxColor{};
+    unsigned int    VboHandle = 0, ElementsHandle = 0;
+    GLsizeiptr      VertexBufferSize{};
+    GLsizeiptr      IndexBufferSize{};
+    bool            HasPolygonMode{};
+    bool            HasBindSampler{};
+    bool            HasClipOrigin{};
+    bool            UseBufferSubData{};
     ImVector<char>  TempBuffer;
 
-    ImGui_ImplOpenGL3_Data() { memset((void*)this, 0, sizeof(*this)); }
+    std::shared_ptr<ImGui_ImplOpenGL3_DeviceGeneration> Retained;
 };
 
 // Backend data stored in io.BackendRendererUserData to allow support for multiple Dear ImGui contexts
@@ -312,6 +330,7 @@ bool ImGui_ImplOpenGL3_InitLoader()
 
 static void ImGui_ImplOpenGL3_ShutdownLoader()
 {
+    if (g_BackendInstances || g_DeviceGenerations) return;
 #ifdef IMGUI_IMPL_OPENGL_LOADER_IMGL3W
     imgl3wShutdown();
 #endif
@@ -432,6 +451,7 @@ bool    ImGui_ImplOpenGL3_Init(const char* glsl_version)
 #endif
 
     ImGui_ImplOpenGL3_InitMultiViewportSupport();
+    ++g_BackendInstances;
 
     return true;
 }
@@ -451,6 +471,7 @@ void    ImGui_ImplOpenGL3_Shutdown()
     io.BackendFlags &= ~(ImGuiBackendFlags_RendererHasVtxOffset | ImGuiBackendFlags_RendererHasTextures | ImGuiBackendFlags_RendererHasViewports);
     platform_io.ClearRendererHandlers();
     IM_DELETE(bd);
+    --g_BackendInstances;
 
     ImGui_ImplOpenGL3_ShutdownLoader();
 }
@@ -466,9 +487,8 @@ void    ImGui_ImplOpenGL3_NewFrame()
             IM_ASSERT(0 && "ImGui_ImplOpenGL3_CreateDeviceObjects() failed!");
 }
 
-static void ImGui_ImplOpenGL3_SetupRenderState(ImDrawData* draw_data, int fb_width, int fb_height, GLuint vertex_array_object)
+static void ImGui_ImplOpenGL3_SetupRenderState(ImDrawData* draw_data, int fb_width, int fb_height, GLuint vertex_array_object, ImGui_ImplOpenGL3_Data* bd)
 {
-    ImGui_ImplOpenGL3_Data* bd = ImGui_ImplOpenGL3_GetBackendData();
 
     // Setup render state: alpha-blending enabled, no face culling, no depth testing, scissor enabled, polygon fill
     glEnable(GL_BLEND);
@@ -543,7 +563,7 @@ static void ImGui_ImplOpenGL3_SetupRenderState(ImDrawData* draw_data, int fb_wid
 // OpenGL3 Render function.
 // Note that this implementation is little overcomplicated because we are saving/setting up/restoring every OpenGL state explicitly.
 // This is in order to be able to run within an OpenGL engine that doesn't do so.
-void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
+static void ImGui_ImplOpenGL3_RenderDrawDataWithState(ImDrawData* draw_data, ImGui_ImplOpenGL3_Data* bd)
 {
     // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
     int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
@@ -553,7 +573,6 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
 
     ImGui_ImplOpenGL3_InitLoader();
 
-    ImGui_ImplOpenGL3_Data* bd = ImGui_ImplOpenGL3_GetBackendData();
 
     // Catch up with texture updates. Most of the times, the list will have 1 element with an OK status, aka nothing to do.
     // (This almost always points to ImGui::GetPlatformIO().Textures[] but is part of ImDrawData to allow overriding or disabling texture updates).
@@ -608,7 +627,7 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
 #ifdef IMGUI_IMPL_OPENGL_USE_VERTEX_ARRAY
     GL_CALL(glGenVertexArrays(1, &vertex_array_object));
 #endif
-    ImGui_ImplOpenGL3_SetupRenderState(draw_data, fb_width, fb_height, vertex_array_object);
+    ImGui_ImplOpenGL3_SetupRenderState(draw_data, fb_width, fb_height, vertex_array_object, bd);
 
     // Will project scissor/clipping rectangles into framebuffer space
     ImVec2 clip_off = draw_data->DisplayPos;         // (0,0) unless using multi-viewports
@@ -656,7 +675,7 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
                 // User callback, registered via ImDrawList::AddCallback()
                 // (ImDrawCallback_ResetRenderState is a special callback value used by the user to request the renderer to reset render state.)
                 if (pcmd->UserCallback == ImDrawCallback_ResetRenderState)
-                    ImGui_ImplOpenGL3_SetupRenderState(draw_data, fb_width, fb_height, vertex_array_object);
+                    ImGui_ImplOpenGL3_SetupRenderState(draw_data, fb_width, fb_height, vertex_array_object, bd);
                 else
                     pcmd->UserCallback(draw_list, pcmd);
             }
@@ -726,6 +745,48 @@ void    ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
     glViewport(last_viewport[0], last_viewport[1], (GLsizei)last_viewport[2], (GLsizei)last_viewport[3]);
     glScissor(last_scissor_box[0], last_scissor_box[1], (GLsizei)last_scissor_box[2], (GLsizei)last_scissor_box[3]);
     (void)bd; // Not all compilation paths use this
+}
+
+struct ImGui_ImplOpenGL3_RenderState { ImGui_ImplOpenGL3_Data data; };
+
+std::shared_ptr<ImGui_ImplOpenGL3_RenderState> ImGui_ImplOpenGL3_CaptureRenderState()
+{
+    const auto* bd = ImGui_ImplOpenGL3_GetBackendData();
+    if (!bd || !bd->Retained) throw std::logic_error("ImGui device objects must be initialized before capture");
+    auto state = std::make_shared<ImGui_ImplOpenGL3_RenderState>();
+    state->data.GlVersion = bd->GlVersion;
+    state->data.GlProfileIsES2 = bd->GlProfileIsES2;
+    state->data.GlProfileIsES3 = bd->GlProfileIsES3;
+    state->data.GlProfileIsCompat = bd->GlProfileIsCompat;
+    state->data.GlProfileMask = bd->GlProfileMask;
+    state->data.MaxTextureSize = bd->MaxTextureSize;
+    state->data.ShaderHandle = bd->ShaderHandle;
+    state->data.AttribLocationTex = bd->AttribLocationTex;
+    state->data.AttribLocationProjMtx = bd->AttribLocationProjMtx;
+    state->data.AttribLocationVtxPos = bd->AttribLocationVtxPos;
+    state->data.AttribLocationVtxUV = bd->AttribLocationVtxUV;
+    state->data.AttribLocationVtxColor = bd->AttribLocationVtxColor;
+    state->data.VboHandle = bd->VboHandle;
+    state->data.ElementsHandle = bd->ElementsHandle;
+    state->data.HasPolygonMode = bd->HasPolygonMode;
+    state->data.HasBindSampler = bd->HasBindSampler;
+    state->data.HasClipOrigin = bd->HasClipOrigin;
+    state->data.Retained = bd->Retained;
+    // Retained execution uses glBufferData; no ImGui allocator/context is touched.
+    state->data.UseBufferSubData = false;
+    return state;
+}
+
+void ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data)
+{
+    ImGui_ImplOpenGL3_RenderDrawDataWithState(draw_data, ImGui_ImplOpenGL3_GetBackendData());
+}
+
+void ImGui_ImplOpenGL3_RenderDrawDataRetained(ImDrawData* draw_data,
+    const std::shared_ptr<ImGui_ImplOpenGL3_RenderState>& state)
+{
+    if (!state || draw_data->Textures) throw std::invalid_argument("Retained ImGui draw data contains borrowed texture updates");
+    ImGui_ImplOpenGL3_RenderDrawDataWithState(draw_data, &state->data);
 }
 
 static void ImGui_ImplOpenGL3_DestroyTexture(ImTextureData* tex)
@@ -856,6 +917,8 @@ bool    ImGui_ImplOpenGL3_CreateDeviceObjects()
 {
     ImGui_ImplOpenGL3_InitLoader();
     ImGui_ImplOpenGL3_Data* bd = ImGui_ImplOpenGL3_GetBackendData();
+
+    auto generation = std::make_shared<ImGui_ImplOpenGL3_DeviceGeneration>();
 
     // Backup GL state
     GLint last_texture, last_array_buffer;
@@ -1038,6 +1101,11 @@ bool    ImGui_ImplOpenGL3_CreateDeviceObjects()
     glGenBuffers(1, &bd->VboHandle);
     glGenBuffers(1, &bd->ElementsHandle);
 
+    generation->shader = bd->ShaderHandle;
+    generation->vertices = bd->VboHandle;
+    generation->indices = bd->ElementsHandle;
+    bd->Retained = std::move(generation);
+
     // Restore modified GL state
     glBindTexture(GL_TEXTURE_2D, last_texture);
     glBindBuffer(GL_ARRAY_BUFFER, last_array_buffer);
@@ -1055,9 +1123,8 @@ void    ImGui_ImplOpenGL3_DestroyDeviceObjects()
 {
     ImGui_ImplOpenGL3_InitLoader();
     ImGui_ImplOpenGL3_Data* bd = ImGui_ImplOpenGL3_GetBackendData();
-    if (bd->VboHandle)      { glDeleteBuffers(1, &bd->VboHandle); bd->VboHandle = 0; }
-    if (bd->ElementsHandle) { glDeleteBuffers(1, &bd->ElementsHandle); bd->ElementsHandle = 0; }
-    if (bd->ShaderHandle)   { glDeleteProgram(bd->ShaderHandle); bd->ShaderHandle = 0; }
+    bd->Retained.reset();
+    bd->VboHandle = bd->ElementsHandle = bd->ShaderHandle = 0;
 
     // Destroy all textures
     for (ImTextureData* tex : ImGui::GetPlatformIO().Textures)

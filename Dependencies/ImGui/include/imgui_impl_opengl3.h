@@ -28,6 +28,7 @@
 //  Only override if your GL version doesn't handle this GLSL version. See GLSL version table at the top of imgui_impl_opengl3.cpp.
 
 #pragma once
+#include <memory>
 #include "imgui.h"      // IMGUI_IMPL_API
 #ifndef IMGUI_DISABLE
 
@@ -36,6 +37,14 @@ IMGUI_IMPL_API bool     ImGui_ImplOpenGL3_Init(const char* glsl_version = nullpt
 IMGUI_IMPL_API void     ImGui_ImplOpenGL3_Shutdown();
 IMGUI_IMPL_API void     ImGui_ImplOpenGL3_NewFrame();
 IMGUI_IMPL_API void     ImGui_ImplOpenGL3_RenderDrawData(ImDrawData* draw_data);
+
+// Overload: retained device generation, independent of the originating ImGui context.
+// Capture is CPU-only after NewFrame/CreateDeviceObjects. Execution/final release
+// require the original GL owner. Draw data must own its inputs and have Textures=null.
+struct ImGui_ImplOpenGL3_RenderState;
+IMGUI_IMPL_API std::shared_ptr<ImGui_ImplOpenGL3_RenderState> ImGui_ImplOpenGL3_CaptureRenderState();
+IMGUI_IMPL_API void ImGui_ImplOpenGL3_RenderDrawDataRetained(ImDrawData* draw_data,
+    const std::shared_ptr<ImGui_ImplOpenGL3_RenderState>& state);
 
 // (Optional) Called by Init/NewFrame/Shutdown
 IMGUI_IMPL_API bool     ImGui_ImplOpenGL3_CreateDeviceObjects();

@@ -13,7 +13,11 @@ OvUI::Widgets::Visual::Image::Image(uint32_t p_textureID, const OvMaths::FVector
 	
 }
 
+OvUI::Widgets::Visual::Image::Image(std::shared_ptr<baregl::Texture> p_texture, const OvMaths::FVector2& p_size) :
+    textureID(std::move(p_texture)), size(p_size) {}
+
 void OvUI::Widgets::Visual::Image::_Draw_Impl()
 {
+	textureID.RetainForCapture();
 	ImGui::Image(textureID.id, Internal::Converter::ToImVec2(size), ImVec2(0.f, 1.f), ImVec2(1.f, 0.f));
 }

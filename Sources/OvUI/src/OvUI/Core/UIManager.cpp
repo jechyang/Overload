@@ -11,6 +11,8 @@
 #include <OvWindowing/Window.h>
 
 #include <imgui.h>
+#include <imgui_internal.h>
+#include <OvUI/Internal/TextureID.h>
 #include <optional>
 
 OvUI::Core::UIManager::UIManager(OvWindowing::Window& p_window, Styling::EStyle p_style, std::string_view p_glslVersion) :
@@ -38,6 +40,7 @@ OvUI::Core::UIManager::~UIManager()
 {
 	m_window.ContentScaleChangedEvent -= m_contentScaleChangedListener;
 
+	SetCommandRecordingEnabled(false);
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
@@ -208,10 +211,54 @@ void OvUI::Core::UIManager::RemoveCanvas()
 
 void OvUI::Core::UIManager::Render()
 {
-	if (m_currentCanvas)
-	{
-		m_currentCanvas->Draw();
-		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-	}
+    SetCommandRecordingEnabled(false);
+    if (m_currentCanvas && m_currentCanvas->BuildFrame(true))
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
+void OvUI::Core::UIManager::SetCommandRecordingEnabled(bool p_enabled)
+{
+    if (p_enabled == static_cast<bool>(m_recorder)) return;
+    if (p_enabled)
+    {
+        auto recorder = std::make_unique<Rendering::DrawDataRecorder>();
+        ImGui_ImplOpenGL3_DestroyDeviceObjects();
+        ImGui_ImplOpenGL3_NewFrame();
+        m_recorder = std::move(recorder);
+    }
+    else
+    {
+        m_recorder->ResetFontIdentifiers();
+        m_recorder.reset();
+        ImGui_ImplOpenGL3_DestroyDeviceObjects();
+    }
+}
+
+OvRendering::Data::RenderCommandList OvUI::Core::UIManager::RecordRenderCommands(
+    std::optional<baregl::Framebuffer::Snapshot> p_target,
+    std::span<const std::shared_ptr<baregl::Texture>> p_textures)
+{
+    SetCommandRecordingEnabled(true);
+    OvRendering::Data::RenderCommandList commands;
+    std::vector<std::shared_ptr<baregl::Texture>> textures(p_textures.begin(), p_textures.end());
+    Internal::TextureCaptureScope scope(textures);
+    try
+    {
+        if (m_currentCanvas && m_currentCanvas->BuildFrame(false))
+        {
+            auto frame = m_recorder->Capture(*ImGui::GetDrawData(), textures);
+            commands.Append([frame = std::move(frame), target = std::move(p_target)](auto&) {
+                if (target) target->Bind(); else baregl::Framebuffer::BindDefault();
+                frame.Execute();
+            });
+        }
+        commands.Seal();
+        return commands;
+    }
+    catch (...)
+    {
+        if (ImGui::GetCurrentContext() && ImGui::GetCurrentContext()->WithinFrameScope) ImGui::EndFrame();
+        commands.FailRecording();
+        throw;
+    }
+}

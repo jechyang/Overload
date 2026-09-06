@@ -25,6 +25,7 @@ namespace OvUI::Widgets::Visual
 		* @parma p_size
 		*/
 		Image(uint32_t p_textureID, const OvMaths::FVector2& p_size);
+		Image(std::shared_ptr<baregl::Texture> p_texture, const OvMaths::FVector2& p_size);
 
 	protected:
 		void _Draw_Impl() override;

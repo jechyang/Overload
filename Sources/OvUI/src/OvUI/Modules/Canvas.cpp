@@ -8,11 +8,13 @@
 
 #include <imgui_internal.h>
 
-void OvUI::Modules::Canvas::Draw()
+void OvUI::Modules::Canvas::Draw() { BuildFrame(true); }
+
+bool OvUI::Modules::Canvas::BuildFrame(bool p_beginRendererFrame)
 {
 	if (!m_panels.empty())
 	{
-		ImGui_ImplOpenGL3_NewFrame();
+		if (p_beginRendererFrame) ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
@@ -41,7 +43,9 @@ void OvUI::Modules::Canvas::Draw()
 			panel.get().Draw();
 
 		ImGui::Render();
+		return true;
 	}
+	return false;
 }
 
 void OvUI::Modules::Canvas::AddPanel(Panels::APanel & p_panel)
