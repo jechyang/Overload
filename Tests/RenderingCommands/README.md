@@ -129,3 +129,9 @@ Debug/Release --command-list 覆盖拥有资源的序列、源对象销毁后消
 Debug/Release --editor --command-list 现在运行真正的视图整帧收集与延迟消费。先完整重建对应配置，再通过 --vs 指定 VS2022（若自动发现不可用）。输出与旧 --editor --draw-packets 模式隔离。
 
 editor_command_validation.inl 验证真实 DebugSceneRenderer 的六组调试/拾取即时对拍、源对象销毁、实际 Actor/Gizmo 解析、场景/删除/坐标拒绝、失败帧不发布、零录制读回及 PBO/pack 状态恢复。原 editor_validation.cpp 在新模式下增加每次真实视图的即时/延迟对照；Asset View 固定渐变曝光与反射时间输入。见 MULTITHREADING_EDITOR_COMMAND_VALIDATION.md。
+
+## 统一帧提交与 GPU 回收（阶段 2 第十三增量）
+
+先完整构建，再运行 Debug/Release --render-frame、--game-frame，以及 --editor --command-list --editor-ui；必要时添加 --vs。前两个模式独立运行，分别输出 <配置>-render-frame/current 和 <配置>-game-frame/current。Game 测试链接生产 Game 对象，仅隔离项目目录与隐藏窗口；Editor 模式增加实际三视图加 UI 的整帧图像比较。
+
+测试覆盖整帧完成、GPU fence 保留/回收、失败/取消/析构/移动、嵌套历史及后继无需等待前帧 GPU 回收、实际 UI/场景/目标销毁后的回放。旧 UI 与动态命令回归继续使用 --ui-commands、--command-list。协议、确定性输入与验收范围见 MULTITHREADING_RENDER_FRAME_VALIDATION.md；没有跨线程许可或性能收益断言。

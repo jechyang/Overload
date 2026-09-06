@@ -19,6 +19,7 @@
 #include <OvGame/Utils/FPSCounter.h>
 
 #include <OvUI/Modules/Canvas.h>
+#include <OvRendering/Data/RenderFrame.h>
 
 namespace OvGame::Core
 {
@@ -55,7 +56,11 @@ namespace OvGame::Core
 		*/
 		void PostUpdate();
 
+		// Capture already-updated scene/debug UI; the GL owner submits and presents.
+		OvRendering::Data::RenderFrame RecordRenderFrame();
+
 	private:
+		uint64_t m_recordedFrameID = 0;
 		OvGame::Core::Context& m_context;
 		OvUI::Modules::Canvas m_canvas;
 

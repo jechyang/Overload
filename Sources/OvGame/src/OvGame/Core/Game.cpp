@@ -5,6 +5,7 @@
 */
 
 #include <tracy/Tracy.hpp>
+#include <baregl/detail/glad/glad.h>
 
 #include <OvDebug/Logger.h>
 #include <OvGame/Core/Game.h>
@@ -150,4 +151,36 @@ void OvGame::Core::Game::PostUpdate()
 	m_context.window->SwapBuffers();
 	m_context.inputManager->ClearEvents();
 	m_context.driver->OnFrameCompleted();
+}
+
+OvRendering::Data::RenderFrame OvGame::Core::Game::RecordRenderFrame()
+{
+    OvRendering::Data::RenderFrame frame(++m_recordedFrameID);
+    m_sceneRenderer.SetDrawRecordingEnabled(true);
+    m_sceneRenderer.BeginCommandRecording();
+    try
+    {
+        if (m_context.sceneManager.GetCurrentScene())
+        {
+            RenderCurrentScene(m_sceneRenderer, m_context);
+            const auto [width, height] = m_context.window->GetSize();
+            const auto target = m_context.framebuffer->RecordTarget();
+            m_sceneRenderer.SubmitRenderOperation([target, width, height](auto&) {
+                const auto [sourceWidth, sourceHeight] = target.GetSize();
+                glBlitNamedFramebuffer(target.GetID(), 0, 0, 0, sourceWidth, sourceHeight,
+                    0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            });
+        }
+        frame.Append(m_sceneRenderer.FinishCommandRecording());
+    }
+    catch (...)
+    {
+        const auto error = std::current_exception();
+        try { if (m_sceneRenderer.IsDrawing()) m_sceneRenderer.EndFrame(); } catch (...) {}
+        m_sceneRenderer.CancelCommandRecording();
+        std::rethrow_exception(error);
+    }
+    if (m_showDebugInformation) frame.Append(m_context.uiManager->RecordRenderCommands());
+    frame.Seal();
+    return frame;
 }

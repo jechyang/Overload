@@ -7,6 +7,7 @@
 #pragma once
 
 #include <memory>
+#include <OvRendering/Data/RenderFrame.h>
 
 #include <OvEditor/Core/Context.h>
 #include <OvEditor/Core/EditorActions.h>
@@ -87,6 +88,10 @@ namespace OvEditor::Core
 		*/
 		void RenderViews(float p_deltaTime);
 
+		// Same-thread frame handoff. Complete before recording another frame to apply picking.
+		OvRendering::Data::RenderFrame RecordRenderFrame(float p_deltaTime);
+		bool CompleteRenderFrame(const OvRendering::Data::RenderFrame::Completion& completion);
+
 		/**
 		* Render the editor UI using ImGui
 		* @param p_deltaTime
@@ -101,6 +106,9 @@ namespace OvEditor::Core
 
 	private:
 		uint64_t m_elapsedFrames = 0;
+		uint64_t m_recordedFrameID = 0;
+		bool m_recordedSceneView = false;
+		OvRendering::Data::RenderFrame::Completion m_latestFrameCompletion;
 		OvUI::Modules::Canvas m_canvas;
 		OvEditor::Core::Context& m_context;
 		OvEditor::Core::PanelsManager m_panelsManager;

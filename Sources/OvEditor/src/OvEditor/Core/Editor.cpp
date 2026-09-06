@@ -413,6 +413,67 @@ void OvEditor::Core::Editor::RenderViews(float p_deltaTime)
 	}
 }
 
+OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p_deltaTime)
+{
+    m_latestFrameCompletion = {};
+    m_recordedSceneView = false;
+    OvRendering::Data::RenderFrame frame(++m_recordedFrameID);
+	auto& assetView = m_panelsManager.GetPanelAs<OvEditor::Panels::AssetView>("Asset View");
+	auto& sceneView = m_panelsManager.GetPanelAs<OvEditor::Panels::SceneView>("Scene View");
+	auto& gameView = m_panelsManager.GetPanelAs<OvEditor::Panels::GameView>("Game View");
+
+	{
+		ZoneScopedN("Editor Views Update");
+
+		if (assetView.IsOpened())
+		{
+			assetView.Update(p_deltaTime);
+		}
+
+		if (gameView.IsOpened())
+		{
+			gameView.Update(p_deltaTime);
+		}
+
+		if (sceneView.IsOpened())
+		{
+			sceneView.Update(p_deltaTime);
+		}
+	}
+
+	if (assetView.IsOpened() && assetView.IsVisible())
+	{
+		ZoneScopedN("Asset View Rendering");
+		frame.Append(assetView.RecordRenderCommands());
+	}
+
+	if (gameView.IsOpened() && gameView.IsVisible())
+	{
+		ZoneScopedN("Game View Rendering");
+		frame.Append(gameView.RecordRenderCommands());
+	}
+
+	if (sceneView.IsOpened() && sceneView.IsVisible())
+	{
+		ZoneScopedN("Scene View Rendering");
+		m_recordedSceneView = true;
+		frame.Append(sceneView.RecordRenderCommands());
+	}
+    UpdateEditorPanels(p_deltaTime);
+    frame.Append(m_context.uiManager->RecordRenderCommands());
+    frame.Seal();
+    m_latestFrameCompletion = frame.GetCompletion();
+    return frame;
+}
+
+bool OvEditor::Core::Editor::CompleteRenderFrame(const OvRendering::Data::RenderFrame::Completion& completion)
+{
+    if (!(completion == m_latestFrameCompletion) || !completion.Succeeded()) return false;
+    m_latestFrameCompletion = {};
+    if (m_recordedSceneView) m_panelsManager.GetPanelAs<Panels::SceneView>("Scene View").CompleteRender();
+    return true;
+}
+
 void OvEditor::Core::Editor::RenderEditorUI(float p_deltaTime)
 {
 	ZoneScopedN("Editor UI Rendering");

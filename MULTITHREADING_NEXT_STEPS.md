@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback 已接入 owning 命令与成功完成后的主线程解析；ImGui 拥有型帧快照、编辑器纹理入口迁移与完整/逐面板 UI 录制已验收，正式帧完成仍待闭合，尚无独立 Render 线程。阶段 2、3 均未全部完成，最新验收见 MULTITHREADING_EDITOR_UI_VALIDATION.md。**
+**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback 已接入 owning 命令与成功完成后的主线程解析；ImGui 拥有型帧快照、编辑器纹理入口迁移与完整/逐面板 UI 录制已验收，统一 RenderFrame 提交、GPU fence 回收与 Editor/Game 整帧捕获入口已验收。产品循环接入与逐帧输入/拾取仍待收尾，尚无独立 Render 线程。阶段 2、3 均未全部完成，最新验收见 MULTITHREADING_RENDER_FRAME_VALIDATION.md。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -226,6 +226,13 @@
 - 新增 --editor --command-list --editor-ui，按实际 Main 启动资源跟踪；完整 Canvas、15 个实际面板、Picker 和 TextureDebugger 销毁后回放共 18 组精确图像对拍。报告见 MULTITHREADING_EDITOR_UI_VALIDATION.md。
 - UI 所有权入口已迁移，仍需闭合正式 frame completion 与统一交接。ResourceTracking/Logger/资源创建/resize/最后释放等仍有主线程与 GL owner 约束；阶段 3 固定 Render owner、有界队列、真实交叠及性能/输入延迟验收尚未完成。
 
+### 4.13 第十三增量：统一帧提交与 GPU 回收
+
+- RenderCommandList 合并 sealed 子列表并延后发布各子 CPU 结果，嵌套/父子历史依赖保持顺序。RenderFrame 拥有全帧序列，Submit 包含可选呈现和 fence；Poll 非阻塞，Wait/析构用于排空。成功及失败前缀捕获均保留到 GPU 回收，错误使历史失效。
+- Editor 增加 Asset/Game/Scene+UI 聚合入口和成功最新帧的拾取完成入口；Game 增加场景+持有目标的最终 blit+调试 UI 入口。默认产品循环保留原路径。
+- Debug/Release 各三组实际 Editor 三视图+UI、六组实际 Game 有/无 UI 图像精确一致；帧失败/取消/轮询/回收/历史、源场景/目标/UI 销毁、原 Editor/动态命令/UI 回归通过。完整协议及证据见 MULTITHREADING_RENDER_FRAME_VALIDATION.md。
+- 下一增量接入可切换的完整产品循环并明确逐帧输入/拾取，再落实固定 Render owner、资源操作与通知归属、有界队列和真实交叠。当前无独立 Render 线程，也无新增性能收益结论；阶段 2、3 尚未全部完成。
+
 ## 5. 阶段 3：Game/Render 双线程（A 形态）
 
 **目标：让固定 Render 线程消费稳定帧数据，Game/Main 线程负责应用更新与必要的平台/UI 事件。**
@@ -334,4 +341,4 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 ## 11. 新对话建议起始消息
 
-> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_COMMAND_LIST_VALIDATION.md，继续完成阶段 2、3：闭合动态 pass 取消/失败后的准备状态；迁移 Editor debug/picking/readback、ImGui 和帧完成；再实现固定 Render owner、有界队列、资源归属和真实 Game/Render 交叠。保留源对象销毁后回放、即时/packet/延迟动态图像严格对拍，按可验收增量提交 Git，不包含用户已有修改，后台验证。
+> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_RENDER_FRAME_VALIDATION.md，继续完成阶段 2、3：接入完整产品循环与逐帧输入/拾取，收尾录制期间的 GL 操作归属；再实现固定 Render owner、有界队列、资源归属和真实 Game/Render 交叠。保留源对象销毁后回放、即时/packet/延迟动态图像严格对拍，按可验收增量提交 Git，不包含用户已有修改，后台验证。

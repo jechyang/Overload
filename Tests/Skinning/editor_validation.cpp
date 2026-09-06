@@ -55,6 +55,7 @@ std::vector<unsigned char> ViewPixels(OvEditor::Panels::AView& view)
 
 #ifdef EDITOR_UI_TEST
 #include "../RenderingCommands/editor_ui_validation.inl"
+#include "../RenderingCommands/editor_frame_validation.inl"
 #endif
 
 int main(int argc, char** argv) try
@@ -201,6 +202,9 @@ int main(int argc, char** argv) try
     }
     std::printf("PASS: real Editor Edit/Play/Pause/8 steps/resume/Stop, %zu exact view-order image pairs, %zu moving transitions, 8 delayed scene switches/resizes\n", imagePairs, transitions);
 #ifdef EDITOR_UI_TEST
+#ifdef EDITOR_COMMANDS_TEST
+    EditorFrameValidation(editor, context, argv[1]);
+#endif
     EditorUIValidation(editor, context, argv[1]);
 #endif
     std::printf("PASS: saved project %s\n", project.string().c_str());
