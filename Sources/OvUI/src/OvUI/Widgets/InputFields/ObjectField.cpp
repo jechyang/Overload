@@ -19,6 +19,8 @@ namespace OvUI::Widgets::InputFields
 	template<typename T>
 	void ObjectField<T>::_Draw_Impl()
 	{
+		iconTextureID.RetainForCapture();
+		previewTextureID.RetainForCapture();
 		const float buttonSize = ImGui::GetFrameHeight();
 		const float innerSize = buttonSize - 2.0f * ImGui::GetStyle().FramePadding.x;
 
@@ -45,11 +47,11 @@ namespace OvUI::Widgets::InputFields
 		ImGui::SameLine(0, 0);
 
 		bool clicked;
-		if (iconTextureID != 0)
+		if (iconTextureID.id != 0)
 		{
 			clicked = ImGui::ImageButton(
 				("icon" + this->m_widgetID).c_str(),
-				(ImTextureID)(uintptr_t)iconTextureID,
+				(ImTextureID)(uintptr_t)iconTextureID.id,
 				ImVec2(innerSize, innerSize),
 				ImVec2(0.f, 1.f),
 				ImVec2(1.f, 0.f)
@@ -63,14 +65,14 @@ namespace OvUI::Widgets::InputFields
 		if (clicked)
 			ClickedEvent.Invoke();
 
-		if (previewTextureID != 0)
+		if (previewTextureID.id != 0)
 		{
 			const float gap = ImGui::GetStyle().FramePadding.y;
 			ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetStyle().ItemSpacing.y + gap);
 
 			ImVec2 imgMin = ImGui::GetCursorScreenPos();
 			ImGui::Image(
-				(ImTextureID)(uintptr_t)previewTextureID,
+				(ImTextureID)(uintptr_t)previewTextureID.id,
 				ImVec2(previewSize, previewSize),
 				ImVec2(0.f, 1.f), ImVec2(1.f, 0.f)
 			);

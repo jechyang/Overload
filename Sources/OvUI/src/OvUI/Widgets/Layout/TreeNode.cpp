@@ -56,7 +56,8 @@ void OvUI::Widgets::Layout::TreeNode::_Draw_Impl()
 
 	ImGui::PushStyleColor(ImGuiCol_Text, Internal::Converter::ToImVec4(labelColor.Resolve()));
 
-	const bool hasIcon = iconTextureID != 0;
+	iconTextureID.RetainForCapture();
+	const bool hasIcon = iconTextureID.id != 0;
 	bool opened;
 	if (hasIcon)
 	{
@@ -73,7 +74,7 @@ void OvUI::Widgets::Layout::TreeNode::_Draw_Impl()
 		const ImU32 tintCol = ImGui::ColorConvertFloat4ToU32(Internal::Converter::ToImVec4(labelColor.Resolve()));
 		const ImVec2 iconMin(startX, centerY - iconSize * 0.5f);
 		const ImVec2 iconMax(startX + iconSize, centerY + iconSize * 0.5f);
-		drawList->AddImage(iconTextureID, iconMin, iconMax, ImVec2(0.f, 1.f), ImVec2(1.f, 0.f), tintCol);
+		drawList->AddImage(iconTextureID.id, iconMin, iconMax, ImVec2(0.f, 1.f), ImVec2(1.f, 0.f), tintCol);
 
 		const float textX = startX + iconSize + ImGui::GetStyle().ItemSpacing.x;
 		drawList->AddText(ImVec2(textX, ImGui::GetItemRectMin().y), tintCol, name.c_str());

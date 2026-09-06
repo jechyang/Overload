@@ -5,6 +5,7 @@
 */
 
 #pragma once
+#include <OvUI/Internal/TextureID.h>
 
 #include <functional>
 #include <vector>
@@ -26,7 +27,7 @@ namespace OvUI::Widgets::Layout
 		*/
 		struct HeaderAction
 		{
-			uint32_t textureID;
+			Internal::TextureID textureID;
 			std::function<void()> callback;
 		};
 

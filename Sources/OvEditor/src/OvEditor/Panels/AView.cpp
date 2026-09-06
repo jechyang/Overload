@@ -27,8 +27,8 @@ OvEditor::Panels::AView::AView
 		true, true, false
 	);
 
-	const auto tex = m_framebuffer.GetAttachment<baregl::Texture>(baregl::types::EFramebufferAttachment::COLOR);
-	m_image = &CreateWidget<OvUI::Widgets::Visual::Image>(tex.value().get().GetID(), OvMaths::FVector2{0.f, 0.f});
+	const auto tex = m_framebuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR);
+	m_image = &CreateWidget<OvUI::Widgets::Visual::Image>(tex, OvMaths::FVector2{0.f, 0.f});
 	scrollable = false;
 }
 
@@ -63,7 +63,7 @@ void OvEditor::Panels::AView::Render()
 		FrameMarkStart(name.c_str());
 
 		m_framebuffer.Resize(winWidth, winHeight);
-		m_image->textureID.id = m_framebuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)->GetID();
+		m_image->textureID = m_framebuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR);
 
 		InitFrame();
 

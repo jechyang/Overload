@@ -4,6 +4,7 @@
 #include <vector>
 #include <imgui.h>
 #include <baregl/Texture.h>
+#include <OvUI/Internal/TextureID.h>
 
 namespace OvUI::Rendering
 {
@@ -32,6 +33,7 @@ namespace OvUI::Rendering
         DrawDataRecorder();
         ~DrawDataRecorder();
         DrawData Capture(const ImDrawData& data, std::span<const std::shared_ptr<baregl::Texture>> textures = {});
+        DrawData CaptureBindings(const ImDrawData& data, std::span<const Internal::TextureID> textures);
         void ResetFontIdentifiers(); // Before switching back to the legacy backend/shutdown.
     };
 }

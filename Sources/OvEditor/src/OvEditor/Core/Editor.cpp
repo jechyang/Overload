@@ -59,6 +59,8 @@ OvEditor::Core::Editor::Editor(Context& p_context) :
 
 OvEditor::Core::Editor::~Editor()
 {
+	OvCore::Helpers::GUIHelpers::SetActorIconID(0);
+	OvCore::Helpers::GUIHelpers::SetIconProvider({});
 	Settings::EditorSettings::Save();
 	m_context.sceneManager.UnloadCurrentScene();
 }
@@ -81,9 +83,9 @@ void OvEditor::Core::Editor::SetupUI()
 	);
 
 	OvCore::Helpers::GUIHelpers::SetIconProvider(
-		[this](OvTools::Utils::PathParser::EFileType p_fileType) -> uint32_t {
+		[this](OvTools::Utils::PathParser::EFileType p_fileType) -> OvUI::Internal::TextureID {
 			auto* texture = m_context.editorResources->GetTexture(OvTools::Utils::PathParser::FileTypeToString(p_fileType));
-			return texture ? texture->GetTexture().GetID() : 0;
+			return texture ? OvUI::Internal::TextureID(texture->RetainTexture()) : OvUI::Internal::TextureID{};
 		}
 	);
 
@@ -145,7 +147,7 @@ void OvEditor::Core::Editor::SetupUI()
 
 	// Provide the actor icon ID for ActorField widgets.
 	if (auto* actorTexture = m_context.editorResources->GetTexture("Actor"))
-		OvCore::Helpers::GUIHelpers::SetActorIconID(actorTexture->GetTexture().GetID());
+		OvCore::Helpers::GUIHelpers::SetActorIconID(actorTexture->RetainTexture());
 
 	// Provide asset existence checker so AssetFields show "(Missing Reference)" for invalid paths.
 	OvCore::Helpers::GUIHelpers::SetAssetExistsChecker(

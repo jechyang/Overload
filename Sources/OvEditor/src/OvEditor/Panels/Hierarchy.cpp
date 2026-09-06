@@ -327,9 +327,9 @@ OvEditor::Panels::Hierarchy::Hierarchy
 	m_actions(CreateWidget<OvUI::Widgets::Layout::Group>()),
 	m_actors(CreateWidget<OvUI::Widgets::Layout::Group>())
 {
-	const uint32_t searchIconID = []{
+	const auto searchIconID = []() -> OvUI::Internal::TextureID {
 		if (auto* tex = EDITOR_CONTEXT(editorResources)->GetTexture("Search"))
-			return tex->GetTexture().GetID();
+			return tex->RetainTexture();
 		return 0u;
 	}();
 
@@ -519,10 +519,10 @@ void OvEditor::Panels::Hierarchy::AddActorByInstance(OvCore::ECS::Actor & p_acto
 	auto& textSelectable = m_actors.CreateWidget<OvUI::Widgets::Layout::TreeNode>(p_actor.GetName(), true);
 	textSelectable.leaf = true;
 
-	const uint32_t actorIconID = OvCore::Helpers::GUIHelpers::GetActorIconID();
-	const uint32_t prefabIconID = OvCore::Helpers::GUIHelpers::GetIconForFileType(OvTools::Utils::PathParser::EFileType::PREFAB);
+	const auto actorIconID = OvCore::Helpers::GUIHelpers::GetActorIconID();
+	const auto prefabIconID = OvCore::Helpers::GUIHelpers::GetIconForFileType(OvTools::Utils::PathParser::EFileType::PREFAB);
 
-	textSelectable.iconTextureID = IsPartOfPrefabInstance(p_actor) && prefabIconID != 0 ? prefabIconID : actorIconID;
+	textSelectable.iconTextureID = IsPartOfPrefabInstance(p_actor) && prefabIconID.id != 0 ? prefabIconID : actorIconID;
 
 	textSelectable.AddPlugin<ActorContextualMenu>(&p_actor, &textSelectable);
 	textSelectable.AddPlugin<OvUI::Plugins::DDSource<std::pair<OvCore::ECS::Actor*, OvUI::Widgets::Layout::TreeNode*>>>("Actor", "Attach to...", std::make_pair(&p_actor, &textSelectable));
@@ -551,7 +551,7 @@ void OvEditor::Panels::Hierarchy::AddActorByInstance(OvCore::ECS::Actor & p_acto
 			? OVUI_STYLE(Text)
 			: OVUI_STYLE(TextDisabled);
 
-		textSelectable.iconTextureID = IsPartOfPrefabInstance(*targetPtr) && prefabIconID != 0 ? prefabIconID : actorIconID;
+		textSelectable.iconTextureID = IsPartOfPrefabInstance(*targetPtr) && prefabIconID.id != 0 ? prefabIconID : actorIconID;
 
 		return targetPtr->GetName();
 	});

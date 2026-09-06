@@ -113,9 +113,9 @@ OvEditor::Panels::Console::Console
 	enableWarning.ValueChangedEvent += [this](bool p_value) { SetShowWarningLogs(p_value); };
 	enableError.ValueChangedEvent += [this](bool p_value) { SetShowErrorLogs(p_value); };
 
-	const uint32_t searchIconID = []{
+	const auto searchIconID = []() -> OvUI::Internal::TextureID {
 		if (auto* tex = EDITOR_CONTEXT(editorResources)->GetTexture("Search"))
-			return tex->GetTexture().GetID();
+			return tex->RetainTexture();
 		return 0u;
 	}();
 
@@ -136,10 +136,15 @@ OvEditor::Panels::Console::Console
 	{
 		ClearOnPlay();
 	};
-	OvDebug::Logger::LogEvent += [this](const OvDebug::LogData& p_logData)
+	m_logListener = OvDebug::Logger::LogEvent += [this](const OvDebug::LogData& p_logData)
 	{
 		OnLogIntercepted(p_logData);
 	};
+}
+
+OvEditor::Panels::Console::~Console()
+{
+	OvDebug::Logger::LogEvent -= m_logListener;
 }
 
 void OvEditor::Panels::Console::OnLogIntercepted(const OvDebug::LogData& p_logData)

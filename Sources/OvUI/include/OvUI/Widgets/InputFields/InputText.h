@@ -5,6 +5,7 @@
 */
 
 #pragma once
+#include <OvUI/Internal/TextureID.h>
 
 #include <OvTools/Eventing/Event.h>
 
@@ -34,7 +35,7 @@ namespace OvUI::Widgets::InputFields
 		bool selectAllOnClick = false;
 		bool focusOnNextDraw = false;
 		bool fullWidth = false;
-		uint32_t iconTextureID = 0;
+		Internal::TextureID iconTextureID = 0;
 		OvTools::Eventing::Event<std::string> ContentChangedEvent;
 		OvTools::Eventing::Event<std::string> EnterPressedEvent;
 	};

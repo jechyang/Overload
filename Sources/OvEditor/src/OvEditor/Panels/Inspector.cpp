@@ -256,8 +256,8 @@ void OvEditor::Panels::Inspector::_DrawAddSection()
 		if (!m_targetActor.has_value())
 			return;
 
-		const uint32_t componentIconID = EDITOR_CONTEXT(editorResources)->GetTexture("Component")->GetTexture().GetID();
-		const uint32_t addScriptIconID = EDITOR_CONTEXT(editorResources)->GetTexture("Add_Script")->GetTexture().GetID();
+		const auto componentIconID = EDITOR_CONTEXT(editorResources)->GetTexture("Component")->RetainTexture();
+		const auto addScriptIconID = EDITOR_CONTEXT(editorResources)->GetTexture("Add_Script")->RetainTexture();
 
 		OvCore::Helpers::GUIHelpers::PickerItemList items;
 
@@ -425,7 +425,7 @@ void OvEditor::Panels::Inspector::_DrawBehaviour(Behaviour& p_behaviour, int p_i
 	header.MoveUpEvent += [move] { move(true); };
 	header.MoveDownEvent += [move] { move(false); };
 
-	const uint32_t editIconID = EDITOR_CONTEXT(editorResources)->GetTexture("Edit")->GetTexture().GetID();
+	const auto editIconID = EDITOR_CONTEXT(editorResources)->GetTexture("Edit")->RetainTexture();
 	const auto scriptPath = EDITOR_CONTEXT(projectAssetsPath) / p_behaviour.name;
 	header.actions.push_back({editIconID, [scriptPath] {
 		EDITOR_EXEC(OpenInCodeEditor(scriptPath));

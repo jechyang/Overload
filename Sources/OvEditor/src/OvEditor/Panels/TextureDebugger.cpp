@@ -140,6 +140,7 @@ namespace OvEditor::Panels
 		{
 			if (p_selectedTextureID == kNoneTextureID)
 			{
+				m_selectedTexture = std::nullopt;
 				m_image.textureID = { 0U };
 				m_image.size = OvMaths::FVector2::Zero;
 			}
@@ -148,7 +149,7 @@ namespace OvEditor::Panels
 				if (auto texture = OvRendering::Utils::ResourceTracking::GetTexture(p_selectedTextureID))
 				{
 					m_selectedTexture = texture;
-					m_image.textureID = { texture->GetID() };
+					m_image.textureID = texture->RetainStorage();
 					m_image.size = CalculateImageSize(m_scaleMode, GetSize(), texture.value());
 				}
 			}
@@ -157,7 +158,7 @@ namespace OvEditor::Panels
 		// Selecting the last texture, by default
 		if (m_textureSelector.choices.size() > 1ULL)
 		{
-			m_textureSelector.currentChoice = static_cast<int>(m_textureSelector.choices.size() - 1ULL);
+			m_textureSelector.currentChoice = m_textureSelector.choices.rbegin()->first;
 			m_textureSelector.ValueChangedEvent.Invoke(m_textureSelector.currentChoice);
 		}
 

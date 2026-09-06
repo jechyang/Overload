@@ -5,6 +5,7 @@
 */
 
 #pragma once
+#include <OvUI/Internal/TextureID.h>
 
 #include <cstdint>
 #include <functional>
@@ -54,10 +55,10 @@ namespace OvUI::Widgets::InputFields
 		*/
 		std::function<std::string(const T&)> tooltipFormatter;
 
-		uint32_t iconTextureID = 0;
+		Internal::TextureID iconTextureID = 0;
 
 		/** When non-zero, a framed preview image is drawn below the input row. */
-		uint32_t previewTextureID = 0;
+		Internal::TextureID previewTextureID = 0;
 		float previewSize = 64.0f;
 
 		OvTools::Eventing::Event<> ClickedEvent;

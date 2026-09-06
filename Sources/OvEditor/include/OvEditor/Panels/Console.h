@@ -42,6 +42,8 @@ namespace OvEditor::Panels
 			const OvUI::Settings::PanelWindowSettings& p_windowSettings
 		);
 
+		~Console() override;
+
 		/**
 		* Method called when a log event occured
 		* @param p_logData
@@ -75,6 +77,8 @@ namespace OvEditor::Panels
 		void TruncateLogs();
 
 	private:
+		OvTools::Eventing::ListenerID m_logListener = 0;
+
 		struct LogEntry
 		{
 			OvDebug::LogData data;

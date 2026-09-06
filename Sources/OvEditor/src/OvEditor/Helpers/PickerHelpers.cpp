@@ -48,7 +48,7 @@ namespace
 
 			const std::string filename = PathParser::GetElementName(resourcePath);
 			const std::string friendlyPath = PathParser::GetFriendlyPath(resourcePath);
-			const uint32_t iconID = EDITOR_CONTEXT(editorResources)->GetFileIcon(path)->GetTexture().GetID();
+			const auto iconID = EDITOR_CONTEXT(editorResources)->GetFileIcon(path)->RetainTexture();
 
 			p_list.Add({
 				resourcePath,

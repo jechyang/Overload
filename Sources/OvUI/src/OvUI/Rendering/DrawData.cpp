@@ -10,13 +10,13 @@
 
 namespace OvUI::Internal
 {
-    thread_local std::vector<std::shared_ptr<baregl::Texture>>* TextureCaptureScope::s_current = nullptr;
-    TextureCaptureScope::TextureCaptureScope(std::vector<std::shared_ptr<baregl::Texture>>& textures) : m_previous(s_current) { s_current = &textures; }
+    thread_local std::vector<TextureID>* TextureCaptureScope::s_current = nullptr;
+    TextureCaptureScope::TextureCaptureScope(std::vector<TextureID>& textures) : m_previous(s_current) { s_current = &textures; }
     TextureCaptureScope::~TextureCaptureScope() { s_current = m_previous; }
     void TextureID::RetainForCapture() const
     {
-        if (TextureCaptureScope::s_current && owner && owner->GetID() == id)
-            TextureCaptureScope::s_current->push_back(owner);
+        if (TextureCaptureScope::s_current && IsRetained())
+            TextureCaptureScope::s_current->push_back(*this);
     }
 }
 
@@ -63,7 +63,7 @@ namespace OvUI::Rendering
                 return texture->GetID();
             }
         };
-        struct Binding { std::shared_ptr<baregl::Texture> texture; std::shared_ptr<FontGeneration> font; };
+        struct Binding { Internal::TextureID texture; std::shared_ptr<FontGeneration> font; };
         template<class T> void PointTo(ImVector<T>& view, std::vector<T>& owned)
         { view.Data = owned.data(); view.Size = view.Capacity = static_cast<int>(owned.size()); }
         template<class T> void Detach(ImVector<T>& view) { view.Data = nullptr; view.Size = view.Capacity = 0; }
@@ -112,6 +112,12 @@ namespace OvUI::Rendering
 
     DrawData DrawDataRecorder::Capture(const ImDrawData& data, std::span<const std::shared_ptr<baregl::Texture>> textures)
     {
+        std::vector<Internal::TextureID> bindings(textures.begin(), textures.end());
+        return CaptureBindings(data, bindings);
+    }
+
+    DrawData DrawDataRecorder::CaptureBindings(const ImDrawData& data, std::span<const Internal::TextureID> textures)
+    {
         if (!data.Valid) throw std::invalid_argument("ImGui draw data is not finalized");
         auto finite=[](float value){return std::isfinite(value);};
         if (!finite(data.DisplayPos.x) || !finite(data.DisplayPos.y) || !finite(data.DisplaySize.x) || !finite(data.DisplaySize.y) ||
@@ -123,8 +129,8 @@ namespace OvUI::Rendering
         auto result = std::make_shared<DrawData::Storage>();
         result->backend=ImGui_ImplOpenGL3_CaptureRenderState();
         result->position=data.DisplayPos; result->size=data.DisplaySize; result->scale=data.FramebufferScale;
-        std::unordered_map<ImTextureID,std::shared_ptr<baregl::Texture>> owners;
-        for (const auto& texture : textures) if (texture) owners.emplace(texture->GetID(),texture);
+        std::unordered_map<ImTextureID,Internal::TextureID> owners;
+        for (const auto& texture : textures) if (texture.IsRetained()) owners.emplace(texture.id,texture);
         auto staged=m_state->fonts;
         std::unordered_map<const ImTextureData*,std::shared_ptr<FontGeneration>> resolved;
         std::vector<ImTextureData*> acknowledge, retire;
@@ -217,7 +223,7 @@ namespace OvUI::Rendering
         for(auto& list:m_storage->lists) for(size_t i=0;i<list->commands.size();++i)
         {
             auto& binding=list->bindings[i];
-            const uint32_t id=binding.font?binding.font->GetID():binding.texture?binding.texture->GetID():0;
+            const uint32_t id=binding.font?binding.font->GetID():binding.texture.id;
             list->commands[i].TexRef=ImTextureRef(ImTextureID(id));
         }
         OwnedDataView data;data.view.Valid=true;data.view.DisplayPos=m_storage->position;data.view.DisplaySize=m_storage->size;

@@ -24,7 +24,20 @@ namespace baregl
 	*/
 	class Texture final : public detail::NativeObject
 	{
+		struct Storage;
 	public:
+		// Retains the GL object independently of this wrapper. Final release requires the GL owner.
+		class Snapshot
+		{
+			std::shared_ptr<Storage> m_storage;
+			explicit Snapshot(std::shared_ptr<Storage> storage) : m_storage(std::move(storage)) {}
+			friend class Texture;
+		public:
+			Snapshot() = default;
+			uint32_t GetID() const;
+		};
+		Snapshot RetainStorage() const;
+
 		/**
 		* Creates a texture.
 		* @param p_type The type of the texture (2D, Cube, etc.)
@@ -119,6 +132,7 @@ namespace baregl
 		const std::string& GetDebugName() const;
 
 	private:
+		std::shared_ptr<Storage> m_storage;
 		const uint32_t m_type;
 		data::TextureDesc m_desc;
 		bool m_allocated = false;

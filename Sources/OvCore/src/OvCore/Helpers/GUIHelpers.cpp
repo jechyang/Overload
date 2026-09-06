@@ -18,7 +18,7 @@ namespace
 	OvCore::Helpers::GUIHelpers::OpenProviderCallback __OPEN_PROVIDER;
 	OvCore::Helpers::GUIHelpers::ActorSelectionProviderCallback __ACTOR_SELECTION_PROVIDER;
 	OvCore::Helpers::GUIHelpers::AssetExistsCallback __ASSET_EXISTS_CHECKER;
-	uint32_t __ACTOR_ICON_ID = 0;
+	OvUI::Internal::TextureID __ACTOR_ICON_ID = 0;
 
 	std::string TitleFromFileType(OvTools::Utils::PathParser::EFileType p_type)
 	{
@@ -89,7 +89,7 @@ void OvCore::Helpers::GUIHelpers::SetIconProvider(IconProviderCallback p_provide
 	__ICON_PROVIDER = std::move(p_provider);
 }
 
-uint32_t OvCore::Helpers::GUIHelpers::GetIconForFileType(OvTools::Utils::PathParser::EFileType p_fileType)
+OvUI::Internal::TextureID OvCore::Helpers::GUIHelpers::GetIconForFileType(OvTools::Utils::PathParser::EFileType p_fileType)
 {
 	return __ICON_PROVIDER ? __ICON_PROVIDER(p_fileType) : 0;
 }
@@ -115,12 +115,12 @@ std::string OvCore::Helpers::GUIHelpers::GetPickerSearchText()
 	return __PICKER_SEARCH_TEXT_PROVIDER ? __PICKER_SEARCH_TEXT_PROVIDER() : "";
 }
 
-void OvCore::Helpers::GUIHelpers::SetActorIconID(uint32_t p_id)
+void OvCore::Helpers::GUIHelpers::SetActorIconID(OvUI::Internal::TextureID p_id)
 {
 	__ACTOR_ICON_ID = p_id;
 }
 
-uint32_t OvCore::Helpers::GUIHelpers::GetActorIconID()
+OvUI::Internal::TextureID OvCore::Helpers::GUIHelpers::GetActorIconID()
 {
 	return __ACTOR_ICON_ID;
 }

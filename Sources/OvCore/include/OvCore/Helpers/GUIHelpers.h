@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstdint>
+#include <OvUI/Internal/TextureID.h>
 #include <functional>
 #include <string>
 #include <unordered_set>
@@ -33,7 +34,7 @@ namespace OvCore::Helpers
 			std::string key;
 			std::string displayName;
 			std::string tooltip;
-			uint32_t iconID = 0;
+			OvUI::Internal::TextureID iconID = 0;
 			std::function<void()> onSelected;
 			bool alwaysVisible = false;
 		};
@@ -62,7 +63,7 @@ namespace OvCore::Helpers
 		using OpenProviderCallback = std::function<void(const std::string&)>;
 		using PickerProviderCallback = std::function<void(PickerItemList, std::string)>;
 		using PickerSearchTextProviderCallback = std::function<std::string()>;
-		using IconProviderCallback = std::function<uint32_t(OvTools::Utils::PathParser::EFileType)>;
+		using IconProviderCallback = std::function<OvUI::Internal::TextureID(OvTools::Utils::PathParser::EFileType)>;
 		using ActorSelectionProviderCallback = std::function<void(uint64_t)>;
 		using AssetExistsCallback = std::function<bool(const std::string&)>;
 
@@ -82,7 +83,7 @@ namespace OvCore::Helpers
 		static void Open(const std::string& p_path);
 
 		static void SetIconProvider(IconProviderCallback p_provider);
-		static uint32_t GetIconForFileType(OvTools::Utils::PathParser::EFileType p_fileType);
+		static OvUI::Internal::TextureID GetIconForFileType(OvTools::Utils::PathParser::EFileType p_fileType);
 
 		static void SetPickerProvider(PickerProviderCallback p_provider);
 		static void OpenPicker(PickerItemList p_items, std::string p_title);
@@ -90,8 +91,8 @@ namespace OvCore::Helpers
 		static void SetPickerSearchTextProvider(PickerSearchTextProviderCallback p_provider);
 		static std::string GetPickerSearchText();
 
-		static void SetActorIconID(uint32_t p_id);
-		static uint32_t GetActorIconID();
+		static void SetActorIconID(OvUI::Internal::TextureID p_id);
+		static OvUI::Internal::TextureID GetActorIconID();
 
 		static void SetActorSelectionProvider(ActorSelectionProviderCallback p_provider);
 		static void SelectActor(uint64_t p_guid);

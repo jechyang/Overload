@@ -25,6 +25,7 @@ namespace OvUI::Widgets::Buttons
 		* @param p_textureID
 		* @param p_size
 		*/
+		ButtonImage(Internal::TextureID p_texture, const OvMaths::FVector2& p_size);
 		ButtonImage(uint32_t p_textureID, const OvMaths::FVector2& p_size);
 		ButtonImage(std::shared_ptr<baregl::Texture> p_texture, const OvMaths::FVector2& p_size);
 

@@ -5,6 +5,7 @@
 */
 
 #pragma once
+#include <OvUI/Internal/TextureID.h>
 
 #include <vector>
 
@@ -53,7 +54,7 @@ namespace OvUI::Widgets::Layout
 		bool selected = false;
 		bool leaf = false;
 
-		uint32_t iconTextureID = 0;
+		Internal::TextureID iconTextureID = 0;
 		float iconSize = 16.f;
 		Types::ColorEffector labelColor = OVUI_STYLE(Text);
 

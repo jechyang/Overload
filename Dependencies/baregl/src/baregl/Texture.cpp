@@ -40,10 +40,21 @@ namespace
 
 namespace baregl
 {
+	struct Texture::Storage
+	{
+		uint32_t id = 0;
+		~Storage() { if (id) glDeleteTextures(1, &id); }
+	};
+
+	uint32_t Texture::Snapshot::GetID() const { return m_storage ? m_storage->id : 0; }
+	Texture::Snapshot Texture::RetainStorage() const { return Snapshot(m_storage); }
+
 	Texture::Texture(types::ETextureType p_type, std::string_view p_debugName) :
+		m_storage(std::make_shared<Storage>()),
 		m_type{ utils::EnumToValue<GLenum>(p_type) }
 	{
-		glCreateTextures(m_type, 1, &m_id);
+		glCreateTextures(m_type, 1, &m_storage->id);
+		m_id = m_storage->id;
 		m_debugName = p_debugName;
 		NOTIFY_TEXTURE_CREATED;
 	}
@@ -80,7 +91,7 @@ namespace baregl
 
 	Texture::~Texture()
 	{
-		glDeleteTextures(1, &m_id);
+		// Registry entries describe wrapper lifetime; frames retain storage separately.
 		NOTIFY_TEXTURE_DESTROYED;
 	}
 

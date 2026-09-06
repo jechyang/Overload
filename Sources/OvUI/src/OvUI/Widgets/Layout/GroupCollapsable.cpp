@@ -57,8 +57,8 @@ void OvUI::Widgets::Layout::GroupCollapsable::_Draw_Impl()
 		for (int i = static_cast<int>(actions.size()) - 1; i >= 0; --i)
 		{
 			ImGui::SetCursorScreenPos({actionsRight - static_cast<float>(actions.size() - i) * bSize, headerMin.y});
-			Internal::TextureID texID;
-			texID.id = actions[i].textureID;
+			const auto texID = actions[i].textureID;
+			texID.RetainForCapture();
 			if (ImGui::ImageButtonEx(
 				ImGui::GetID(("##act" + std::to_string(i) + m_widgetID).c_str()),
 				texID.id,

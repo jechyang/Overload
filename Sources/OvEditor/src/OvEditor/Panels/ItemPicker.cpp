@@ -47,9 +47,9 @@ ItemPicker::ItemPicker(
 {
 	minSize = { 250.f, 250.f };
 
-	const uint32_t searchIconID = []{
+	const auto searchIconID = []() -> OvUI::Internal::TextureID {
 		if (auto* tex = EDITOR_CONTEXT(editorResources)->GetTexture("Search"))
-			return tex->GetTexture().GetID();
+			return tex->RetainTexture();
 		return 0u;
 	}();
 
@@ -150,7 +150,7 @@ void ItemPicker::Populate()
 	{
 		auto& row = m_listGroup->CreateWidget<OvUI::Widgets::Layout::Group>();
 
-		if (item.iconID != 0)
+		if (item.iconID.id != 0)
 		{
 			auto& icon = row.CreateWidget<OvUI::Widgets::Visual::Image>(item.iconID, OvMaths::FVector2{ 16.f, 16.f });
 			icon.lineBreak = false;

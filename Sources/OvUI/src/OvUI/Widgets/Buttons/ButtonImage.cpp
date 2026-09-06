@@ -18,6 +18,9 @@ OvUI::Widgets::Buttons::ButtonImage::ButtonImage(uint32_t p_textureID, const OvM
 OvUI::Widgets::Buttons::ButtonImage::ButtonImage(std::shared_ptr<baregl::Texture> p_texture, const OvMaths::FVector2& p_size) :
     textureID(std::move(p_texture)), size(p_size) {}
 
+OvUI::Widgets::Buttons::ButtonImage::ButtonImage(Internal::TextureID p_texture, const OvMaths::FVector2& p_size) :
+    textureID(std::move(p_texture)), size(p_size) {}
+
 void OvUI::Widgets::Buttons::ButtonImage::_Draw_Impl()
 {
 	textureID.RetainForCapture();

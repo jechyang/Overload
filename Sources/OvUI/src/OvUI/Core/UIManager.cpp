@@ -240,13 +240,13 @@ OvRendering::Data::RenderCommandList OvUI::Core::UIManager::RecordRenderCommands
 {
     SetCommandRecordingEnabled(true);
     OvRendering::Data::RenderCommandList commands;
-    std::vector<std::shared_ptr<baregl::Texture>> textures(p_textures.begin(), p_textures.end());
+    std::vector<Internal::TextureID> textures(p_textures.begin(), p_textures.end());
     Internal::TextureCaptureScope scope(textures);
     try
     {
         if (m_currentCanvas && m_currentCanvas->BuildFrame(false))
         {
-            auto frame = m_recorder->Capture(*ImGui::GetDrawData(), textures);
+            auto frame = m_recorder->CaptureBindings(*ImGui::GetDrawData(), textures);
             commands.Append([frame = std::move(frame), target = std::move(p_target)](auto&) {
                 if (target) target->Bind(); else baregl::Framebuffer::BindDefault();
                 frame.Execute();

@@ -279,11 +279,11 @@ OvUI::Widgets::InputFields::AssetField& OvCore::Helpers::GUIDrawer::DrawTexture(
 {
 	CreateTitle(p_root, p_name);
 
-	auto getPreviewID = [&]() -> uint32_t
+	auto getPreviewID = [&]() -> OvUI::Internal::TextureID
 	{
-		if (p_data) return p_data->GetTexture().GetID();
+		if (p_data) return p_data->RetainTexture();
 		auto* empty = GUIHelpers::GetEmptyTexture();
-		return empty ? empty->GetTexture().GetID() : 0;
+		return empty ? OvUI::Internal::TextureID(empty->RetainTexture()) : OvUI::Internal::TextureID{};
 	};
 
 	auto& widget = p_root.CreateWidget<OvUI::Widgets::InputFields::AssetField>(p_data ? p_data->path : std::string{});
@@ -304,7 +304,7 @@ OvUI::Widgets::InputFields::AssetField& OvCore::Helpers::GUIDrawer::DrawTexture(
 			{
 				p_data = resource;
 				widgetPtr->content = p_receivedData.first;
-				widgetPtr->previewTextureID = resource->GetTexture().GetID();
+				widgetPtr->previewTextureID = resource->RetainTexture();
 				if (p_updateNotifier)
 					p_updateNotifier->Invoke();
 			}
@@ -326,7 +326,7 @@ OvUI::Widgets::InputFields::AssetField& OvCore::Helpers::GUIDrawer::DrawTexture(
 		{
 			p_data = resource;
 			widgetPtr->content = p_path;
-			widgetPtr->previewTextureID = resource->GetTexture().GetID();
+			widgetPtr->previewTextureID = resource->RetainTexture();
 			if (p_updateNotifier)
 				p_updateNotifier->Invoke();
 		}
@@ -608,7 +608,7 @@ void OvCore::Helpers::GUIDrawer::DrawColor(OvUI::Internal::WidgetContainer & p_r
 	dispatcher.RegisterProvider(p_provider);
 }
 
-OvUI::Widgets::InputFields::InputText& OvCore::Helpers::GUIDrawer::DrawSearchBar(OvUI::Internal::WidgetContainer& p_root, uint32_t p_searchIconTextureID)
+OvUI::Widgets::InputFields::InputText& OvCore::Helpers::GUIDrawer::DrawSearchBar(OvUI::Internal::WidgetContainer& p_root, OvUI::Internal::TextureID p_searchIconTextureID)
 {
 	auto& searchBar = p_root.CreateWidget<OvUI::Widgets::InputFields::InputText>();
 	searchBar.fullWidth = true;

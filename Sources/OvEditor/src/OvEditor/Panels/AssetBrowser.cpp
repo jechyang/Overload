@@ -170,7 +170,7 @@ namespace
 			{
 				if (texture)
 				{
-					image.textureID.id = texture->GetTexture().GetID();
+					image.textureID = texture->RetainTexture();
 				}
 
 				ImGui::BeginTooltip();
@@ -848,7 +848,7 @@ namespace
 
 		const std::string itemName = embeddedPath->assetName;
 		auto& itemGroup = p_root.CreateWidget<Layout::Group>();
-		const uint32_t iconTextureID = EDITOR_CONTEXT(editorResources)->GetFileIcon(itemName)->GetTexture().GetID();
+		const auto iconTextureID = EDITOR_CONTEXT(editorResources)->GetFileIcon(itemName)->RetainTexture();
 		itemGroup.CreateWidget<Visual::Image>(iconTextureID, OvMaths::FVector2{ 16, 16 }).lineBreak = false;
 
 		auto& clickableText = itemGroup.CreateWidget<Texts::TextClickable>(itemName);
@@ -1011,7 +1011,7 @@ void OvEditor::Panels::AssetBrowser::ConsiderItem(OvUI::Widgets::Layout::TreeNod
 	auto& itemGroup = p_root ? p_root->CreateWidget<Layout::Group>() : m_assetList->CreateWidget<Layout::Group>();
 
 	/* Find the icon to apply to the item */
-	const uint32_t iconTextureID = isDirectory ? EDITOR_CONTEXT(editorResources)->GetTexture("Folder")->GetTexture().GetID() : EDITOR_CONTEXT(editorResources)->GetFileIcon(itemname)->GetTexture().GetID();
+	const auto iconTextureID = isDirectory ? EDITOR_CONTEXT(editorResources)->GetTexture("Folder")->RetainTexture() : EDITOR_CONTEXT(editorResources)->GetFileIcon(itemname)->RetainTexture();
 
 	itemGroup.CreateWidget<Visual::Image>(iconTextureID, OvMaths::FVector2{ 16, 16 }).lineBreak = false;
 

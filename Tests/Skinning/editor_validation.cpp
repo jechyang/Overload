@@ -53,6 +53,10 @@ std::vector<unsigned char> ViewPixels(OvEditor::Panels::AView& view)
 #include "../RenderingCommands/editor_command_validation.inl"
 #endif
 
+#ifdef EDITOR_UI_TEST
+#include "../RenderingCommands/editor_ui_validation.inl"
+#endif
+
 int main(int argc, char** argv) try
 {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
@@ -62,7 +66,22 @@ int main(int argc, char** argv) try
     std::filesystem::create_directories(project / "Assets");
     std::ofstream(project / "SkinningProject.ovproject") << "gravity=-9.81\nx_resolution=640\ny_resolution=480\nfullscreen=false\nexecutable_name=Game\nstart_scene=crowd.ovscene\nvsync=false\nmultisampling=false\nsamples=1\nbuild_type=0\nwindow_icon=\n";
     std::ofstream(project / "Assets/observer.lua") << "local t = {}\nfunction t:OnUpdate(dt) end\nreturn t\n";
+#ifdef EDITOR_UI_TEST
+    OvRendering::Utils::ResourceTracking::TrackResources(); // Match the real Main.cpp startup.
+#endif
     OvEditor::Core::Context context(project);
+#ifdef EDITOR_UI_TEST
+    struct LogSubscriptionGuard
+    {
+        uint64_t before = OvDebug::Logger::LogEvent.GetListenerCount();
+        ~LogSubscriptionGuard()
+        {
+            if (OvDebug::Logger::LogEvent.GetListenerCount() != before)
+            { std::fprintf(stderr,"FAIL: Editor left a global log subscription after destruction\n"); std::abort(); }
+            std::puts("PASS: Editor destruction removes global Console log subscription");
+        }
+    } logSubscriptionGuard;
+#endif
     OvEditor::Core::Editor editor(context);
     auto& actions = editor.m_editorActions;
     auto& game = editor.m_panelsManager.GetPanelAs<OvEditor::Panels::GameView>("Game View");
@@ -181,6 +200,9 @@ int main(int argc, char** argv) try
         actions.StopPlaying(); Require(SceneState(current()) == initial, "scene switch/stop did not restore original");
     }
     std::printf("PASS: real Editor Edit/Play/Pause/8 steps/resume/Stop, %zu exact view-order image pairs, %zu moving transitions, 8 delayed scene switches/resizes\n", imagePairs, transitions);
+#ifdef EDITOR_UI_TEST
+    EditorUIValidation(editor, context, argv[1]);
+#endif
     std::printf("PASS: saved project %s\n", project.string().c_str());
     return 0;
 }

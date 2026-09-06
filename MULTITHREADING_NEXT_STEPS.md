@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback 已接入 owning 命令与成功完成后的主线程解析；ImGui 拥有型帧快照与 Image/ButtonImage 入口已通过独立验收，编辑器其余裸纹理 ID 迁移、全 UI 录制和正式帧完成仍待闭合，尚无独立 Render 线程。阶段 2、3 均未全部完成，最新验收见 MULTITHREADING_IMGUI_SNAPSHOT_VALIDATION.md。**
+**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback 已接入 owning 命令与成功完成后的主线程解析；ImGui 拥有型帧快照、编辑器纹理入口迁移与完整/逐面板 UI 录制已验收，正式帧完成仍待闭合，尚无独立 Render 线程。阶段 2、3 均未全部完成，最新验收见 MULTITHREADING_EDITOR_UI_VALIDATION.md。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -218,6 +218,13 @@
 - UIManager 增加命令录制入口，Canvas 分离 CPU 构建与 GL 初始化；Image/ButtonImage 可携带纹理所有者，模式切回即时前清理字体逻辑 ID。原产品默认即时路径保持。
 - Debug/Release 各 8 组大网格/裁剪/高 DPI/销毁后精确对拍、8 帧字体更新与重建的逆序回放、unpack 状态恢复、失败/取消/回收及真实 UIManager 控件通过。完整构建、10 项复制与两配置实际 Editor 回归通过，详见 MULTITHREADING_IMGUI_SNAPSHOT_VALIDATION.md。
 - **整个编辑器 UI 尚未完成迁移。** 下一步逐个迁移 AView、Toolbar、AssetBrowser、搜索/对象字段、树节点、HeaderAction 和 TextureDebugger 的裸 ID，验证全 UI 命令模式；再闭合正式 frame completion 和固定 Render owner/有界队列。资源创建/resize/最终释放仍有 GL owner 约束，无阶段 3 并行或性能结论。
+
+### 4.12 第十二增量：编辑器 UI 纹理入口迁移
+
+- 所有已定位的编辑器 Image/ButtonImage、搜索图标、对象字段/纹理预览、TreeNode、HeaderAction 和 ItemPicker 接入 owning TextureID；AView 更新时保留当前附件。TextureDebugger 通过 baregl::Texture::Snapshot 保留独立 GL 存储，源包装对象删除后仍可回放。
+- 全局 Actor 图标在 Editor 析构时释放，Console 取消静态 Logger 订阅，修复延迟 GPU 资源释放日志写入已销毁面板的问题。裸 ID 的旧默认选择改用实际纹理键。
+- 新增 --editor --command-list --editor-ui，按实际 Main 启动资源跟踪；完整 Canvas、15 个实际面板、Picker 和 TextureDebugger 销毁后回放共 18 组精确图像对拍。报告见 MULTITHREADING_EDITOR_UI_VALIDATION.md。
+- UI 所有权入口已迁移，仍需闭合正式 frame completion 与统一交接。ResourceTracking/Logger/资源创建/resize/最后释放等仍有主线程与 GL owner 约束；阶段 3 固定 Render owner、有界队列、真实交叠及性能/输入延迟验收尚未完成。
 
 ## 5. 阶段 3：Game/Render 双线程（A 形态）
 

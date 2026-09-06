@@ -20,7 +20,8 @@ void OvUI::Widgets::InputFields::InputText::_Draw_Impl()
 	bool needFocus = focusOnNextDraw;
 	focusOnNextDraw = false;
 
-	const bool hasIcon = iconTextureID != 0;
+	iconTextureID.RetainForCapture();
+	const bool hasIcon = iconTextureID.id != 0;
 	const float buttonSize = ImGui::GetFrameHeight();
 	const float innerSize = buttonSize - 2.0f * ImGui::GetStyle().FramePadding.x;
 
@@ -32,7 +33,7 @@ void OvUI::Widgets::InputFields::InputText::_Draw_Impl()
 		ImGui::PushStyleColor(ImGuiCol_ButtonActive, frameBg);
 		const bool iconClicked = ImGui::ImageButton(
 			("icon" + m_widgetID).c_str(),
-			(ImTextureID)(uintptr_t)iconTextureID,
+			(ImTextureID)(uintptr_t)iconTextureID.id,
 			ImVec2(innerSize, innerSize),
 			ImVec2(0.f, 1.f), ImVec2(1.f, 0.f)
 		);
