@@ -209,7 +209,7 @@ OvRendering::Core::ABaseRenderer::GeometryDrawCommand OvRendering::Core::ABaseRe
 )
 {
 	ZoneScopedN("Prepare Geometry Draw");
-	// CPU-only. Resources and frame bindings remain owned by the synchronous caller.
+	// CPU-only. Standard immutable geometry is retained; other frame bindings stay external.
 	if (!p_drawable.mesh || !p_drawable.material || p_drawable.material->GetGPUInstances() <= 0)
 	{
 		throw std::invalid_argument("Geometry draw requires a mesh, material and positive instance count");
@@ -236,7 +236,13 @@ OvRendering::Core::ABaseRenderer::GeometryDrawCommand OvRendering::Core::ABaseRe
 		}
 	}
 
-	return { p_pso, p_drawable.mesh.value(), p_drawable.primitiveMode,
+	// Do not bypass virtual behavior of custom meshes, including Mesh subclasses.
+	std::shared_ptr<const Resources::IMesh> retained;
+	if (typeid(p_drawable.mesh.value()) == typeid(Resources::Mesh))
+	{
+		retained = static_cast<const Resources::Mesh&>(p_drawable.mesh.value()).RetainGeometry();
+	}
+	return { p_pso, retained, retained ? *retained : p_drawable.mesh.value(), p_drawable.primitiveMode,
 		static_cast<uint32_t>(p_drawable.material->GetGPUInstances()) };
 }
 

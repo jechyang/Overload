@@ -76,3 +76,5 @@ node Tests\Skinning\run-validation.mjs Release --snapshots --vs "C:/Program File
 ## 下一增量
 
 在这个材质持有接口上继续建立 draw 所有权：mesh/GPU geometry 代际、值拷贝 transform 与独占 palette，接入同线程真实 DrawEntity 命令消费并对拍。然后迁移 view/pass/target/feature buffer 和多视图顺序，统一处理缓存失效与帧完成/释放边界。完整帧数据闭合前不引入 Render 线程。
+
+后续进展：第四增量已接入标准 Mesh 几何持有及模型/palette 上传快照；完整 draw 聚合和其它 feature 资源所有权仍在后续范围。详见 MULTITHREADING_DRAW_INPUT_VALIDATION.md，本报告保留第三增量验收时的范围。

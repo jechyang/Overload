@@ -122,14 +122,16 @@ namespace OvRendering::Core
 
 	protected:
 		// First command boundary: scalar geometry state is captured by value.
-		// The mesh is borrowed, not retained; its storage and GPU data must remain
-		// stable until execution. This is NOT a self-contained frame command:
+		// Standard Mesh GPU storage is retained. Custom IMesh implementations remain
+		// borrowed and must stay stable. This is NOT a self-contained frame command:
 		// shaders, textures, uniforms, palettes, viewport and targets are external.
-		// Execute synchronously in the same draw, after feature/material setup and
-		// before cleanup. Cross-frame queuing and worker GL execution are forbidden.
+		// Production consumes this in the same draw, after feature/material setup.
+		// Retained geometry can outlive its source when all external bindings are
+		// supplied again; borrowed geometry cannot. Worker GL execution is forbidden.
 		struct GeometryDrawCommand
 		{
 			const Data::PipelineState pipelineState;
+			const std::shared_ptr<const Resources::IMesh> retainedMesh;
 			const Resources::IMesh& mesh;
 			const baregl::types::EPrimitiveMode primitiveMode;
 			const uint32_t instances;

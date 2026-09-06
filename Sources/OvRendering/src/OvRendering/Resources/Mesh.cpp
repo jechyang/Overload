@@ -56,6 +56,23 @@ namespace
 	}
 }
 
+struct OvRendering::Resources::Mesh::GeometryStorage final : IMesh
+{
+	GeometryStorage(uint32_t p_vertices, uint32_t p_indices) : vertices(p_vertices), indices(p_indices) {}
+	void Bind() const override { vertexArray.Bind(); }
+	void Unbind() const override { vertexArray.Unbind(); }
+	uint32_t GetVertexCount() const override { return vertices; }
+	uint32_t GetIndexCount() const override { return indices; }
+	const Geometry::BoundingSphere& GetBoundingSphere() const override { return bounds; }
+
+	const uint32_t vertices;
+	const uint32_t indices;
+	baregl::VertexArray vertexArray;
+	baregl::Buffer vertexBuffer;
+	baregl::Buffer indexBuffer;
+	Geometry::BoundingSphere bounds;
+};
+
 OvRendering::Resources::Mesh::Mesh(
 	std::span<const Geometry::Vertex> p_vertices,
 	std::span<const uint32_t> p_indices,
@@ -64,10 +81,11 @@ OvRendering::Resources::Mesh::Mesh(
 	m_vertexCount(static_cast<uint32_t>(p_vertices.size())),
 	m_indicesCount(static_cast<uint32_t>(p_indices.size())),
 	m_materialIndex(p_materialIndex),
-	m_hasSkinningData(false)
+	m_hasSkinningData(false),
+	m_geometry(std::make_shared<GeometryStorage>(m_vertexCount, m_indicesCount))
 {
 	Upload(p_vertices, p_indices);
-	m_boundingSphere = ComputeBoundingSphere(p_vertices);
+	m_geometry->bounds = ComputeBoundingSphere(p_vertices);
 }
 
 OvRendering::Resources::Mesh::Mesh(
@@ -78,20 +96,21 @@ OvRendering::Resources::Mesh::Mesh(
 	m_vertexCount(static_cast<uint32_t>(p_vertices.size())),
 	m_indicesCount(static_cast<uint32_t>(p_indices.size())),
 	m_materialIndex(p_materialIndex),
-	m_hasSkinningData(true)
+	m_hasSkinningData(true),
+	m_geometry(std::make_shared<GeometryStorage>(m_vertexCount, m_indicesCount))
 {
 	Upload(p_vertices, p_indices);
-	m_boundingSphere = ComputeBoundingSphere(p_vertices);
+	m_geometry->bounds = ComputeBoundingSphere(p_vertices);
 }
 
 void OvRendering::Resources::Mesh::Bind() const
 {
-	m_vertexArray.Bind();
+	m_geometry->vertexArray.Bind();
 }
 
 void OvRendering::Resources::Mesh::Unbind() const
 {
-	m_vertexArray.Unbind();
+	m_geometry->vertexArray.Unbind();
 }
 
 uint32_t OvRendering::Resources::Mesh::GetVertexCount() const
@@ -106,7 +125,7 @@ uint32_t OvRendering::Resources::Mesh::GetIndexCount() const
 
 const OvRendering::Geometry::BoundingSphere& OvRendering::Resources::Mesh::GetBoundingSphere() const
 {
-	return m_boundingSphere;
+	return m_geometry->bounds;
 }
 
 uint32_t OvRendering::Resources::Mesh::GetMaterialIndex() const
@@ -121,20 +140,20 @@ bool OvRendering::Resources::Mesh::HasSkinningData() const
 
 void OvRendering::Resources::Mesh::Upload(std::span<const Geometry::Vertex> p_vertices, std::span<const uint32_t> p_indices)
 {
-	if (m_vertexBuffer.Allocate(p_vertices.size_bytes()))
+	if (m_geometry->vertexBuffer.Allocate(p_vertices.size_bytes()))
 	{
-		m_vertexBuffer.Upload(p_vertices.data());
+		m_geometry->vertexBuffer.Upload(p_vertices.data());
 
-		if (m_indexBuffer.Allocate(p_indices.size_bytes()))
+		if (m_geometry->indexBuffer.Allocate(p_indices.size_bytes()))
 		{
-			m_indexBuffer.Upload(p_indices.data());
-			m_vertexArray.SetLayout({
+			m_geometry->indexBuffer.Upload(p_indices.data());
+			m_geometry->vertexArray.SetLayout({
 				baregl::data::FloatVertexAttribute{ baregl::types::EDataType::FLOAT, 3 }, // position
 				baregl::data::FloatVertexAttribute{ baregl::types::EDataType::FLOAT, 2 }, // texCoords
 				baregl::data::FloatVertexAttribute{ baregl::types::EDataType::FLOAT, 3 }, // normal
 				baregl::data::FloatVertexAttribute{ baregl::types::EDataType::FLOAT, 3 }, // tangent
 				baregl::data::FloatVertexAttribute{ baregl::types::EDataType::FLOAT, 3 }, // bitangent
-			}, m_vertexBuffer, m_indexBuffer);
+			}, m_geometry->vertexBuffer, m_geometry->indexBuffer);
 		}
 		else
 		{
@@ -149,14 +168,14 @@ void OvRendering::Resources::Mesh::Upload(std::span<const Geometry::Vertex> p_ve
 
 void OvRendering::Resources::Mesh::Upload(std::span<const Geometry::SkinnedVertex> p_vertices, std::span<const uint32_t> p_indices)
 {
-	if (m_vertexBuffer.Allocate(p_vertices.size_bytes()))
+	if (m_geometry->vertexBuffer.Allocate(p_vertices.size_bytes()))
 	{
-		m_vertexBuffer.Upload(p_vertices.data());
+		m_geometry->vertexBuffer.Upload(p_vertices.data());
 
-		if (m_indexBuffer.Allocate(p_indices.size_bytes()))
+		if (m_geometry->indexBuffer.Allocate(p_indices.size_bytes()))
 		{
-			m_indexBuffer.Upload(p_indices.data());
-			m_vertexArray.SetLayout({
+			m_geometry->indexBuffer.Upload(p_indices.data());
+			m_geometry->vertexArray.SetLayout({
 				baregl::data::FloatVertexAttribute{ baregl::types::EDataType::FLOAT, 3 }, // position
 				baregl::data::FloatVertexAttribute{ baregl::types::EDataType::FLOAT, 2 }, // texCoords
 				baregl::data::FloatVertexAttribute{ baregl::types::EDataType::FLOAT, 3 }, // normal
@@ -164,7 +183,7 @@ void OvRendering::Resources::Mesh::Upload(std::span<const Geometry::SkinnedVerte
 				baregl::data::FloatVertexAttribute{ baregl::types::EDataType::FLOAT, 3 }, // bitangent
 				baregl::data::IntegerVertexAttribute{ baregl::types::EDataType::UNSIGNED_INT, 4 }, // boneIDs
 				baregl::data::FloatVertexAttribute{ baregl::types::EDataType::FLOAT, 4 }  // boneWeights
-			}, m_vertexBuffer, m_indexBuffer);
+			}, m_geometry->vertexBuffer, m_geometry->indexBuffer);
 		}
 		else
 		{
@@ -178,3 +197,8 @@ void OvRendering::Resources::Mesh::Upload(std::span<const Geometry::SkinnedVerte
 }
 
 
+
+std::shared_ptr<const OvRendering::Resources::IMesh> OvRendering::Resources::Mesh::RetainGeometry() const
+{
+	return m_geometry;
+}

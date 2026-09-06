@@ -7,6 +7,7 @@
 #pragma once
 
 #include <chrono>
+#include <optional>
 #include <map>
 #include <stack>
 
@@ -38,6 +39,16 @@ namespace OvCore::Rendering
 		* @param p_camera
 		*/
 		void SetCamera(const OvRendering::Entities::Camera& p_camera);
+
+		// CPU-only, owned per-draw payload. View/camera/time and target remain external.
+		struct DrawUploadCommand
+		{
+			OvMaths::FMatrix4 modelMatrix;
+			OvMaths::FMatrix4 userMatrix;
+		};
+		static std::optional<DrawUploadCommand> PrepareDrawUpload(const OvRendering::Entities::Drawable& p_drawable);
+		// Execute on this feature's GL owner within its active frame.
+		void ExecuteDrawUpload(const DrawUploadCommand& p_command);
 
 	protected:
 		virtual void OnBeginFrame(const OvRendering::Data::FrameDescriptor& p_frameDescriptor) override;

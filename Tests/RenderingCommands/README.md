@@ -54,3 +54,18 @@ node Tests\Skinning\run-validation.mjs Release --snapshots
 - 类型、未持有纹理、无 fallback 的空 sampler、unsupported 类型和分配失败均在录制时拒绝，不消费 singleUse 属性；移动后空快照拒绝回放。
 
 快照持有整个 shader variant 代际和实际 GPU 纹理，尚不包含 geometry、transform/palette、view/pass/target 或 feature buffers。获取、录制、回放和最终释放仍在 GL owner；回到即时 renderer 必须使其签名缓存失效，不得夹入尚未结束的 Bind/UploadProperties 调用段。默认 renderer 尚未采用完整快照消费，--editor 是新资源表示及原即时链路的集成回归。详细协议、成本和最终证据见 MULTITHREADING_MATERIAL_SNAPSHOT_VALIDATION.md。
+
+## 几何持有与模型/palette 上传（阶段 2 第四增量）
+
+~~~bat
+node Tests\Skinning\run-validation.mjs Debug --draw-inputs
+node Tests\Skinning\run-validation.mjs Release --draw-inputs
+~~~
+
+先完整重建，Mesh 内部布局已改变；VS 路径可用 --vs 指定。输出 <配置>-draw-inputs/{baseline,current}/。旧 renderer/material/EngineBufferRenderFeature/SkinningRenderFeature 源码固定为 b1128a77b55b9d96c554aad63e743056e481f2cf，两程序均使用当前 Mesh/Shader/Texture 内部表示。旧 renderer 编译时使用匹配的 ABaseRenderer.h 嵌套命令定义；此兼容处理也用于以前的 geometry/material/snapshots 模式，旧基准提交保持不变。
+
+24 帧/72 次 DrawEntity 的实际缓冲分配、上传内容、绑定顺序以及像素精确比较。当前路径另组合几何、材质、模型/palette 命令，销毁源 Mesh/Material/Drawable/矩阵数组后覆盖 GPU 状态再回放 32 帧，并检查最终 VAO/VBO/EBO 回收和即时 palette 缓存恢复。另检查无 palette 的 identity、禁用 skinning 的 no-op、无模型描述符和自定义 Mesh 子类；保留原材质/几何/蒙皮及材质资源生命周期回归。
+
+需要检查新增上传成本时，在 Build/<配置> 工作目录串行交替运行 baseline/current 的 skinning-validation.exe <另建输出目录> --benchmark。用 45 骨骼、两个稳定数组交替制造缓存 miss，32 次预热，256×32 次实际 palette 上传；计时期间关闭 GL 拦截，不能与构建或其它验证并发。它衡量 CPU/驱动上传开销，不代表整帧或 GPU 渲染时间。
+
+独立几何持有仅适用于标准 Mesh，自定义 IMesh/派生 Mesh 在生产几何命令中仍借用。模型/palette 命令仍依赖执行 feature 的 UBO/SSBO 及外部 view/pass/target 状态，材质快照尚未统一接入完整 draw。详见 MULTITHREADING_DRAW_INPUT_VALIDATION.md。

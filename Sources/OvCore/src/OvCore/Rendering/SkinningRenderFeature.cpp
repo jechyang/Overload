@@ -5,6 +5,7 @@
 */
 
 #include <string>
+#include <tracy/Tracy.hpp>
 
 #include <OvCore/Rendering/SkinningDrawableDescriptor.h>
 #include <OvCore/Rendering/SkinningRenderFeature.h>
@@ -93,16 +94,8 @@ void OvCore::Rendering::SkinningRenderFeature::OnBeforeDraw(
 
 	if (mustUpload)
 	{
-		const auto uploadSize = static_cast<uint64_t>(skinningDescriptor->count) * sizeof(OvMaths::FMatrix4);
-		if (skinningBuffer.GetSize() < uploadSize)
-		{
-			skinningBuffer.Allocate(uploadSize, baregl::types::EAccessSpecifier::STREAM_DRAW);
-		}
-
-		skinningBuffer.Upload(skinningDescriptor->matrices, baregl::data::BufferMemoryRange{
-			.offset = 0,
-			.size = uploadSize
-		});
+		const auto snapshot = RecordPalette(p_drawable);
+		UploadPalette(snapshot);
 
 		m_lastUploaded = { skinningDescriptor->matrices, skinningDescriptor->count, skinningDescriptor->poseVersion };
 	}
@@ -131,5 +124,50 @@ void OvCore::Rendering::SkinningRenderFeature::BindIdentityPalette() const
 	{
 		m_identityBuffer->Bind(baregl::types::EBufferType::SHADER_STORAGE, m_bufferBindingPoint);
 		m_bound = { EBoundPalette::IDENTITY };
+	}
+}
+
+OvCore::Rendering::SkinningRenderFeature::PaletteSnapshot
+OvCore::Rendering::SkinningRenderFeature::RecordPalette(const OvRendering::Entities::Drawable& p_drawable)
+{
+	ZoneScopedN("Record Skinning Palette");
+	PaletteSnapshot result;
+	result.enabled =
+		(p_drawable.featureSetOverride.has_value() && p_drawable.featureSetOverride->contains(kSkinningFeatureName)) ||
+		(p_drawable.material.has_value() && p_drawable.material->GetFeatures().contains(kSkinningFeatureName));
+	if (!result.enabled) return result;
+	OvTools::Utils::OptRef<const SkinningDrawableDescriptor> descriptor;
+	if (p_drawable.TryGetDescriptor<SkinningDrawableDescriptor>(descriptor) && descriptor->matrices && descriptor->count > 0)
+	{
+		result.matrices.assign(descriptor->matrices, descriptor->matrices + descriptor->count);
+	}
+	return result;
+}
+
+void OvCore::Rendering::SkinningRenderFeature::UploadPalette(const PaletteSnapshot& p_snapshot)
+{
+	ZoneScopedN("Execute Skinning Palette Upload");
+	auto& buffer = GetCurrentSkinningBuffer();
+	const auto uploadSize = static_cast<uint64_t>(p_snapshot.matrices.size()) * sizeof(OvMaths::FMatrix4);
+	if (buffer.GetSize() < uploadSize)
+	{
+		buffer.Allocate(uploadSize, baregl::types::EAccessSpecifier::STREAM_DRAW);
+	}
+	buffer.Upload(p_snapshot.matrices.data(), baregl::data::BufferMemoryRange{ .offset = 0, .size = uploadSize });
+}
+
+void OvCore::Rendering::SkinningRenderFeature::ExecutePaletteSnapshot(const PaletteSnapshot& p_snapshot)
+{
+	ZoneScopedN("Replay Skinning Palette");
+	if (!p_snapshot.enabled) return;
+	// Invalidate before touching GL, including failure paths. Snapshot storage must
+	// never masquerade as a live component address in the immediate upload cache.
+	m_lastUploaded = {};
+	m_bound = {};
+	if (p_snapshot.matrices.empty()) BindIdentityPalette();
+	else
+	{
+		UploadPalette(p_snapshot);
+		GetCurrentSkinningBuffer().Bind(baregl::types::EBufferType::SHADER_STORAGE, m_bufferBindingPoint);
 	}
 }

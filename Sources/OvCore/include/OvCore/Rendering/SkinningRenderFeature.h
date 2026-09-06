@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include <OvMaths/FMatrix4.h>
 #include <OvRendering/Features/ARenderFeature.h>
@@ -41,12 +42,32 @@ namespace OvCore::Rendering
 		*/
 		uint32_t GetBufferBindingPoint() const;
 
+		// Owns already-transposed palette values; no component or Drawable reference.
+		// Capture on a stable CPU input; execute/release on the GL owner in a frame.
+		class PaletteSnapshot
+		{
+		public:
+			PaletteSnapshot(PaletteSnapshot&&) noexcept = default;
+			PaletteSnapshot& operator=(PaletteSnapshot&&) noexcept = default;
+			PaletteSnapshot(const PaletteSnapshot&) = delete;
+			PaletteSnapshot& operator=(const PaletteSnapshot&) = delete;
+		private:
+			friend class SkinningRenderFeature;
+			PaletteSnapshot() = default;
+			bool enabled = false;
+			std::vector<OvMaths::FMatrix4> matrices;
+		};
+		static PaletteSnapshot RecordPalette(const OvRendering::Entities::Drawable& p_drawable);
+		// Independent replay invalidates the immediate borrowed-input cache.
+		void ExecutePaletteSnapshot(const PaletteSnapshot& p_snapshot);
+
 	protected:
 		virtual void OnBeginFrame(const OvRendering::Data::FrameDescriptor& p_frameDescriptor) override;
 		virtual void OnEndFrame() override;
 		virtual void OnBeforeDraw(OvRendering::Data::PipelineState& p_pso, const OvRendering::Entities::Drawable& p_drawable) override;
 
 	private:
+		void UploadPalette(const PaletteSnapshot& p_snapshot);
 		void BindIdentityPalette() const;
 		baregl::Buffer& GetCurrentSkinningBuffer() const;
 

@@ -82,6 +82,13 @@ namespace OvRendering::Resources
 		*/
 		bool HasSkinningData() const;
 
+		Mesh(const Mesh&) = delete;
+		Mesh& operator=(const Mesh&) = delete;
+
+		// Retain immutable GPU geometry independently of the Mesh/Model wrapper.
+		// Acquire/use/final release on the GL owner before context shutdown.
+		std::shared_ptr<const IMesh> RetainGeometry() const;
+
 	private:
 		void Upload(std::span<const Geometry::Vertex> p_vertices, std::span<const uint32_t> p_indices);
 		void Upload(std::span<const Geometry::SkinnedVertex> p_vertices, std::span<const uint32_t> p_indices);
@@ -92,10 +99,7 @@ namespace OvRendering::Resources
 		const uint32_t m_materialIndex;
 		const bool m_hasSkinningData;
 
-		baregl::VertexArray m_vertexArray;
-		baregl::Buffer m_vertexBuffer;
-		baregl::Buffer m_indexBuffer;
-
-		Geometry::BoundingSphere m_boundingSphere;
+		struct GeometryStorage;
+		std::shared_ptr<GeometryStorage> m_geometry;
 	};
 }

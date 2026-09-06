@@ -84,26 +84,31 @@ void OvCore::Rendering::EngineBufferRenderFeature::OnEndFrame()
 	m_engineBuffer->Unbind();
 }
 
+std::optional<OvCore::Rendering::EngineBufferRenderFeature::DrawUploadCommand>
+OvCore::Rendering::EngineBufferRenderFeature::PrepareDrawUpload(const OvRendering::Entities::Drawable& p_drawable)
+{
+	ZoneScopedN("Prepare Engine Draw Upload");
+	OvTools::Utils::OptRef<const EngineDrawableDescriptor> descriptor;
+	if (!p_drawable.TryGetDescriptor<EngineDrawableDescriptor>(descriptor)) return std::nullopt;
+	// The model is transposed, but the legacy user matrix is uploaded as-is.
+	return DrawUploadCommand{ OvMaths::FMatrix4::Transpose(descriptor->modelMatrix), descriptor->userMatrix };
+}
+
+void OvCore::Rendering::EngineBufferRenderFeature::ExecuteDrawUpload(const DrawUploadCommand& p_command)
+{
+	ZoneScopedN("Execute Engine Draw Upload");
+	m_engineBuffer->Upload(&p_command.modelMatrix, baregl::data::BufferMemoryRange{
+		.offset = 0,
+		.size = sizeof(p_command.modelMatrix)
+	});
+	m_engineBuffer->Upload(&p_command.userMatrix, baregl::data::BufferMemoryRange{
+		.offset = kUBOSize - sizeof(p_command.userMatrix),
+		.size = sizeof(p_command.userMatrix)
+	});
+}
+
 void OvCore::Rendering::EngineBufferRenderFeature::OnBeforeDraw(OvRendering::Data::PipelineState& p_pso, const OvRendering::Entities::Drawable& p_drawable)
 {
-	ZoneScoped;
-
-	OvTools::Utils::OptRef<const EngineDrawableDescriptor> descriptor;
-
-	if (p_drawable.TryGetDescriptor<EngineDrawableDescriptor>(descriptor))
-	{
-		const auto modelMatrix = OvMaths::FMatrix4::Transpose(descriptor->modelMatrix);
-		
-		// Upload model matrix (First matrix in the UBO)
-		m_engineBuffer->Upload(&modelMatrix, baregl::data::BufferMemoryRange{
-			.offset = 0,
-			.size = sizeof(modelMatrix)
-		});
-
-		// Upload user matrix (Last matrix in the UBO)
-		m_engineBuffer->Upload(&descriptor->userMatrix, baregl::data::BufferMemoryRange{
-			.offset = kUBOSize - sizeof(modelMatrix),
-			.size = sizeof(modelMatrix)
-		});
-	}
+	(void)p_pso;
+	if (const auto command = PrepareDrawUpload(p_drawable)) ExecuteDrawUpload(*command);
 }

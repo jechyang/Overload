@@ -268,6 +268,8 @@ void SnapshotValidation(const std::filesystem::path& dir)
 }
 #endif
 
+
+#ifndef SNAPSHOT_VALIDATION_NO_MAIN
 int main(int argc, char** argv) try
 {
     std::setvbuf(stdout,nullptr,_IONBF,0);
@@ -280,3 +282,5 @@ int main(int argc, char** argv) try
     return 0;
 }
 catch (const std::exception& error) { allocationFailureCountdown = -1; std::fprintf(stderr,"FAIL: %s\n",error.what()); return 1; }
+
+#endif
