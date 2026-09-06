@@ -161,3 +161,7 @@ Debug/Release --log-dispatch 独立运行，覆盖拥有型主线程事件、六
 ## ImGui GPU 代际与 loader（阶段 3 第五增量）
 
 重新生成工程并完整构建后运行 Debug/Release --imgui-lifetime（可追加 --vs），输出 <配置>-imgui-lifetime/current。覆盖 32 组真实 UI 精确图像、managed backend/atlas/快照无上下文析构、owner 实际删除、旧快照释放与新后端重叠、编译/链接失败回收/状态恢复和域关闭后的零惰性上传。ImGui 现在复用引擎 GLAD，不独立初始化或关闭 loader。协议、限制及原 UI/Render/产品回归见 MULTITHREADING_IMGUI_LIFETIME_VALIDATION.md。
+
+## Tracy GPU 查询与 TLS 退出（阶段 3 第六增量）
+
+完整构建后运行 Debug/Release --gpu-profiling（可追加 --vs），输出 <配置>-gpu-profiling/current。当前 Driver 测试副本仅插入 profiling 初始化前/后两个回调，安装 GL hook 并注入失败，不改变正常生命周期逻辑或 ABI。验证 8 次主线程/8 次 Render 重启的查询名称匹配、TLS 归零、重复创建/销毁及两类初始化失败；正常产品回归链接未插桩的 Driver。生成的 exe 可接收输出目录和 --capture，等待本机 Tracy 连接并验证尾部时间戳收集。见 MULTITHREADING_GPU_PROFILING_VALIDATION.md。

@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback 已接入 owning 命令与成功完成后的主线程解析；ImGui 拥有型帧快照、编辑器纹理入口迁移与完整/逐面板 UI 录制已验收，统一 RenderFrame 提交、GPU fence 回收与 Editor/Game 整帧捕获入口已验收。Editor/Game 产品循环现默认采用同线程帧提交，拾取/Gizmo/材质拖放使用对应帧输入；即时配置回退及应用退出已验收。阶段 3 已增加固定 RenderThread、GPU 在途容量限制及失败排空，并通过独立真实 GL 验证；尚未接入产品循环，阶段 2/3 整体目标仍未完成，后台 Logger 已接入拥有型消息与产品主线程分发，七类 baregl 原生对象已接入 owner 回收与停机句柄失效，纹理注册表已采用锁内元数据/代际快照，TextureDebugger 改为主线程拉取，ImGui GPU 代际/atlas 已接入 owner 回收并复用引擎 GLAD，最新验收见 MULTITHREADING_IMGUI_LIFETIME_VALIDATION.md。**
+**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback 已接入 owning 命令与成功完成后的主线程解析；ImGui 拥有型帧快照、编辑器纹理入口迁移与完整/逐面板 UI 录制已验收，统一 RenderFrame 提交、GPU fence 回收与 Editor/Game 整帧捕获入口已验收。Editor/Game 产品循环现默认采用同线程帧提交，拾取/Gizmo/材质拖放使用对应帧输入；即时配置回退及应用退出已验收。阶段 3 已增加固定 RenderThread、GPU 在途容量限制及失败排空，并通过独立真实 GL 验证；尚未接入产品循环，阶段 2/3 整体目标仍未完成，后台 Logger 已接入拥有型消息与产品主线程分发，七类 baregl 原生对象已接入 owner 回收与停机句柄失效，纹理注册表已采用锁内元数据/代际快照，TextureDebugger 改为主线程拉取，ImGui GPU 代际/atlas 已接入 owner 回收并复用引擎 GLAD，Tracy GPU 查询池及 TLS 已接入 owner 正常/失败退出，最新验收见 MULTITHREADING_GPU_PROFILING_VALIDATION.md。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -274,6 +274,10 @@ ResourceTracking 对外返回拥有型元数据/storage 与代际，Allocate/Res
 
 ImGui 后端复用唯一引擎 GLAD，移除共享 backend/generation loader 计数；设备 program/buffer、后端 atlas 与临时 shader 使用原生回收记录。失败恢复旧代际/GL 状态，关闭域的 UI 快照在字体上传前拒绝。Debug/Release 32 组真实图像、后台最后释放/新代际重叠、失败/关闭与全部 UI/产品回归通过，见 MULTITHREADING_IMGUI_LIFETIME_VALIDATION.md。接下来处理 Tracy GPU 查询/TLS 退出，再收尾产品 GL 调用归属与实际双线程接入。
 
+### 5.6 已完成第六增量：Tracy GPU 查询/TLS 退出
+
+Tracy GPU 初始化成功后才发布 TLS，重复创建拒绝覆盖；正常退出和 Driver 构造失败在 owner 收集尾部时间戳、删除查询池并清空 TLS。Debug/Release 8 次主线程与 8 次 Render 重启、两类失败及产品/队列/UI 回归通过；实际 Release Tracy 连接验证每个尾部 GPU zone 的两个时间戳，采集可解析。见 MULTITHREADING_GPU_PROFILING_VALIDATION.md。下一步接入产品资源创建/上传与 Context 所有权，拆开 UI/窗口操作，再建立实际多帧 Game/Render 循环。
+
 ## 6. 阶段 4：多 Pass/View 并行命令录制
 
 - 使用阶段 0 的任务依赖描述 view/pass 之间的真实数据依赖；各 job 使用私有命令缓冲或独占 arena。
@@ -369,4 +373,4 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 ## 11. 新对话建议起始消息
 
-> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_IMGUI_LIFETIME_VALIDATION.md，继续完成阶段 2、3：收尾录制期间的 GL 操作归属，固定 Render owner，建立资源/通知归属、有界队列和多帧输入结果传递；验证真实 Game/Render 交叠、窗口/场景/退出和性能。保留源对象销毁后回放、即时/packet/延迟动态图像严格对拍，按可验收增量提交 Git，不包含用户已有修改，后台验证。
+> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_GPU_PROFILING_VALIDATION.md，继续完成阶段 2、3：收尾录制期间的 GL 操作归属，固定 Render owner，建立资源/通知归属、有界队列和多帧输入结果传递；验证真实 Game/Render 交叠、窗口/场景/退出和性能。保留源对象销毁后回放、即时/packet/延迟动态图像严格对拍，按可验收增量提交 Git，不包含用户已有修改，后台验证。

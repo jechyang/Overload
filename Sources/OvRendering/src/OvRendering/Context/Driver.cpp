@@ -104,6 +104,11 @@ OvRendering::Context::Driver::Driver(const OvRendering::Settings::DriverSettings
 	});
 
 	TracyGpuContext;
+	struct ProfilingConstructionGuard
+	{
+		bool committed = false;
+		~ProfilingConstructionGuard() { if (!committed) { TracyGpuContextDestroy; } }
+	} profilingGuard;
 	
 	auto initialPipelineState = RetrieveOpenGLPipelineState(*m_gfxContext);
 
@@ -125,10 +130,14 @@ OvRendering::Context::Driver::Driver(const OvRendering::Settings::DriverSettings
 	OVLOG_INFO("\tHardware => " + m_hardware);
 	OVLOG_INFO("\tVersion => " + m_version);
 	OVLOG_INFO("\tShading Language => " + m_shadingLanguageVersion);
+	profilingGuard.committed = true;
 }
 
 OvRendering::Context::Driver::~Driver()
 {
+	// RenderThread has drained frames; legacy callers also finish outstanding
+	// GPU timestamps here, while their original GL context is still current.
+	TracyGpuContextDestroy;
 	m_gfxContext.reset();
 }
 

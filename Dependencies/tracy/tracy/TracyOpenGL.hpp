@@ -4,6 +4,7 @@
 #if !defined TRACY_ENABLE || defined __APPLE__
 
 #define TracyGpuContext
+#define TracyGpuContextDestroy
 #define TracyGpuContextName(x,y)
 #define TracyGpuNamedZone(x,y,z)
 #define TracyGpuNamedZoneC(x,y,z,w)
@@ -34,6 +35,8 @@ public:
 #include <atomic>
 #include <assert.h>
 #include <stdlib.h>
+#include <new>
+#include <stdexcept>
 
 #include "Tracy.hpp"
 #include "../client/TracyProfiler.hpp"
@@ -49,7 +52,8 @@ public:
 #  define glQueryCounter glQueryCounterEXT
 #endif
 
-#define TracyGpuContext tracy::GetGpuCtx().ptr = (tracy::GpuCtx*)tracy::tracy_malloc( sizeof( tracy::GpuCtx ) ); new(tracy::GetGpuCtx().ptr) tracy::GpuCtx;
+#define TracyGpuContext tracy::CreateGpuContext();
+#define TracyGpuContextDestroy tracy::DestroyGpuContext();
 #define TracyGpuContextName( name, size ) tracy::GetGpuCtx().ptr->Name( name, size );
 #if defined TRACY_HAS_CALLSTACK && defined TRACY_CALLSTACK
 #  define TracyGpuNamedZone( varname, name, active ) static constexpr tracy::SourceLocationData TracyConcat(__tracy_gpu_source_location,TracyLine) { name, TracyFunction,  TracyFile, (uint32_t)TracyLine, 0 }; tracy::GpuCtxScope varname( &TracyConcat(__tracy_gpu_source_location,TracyLine), TRACY_CALLSTACK, active );
@@ -91,37 +95,55 @@ class GpuCtx
 
 public:
     GpuCtx()
-        : m_context( GetGpuCtxCounter().fetch_add( 1, std::memory_order_relaxed ) )
+        : m_query{}
+        , m_context( GetGpuCtxCounter().fetch_add( 1, std::memory_order_relaxed ) )
         , m_head( 0 )
         , m_tail( 0 )
     {
         assert( m_context != 255 );
 
-        glGenQueries( QueryCount, m_query );
+        try
+        {
+            glGenQueries( QueryCount, m_query );
 
-        int64_t tgpu;
-        glGetInteger64v( GL_TIMESTAMP, &tgpu );
-        int64_t tcpu = Profiler::GetTime();
+            int64_t tgpu;
+            glGetInteger64v( GL_TIMESTAMP, &tgpu );
+            int64_t tcpu = Profiler::GetTime();
 
-        GLint bits;
-        glGetQueryiv( GL_TIMESTAMP, GL_QUERY_COUNTER_BITS, &bits );
+            GLint bits;
+            glGetQueryiv( GL_TIMESTAMP, GL_QUERY_COUNTER_BITS, &bits );
 
-        const float period = 1.f;
-        const auto thread = GetThreadHandle();
-        TracyLfqPrepare( QueueType::GpuNewContext );
-        MemWrite( &item->gpuNewContext.cpuTime, tcpu );
-        MemWrite( &item->gpuNewContext.gpuTime, tgpu );
-        MemWrite( &item->gpuNewContext.thread, thread );
-        MemWrite( &item->gpuNewContext.period, period );
-        MemWrite( &item->gpuNewContext.context, m_context );
-        MemWrite( &item->gpuNewContext.flags, uint8_t( 0 ) );
-        MemWrite( &item->gpuNewContext.type, GpuContextType::OpenGl );
+            const float period = 1.f;
+            const auto thread = GetThreadHandle();
+            TracyLfqPrepare( QueueType::GpuNewContext );
+            MemWrite( &item->gpuNewContext.cpuTime, tcpu );
+            MemWrite( &item->gpuNewContext.gpuTime, tgpu );
+            MemWrite( &item->gpuNewContext.thread, thread );
+            MemWrite( &item->gpuNewContext.period, period );
+            MemWrite( &item->gpuNewContext.context, m_context );
+            MemWrite( &item->gpuNewContext.flags, uint8_t( 0 ) );
+            MemWrite( &item->gpuNewContext.type, GpuContextType::OpenGl );
 
 #ifdef TRACY_ON_DEMAND
-        GetProfiler().DeferItem( *item );
+            GetProfiler().DeferItem( *item );
 #endif
 
-        TracyLfqCommit;
+            TracyLfqCommit;
+        }
+        catch( ... )
+        {
+            glDeleteQueries( QueryCount, m_query );
+            throw;
+        }
+    }
+
+    // Overload: owner thread, current GL context, and no live GPU zones.
+    // The final collect preserves timestamps before deleting the query pool.
+    ~GpuCtx()
+    {
+        glFinish();
+        Collect();
+        glDeleteQueries( QueryCount, m_query );
     }
 
     void Name( const char* name, uint16_t len )
@@ -197,6 +219,27 @@ private:
     unsigned int m_head;
     unsigned int m_tail;
 };
+
+// Explicit lifecycle: TLS has no GL-safe thread-exit destructor. Publish only
+// after successful construction, and never silently replace a live context.
+inline void CreateGpuContext()
+{
+    auto& slot = GetGpuCtx().ptr;
+    if( slot ) throw std::logic_error("Tracy GPU context already exists on this thread");
+    void* storage = tracy_malloc( sizeof( GpuCtx ) );
+    if( !storage ) throw std::bad_alloc();
+    try { slot = new( storage ) GpuCtx; }
+    catch( ... ) { tracy_free( storage ); throw; }
+}
+
+inline void DestroyGpuContext()
+{
+    auto& slot = GetGpuCtx().ptr;
+    if( !slot ) return;
+    slot->~GpuCtx();
+    tracy_free( slot );
+    slot = nullptr;
+}
 
 class GpuCtxScope
 {
