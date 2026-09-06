@@ -158,6 +158,9 @@ namespace OvRendering::Core
 		Data::RenderCommandList FinishCommandRecording();
 		void CancelCommandRecording();
 		bool IsRecordingCommands() const { return m_commands != nullptr; }
+        // Returns true if the effect must initialize its temporal history again.
+        bool UseRenderHistory(Data::RenderCommandList::History& p_history)
+        { return m_commands ? m_commands->UseHistory(p_history) : p_history.PrepareImmediate(); }
 		void SubmitRenderOperation(Data::RenderCommandList::Operation p_operation);
 		static void ExecutePassState(Context::Driver& p_driver, const PassStateCommand& p_command);
 

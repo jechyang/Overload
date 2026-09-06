@@ -2,6 +2,8 @@
 
 日期：2026-09-06。前置提交：c82d4fa（目标配置、viewport、clear）。
 
+后续：本文记录第八增量验收时的状态。动态反射/曝光历史的取消、失败和后继失效重建已在第九增量补充，见 MULTITHREADING_TEMPORAL_HISTORY_VALIDATION.md。
+
 ## 实现范围
 
 RenderCommandList 是可移动、不可复制的命令容器。生产者按调用顺序追加拥有资源的操作，Seal 后只能消费一次；状态为 RECORDING、READY、EXECUTING、COMPLETED、FAILED 或 CANCELLED。执行成功后释放操作，执行异常停止后续操作、记录成功执行的前缀数量并进入 FAILED，不能重试同一列表。取消未执行列表释放捕获。Append 分配失败会使录制失效。

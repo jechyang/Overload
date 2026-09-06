@@ -26,6 +26,46 @@ struct CommandHooks
     ~CommandHooks(){glad_glDrawElements=commandDraw;glad_glNamedBufferSubData=commandUpload;glad_glNamedBufferData=commandAllocate;glad_glClear=commandClear;glad_glBindFramebuffer=commandTarget;}
 };
 
+void HistoryValidation(Context::Driver& driver)
+{
+    using List=Data::RenderCommandList;
+    List::History history;
+    int calls=0;
+    auto record=[&]() { List list; list.UseHistory(history); list.Append([&](auto&){++calls;}); list.Seal(); return list; };
+    auto first=record();auto second=record();first.Execute(driver);second.Execute(driver);
+    Require(calls==2 && !history.PrepareImmediate(),"ordered history did not complete");
+    for(int mode=0;mode<4;++mode)
+    {
+        List parent;Require(!parent.UseHistory(history),"unexpected healthy history reset");
+        parent.Append([&](auto&){++calls;throw std::runtime_error("history execution failure");});
+        List child;child.UseHistory(history);child.Append([&](auto&){++calls;});child.Seal();
+        if(mode==0)parent.Cancel();
+        if(mode==1)parent.FailRecording();
+        if(mode==2){parent.Seal();try{parent.Execute(driver);}catch(const std::runtime_error&){}}
+        if(mode==3){List abandoned(std::move(parent));}
+        const auto before=calls;bool rejected=false;
+        try{child.Execute(driver);}catch(const std::logic_error&){rejected=true;}
+        Require(rejected && calls==before && child.GetExecutedCount()==0,"invalid descendant executed GPU prefix");
+        List recovery;Require(recovery.UseHistory(history),"invalid history did not request reset");
+        Require(!recovery.UseHistory(history),"same-list history registered twice");recovery.Seal();recovery.Execute(driver);
+    }
+    {auto parent=record();auto child=record();const auto before=calls;bool rejected=false;
+     try{child.Execute(driver);}catch(const std::logic_error&){rejected=true;}
+     Require(rejected && calls==before,"out-of-order history was consumed");parent.Cancel();
+     Require(history.PrepareImmediate(),"immediate fallback did not reset poisoned history");}
+    {auto pending=record();bool rejected=false;try{history.PrepareImmediate();}catch(const std::logic_error&){rejected=true;}
+     Require(rejected,"immediate work overtook a pending temporal frame");pending.Execute(driver);}
+    {List::History other;List parent;parent.UseHistory(history);List bridge;bridge.UseHistory(history);bridge.UseHistory(other);bridge.Seal();
+     List tail;tail.UseHistory(other);tail.Append([&](auto&){++calls;});tail.Seal();parent.Cancel();
+     try{bridge.Execute(driver);}catch(const std::logic_error&){}const auto before=calls;
+     try{tail.Execute(driver);}catch(const std::logic_error&){}
+     Require(tail.GetState()==List::State::FAILED && calls==before,"failure did not propagate between histories");}
+    {List::History detached;List survivor;survivor.UseHistory(detached);survivor.Seal();
+     List moved(std::move(survivor));moved.Execute(driver);Require(!detached.PrepareImmediate(),"move invalidated history");}
+    {List surviving;{List::History destroyed;surviving.UseHistory(destroyed);}surviving.Seal();surviving.Execute(driver);}
+    std::puts("PASS: temporal ordering, cancel/record/execute/abandon failure, dependent rejection, reset, move and owner destruction");
+}
+
 void CommandLifetimeValidation(const std::filesystem::path& dir)
 {
     OvWindowing::Settings::DeviceSettings ds;ds.contextMajorVersion=4;ds.contextMinorVersion=5;OvWindowing::Context::Device device(ds);
@@ -92,6 +132,7 @@ void CommandLifetimeValidation(const std::filesystem::path& dir)
          renderer.BeginCommandRecording();renderer.BeginFrame(frame);renderer.DrawFrame();renderer.EndFrame();auto next=renderer.FinishCommandRecording();next.Execute(driver);
          auto pixels=ReadTarget(target.RecordTarget());Require(pixels[0]==0 && pixels[1]==255,"next frame failed to recover after cancelled recording");}
     }
+    HistoryValidation(driver);
     using List=Data::RenderCommandList;
     {List allocation;bool failed=false;allocationFailureSize=sizeof(List::Operation);allocationFailureCountdown=0;
      try{allocation.Append([](auto&){});}catch(const std::bad_alloc&){failed=true;}allocationFailureCountdown=-1;
@@ -123,6 +164,10 @@ int main(int argc,char** argv) try
     Require(read(dynamicImmediate/"frames.bin")==read(dynamicRepeat/"frames.bin"),"repeated dynamic immediate image changed");
     Require(read(dynamicImmediate/"frames.bin")==read(dynamicPacket/"frames.bin"),"dynamic same-draw packet image differs");
     Require(read(dynamicImmediate/"frames.bin")==read(dynamicDelayed/"frames.bin"),"dynamic shadow/reflection/exposure/bloom command images differ");
+    const auto recovered=std::filesystem::path(argv[1])/"dynamic-recovered";
+    std::filesystem::create_directories(recovered);ImageValidation(recovered,false,true,true,true,true);
+    Require(read(dynamicImmediate/"frames.bin")==read(recovered/"frames.bin"),"cancelled/failed temporal history did not rebuild exact dynamic image");
+    std::puts("PASS: 24 dynamic frames recover exactly after cancellation, partial execution failure, abandonment and dependent cancellation; progressive exposure and on-demand progressive reflection reset");
     std::puts("PASS: 24 dynamic shadow/reflection/mipmap/exposure/bloom/tonemapping/FXAA immediate-delayed image pairs");return 0;
 }
 catch(const std::exception& e){allocationFailureCountdown=-1;std::fprintf(stderr,"FAIL: %s\n",e.what());return 1;}

@@ -275,7 +275,7 @@ void StateValidation(const std::filesystem::path& dir)
     std::printf("PASS: %zu snapshots, 32 playback/rate scenarios, shared resources and lifetimes\n", snapshots);
 }
 
-void ImageValidation(const std::filesystem::path& dir, bool trace, bool recordDraws = false, bool recordCommands = false, bool dynamicPasses = false)
+void ImageValidation(const std::filesystem::path& dir, bool trace, bool recordDraws = false, bool recordCommands = false, bool dynamicPasses = false, bool recoverHistory = false)
 {
     OvWindowing::Settings::DeviceSettings ds; ds.contextMajorVersion = 4; ds.contextMinorVersion = 5;
     OvWindowing::Context::Device device(ds);
@@ -298,10 +298,12 @@ void ImageValidation(const std::filesystem::path& dir, bool trace, bool recordDr
         light.GetData().castShadows=true;light.GetData().shadowMapResolution=128;light.owner.transform.SetLocalRotation(FQuaternion({30,45,0}));
         auto& probe=scene.CreateActor("dynamic probe").AddComponent<OvCore::ECS::Components::CReflectionProbe>();
         probe.SetCubemapResolution(16);probe.SetCaptureSpeed(OvCore::ECS::Components::CReflectionProbe::ECaptureSpeed::SIX_FACES);
+        if(recoverHistory){probe.SetCaptureSpeed(OvCore::ECS::Components::CReflectionProbe::ECaptureSpeed::ONE_FACE);
+            probe.SetRefreshMode(OvCore::ECS::Components::CReflectionProbe::ERefreshMode::ON_DEMAND);probe.RequestCapture(true);}
         probe.SetInfluencePolicy(OvCore::ECS::Components::CReflectionProbe::EInfluencePolicy::GLOBAL);
         auto& stack=scene.CreateActor("dynamic effects").AddComponent<OvCore::ECS::Components::CPostProcessStack>();
-        auto exposure=stack.GetAutoExposureSettings();exposure.progressive=false;stack.SetAutoExposureSettings(exposure);
-        Require(!stack.GetAutoExposureSettings().progressive,"auto-exposure setter did not update active effect settings");
+        auto exposure=stack.GetAutoExposureSettings();exposure.progressive=recoverHistory;stack.SetAutoExposureSettings(exposure);
+        Require(stack.GetAutoExposureSettings().progressive==recoverHistory,"auto-exposure setter did not update active effect settings");
         auto bloom=stack.GetBloomSettings();bloom.passes=3;stack.SetBloomSettings(bloom);
     }
     OvCore::Resources::Material material; material.SetShader(shader);
@@ -321,6 +323,23 @@ void ImageValidation(const std::filesystem::path& dir, bool trace, bool recordDr
     {
         skin.SetTime(skin.GetAnimationDurationSeconds() * float(i) / 24.0f);
         const auto version = skin.GetPoseVersion();
+        if(recoverHistory)
+        {
+            auto recordDiscard=[&](bool fail) {
+                renderer.AddDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>({.scene=scene,.fallbackMaterial=material});
+                renderer.BeginCommandRecording();renderer.BeginFrame(frame);renderer.DrawFrame();
+                if(fail)renderer.SubmitRenderOperation([](auto&){throw std::runtime_error("injected temporal failure");});
+                renderer.EndFrame();return renderer.FinishCommandRecording();
+            };
+            auto discarded=recordDiscard(i%4==1);
+            if(i%4==0)discarded.Cancel();
+            if(i%4==1){bool failed=false;try{discarded.Execute(driver);}catch(const std::runtime_error&){failed=true;}
+                Require(failed && discarded.GetExecutedCount()>0,"dynamic prefix failure was not injected");}
+            if(i%4==2){auto abandoned=std::move(discarded);}
+            if(i%4==3){auto dependent=recordDiscard(false);discarded.Cancel();bool failed=false;
+                try{dependent.Execute(driver);}catch(const std::logic_error&){failed=true;}
+                Require(failed && dependent.GetExecutedCount()==0,"dependent dynamic frame ran after cancelled history");}
+        }
         renderer.AddDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>({.scene=scene, .fallbackMaterial=material});
         if (recordCommands) renderer.BeginCommandRecording();
         renderer.BeginFrame(frame); renderer.DrawFrame();

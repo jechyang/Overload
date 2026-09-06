@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态 pass 准备状态的取消/失败恢复、Editor debug/picking/readback、ImGui 和正式帧完成仍待闭合，尚无独立 Render 线程。阶段 2、3 均未全部完成，最新验收见 MULTITHREADING_COMMAND_LIST_VALIDATION.md。**
+**阶段 0、阶段 1 已验收提交。阶段 2 已建立可拥有资源并延后消费的 SceneRenderer 帧命令序列，覆盖目标、上传、draw、反射/曝光 mipmap 顺序；源 renderer/场景销毁后及真实动态 pass 对拍通过。动态反射/曝光历史已加入取消/失败失效传播及下一帧重建；Editor debug/picking/readback、ImGui 和正式帧完成仍待闭合，尚无独立 Render 线程。阶段 2、3 均未全部完成，最新验收见 MULTITHREADING_TEMPORAL_HISTORY_VALIDATION.md。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -195,7 +195,14 @@
 - RenderCommandList 支持按序录制、封口、转移、单次消费、失败/取消终态和前缀计数。ABaseRenderer 收集目标/viewport/clear，CompositeRenderer 将 owning draw 包加入序列；启用的 feature/pass 必须显式 opt-in，录制失败不能封口。
 - Engine/Skinning/Reflection 录制不再捕获 feature this；CPU 值与 GPU buffer 由操作持有。帧上传/灯光覆盖与恢复、palette、反射和自动曝光 mipmap 按生产顺序提交。
 - 每配置 8 组销毁所有源对象后的回放、GPU 副作用拦截、取消/异常/分配失败、普通 24 帧 Mannequin 及真实阴影/六面反射/曝光/Bloom/Tonemapping/FXAA 的 24 帧即时/packet/延迟对拍通过。动态测试发现并修复 SetAutoExposureSettings 写错 Effect 键，保留严格逐字节对拍。详见 MULTITHREADING_COMMAND_LIST_VALIDATION.md。
-- 当前完成状态仅表示 CPU 提交结束。生产资源创建与部分元数据/埋点仍依赖 GL owner；取消不回滚 dynamic pass 的 CPU 准备历史。下一步闭合这些状态及 Editor debug/picking/readback、ImGui 和帧完成，再进入固定 Render 线程与有界队列。旧 Editor 仅同次 packet 回归通过。
+- 当前完成状态仅表示 CPU 提交结束。生产资源创建与部分元数据/埋点仍依赖 GL owner；本增量当时尚未闭合动态历史恢复，后续由 4.9 的失效重建协议处理。下一步闭合 Editor debug/picking/readback、ImGui 和帧完成，再进入固定 Render 线程与有界队列。旧 Editor 仅同次 packet 回归通过。
+
+### 4.9 第九增量：动态历史失效与重建
+
+- RenderCommandList::History 记录历史代次和前序完成标记；取消、录制/执行失败、未消费析构会失效相关历史。已准备后继在任何 GPU 操作前拒绝；下一次生产要求重建，同列表重复使用不重复登记，移动不误取消。
+- ReflectionRenderPass 在推进捕获面前登记；失败后重置双缓冲和有效标记，并强制完整六面重建，包含 ON_DEMAND 请求。AutoExposureEffect 在选择历史缓冲前登记；失败后重置 ping-pong、计时和首帧标记。
+- Debug/Release 命令状态测试、24 帧渐变曝光/按需逐面反射的取消、部分执行失败、析构放弃、后继失效恢复，均与即时基准精确对拍通过。完整构建、旧路径与编辑器回归结果见 MULTITHREADING_TEMPORAL_HISTORY_VALIDATION.md。
+- 这不是 Material singleUse 或场景更新的通用回滚，也不是 GPU fence/跨线程提交队列。下一步继续 Editor debug/picking/readback、ImGui 稳定数据和帧完成，再实现阶段 3 固定 Render owner、有界队列与真实交叠。
 
 ## 5. 阶段 3：Game/Render 双线程（A 形态）
 

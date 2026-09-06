@@ -51,6 +51,16 @@ void OvCore::Rendering::ReflectionRenderPass::Draw(OvRendering::Data::PipelineSt
 	{
 		auto& reflectionProbe = reflectionProbeReference.get();
 
+        if (m_renderer.UseRenderHistory(reflectionProbe.m_captureHistory))
+        {
+            // A partially executed cube cannot be rolled back. Rebuild all faces,
+            // including ON_DEMAND probes whose speculative request was consumed.
+            reflectionProbe.m_framebuffers.Reset();
+            reflectionProbe.m_cubemapIterator.Reset();
+            reflectionProbe.m_isAnyCubemapComplete = false;
+            reflectionProbe.RequestCapture(true);
+        }
+
 		const auto faceIndices = reflectionProbe._GetCaptureFaceIndices();
 
 		// No faces to render, skip this probe.

@@ -55,6 +55,13 @@ void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
 
 	const auto& autoExposureSettings = static_cast<const AutoExposureSettings&>(p_settings);
 
+    if (m_renderer.UseRenderHistory(m_history))
+    {
+        m_firstFrame = true;
+        m_previousTime.reset();
+        m_exposurePingPongBuffer.Reset();
+    }
+
 	// Luminance calculation
 	m_luminanceBuffer.Resize(kLuminanceBufferResolution, kLuminanceBufferResolution);
 	m_luminanceMaterial.SetProperty("_CenterWeightBias", autoExposureSettings.centerWeightBias, true);

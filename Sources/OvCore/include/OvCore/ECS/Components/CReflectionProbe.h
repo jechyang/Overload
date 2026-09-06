@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <OvRendering/Data/RenderCommandList.h>
 #include <array>
 #include <cstddef>
 
@@ -220,6 +221,7 @@ namespace OvCore::ECS::Components
 		uint32_t m_captureFaceIndex = 0; // Current frame index in the capture process
 		std::optional<CaptureRequestDesc> m_captureRequest = std::nullopt;
 		bool m_isAnyCubemapComplete = false;
+		OvRendering::Data::RenderCommandList::History m_captureHistory;
 
 		// Serialized properties
 		ERefreshMode m_refreshMode = ERefreshMode::REALTIME;

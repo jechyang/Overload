@@ -7,6 +7,7 @@
 #pragma once
 
 #include <chrono>
+#include <OvRendering/Data/RenderCommandList.h>
 
 #include <OvCore/Rendering/PingPongFramebuffer.h>
 #include <OvCore/Rendering/PostProcess/AEffect.h>
@@ -65,5 +66,6 @@ namespace OvCore::Rendering::PostProcess
 
 		// Used to skip the first frame of the exposure adaptation
 		bool m_firstFrame = true;
+		OvRendering::Data::RenderCommandList::History m_history;
 	};
 }
