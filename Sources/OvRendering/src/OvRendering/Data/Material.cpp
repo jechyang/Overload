@@ -5,6 +5,7 @@
 */
 
 #include <format>
+#include <cstring>
 #include <ranges>
 
 #include <baregl/Buffer.h>
@@ -166,7 +167,7 @@ void OvRendering::Data::Material::UpdateProperties()
 	});
 }
 
-OvRendering::Data::MaterialSignatureSet OvRendering::Data::Material::Bind(
+OvRendering::Data::Material::BindingCommand OvRendering::Data::Material::PrepareBinding(
 	std::optional<const std::string_view> p_pass,
 	OvTools::Utils::OptRef<const Data::FeatureSet> p_featureSetOverride,
 	baregl::Texture* p_emptyTexture2D,
@@ -189,14 +190,123 @@ OvRendering::Data::MaterialSignatureSet OvRendering::Data::Material::Bind(
 		p_emptyTextureCube
 	);
 
-	if (!p_previousMaterialSignature || signature.bindSignature != p_previousMaterialSignature->bindSignature)
+	return { program, signature, !p_previousMaterialSignature || signature.bindSignature != p_previousMaterialSignature->bindSignature };
+}
+
+void OvRendering::Data::Material::ExecuteBinding(const BindingCommand& p_command)
+{
+	ZoneScopedN("Material Execute Binding");
+	if (p_command.bindRequired) p_command.program.Bind();
+}
+
+OvRendering::Data::MaterialSignatureSet OvRendering::Data::Material::Bind(
+	std::optional<const std::string_view> p_pass,
+	OvTools::Utils::OptRef<const Data::FeatureSet> p_featureSetOverride,
+	baregl::Texture* p_emptyTexture2D,
+	baregl::Texture* p_emptyTextureCube,
+	std::optional<MaterialSignatureSet> p_previousMaterialSignature
+)
+{
+	ZoneScoped;
+	const auto command = PrepareBinding(p_pass, p_featureSetOverride, p_emptyTexture2D, p_emptyTextureCube, p_previousMaterialSignature);
+	ExecuteBinding(command);
+	m_programInUse = command.program;
+	return command.signature;
+}
+
+std::optional<OvRendering::Data::Material::UniformUploadCommand> OvRendering::Data::Material::PrepareUniformUpload(
+	const baregl::ShaderProgram& p_program,
+	const std::string& p_name,
+	const MaterialPropertyType& p_value,
+	baregl::Texture* p_emptyTexture2D,
+	baregl::Texture* p_emptyTextureCube
+)
+{
+	ZoneScopedN("Material Prepare Uniform");
+	const auto info = p_program.GetUniformInfo(p_name);
+	if (!info) return std::nullopt;
+	const auto& uniform = info->get();
+	using namespace OvMaths;
+	using enum baregl::types::EUniformType;
+	UniformUploadValue value;
+	// Type checking, matrix transposition and asset lookup happen before GL.
+	switch (uniform.type)
 	{
-		program.Bind();
+	case BOOL: value = static_cast<int>(std::get<bool>(p_value)); break;
+	case INT: value = std::get<int>(p_value); break;
+	case FLOAT: value = std::get<float>(p_value); break;
+	case FLOAT_VEC2:
+	{
+		const auto& v = std::get<FVector2>(p_value);
+		value = baregl::math::Vec2{ v.x, v.y }; break;
 	}
+	case FLOAT_VEC3:
+	{
+		const auto& v = std::get<FVector3>(p_value);
+		value = baregl::math::Vec3{ v.x, v.y, v.z }; break;
+	}
+	case FLOAT_VEC4:
+	{
+		const auto& v = std::get<FVector4>(p_value);
+		value = baregl::math::Vec4{ v.x, v.y, v.z, v.w }; break;
+	}
+	case FLOAT_MAT3:
+	{
+		const auto t = FMatrix3::Transpose(std::get<FMatrix3>(p_value));
+		baregl::math::Mat3 payload;
+		static_assert(sizeof(payload) == sizeof(t.data));
+		std::memcpy(&payload, t.data, sizeof(payload));
+		value = payload; break;
+	}
+	case FLOAT_MAT4:
+	{
+		const auto t = FMatrix4::Transpose(std::get<FMatrix4>(p_value));
+		baregl::math::Mat4 payload;
+		static_assert(sizeof(payload) == sizeof(t.data));
+		std::memcpy(&payload, t.data, sizeof(payload));
+		value = payload; break;
+	}
+	case SAMPLER_2D:
+	case SAMPLER_CUBE:
+	{
+		baregl::Texture* handle = nullptr;
+		if (auto textureHandle = std::get_if<baregl::Texture*>(&p_value)) handle = *textureHandle;
+		else if (auto texture = std::get_if<Resources::Texture*>(&p_value); texture && *texture)
+			handle = &(*texture)->GetTexture();
+		if (!handle) handle = uniform.type == SAMPLER_2D ? p_emptyTexture2D : p_emptyTextureCube;
+		OVASSERT(uniform.textureIndex.has_value(), std::format("No texture index found for uniform: {}", p_name));
+		value = handle;
+		break;
+	}
+	default: break; // Preserve legacy no-upload behavior for unsupported uniform types.
+	}
+	return UniformUploadCommand{ uniform.name, uniform.type, std::move(value), uniform.textureIndex };
+}
 
-	m_programInUse = program;
-
-	return signature;
+void OvRendering::Data::Material::ExecuteUniformUpload(baregl::ShaderProgram& p_program, const UniformUploadCommand& p_command)
+{
+	ZoneScopedN("Material Execute Uniform");
+	using namespace OvMaths;
+	using namespace baregl::math;
+	using enum baregl::types::EUniformType;
+	const auto& name = p_command.name;
+	const auto& value = p_command.value;
+	switch (p_command.type)
+	{
+	case BOOL:
+	case INT: p_program.SetUniform<int>(name, std::get<int>(value)); break;
+	case FLOAT: p_program.SetUniform<float>(name, std::get<float>(value)); break;
+	case FLOAT_VEC2: p_program.SetUniform<Vec2>(name, std::get<Vec2>(value)); break;
+	case FLOAT_VEC3: p_program.SetUniform<Vec3>(name, std::get<Vec3>(value)); break;
+	case FLOAT_VEC4: p_program.SetUniform<Vec4>(name, std::get<Vec4>(value)); break;
+	case FLOAT_MAT3: p_program.SetUniform<Mat3>(name, std::get<Mat3>(value)); break;
+	case FLOAT_MAT4: p_program.SetUniform<Mat4>(name, std::get<Mat4>(value)); break;
+	case SAMPLER_2D:
+	case SAMPLER_CUBE:
+		BindTexture(p_program, name, std::get<baregl::Texture*>(value), nullptr, p_command.textureIndex.value());
+		break;
+	default: break;
+	}
 }
 
 void OvRendering::Data::Material::UploadProperties(
@@ -207,103 +317,18 @@ void OvRendering::Data::Material::UploadProperties(
 )
 {
 	ZoneScoped;
-
 	OVASSERT(m_programInUse.has_value(), "Cannot upload properties before binding");
-
-	using namespace OvMaths;
-	using namespace baregl::math;
-	using enum baregl::types::EUniformType;
-
 	auto& program = m_programInUse.value();
-
+	// Keep traversal and per-property consumption order, including partial failure.
+	// No draw-sized allocation or delayed reset of single-use values is introduced.
 	for (auto& [name, prop] : m_properties)
 	{
 		if (!uploadStableProperties && !prop.singleUse) continue;
 		if (!uploadSingleUseProperties && prop.singleUse) continue;
-
-		const auto uniformData = program.GetUniformInfo(name);
-
-		// Skip this property if the current program isn't using its associated uniform
-		if (!uniformData)
-		{
-			continue;
-		}
-
-		auto& value = prop.value;
-		auto uniformType = uniformData.value().get().type;
-
-		// Iterating over the properties to set them in the shader.
-		// This could have been cleaner with a visitor, but the performance impact
-		// is not worth it. This is a critical path in the rendering pipeline.
-
-		if (uniformType == BOOL)
-		{
-			program.SetUniform<int>(name, static_cast<int>(std::get<bool>(value)));
-		}
-		else if (uniformType == INT)
-		{
-			program.SetUniform<int>(name, std::get<int>(value));
-		}
-		else if (uniformType == FLOAT)
-		{
-			program.SetUniform<float>(name, std::get<float>(value));
-		}
-		else if (uniformType == FLOAT_VEC2)
-		{
-			program.SetUniform<Vec2>(name, (Vec2&)(std::get<FVector2>(value)));
-		}
-		else if (uniformType == FLOAT_VEC3)
-		{
-			program.SetUniform<Vec3>(name, (Vec3&)std::get<FVector3>(value));
-		}
-		else if (uniformType == FLOAT_VEC4)
-		{
-			program.SetUniform<Vec4>(name, (Vec4&)std::get<FVector4>(value));
-		}
-		else if (uniformType == FLOAT_MAT3)
-		{
-			const auto t = FMatrix3::Transpose(std::get<FMatrix3>(value));
-			program.SetUniform<Mat3>(name, (Mat3&)t);
-		}
-		else if (uniformType == FLOAT_MAT4)
-		{
-			const auto t = FMatrix4::Transpose(std::get<FMatrix4>(value));
-			program.SetUniform<Mat4>(name, (Mat4&)t);
-		}
-		else if (uniformType == SAMPLER_2D || uniformType == SAMPLER_CUBE)
-		{
-			baregl::Texture* handle = nullptr;
-			if (auto textureHandle = std::get_if<baregl::Texture*>(&value))
-			{
-				handle = *textureHandle;
-			}
-			else if (auto texture = std::get_if<Resources::Texture*>(&value))
-			{
-				if (*texture != nullptr)
-				{
-					handle = &(*texture)->GetTexture();
-				}
-			}
-			
-			const auto textureIndex = uniformData.value().get().textureIndex;
-
-			OVASSERT(textureIndex.has_value(), std::format("No texture index found for uniform: {}", name));
-
-			BindTexture(
-				program,
-				name,
-				handle,
-				uniformType == SAMPLER_2D ?
-					p_emptyTexture2D :
-					p_emptyTextureCube,
-				textureIndex.value()
-			);
-		}
-
-		if (prop.singleUse)
-		{
-			value = prop.defaultValue;
-		}
+		const auto command = PrepareUniformUpload(program, name, prop.value, p_emptyTexture2D, p_emptyTextureCube);
+		if (!command) continue;
+		ExecuteUniformUpload(program, *command);
+		if (prop.singleUse) prop.value = prop.defaultValue;
 	}
 }
 
@@ -615,7 +640,7 @@ OvRendering::Data::MaterialSignatureSet OvRendering::Data::Material::CalculateSi
 {
 	ZoneScoped;
 
-	MaterialSignatureSet signature;
+	MaterialSignatureSet signature{};
 
 	// Bind
 	HashCombine(signature.bindSignature, this);

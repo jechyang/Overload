@@ -21,3 +21,19 @@ node Tests\Skinning\run-validation.mjs Release --geometry
 同线程集成检查另运行 `Debug/Release --editor`，验收真实新建项目、共享资源、多视图消费顺序、暂停/逐帧/恢复/切场景。此检查是新路径的集成回归，并非旧编辑器与新编辑器逐帧对拍。
 
 该增量仍同步消费借用 mesh，shader/texture/uniform/palette/viewport/target 由外层原调用链设置。测试没有在源 mesh 销毁后执行命令，也不支持跨帧排队、后台录制或 Render 线程。详细所有权审查与剩余工作见根目录 `MULTITHREADING_RENDER_COMMAND_VALIDATION.md`。
+
+## 材质绑定与 uniform 命令（阶段 2 第二增量）
+
+```bat
+node Tests\Skinning\run-validation.mjs Debug --material
+node Tests\Skinning\run-validation.mjs Release --material
+```
+
+输出为 `<配置>-material/{baseline,current}/`。旧 ABaseRenderer/Material 源码取自 `50194bfe7ee94eac37d63bbf84779c7c68b390e4`，当前取工作树；**旧材质副本只将未初始化的 MaterialSignatureSet seed 归零**，使其成为有确定缓存语义的对照。原几何/蒙皮模式的基准不变。测试脚本开始时清除该模式的旧 result.json，失败重跑不会留下过期成功标记。
+
+- 42 组材质事务：缓存命中、stable/single-use 分离、其他材质切换、pass/feature 覆盖和回退、当前变体缺失 uniform、bool/int/float/vec2/vec3/vec4/mat3/mat4、2D/cube sampler、纹理资产/裸 GPU 纹理/null/fallback。
+- 拦截并转发真实 GL 绑定及 uniform 上传函数，记录 `material-trace.bin`；按明确字段记录 GPU uniform 读回与 CPU 属性状态到 `material-state.bin`。两份文件必须逐字节一致，GPU 资源 ID 映射为测试逻辑标签，不比较地址或签名数值。
+- 检查上传筛选和中途错误的前缀消费顺序。新路径检查准备不产生 GL 调用、不消费属性；销毁源 Material 后，用仍存活的 shader/texture 执行已复制参数，检查矩阵和纹理解析结果。
+- 随后执行原几何 256 组和真实蒙皮 24 帧对拍；真实编辑器模式/多视图/切场景继续使用 `--editor`。
+
+独占材质微基准：完整回归编译后，在 `Build/<配置>` 工作目录运行对应 baseline/current 的 `skinning-validation.exe <另建输出目录> --benchmark`。先完成材质自检，再关闭所有 GL 拦截；预热 32 组，测量 256×32 次 SetProperty/Bind/10 uniform 上传/Unbind，输出中位数与 p95。需串行交替跑旧/新程序，不能与构建、编辑器回归或其他 Tracy 客户端同时运行；这不是完整编辑器帧率。

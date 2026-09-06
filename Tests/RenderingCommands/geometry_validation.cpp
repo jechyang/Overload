@@ -197,6 +197,7 @@ void GeometryValidation(const std::filesystem::path& dir)
     std::printf("PASS: 256 ordered GL draws / frames, all four dispatch branches, %zu visible frames\n", visibleFrames);
 }
 
+#ifndef GEOMETRY_VALIDATION_NO_MAIN
 int main(int argc, char** argv) try
 {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
@@ -206,3 +207,4 @@ int main(int argc, char** argv) try
     return 0;
 }
 catch (const std::exception& error) { std::fprintf(stderr, "FAIL: %s\n", error.what()); return 1; }
+#endif

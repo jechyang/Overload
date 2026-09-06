@@ -7,6 +7,7 @@
 #pragma once
 
 #include <optional>
+#include <type_traits>
 #include <unordered_map>
 #include <variant>
 
@@ -65,6 +66,53 @@ namespace OvRendering::Data
 	{
 	public:
 		using PropertyMap = std::unordered_map<std::string, MaterialProperty>;
+
+		// Synchronous command boundaries. Program/metadata/textures are borrowed
+		// and must stay alive and unchanged through execution. Scalar/vector/matrix
+		// values are captured by value; no command retains a Material or property.
+		// These commands do not permit cross-frame queuing or worker GL calls.
+		struct BindingCommand
+		{
+			baregl::ShaderProgram& program;
+			const MaterialSignatureSet signature;
+			const bool bindRequired;
+		};
+
+		// GPU payloads have trivial copy semantics, avoiding repeated dispatch and
+		// matrix copy constructors when returning a command in Debug builds.
+		using UniformUploadValue = std::variant<std::monostate, int, float,
+			baregl::math::Vec2, baregl::math::Vec3, baregl::math::Vec4,
+			baregl::math::Mat3, baregl::math::Mat4, baregl::Texture*>;
+		static_assert(std::is_trivially_copyable_v<UniformUploadValue>);
+
+		struct UniformUploadCommand
+		{
+			const std::string& name; // Owned by the borrowed program's uniform metadata.
+			const baregl::types::EUniformType type;
+			const UniformUploadValue value; // Matrices are already transposed; textures resolved.
+			const std::optional<uint32_t> textureIndex;
+		};
+
+		BindingCommand PrepareBinding(
+			std::optional<const std::string_view> p_pass = std::nullopt,
+			OvTools::Utils::OptRef<const Data::FeatureSet> p_featureSetOverride = std::nullopt,
+			baregl::Texture* p_emptyTexture2D = nullptr,
+			baregl::Texture* p_emptyTextureCube = nullptr,
+			std::optional<MaterialSignatureSet> p_previousMaterialSignature = std::nullopt
+		);
+		static void ExecuteBinding(const BindingCommand& p_command);
+
+		// CPU-only: reads cached shader metadata, captures one value, and resolves
+		// texture assets/fallbacks. Missing uniforms return nullopt without consuming.
+		static std::optional<UniformUploadCommand> PrepareUniformUpload(
+			const baregl::ShaderProgram& p_program,
+			const std::string& p_name,
+			const MaterialPropertyType& p_value,
+			baregl::Texture* p_emptyTexture2D = nullptr,
+			baregl::Texture* p_emptyTextureCube = nullptr
+		);
+		// Execute on the GL owner with the same program bound and resources stable.
+		static void ExecuteUniformUpload(baregl::ShaderProgram& p_program, const UniformUploadCommand& p_command);
 
 		/**
 		* Creates a material

@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、阶段 1 均已完成约定范围验收并分别提交。阶段 2 首增量已拆分同线程几何命令准备/执行，完整帧所有权仍待后续逐类迁移；不直接跳到 Render 线程。阶段 2 最新范围与验收见 MULTITHREADING_RENDER_COMMAND_VALIDATION.md；阶段 1 收尾结果见 MULTITHREADING_SKINNING_STAGE1_COMPLETION.md。**
+**阶段 0、阶段 1 均已完成约定范围验收并分别提交。阶段 2 已拆分同线程几何、材质绑定与逐 uniform 准备/执行，完整 draw/帧快照及资源在途持有仍待后续迁移；不直接跳到 Render 线程。最新范围与验收见 MULTITHREADING_MATERIAL_COMMAND_VALIDATION.md，几何首增量见 MULTITHREADING_RENDER_COMMAND_VALIDATION.md。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -143,6 +143,14 @@
 - 新增 `Debug/Release --geometry`，保留阶段 1 ABaseRenderer.cpp 作旧路径；对照实际 GL 顺序/状态、四种几何提交分支和图像。真实编辑器项目回归继续使用 `--editor`。最终结果与日志见 MULTITHREADING_RENDER_COMMAND_VALIDATION.md。
 - 下一增量从材质 CPU 参数/变体选择与 GL 上传拆分开始，固定单次属性、signature 和资源持有语义。然后逐步迁移 transform/palette/view/pass/target；阶段 2 整体尚未完成。
 
+### 4.2 第二增量：材质绑定与逐 uniform 参数快照
+
+- Material 的变体选择/签名准备与 GL program 绑定分离；uniform 的 CPU 复制、类型检查、矩阵转置、纹理解析与 GL 上传分离。原 Bind/UploadProperties 包装已接入，Material 对象布局不变。
+- 按原顺序逐属性立即执行，之后恢复单次属性默认值；缺失 uniform 不消费，筛选和异常前缀消费语义不变。修复 signature 哈希 seed 未初始化，保证缓存结果确定。
+- 数值参数由命令按值拥有；名称借用 shader 元数据，program/纹理仍借用且必须保持稳定。命令不保留源 Material，但尚不支持跨帧保留资源或完整 draw 批量录制。
+- `Debug/Release --material` 使用 `50194bf` 的旧材质/几何源码对照；仅归零旧材质副本的未初始化 hash seed。42 组材质/GPU 状态与 GL 调用序列、几何及蒙皮图像对拍，另检查源对象销毁和 CPU 准备；最终集成/构建/测量见 MULTITHREADING_MATERIAL_COMMAND_VALIDATION.md。
+- 下一增量：聚合完整 draw 参数快照、资源版本持有和单次属性批量消费边界，再逐类迁移 transform/palette/view/pass/target。仍不引入 Render 线程。
+
 ## 5. 阶段 3：Game/Render 双线程（A 形态）
 
 **目标：让固定 Render 线程消费稳定帧数据，Game/Main 线程负责应用更新与必要的平台/UI 事件。**
@@ -193,10 +201,10 @@
 ### 工作区
 
 - 原基准为 73ae710a57889bfde94184c3c8f073228e998144；工作分支 main。
-- 按用户要求补齐阶段提交：阶段 0 为 30eb8fe，阶段 1 的三个已验收增量合并为 4f8da08。阶段 2 首增量为本文件所属的新提交；后续每个独立可验收增量完成检查后单独提交。
+- 按用户要求分阶段提交：阶段 0 为 30eb8fe，阶段 1 为 4f8da08，阶段 2 几何首增量为 50194bf，材质第二增量为本文件所属的新提交。后续每个独立可验收增量完成检查后单独提交。
 - 仅提交多线程实现、测试与验收文档。Editor.cpp 的既有注释修改通过按 hunk 暂存排除；ItemPicker、SkeletalData、OvUI、.zcode 等其他用户改动仍留在工作树。
 - 历史验收是在包含这些既有用户改动的工作区中完成，不声称逐个检出了补提交来复现历史构建。Tests/Skinning 的旧源码基准仍固定为原基准，不因补提交而变化。
-- 未创建额外任务或推送远程。阶段 2 已建立首个几何边界，继续按独立增量推进。
+- 未创建额外任务或推送远程。阶段 2 已建立几何与材质逐属性边界，继续按独立增量推进。
 
 ### 构建（已实际验证的入口）
 
@@ -225,6 +233,7 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 - 第三增量最新报告：`MULTITHREADING_SKINNING_STAGE1_COMPLETION.md`；新增 `Debug/Release --editor`。可打开项目：`Build/JobsValidation/Skinning/Release-editor/current/SkinningProject/SkinningProject.ovproject`。测试会重新生成该专用项目。
 - 最新正式构建为 `msbuild-debug-skinning-stage1-retry.log`、`msbuild-release-skinning-stage1-final.log`，复制为 `skinning-stage1-build-artifacts.json`；最终独占性能 `skinning-stage1-perf-*`，Tracy 为 `tracy-skinning-stage1-release*`。
 - 阶段 2 首增量使用 `Debug/Release --geometry`，输出 `Build/JobsValidation/Skinning/<配置>-geometry/`；详情见 `Tests/RenderingCommands/README.md`。新构建日志后缀为 `geometry-stage2`，编辑器回归日志为 `geometry-editor-{debug,release}.log`，不将并发构建/验收期间的耗时作为性能基线。
+- 阶段 2 第二增量使用 `Debug/Release --material`，输出 `<配置>-material/`；最终构建日志后缀为 `material-final`，最终编辑器日志为 `material-editor-{debug,release}-final.log`，复制核对为 `material-final-build-artifacts.json`。微基准见 `material-stage2-perf-payload.json`；首稿 `material-stage2` 构建及性能日志不作为最终产物证据。最新状态以 MULTITHREADING_MATERIAL_COMMAND_VALIDATION.md 为准。
 
 ### 只在需要时阅读的证据
 
@@ -240,4 +249,4 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 ## 11. 新对话建议起始消息
 
-> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_RENDER_COMMAND_VALIDATION.md，以已提交的阶段 0/1 和阶段 2 几何边界为基线，继续阶段 2 下一个独立增量：拆分材质 CPU 参数/变体选择与 GL 绑定上传，明确参数快照及资源持有，先同线程对拍再单独 git 提交。保留已有用户改动、旧路径对照和多视图语义；不要将 Actor/组件 vector 的裸引用浅拷贝跨帧，不直接引入 Render 线程。后台验证优先，不操作 VS2022 界面。
+> 阅读 MULTITHREADING_NEXT_STEPS.md 和 MULTITHREADING_MATERIAL_COMMAND_VALIDATION.md，以已提交的几何/材质逐属性命令为基线，继续阶段 2 下一个独立增量：聚合完整 draw 参数快照、资源版本持有和单次属性批量消费边界，先同线程对拍再单独 git 提交。保留已有用户改动、旧路径对照和多视图语义；不要将 Actor/组件 vector 的裸引用浅拷贝跨帧，不直接引入 Render 线程。后台验证优先，不操作 VS2022 界面。

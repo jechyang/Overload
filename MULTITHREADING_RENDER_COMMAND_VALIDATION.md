@@ -66,4 +66,6 @@ Material::Bind / UploadProperties / Unbind 不修改 GPUInstances，因此提前
 
 ## 下一个独立增量
 
+更新：以下材质准备/执行拆分已在第二增量实现，结果见 `MULTITHREADING_MATERIAL_COMMAND_VALIDATION.md`。完整 draw 参数聚合和资源在途持有仍待后续处理。
+
 先拆 Material 的 CPU 参数/变体选择与 GL 绑定上传，定义有所有权的材质参数及纹理引用，保持单次属性重置和跨 draw signature 语义。之后按依赖迁移 Actor transform、palette、view/pass 常量和目标命令。每一类都先同线程对拍并提交；资源在途持有和消费完成协议闭合之后，才进入 Render 线程。
