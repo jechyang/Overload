@@ -46,14 +46,14 @@ void OvCore::Rendering::SkinningRenderFeature::OnBeginFrame(const OvRendering::D
 	m_lastUploaded = {};
 	m_bound = {};
 
-	if (m_identityBuffer->GetSize() == 0)
-	{
-		const auto identity = OvMaths::FMatrix4::Transpose(OvMaths::FMatrix4::Identity);
-		m_renderer.SubmitRenderOperation([buffer = m_identityBuffer, identity](auto&) {
+	const auto identity = OvMaths::FMatrix4::Transpose(OvMaths::FMatrix4::Identity);
+	m_renderer.SubmitRenderOperation([buffer = m_identityBuffer, identity](auto&) {
+		if (buffer->GetSize() == 0)
+		{
 			buffer->Allocate(sizeof(identity), baregl::types::EAccessSpecifier::STATIC_DRAW);
 			buffer->Upload(&identity);
-		});
-	}
+		}
+	});
 }
 
 void OvCore::Rendering::SkinningRenderFeature::OnEndFrame()

@@ -118,22 +118,42 @@ OvGame::Core::Context::Context() :
 		}
 	}
 	inputManager = std::make_unique<OvWindowing::Inputs::InputManager>(*window);
-	window->MakeCurrentContext();
-
-	device->SetVsync(projectSettings.GetOrDefault<bool>("vsync", true));
+	const bool vsync = projectSettings.GetOrDefault<bool>("vsync", true);
 
 	OvRendering::Data::PipelineState basePSO;
 	basePSO.multisample = projectSettings.GetOrDefault<bool>("multisampling", false);
 
 	/* Graphics context creation */
-	driver = std::make_unique<OvRendering::Context::Driver>(OvRendering::Settings::DriverSettings{
+    const OvRendering::Settings::DriverSettings driverSettings{
 #ifdef _DEBUG
-		true,
+        true,
 #else
-		false,
+        false,
 #endif
-		basePSO
-	});
+        basePSO
+    };
+    if (projectSettings.GetOrDefault<bool>("render_thread", false))
+    {
+        if (!projectSettings.GetOrDefault<bool>("render_commands", true))
+            throw std::invalid_argument("render_thread requires render_commands");
+        OvWindowing::Window::DetachCurrentContext();
+        renderThread = std::make_unique<OvRendering::Threading::RenderThread>([this, driverSettings, vsync] {
+            window->MakeCurrentContext();
+            device->SetVsync(vsync);
+            auto owned = std::make_unique<OvRendering::Context::Driver>(driverSettings);
+            driver = std::shared_ptr<OvRendering::Context::Driver>(owned.get(), [](auto*) {});
+            return owned;
+        }, [] { OvWindowing::Window::DetachCurrentContext(); });
+        resourceExecutor = std::make_unique<baregl::ResourceExecutor>([this](std::function<void()> work) {
+            renderThread->Invoke([&](auto&) { work(); });
+        });
+    }
+    else
+    {
+        window->MakeCurrentContext();
+        device->SetVsync(vsync);
+        driver = std::make_shared<OvRendering::Context::Driver>(driverSettings);
+    }
 
 	uiManager = std::make_unique<OvUI::Core::UIManager>(
 		*window,

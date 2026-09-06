@@ -239,6 +239,20 @@ namespace baregl
 		});
 	}
 
+	Framebuffer::Snapshot Framebuffer::Snapshot::WithDrawBuffer(std::optional<uint32_t> p_index) const
+	{
+		if (!m_data || (p_index && *p_index >= k_maxColorAttachmentCount))
+			throw std::invalid_argument("Invalid recorded draw buffer selection");
+		auto data = std::make_shared<SnapshotData>();
+		data->attachments = m_data->attachments;
+		data->layers = m_data->layers;
+		data->drawBuffer = p_index;
+		data->readBuffer = m_data->readBuffer;
+		data->size = m_data->size;
+		data->debugName = m_data->debugName;
+		return Snapshot(std::move(data));
+	}
+
 	void Framebuffer::Snapshot::Bind() const
 	{
 		return ResourceExecutor::Invoke([&]() -> void {
@@ -291,6 +305,9 @@ namespace baregl
 
 	void Framebuffer::Resize(uint16_t p_width, uint16_t p_height)
 	{
+		// The producer owns source attachment metadata. Avoid a synchronous owner
+		// task on every unchanged post-process target; real changes still dispatch.
+		if (IsValid() && p_width && p_height && GetSize() == std::pair{p_width, p_height}) return;
 		return ResourceExecutor::Invoke([&]() -> void {
 			if (!IsValid() || !p_width || !p_height) throw std::invalid_argument("Invalid framebuffer resize");
 			if (GetSize() == std::pair{p_width, p_height}) return;

@@ -51,7 +51,7 @@ void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
 )
 {
 	ZoneScoped;
-	TracyGpuZone("AutoExposureEffect");
+	OV_GPU_ZONE(m_renderer, "AutoExposureEffect");
 
 	const auto& autoExposureSettings = static_cast<const AutoExposureSettings&>(p_settings);
 

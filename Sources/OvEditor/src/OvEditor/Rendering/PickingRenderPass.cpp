@@ -132,7 +132,7 @@ OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Rendering::Picki
 void OvEditor::Rendering::PickingRenderPass::Draw(OvRendering::Data::PipelineState p_pso)
 {
 	ZoneScoped;
-	TracyGpuZone("PickingRenderPass");
+	OV_GPU_ZONE(m_renderer, "PickingRenderPass");
 
 	using namespace OvCore::Rendering;
 

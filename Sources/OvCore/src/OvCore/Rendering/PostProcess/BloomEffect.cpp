@@ -107,7 +107,7 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 )
 {
 	ZoneScoped;
-	TracyGpuZone("BloomEffect");
+	OV_GPU_ZONE(m_renderer, "BloomEffect");
 
 	using enum OvRendering::Settings::EBlitFlags;
 

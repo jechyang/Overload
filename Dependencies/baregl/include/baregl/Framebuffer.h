@@ -125,6 +125,8 @@ namespace baregl
 			void ReadRGBA8(std::span<uint8_t> p_pixels) const;
 			uint32_t GetID() const; // Realizes the FBO on the GL owner (or through ResourceExecutor).
 			std::pair<uint16_t, uint16_t> GetSize() const;
+			// CPU-only selection for recorded passes; leaves the source FBO unchanged.
+			Snapshot WithDrawBuffer(std::optional<uint32_t> p_index) const;
 		private:
 			explicit Snapshot(std::shared_ptr<SnapshotData> p_data) : m_data(std::move(p_data)) {}
 			std::shared_ptr<SnapshotData> m_data;

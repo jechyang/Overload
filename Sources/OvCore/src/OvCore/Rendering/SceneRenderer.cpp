@@ -80,7 +80,7 @@ namespace
 		virtual void Draw(OvRendering::Data::PipelineState p_pso) override
 		{
 			ZoneScoped;
-			TracyGpuZone("OpaqueRenderPass");
+			OV_GPU_ZONE(m_renderer, "OpaqueRenderPass");
 
 			PrepareStencilBuffer(p_pso);
 
@@ -105,7 +105,7 @@ namespace
 		virtual void Draw(OvRendering::Data::PipelineState p_pso) override
 		{
 			ZoneScoped;
-			TracyGpuZone("TransparentRenderPass");
+			OV_GPU_ZONE(m_renderer, "TransparentRenderPass");
 
 			PrepareStencilBuffer(p_pso);
 
@@ -130,7 +130,7 @@ namespace
 		virtual void Draw(OvRendering::Data::PipelineState p_pso) override
 		{
 			ZoneScoped;
-			TracyGpuZone("UIRenderPass");
+			OV_GPU_ZONE(m_renderer, "UIRenderPass");
 
 			PrepareStencilBuffer(p_pso);
 

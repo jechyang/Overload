@@ -41,10 +41,21 @@ OvGame::Core::Game::Game(Context & p_context) :
 	startupScenePath = OvTools::Utils::PathParser::MakeNonWindowsStyle(startupScenePath);
 	m_context.sceneManager.LoadScene(startupScenePath);
 	m_context.sceneManager.GetCurrentScene()->Play();
+    if (m_context.renderThread) SetFrameSubmissionEnabled(true);
 }
 
 OvGame::Core::Game::~Game()
 {
+    try
+    {
+        if (m_context.renderThread && m_pendingFrame)
+        {
+            m_context.renderThread->Discard(std::move(*m_pendingFrame));
+            m_pendingFrame.reset();
+        }
+        DrainRenderFrames();
+    }
+    catch (const std::exception& error) { OVLOG_ERROR(error.what()); }
 	m_context.sceneManager.UnloadCurrentScene();
 }
 
@@ -52,6 +63,7 @@ void OvGame::Core::Game::PreUpdate()
 {
 	ZoneScoped;
 	OvDebug::Logger::DispatchPendingEvents();
+    CollectCompletedFrames();
 
 	m_context.device->PollEvents();
 }
@@ -96,6 +108,7 @@ void RenderCurrentScene(
 
 void OvGame::Core::Game::Update(float p_deltaTime)
 {
+    ZoneScopedN("Game Update");
     if (m_pendingFrame) throw std::logic_error("Previous Game frame has not been submitted");
     std::optional<OvRendering::Data::RenderFrame> frame;
     if (m_frameSubmissionEnabled) frame.emplace(++m_recordedFrameID);
@@ -156,14 +169,35 @@ void OvGame::Core::Game::Update(float p_deltaTime)
 void OvGame::Core::Game::PostUpdate()
 {
     ZoneScoped;
+    CollectCompletedFrames();
     if (m_frameSubmissionEnabled)
     {
         if (!m_pendingFrame) throw std::logic_error("Game frame was not prepared");
         auto frame = std::move(*m_pendingFrame); m_pendingFrame.reset();
-        frame.Submit(*m_context.driver, [&] { m_context.window->SwapBuffers(); });
-        frame.Wait();
-        m_context.inputManager->ClearEvents();
-        frame.GetCompletion().RethrowIfFailed();
+        if (m_context.renderThread)
+        {
+            m_context.window->ApplyPendingCursor();
+            // Allocate completion storage before admission transfers ownership.
+            m_inFlightFrames.push_back(frame.GetCompletion());
+            try
+            {
+                m_context.renderThread->Submit(std::move(frame), [window = m_context.window.get()] { window->Present(); });
+            }
+            catch (...)
+            {
+                m_inFlightFrames.pop_back();
+                m_context.renderThread->Discard(std::move(frame));
+                throw;
+            }
+            m_context.inputManager->ClearEvents();
+        }
+        else
+        {
+            frame.Submit(*m_context.driver, [&] { m_context.window->SwapBuffers(); });
+            frame.Wait();
+            m_context.inputManager->ClearEvents();
+            frame.GetCompletion().RethrowIfFailed();
+        }
     }
     else
     {
@@ -176,6 +210,8 @@ void OvGame::Core::Game::PostUpdate()
 void OvGame::Core::Game::SetFrameSubmissionEnabled(bool enabled)
 {
     if (m_pendingFrame) throw std::logic_error("Cannot switch Game submission mode during a frame");
+    if (!enabled && m_context.renderThread) throw std::logic_error("Threaded Game requires command submission");
+    DrainRenderFrames();
     m_sceneRenderer.SetDrawRecordingEnabled(enabled);
     m_context.uiManager->SetCommandRecordingEnabled(enabled);
     m_frameSubmissionEnabled = enabled;
@@ -216,4 +252,20 @@ OvRendering::Data::RenderCommandList OvGame::Core::Game::RecordSceneCommands()
         m_sceneRenderer.CancelCommandRecording();
         std::rethrow_exception(error);
     }
+}
+
+void OvGame::Core::Game::CollectCompletedFrames()
+{
+    while (!m_inFlightFrames.empty() && m_inFlightFrames.front().IsRetired())
+    {
+        auto completion = m_inFlightFrames.front(); m_inFlightFrames.pop_front();
+        completion.RethrowIfFailed();
+    }
+    if (m_context.renderThread) m_context.renderThread->RethrowIfFailed();
+}
+
+void OvGame::Core::Game::DrainRenderFrames()
+{
+    if (m_context.renderThread) m_context.renderThread->WaitIdle();
+    CollectCompletedFrames();
 }

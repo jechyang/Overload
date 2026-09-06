@@ -103,6 +103,29 @@ namespace OvRendering::Data
             try { m_operations.push_back(std::move(operation)); }
             catch (...) { FailRecording(); throw; }
         }
+        // Group an already-recorded suffix without executing or borrowing its
+        // operations. Used for lexical GPU scopes that must live on the consumer.
+        using OperationGroup = std::vector<Operation>;
+        using GroupWrapper = std::function<void(Context::Driver&, const OperationGroup&)>;
+        void WrapOperations(size_t first, GroupWrapper wrapper)
+        {
+            if (m_state != State::RECORDING || first > m_operations.size() || !wrapper)
+                throw std::logic_error("Invalid command scope");
+            if (first == m_operations.size()) return;
+            try
+            {
+                OperationGroup group;
+                group.reserve(m_operations.size() - first);
+                for (size_t i = first; i < m_operations.size(); ++i)
+                    group.push_back(std::move(m_operations[i]));
+                Operation operation = [group = std::move(group), wrapper = std::move(wrapper)](Context::Driver& driver) {
+                    wrapper(driver, group);
+                };
+                m_operations.resize(first);
+                m_operations.push_back(std::move(operation));
+            }
+            catch (...) { FailRecording(); throw; }
+        }
         // Transfer a sealed list into this sequence. All child completion tokens
         // publish only after the whole sequence succeeds or fails.
         void Append(RenderCommandList&& child)

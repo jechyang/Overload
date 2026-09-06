@@ -29,7 +29,7 @@ OvEditor::Rendering::GridRenderPass::GridRenderPass(OvRendering::Core::Composite
 void OvEditor::Rendering::GridRenderPass::Draw(OvRendering::Data::PipelineState p_pso)
 {
 	ZoneScoped;
-	TracyGpuZone("GridRenderPass");
+	OV_GPU_ZONE(m_renderer, "GridRenderPass");
 
 	OVASSERT(m_renderer.HasDescriptor<GridDescriptor>(), "Cannot find GridDescriptor attached to this renderer");
 	OVASSERT(m_renderer.HasFeature<OvRendering::Features::DebugShapeRenderFeature>(), "Cannot find DebugShapeRenderFeature attached to this renderer");

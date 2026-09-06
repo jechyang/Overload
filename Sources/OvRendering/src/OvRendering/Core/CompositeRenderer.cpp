@@ -20,7 +20,7 @@ OvRendering::Core::CompositeRenderer::CompositeRenderer(Context::Driver& p_drive
 void OvRendering::Core::CompositeRenderer::BeginFrame(const Data::FrameDescriptor& p_frameDescriptor)
 {
 	ZoneScoped;
-	TracyGpuZone("BeginFrame");
+	OV_GPU_ZONE(*this, "BeginFrame");
 
 	try
 	{
@@ -64,7 +64,7 @@ void OvRendering::Core::CompositeRenderer::BeginFrame(const Data::FrameDescripto
 void OvRendering::Core::CompositeRenderer::DrawFrame()
 {
 	ZoneScoped;
-	TracyGpuZone("DrawFrame");
+	OV_GPU_ZONE(*this, "DrawFrame");
 
 	auto pso = CreatePipelineState();
 
@@ -90,7 +90,7 @@ void OvRendering::Core::CompositeRenderer::DrawFrame()
 void OvRendering::Core::CompositeRenderer::EndFrame()
 {
 	ZoneScoped;
-	TracyGpuZone("EndFrame");
+	OV_GPU_ZONE(*this, "EndFrame");
 
 	try
 	{

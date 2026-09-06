@@ -26,6 +26,8 @@
 
 #include <OvTools/Filesystem/IniFile.h>
 #include <OvTools/Jobs/JobSystem.h>
+#include <OvRendering/Threading/RenderThread.h>
+#include <baregl/ResourceExecutor.h>
 
 namespace OvGame::Core
 {
@@ -59,7 +61,11 @@ namespace OvGame::Core
 		std::unique_ptr<OvWindowing::Context::Device> device;
 		std::unique_ptr<OvWindowing::Window> window;
 		std::unique_ptr<OvWindowing::Inputs::InputManager> inputManager;
-		std::unique_ptr<OvRendering::Context::Driver> driver;
+		// Reverse destruction keeps the resource dispatcher and GL owner alive
+		// through all services/resources, then destroys the window last.
+		std::unique_ptr<OvRendering::Threading::RenderThread> renderThread;
+		std::unique_ptr<baregl::ResourceExecutor> resourceExecutor;
+		std::shared_ptr<OvRendering::Context::Driver> driver;
 		std::unique_ptr<OvUI::Core::UIManager> uiManager;
 		std::unique_ptr<OvPhysics::Core::PhysicsEngine> physicsEngine;
 		std::unique_ptr<OvAudio::Core::AudioEngine> audioEngine;

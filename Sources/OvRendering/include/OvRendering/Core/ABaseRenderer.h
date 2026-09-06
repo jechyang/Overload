@@ -18,6 +18,9 @@
 #include <OvRendering/Settings/EBlitFlags.h>
 #include <OvRendering/Context/Driver.h>
 
+namespace tracy { struct SourceLocationData; }
+namespace OvRendering::Utils { class GpuScope; }
+
 namespace OvRendering::Core
 {
 	/**
@@ -27,6 +30,7 @@ namespace OvRendering::Core
 	class ABaseRenderer : public IRenderer
 	{
 	public:
+		Utils::GpuScope ProfileGpuScope(const tracy::SourceLocationData* p_source);
 		/**
 		* Constructor of the base renderer
 		* @param p_driver
@@ -147,6 +151,7 @@ namespace OvRendering::Core
 		// Select via this API while drawing. Recording copies CPU state only.
 		// Execution and final resource release currently require the GL owner.
 		void BindTarget(baregl::Framebuffer* p_target);
+		void BindTarget(baregl::Framebuffer::Snapshot p_target);
 		PassStateCommand RecordPassState() const;
 		void ExecutePassState(const PassStateCommand& p_command);
 		ClearCommand PrepareClear(bool p_colorBuffer, bool p_depthBuffer, bool p_stencilBuffer,

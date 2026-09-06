@@ -131,7 +131,7 @@ protected:
 	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
 	{
 		ZoneScoped;
-		TracyGpuZone("DebugCamerasRenderPass");
+		OV_GPU_ZONE(m_renderer, "DebugCamerasRenderPass");
 
 		using namespace OvRendering::Features;
 
@@ -196,7 +196,7 @@ protected:
 	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
 	{
 		ZoneScoped;
-		TracyGpuZone("DebugReflectionProbesRenderPass");
+		OV_GPU_ZONE(m_renderer, "DebugReflectionProbesRenderPass");
 
 		using namespace OvRendering::Features;
 
@@ -269,7 +269,7 @@ protected:
 	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
 	{
 		ZoneScoped;
-		TracyGpuZone("DebugLightsRenderPass");
+		OV_GPU_ZONE(m_renderer, "DebugLightsRenderPass");
 
 		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
 
@@ -321,7 +321,7 @@ protected:
 	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
 	{
 		ZoneScoped;
-		TracyGpuZone("DebugActorRenderPass");
+		OV_GPU_ZONE(m_renderer, "DebugActorRenderPass");
 
 		// Clear stencil buffer for outline rendering
 		m_renderer.Clear(false, false, true);

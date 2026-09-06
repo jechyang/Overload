@@ -22,7 +22,7 @@ void OvCore::Rendering::PostProcess::TonemappingEffect::Draw(
 )
 {
 	ZoneScoped;
-	TracyGpuZone("TonemappingEffect");
+	OV_GPU_ZONE(m_renderer, "TonemappingEffect");
 
 	const auto& tonemappingSettings = static_cast<const TonemappingSettings&>(p_settings);
 

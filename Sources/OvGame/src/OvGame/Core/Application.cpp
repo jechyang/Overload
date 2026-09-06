@@ -32,6 +32,7 @@ void OvGame::Core::Application::Run()
 		clock.Update();
 		FrameMark;
 	}
+    m_game.DrainRenderFrames();
 }
 
 bool OvGame::Core::Application::IsRunning() const

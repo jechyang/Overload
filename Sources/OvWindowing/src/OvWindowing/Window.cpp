@@ -232,7 +232,18 @@ void OvWindowing::Window::MakeCurrentContext() const
 	glfwMakeContextCurrent(m_glfwWindow);
 }
 
+void OvWindowing::Window::DetachCurrentContext()
+{
+    glfwMakeContextCurrent(nullptr);
+}
+
 void OvWindowing::Window::SwapBuffers()
+{
+    ApplyPendingCursor();
+    Present();
+}
+
+void OvWindowing::Window::ApplyPendingCursor()
 {
 	if (m_cursorShape.has_value())
 	{
@@ -240,6 +251,10 @@ void OvWindowing::Window::SwapBuffers()
 		m_cursorShape.reset();
 	}
 
+}
+
+void OvWindowing::Window::Present()
+{
 	glfwSwapBuffers(m_glfwWindow);
 }
 

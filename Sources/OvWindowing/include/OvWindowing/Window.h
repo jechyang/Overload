@@ -204,12 +204,17 @@ namespace OvWindowing
 		* Define the window as the current context
 		*/
 		void MakeCurrentContext() const;
+        static void DetachCurrentContext();
 
 		/**
 		* Handle the buffer swapping with the current window.
 		* @note Also responsible for updating the cursor, so it's done last and has the final word
 		*/
 		void SwapBuffers();
+
+        // Main-thread platform update, separated from GL-owner presentation.
+        void ApplyPendingCursor();
+        void Present();
 
 		/**
 		* Define a mode for the mouse cursor

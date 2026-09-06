@@ -169,3 +169,7 @@ Debug/Release --log-dispatch 独立运行，覆盖拥有型主线程事件、六
 ## 资源调用与 UI 后端分派（阶段 3 第七增量）
 
 重新生成工程并完整构建后运行 Debug/Release --resource-executor（可追加 --vs），输出 <配置>-resource-executor/current。主线程无 GL 上下文，通过显式 ResourceExecutor 同步调用真正的资源类与 UIManager/Canvas；GL hooks 检查固定 owner。覆盖七类资源、上传/读回/resize 旧存储、shader 诊断及跨帧 uniform 指向、UI 像素对拍与源销毁、作用域/异常/关闭。协议及产品接入边界见 MULTITHREADING_RESOURCE_EXECUTOR_VALIDATION.md。
+
+## Game 实际双线程（阶段 3 第八增量）
+
+完整构建后独立运行 Debug/Release --game-thread（可追加 --vs），输出 <配置>-game-thread/current。新建保存项目，比较实际 Application/Game 的主线程与 Render Context 32 帧姿态/场景/UI；验证自然交叠、两帧容量、重载/退出/重建/失败。测试 Window 副本只在 Present 之前插入 backbuffer 读回 hook。生成 exe 可接收输出目录及 --capture，等待 Tracy 连接并验证消费线程 GPU scope。Game.ini 的 render_thread=true 要求 render_commands=true，暂不默认开启；Editor 接入和最终性能/延迟验收仍待完成，见 MULTITHREADING_GAME_THREAD_VALIDATION.md。

@@ -11,6 +11,7 @@
 #include <tracy/Tracy.hpp>
 
 #include <OvRendering/Core/ABaseRenderer.h>
+#include <OvRendering/Utils/Profiling.h>
 #include <OvRendering/Resources/Loaders/TextureLoader.h>
 
 std::atomic_bool OvRendering::Core::ABaseRenderer::s_isDrawing{ false };
@@ -318,6 +319,12 @@ void OvRendering::Core::ABaseRenderer::BindTarget(baregl::Framebuffer* p_target)
 	m_passState.target = std::move(target);
 }
 
+void OvRendering::Core::ABaseRenderer::BindTarget(baregl::Framebuffer::Snapshot p_target)
+{
+    SubmitRenderOperation([target = p_target](Context::Driver&) { target.Bind(); });
+    m_passState.target = std::move(p_target);
+}
+
 OvRendering::Core::ABaseRenderer::PassStateCommand OvRendering::Core::ABaseRenderer::RecordPassState() const
 {
 	return m_passState;
@@ -380,3 +387,6 @@ void OvRendering::Core::ABaseRenderer::SubmitRenderOperation(Data::RenderCommand
 	}
 	else p_operation(m_driver);
 }
+
+OvRendering::Utils::GpuScope OvRendering::Core::ABaseRenderer::ProfileGpuScope(const tracy::SourceLocationData* p_source)
+{ return Utils::GpuScope(m_commands.get(), p_source); }

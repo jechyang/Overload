@@ -55,7 +55,7 @@ OvTools::Utils::OptRef<const OvCore::Rendering::PostProcess::PostProcessStack> F
 void OvCore::Rendering::PostProcessRenderPass::Draw(OvRendering::Data::PipelineState p_pso)
 {
 	ZoneScoped;
-	TracyGpuZone("PostProcessRenderPass");
+	OV_GPU_ZONE(m_renderer, "PostProcessRenderPass");
 
 	auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
 	auto& scene = sceneDescriptor.scene;

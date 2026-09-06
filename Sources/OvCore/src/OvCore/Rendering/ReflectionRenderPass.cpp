@@ -38,7 +38,7 @@ OvCore::Rendering::ReflectionRenderPass::ReflectionRenderPass(OvRendering::Core:
 void OvCore::Rendering::ReflectionRenderPass::Draw(OvRendering::Data::PipelineState p_pso)
 {
 	ZoneScoped;
-	TracyGpuZone("ReflectionRenderPass");
+	OV_GPU_ZONE(m_renderer, "ReflectionRenderPass");
 
 	using namespace OvCore::Rendering;
 
@@ -90,8 +90,13 @@ void OvCore::Rendering::ReflectionRenderPass::Draw(OvRendering::Data::PipelineSt
 			reflectionCamera.SetRotation(OvMaths::FQuaternion{ kCubeFaceRotations[faceIndex] });
 			reflectionCamera.CacheMatrices(width, height);
 			engineBufferRenderFeature.SetCamera(reflectionCamera);
-			targetFramebuffer.SetTargetDrawBuffer(faceIndex);
-			m_renderer.BindTarget(&targetFramebuffer);
+			if (m_renderer.IsRecordingCommands())
+				m_renderer.BindTarget(targetFramebuffer.RecordTarget().WithDrawBuffer(faceIndex));
+			else
+			{
+				targetFramebuffer.SetTargetDrawBuffer(faceIndex);
+				m_renderer.BindTarget(&targetFramebuffer);
+			}
 			m_renderer.Clear(true, true, true);
 			_DrawReflections(p_pso, reflectionCamera);
 

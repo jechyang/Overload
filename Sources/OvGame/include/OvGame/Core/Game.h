@@ -21,6 +21,7 @@
 #include <OvUI/Modules/Canvas.h>
 #include <OvRendering/Data/RenderFrame.h>
 #include <optional>
+#include <deque>
 
 namespace OvGame::Core
 {
@@ -61,9 +62,12 @@ namespace OvGame::Core
 		OvRendering::Data::RenderFrame RecordRenderFrame();
         void SetFrameSubmissionEnabled(bool enabled);
         bool IsFrameSubmissionEnabled() const { return m_frameSubmissionEnabled; }
+        void DrainRenderFrames();
 
 	private:
         OvRendering::Data::RenderCommandList RecordSceneCommands();
+        void CollectCompletedFrames();
+        std::deque<OvRendering::Data::RenderFrame::Completion> m_inFlightFrames;
         bool m_frameSubmissionEnabled = false;
         std::optional<OvRendering::Data::RenderFrame> m_pendingFrame;
 		uint64_t m_recordedFrameID = 0;
