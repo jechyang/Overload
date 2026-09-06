@@ -497,17 +497,20 @@ void SysTraceGetExternalName( uint64_t thread, const char*& threadName, const ch
     {
         if( _GetThreadDescription )
         {
-            PWSTR tmp;
-            _GetThreadDescription( hnd, &tmp );
-            char buf[256];
-            if( tmp )
+            PWSTR tmp = nullptr;
+            const auto status = _GetThreadDescription( hnd, &tmp );
+            if( SUCCEEDED( status ) && tmp )
             {
-                auto ret = wcstombs( buf, tmp, 256 );
-                if( ret != 0 )
+                // Thread descriptions are UTF-16, independent of the C locale.
+                // wcstombs can return size_t(-1); never use it as a copy length.
+                char buf[256];
+                const auto length = WideCharToMultiByte( CP_UTF8, WC_ERR_INVALID_CHARS, tmp, -1, buf, sizeof( buf ), nullptr, nullptr );
+                if( length > 1 )
                 {
-                    threadName = CopyString( buf, ret );
+                    threadName = CopyString( buf, size_t( length - 1 ) );
                     threadSent = true;
                 }
+                LocalFree( tmp );
             }
         }
         const auto pid = GetProcessIdOfThread( hnd );

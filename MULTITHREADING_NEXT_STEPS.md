@@ -4,7 +4,7 @@
 
 ## 从这里开始
 
-**阶段 0、1 已验收提交。阶段 2 已完成拥有型场景/编辑器/UI 帧命令、历史恢复、GPU 回收和产品交互。阶段 3 的 Game/Editor 均可用 render_thread=true 接入固定 Render owner 与有界队列，正常逐帧不 Wait；资源/日志/纹理注册表/UI/Tracy 归属及按序交互已接入。最新完整 UI、窗口变化、真实最小化/恢复和在途 Gizmo 验收通过，并修复窄视口 Bloom 和最小化状态查询，见 MULTITHREADING_WINDOW_UI_VALIDATION.md。阶段 2/3 整体目标仍未完成：下一步独占统计整帧 CPU/GPU、队列及输入到呈现请求/交互应用延迟，完成最终证据核对并决定默认配置。render_thread 暂默认 false。**
+**阶段 0、1 已验收提交。阶段 2 已完成拥有型场景/编辑器/UI 帧命令、历史恢复、GPU 回收和产品交互。阶段 3 的 Game/Editor 均可用 render_thread=true 接入固定 Render owner 与有界队列，正常逐帧不 Wait；资源/日志/纹理注册表/UI/Tracy 归属及按序交互已接入。最新完整 UI、窗口变化、真实最小化/恢复和在途 Gizmo 验收通过，并修复窄视口 Bloom 和最小化状态查询，见 MULTITHREADING_WINDOW_UI_VALIDATION.md。长基准另发现并修复 Tracy Windows Unicode 外部线程名越界复制，Debug/Release 专项与完整 Game 长采集通过，见 MULTITHREADING_TRACY_THREAD_NAME_VALIDATION.md。阶段 2/3 整体目标仍待性能/延迟最终汇总、完整编辑器 Tracy 采集及最终证据审计。render_thread 默认保留 false，由项目显式开启。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -293,6 +293,10 @@ Editor Context 安装固定 Render owner 和资源作用域，实际产品循环
 ### 5.10 已完成第十增量：完整 UI、窗口和在途输入
 
 完整产品 Canvas 在两配置各 96 帧、12 次场景/窗口/视图变化与播放模式切换下通过，按帧延迟动作与 GPU 退役稳定。真实 press/drag/release 在 Render 积压时按对应帧输入应用，与 Gizmo oracle 一致；Game/Editor 各六次真实离屏最小化/恢复保持前台不变并排空。压力发现并修复 Bloom 窄目标 4x0 和 1x1 pass 边界，五种极小/窄目标两 Context 像素精确一致；修复 IsMinimized 错查最大化标志。ImGui BaseVertex 绘制加入 owner 断言，既有动态命令与 Game/Editor 图像/失败/退出回归通过。见 MULTITHREADING_WINDOW_UI_VALIDATION.md。下一步独占 CPU/GPU、队列和输入延迟计量，再完成最终阶段审计。
+
+### 5.11 已完成第十一增量：Tracy Unicode 线程名稳定性
+
+长采集发现 Windows 外部线程名 wcstombs 失败被当作超大复制长度，导致 Tracy Symbol Worker 异常并暂停应用。改为检查 HRESULT、明确 UTF-8 转换、失败回退与 LocalFree。Debug/Release 各 224 次真实名称查询及原 GPU/TLS 生命周期回归通过，完整构建零警告零错误；修复后的 Game 九个长采集 case 完整可解析，每组双线程有 383/384 个 Update 与 Render 交叠。见 MULTITHREADING_TRACY_THREAD_NAME_VALIDATION.md。下一步完成 Editor 长采集、最终性能/延迟汇总与阶段审计。
 
 ## 6. 阶段 4：多 Pass/View 并行命令录制
 

@@ -5,6 +5,14 @@
 #include <OvRendering/Threading/RenderThread.h>
 #include <thread>
 #include <chrono>
+#undef APIENTRY
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <clocale>
+#include <client/TracySysTrace.hpp>
+
 
 namespace
 {
@@ -31,6 +39,51 @@ namespace
         if(!failed&&tracy::GetProfiler().IsConnected())Require(counters==2&&reads==2,"last GPU zone timestamps not collected at shutdown");
     }
     void LastZone(){TracyGpuZone("GPU profiling final zone");Clear();}
+    void ExternalThreadNames()
+    {
+        Require(!tracy::GetProfiler().IsConnected(),"thread-name regression must run before capture");
+        PWSTR previous=nullptr;
+        Require(SUCCEEDED(GetThreadDescription(GetCurrentThread(),&previous)),"read original thread description");
+        struct Restore
+        {
+            PWSTR previous;
+            std::string locale;
+            ~Restore(){SetThreadDescription(GetCurrentThread(),previous?previous:L"");LocalFree(previous);std::setlocale(LC_CTYPE,locale.c_str());}
+        } restore{previous,std::setlocale(LC_CTYPE,nullptr)};
+        Require(std::setlocale(LC_CTYPE,"C"),"C locale unavailable");
+        char legacy[256];
+#pragma warning(push)
+#pragma warning(disable:4996) // Exercise the exact API that failed before the fix.
+        Require(std::wcstombs(legacy,L"\u6d4b\u8bd5",sizeof(legacy))==size_t(-1),"Unicode regression did not exercise the old conversion failure");
+#pragma warning(pop)
+        const auto resolve=[&](DWORD thread,const char* expected){
+            const char* threadName=nullptr;const char* processName=nullptr;
+            tracy::SysTraceGetExternalName(thread,threadName,processName);
+            const bool valid=threadName&&processName&&*threadName&&*processName&&std::strlen(threadName)<=255;
+            const bool equal=!expected||(threadName&&std::string_view(threadName)==expected);
+            tracy::tracy_free(const_cast<char*>(threadName));tracy::tracy_free(const_cast<char*>(processName));
+            Require(valid&&equal,"external thread name was invalid or not UTF-8");
+        };
+        for(int i=0;i<32;++i)
+        {
+            Require(SUCCEEDED(SetThreadDescription(GetCurrentThread(),L"Render validation")),"set ASCII thread name");
+            resolve(GetCurrentThreadId(),"Render validation");
+            Require(SUCCEEDED(SetThreadDescription(GetCurrentThread(),L"\u6d4b\u8bd5\u7ebf\u7a0b")),"set Unicode thread name");
+            resolve(GetCurrentThreadId(),"\xE6\xB5\x8B\xE8\xAF\x95\xE7\xBA\xBF\xE7\xA8\x8B");
+            Require(SUCCEEDED(SetThreadDescription(GetCurrentThread(),L"GPU \U0001F680")),"set supplementary Unicode thread name");
+            resolve(GetCurrentThreadId(),"GPU \xF0\x9F\x9A\x80");
+            const std::wstring boundary(255,L'A');const std::string expected(255,'A');
+            Require(SUCCEEDED(SetThreadDescription(GetCurrentThread(),boundary.c_str())),"set boundary thread name");
+            resolve(GetCurrentThreadId(),expected.c_str());
+            const std::wstring oversized(1024,L'A');
+            Require(SUCCEEDED(SetThreadDescription(GetCurrentThread(),oversized.c_str())),"set oversized thread name");
+            resolve(GetCurrentThreadId(),nullptr);
+            Require(SUCCEEDED(SetThreadDescription(GetCurrentThread(),L"")),"set empty thread name");
+            resolve(GetCurrentThreadId(),nullptr);
+            resolve(MAXDWORD,"???");
+        }
+        std::puts("PASS: 224 external thread-name lookups in C locale: ASCII, Chinese, supplementary Unicode, byte boundary, oversized/empty/dead-thread fallback");
+    }
 }
 void GpuProfilingBeforeInitialize()
 {
@@ -46,6 +99,7 @@ void GpuProfilingAfterInitialize()
 int main(int argc,char** argv) try
 {
     std::setvbuf(stdout,nullptr,_IONBF,0);
+    ExternalThreadNames();
     const bool capture=argc>2&&std::string_view(argv[2])=="--capture";
     if(capture)
     {
