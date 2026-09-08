@@ -47,7 +47,7 @@ namespace OvEditor::Panels
             std::optional<std::string> materialDrop;
         };
         ~SceneView() override;
-        OvRendering::Data::RenderCommandList RecordRenderCommands() override;
+        OvRendering::Data::RenderCommandList RecordRenderCommands(bool p_deferEncoding = false) override;
         std::shared_ptr<Interaction> GetRecordedInteraction() const { return m_recordedInteraction; }
         bool CompleteInteraction(const std::shared_ptr<Interaction>& interaction);
 		virtual void Update(float p_deltaTime) override;

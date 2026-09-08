@@ -136,6 +136,7 @@ namespace OvRendering::Core
 		std::shared_ptr<baregl::Texture> m_recordingFallback2D;
 		std::shared_ptr<baregl::Texture> m_recordingFallbackCube;
 		std::shared_ptr<const Data::Material::Snapshot> m_recordedMaterial;
+        Data::Material::PreparedSnapshot m_preparedMaterial;
 		OvTools::Utils::OptRef<Core::ARenderPass> m_currentPass;
 	};
 }

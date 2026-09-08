@@ -213,6 +213,7 @@ void OvGame::Core::Game::SetFrameSubmissionEnabled(bool enabled)
     if (!enabled && m_context.renderThread) throw std::logic_error("Threaded Game requires command submission");
     DrainRenderFrames();
     m_sceneRenderer.SetDrawRecordingEnabled(enabled);
+    m_sceneRenderer.SetCommandRecordingJobs(enabled && m_context.projectSettings.GetOrDefault<bool>("parallel_recording", false) ? m_context.jobSystem.get() : nullptr);
     m_context.uiManager->SetCommandRecordingEnabled(enabled);
     m_frameSubmissionEnabled = enabled;
 }

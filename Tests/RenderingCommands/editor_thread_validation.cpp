@@ -81,7 +81,7 @@ struct Gate
 void SetEditorThreadMode(const std::filesystem::path& project, bool enabled)
 {
     OvTools::Filesystem::IniFile settings((project/"SkinningProject.ovproject").string());
-    settings.Remove("render_thread"); settings.Add("render_thread",enabled); settings.Rewrite();
+    settings.Remove("render_thread"); settings.Add("render_thread",enabled); settings.Remove("parallel_recording"); settings.Add("parallel_recording",true); settings.Rewrite();
 }
 struct ViewsFixture
 {

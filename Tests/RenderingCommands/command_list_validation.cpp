@@ -147,7 +147,10 @@ void CommandLifetimeValidation(const std::filesystem::path& dir)
     Require(glGetError()==GL_NO_ERROR && images.good(),"command lifetime GL/output failure");std::puts("PASS: 8 destroyed renderer/scene/feature/material/geometry/target command pairs; zero recording GPU side effects; terminal failure, cancellation and move ownership");
 }
 
-int main(int argc,char** argv) try
+#ifndef COMMAND_LIST_VALIDATION_MAIN
+#define COMMAND_LIST_VALIDATION_MAIN main
+#endif
+int COMMAND_LIST_VALIDATION_MAIN(int argc,char** argv) try
 {
     std::setvbuf(stdout,nullptr,_IONBF,0);_set_abort_behavior(0,_WRITE_ABORT_MSG|_CALL_REPORTFAULT);_CrtSetReportMode(_CRT_ASSERT,_CRTDBG_MODE_FILE);_CrtSetReportFile(_CRT_ASSERT,_CRTDBG_FILE_STDERR);Require(argc==2,"pass output directory");
     PacketValidation(argv[1]);CommandLifetimeValidation(argv[1]);TargetStateValidation();TargetPacketValidation(argv[1]);FrameInputValidation(argv[1]);FramePacketValidation(argv[1]);

@@ -44,11 +44,17 @@ namespace OvRendering::Data
     }
     RenderFrame::Completion RenderFrame::GetCompletion() const
     { return Completion(m_storage ? m_storage->shared : nullptr); }
-    void RenderFrame::Append(RenderCommandList&& commands)
+    void RenderFrame::Append(RenderCommandList&& commands) { AppendImpl(std::move(commands), false); }
+    void RenderFrame::AppendRecording(RenderCommandList&& commands) { AppendImpl(std::move(commands), true); }
+    void RenderFrame::AppendImpl(RenderCommandList&& commands, bool prepared)
     {
         if (!m_storage || GetCompletion().GetState() != State::RECORDING)
             throw std::logic_error("Frame is not recording");
-        try { m_storage->commands.Append(std::move(commands)); }
+        try
+        {
+            if (prepared) m_storage->commands.AppendRecording(std::move(commands));
+            else m_storage->commands.Append(std::move(commands));
+        }
         catch (...)
         {
             if (m_storage->commands.GetState() == RenderCommandList::State::RECORDING)
@@ -59,12 +65,22 @@ namespace OvRendering::Data
             throw;
         }
     }
-    void RenderFrame::Seal()
+    void RenderFrame::Seal(OvTools::Jobs::JobSystem* jobs)
     {
         if (!m_storage || GetCompletion().GetState() != State::RECORDING)
             throw std::logic_error("Frame cannot be sealed");
-        m_storage->commands.Seal();
-        m_storage->shared->state.store(State::READY, std::memory_order_release);
+        try
+        {
+            m_storage->commands.Seal(jobs);
+            m_storage->shared->state.store(State::READY, std::memory_order_release);
+        }
+        catch (...)
+        {
+            m_storage->shared->error = std::current_exception();
+            m_storage->shared->state.store(State::FAILED, std::memory_order_release);
+            Retire(false);
+            throw;
+        }
     }
     void RenderFrame::Cancel()
     {

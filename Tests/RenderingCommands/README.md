@@ -201,3 +201,23 @@ node Tests/RenderingCommands/analyze-product-tracy.mjs <events.csv>
 ~~~
 
 采集先完成项目夹具，再等待 TRACE READY 连接；连接后的计量另存 product-frame-metrics-connected.csv。两个分析器分别验证时序/帧 ID/两帧容量/交叠，以及完整 Tracy case/线程身份/真实 Update 与 Render 的交叠。GPU 原始时间戳用 BigInt 处理。正式未连接数据与连接数据不得混算；GPU 时间线跨度不是忙碌占用率，呈现返回不是屏幕显示，交互观察不是物理输入设备延迟。指标定义、默认配置决定及结果见 MULTITHREADING_FRAME_PERFORMANCE_VALIDATION.md。
+
+## 多 Pass/View 并行命令录制（阶段 4）
+
+完整构建 Debug/Release 后运行：
+
+~~~bat
+node Tests/Skinning/run-validation.mjs Release --parallel-recording
+node Tests/Skinning/run-validation.mjs Debug --parallel-recording
+node Tests/Skinning/run-validation.mjs Release --parallel-recording --asan
+node Tests/Skinning/run-validation.mjs Release --parallel-recording --mutex-deque
+node Tests/Skinning/run-validation.mjs Release --recording-benchmark
+~~~
+
+专项输出在 <配置>-parallel-recording-command-list/current/；ASan 和 MutexDeque 使用独立后缀目录。测试包括原动态完整帧回归、128 draw 门槛、私有槽顺序、worker 无 GL context、部分提交/汇合失败后的排空、跨视图 history/completion、1024 份源销毁材质输入及 8 个 GPU 代际。三模式（旧录制、准备后串行、准备后并行）各 12 帧、每帧 4 pass × 192 draw，逐像素及 GL draw 状态精确对拍。当前测试材质有 27 个 active uniform（24 个额外矩阵），用于检查有足够编码工作的负载；不能代替普通材质的整帧结论。
+
+--recording-benchmark 使用真实 Editor 三视图、64 个动画实例、固定 Render owner，在三种录制方式之间交替运行；每种方式三轮，每轮 192 帧丢弃前 32 帧，共 1440 个统计帧。输出在 Release-recording-benchmark-command-list-editor-ui/current/product-frame-metrics.csv。用 analyze-product-benchmark.mjs 分析该 CSV。--editor-stress 和 --game-thread 的模式配置显式开启 parallel_recording，可用于 Debug/Release 产品生命周期回归。
+
+所有性能运行保持独占，不与构建、其他引擎测试或 Tracy 客户端并发。未连接 Tracy 的专项数据用 analyze-parallel-recording.mjs 分析 parallel-recording-metrics.csv；完成 Release 专项编译后，单独运行 capture-parallel-recording.mjs。随后用 tracy-csvexport.exe -u -f Record 导出 Build/JobsValidation/tracy-parallel-recording-release.tracy，传给 analyze-parallel-recording-tracy.mjs；分析器检查完整 36 组、真实 worker 区间重叠及封口前结束，不使用固定 sleep 作为工作量。
+
+生产项目设置 parallel_recording=true 才启用新录制准备/编码；默认 false，适用于 render_commands=true 下的同线程或固定 Render owner。低层 renderer 通过 SetCommandRecordingJobs 提供池，以 SetParallelCommandRecordingEnabled(false) 保留准备后串行 oracle。历史 material/snapshot/draw-input 基准只补充链接所需新辅助函数及基类新增尾部字段，旧 Bind/Upload/DrawEntity 和基准提交保持不变。详细所有权、失败边界和测量结果见根目录 MULTITHREADING_PARALLEL_RECORDING_VALIDATION.md。

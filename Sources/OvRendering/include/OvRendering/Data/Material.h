@@ -139,6 +139,21 @@ namespace OvRendering::Data
 			uint64_t m_shaderVersion = 0;
 		};
 
+        // Main prepares immutable CPU values and pins resource generations in draw order.
+        // Worker encoding never reads Material, Shader assets, or live Texture assets.
+        // Single-use values are consumed on successful preparation; a later allocation
+        // failure aborts the entire recording, without publishing any partial commands.
+        class SnapshotInput;
+        using PreparedSnapshot = std::shared_ptr<const SnapshotInput>;
+        PreparedSnapshot PrepareSnapshot(
+            std::optional<const std::string_view> p_pass,
+            OvTools::Utils::OptRef<const Data::FeatureSet> p_features,
+            const std::shared_ptr<baregl::Texture>& p_emptyTexture2D,
+            const std::shared_ptr<baregl::Texture>& p_emptyTextureCube,
+            std::span<const std::shared_ptr<baregl::Texture>> p_textures,
+            const PreparedSnapshot& p_previous, bool p_uploadStable, bool p_uploadSingleUse);
+        static std::shared_ptr<const Snapshot> EncodeSnapshot(const PreparedSnapshot& p_input);
+
 		// CPU recording consumes used single-use properties only after the entire
 		// packet is ready. Failure leaves them unchanged and issues no GL calls.
 		// Asset textures are pinned automatically. Non-null raw textures require a

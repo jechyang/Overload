@@ -82,14 +82,14 @@ void OvEditor::Panels::AView::Render()
 	}
 }
 
-OvRendering::Data::RenderCommandList OvEditor::Panels::AView::RecordRenderCommands()
+OvRendering::Data::RenderCommandList OvEditor::Panels::AView::RecordRenderCommands(bool p_deferEncoding)
 {
     m_renderer->SetDrawRecordingEnabled(true);
     m_renderer->BeginCommandRecording();
     try
     {
         Render();
-        return m_renderer->FinishCommandRecording();
+        return m_renderer->FinishCommandRecording(p_deferEncoding);
     }
     catch (...)
     {

@@ -361,6 +361,7 @@ namespace
 OvCore::Rendering::SceneRenderer::SceneRenderer(OvRendering::Context::Driver& p_driver, bool p_stencilWrite)
 	: OvRendering::Core::CompositeRenderer(p_driver)
 {
+	SetCommandRecordingJobs(&OVSERVICE(OvTools::Jobs::JobSystem));
 	using namespace OvRendering::Features;
 	using namespace OvRendering::Settings;
 	using enum OvRendering::Features::EFeatureExecutionPolicy;

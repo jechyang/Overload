@@ -361,10 +361,10 @@ void OvRendering::Core::ABaseRenderer::BeginCommandRecording()
 	m_commands = std::make_unique<Data::RenderCommandList>();
 }
 
-OvRendering::Data::RenderCommandList OvRendering::Core::ABaseRenderer::FinishCommandRecording()
+OvRendering::Data::RenderCommandList OvRendering::Core::ABaseRenderer::FinishCommandRecording(bool p_deferEncoding)
 {
 	if (IsDrawing() || !m_commands) throw std::logic_error("Finish recording after EndFrame");
-	m_commands->Seal();
+	if (!p_deferEncoding) m_commands->Seal(m_parallelCommandRecording ? m_commandRecordingJobs : nullptr);
 	auto result = std::move(*m_commands);
 	m_commands.reset();
 	return result;

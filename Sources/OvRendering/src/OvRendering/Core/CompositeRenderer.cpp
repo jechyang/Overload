@@ -35,7 +35,7 @@ void OvRendering::Core::CompositeRenderer::BeginFrame(const Data::FrameDescripto
 				if (pass.second->IsEnabled() && !pass.second->SupportsCommandRecording())
 					throw std::invalid_argument("Enabled pass has not opted into command recording");
 		}
-		m_recordedMaterial.reset();
+		m_recordedMaterial.reset(); m_preparedMaterial.reset();
 		ABaseRenderer::BeginFrame(p_frameDescriptor);
 
 		for (const auto& feature : m_features | std::views::values)
@@ -111,7 +111,7 @@ void OvRendering::Core::CompositeRenderer::EndFrame()
 		}
 
 		ClearDescriptors();
-		m_recordedMaterial.reset();
+		m_recordedMaterial.reset(); m_preparedMaterial.reset();
 		ABaseRenderer::EndFrame();
 	}
 	catch (...)
@@ -120,7 +120,7 @@ void OvRendering::Core::CompositeRenderer::EndFrame()
 		{
 			m_commands->FailRecording();
 			ClearDescriptors();
-			m_recordedMaterial.reset();
+			m_recordedMaterial.reset(); m_preparedMaterial.reset();
 			if (IsDrawing()) ABaseRenderer::EndFrame();
 		}
 		throw;
@@ -167,23 +167,47 @@ void OvRendering::Core::CompositeRenderer::DrawEntity(
 			const bool stable = !m_previousMaterialSignature || binding.signature.stablePropertySignature != m_previousMaterialSignature->stablePropertySignature;
 			const bool once = !m_previousMaterialSignature || binding.signature.singleUsePropertySignature != m_previousMaterialSignature->singleUsePropertySignature;
 			auto geometry = PrepareGeometryDraw(p_pso, p_drawable);
-			auto material = std::make_shared<Data::Material::Snapshot>(p_drawable.material->RecordCachedSnapshot(
-				p_drawable.pass, features, m_recordingFallback2D, m_recordingFallbackCube,
-				recording.textures, m_recordedMaterial.get(), stable, once));
-			DrawPacket packet{ RecordPassState(), std::move(geometry), material, std::move(recording) };
-			m_recording = nullptr;
-			if (IsRecordingCommands())
-			{
-				SubmitRenderOperation([packet = std::move(packet)](Context::Driver& driver) {
-					ExecutePassState(driver, packet.state);
-					for (const auto& operation : packet.features.operations) operation();
-					packet.material->Execute();
-					const auto& geometry = packet.geometry;
-					driver.Draw(geometry.pipelineState, geometry.mesh, geometry.primitiveMode, geometry.instances);
-				});
-			}
-			else ExecuteDrawPacket(packet);
-			m_recordedMaterial = std::move(material);
+            if (IsRecordingCommands() && m_commandRecordingJobs)
+            {
+                auto input = p_drawable.material->PrepareSnapshot(p_drawable.pass, features,
+                    m_recordingFallback2D, m_recordingFallbackCube, recording.textures,
+                    m_preparedMaterial, stable, once);
+                auto state = RecordPassState();
+                m_recording = nullptr;
+                m_commands->AppendDeferred([input, state = std::move(state), geometry = std::move(geometry),
+                    recording = std::move(recording)]() mutable -> Data::RenderCommandList::Operation {
+                    DrawPacket packet{std::move(state), std::move(geometry),
+                        Data::Material::EncodeSnapshot(input), std::move(recording)};
+                    return [packet = std::move(packet)](Context::Driver& driver) {
+                        ExecutePassState(driver, packet.state);
+                        for (const auto& operation : packet.features.operations) operation();
+                        packet.material->Execute();
+                        const auto& draw = packet.geometry;
+                        driver.Draw(draw.pipelineState, draw.mesh, draw.primitiveMode, draw.instances);
+                    };
+                });
+                m_preparedMaterial = std::move(input);
+            }
+            else
+            {
+				auto material = std::make_shared<Data::Material::Snapshot>(p_drawable.material->RecordCachedSnapshot(
+					p_drawable.pass, features, m_recordingFallback2D, m_recordingFallbackCube,
+					recording.textures, m_recordedMaterial.get(), stable, once));
+				DrawPacket packet{ RecordPassState(), std::move(geometry), material, std::move(recording) };
+				m_recording = nullptr;
+				if (IsRecordingCommands())
+				{
+					SubmitRenderOperation([packet = std::move(packet)](Context::Driver& driver) {
+						ExecutePassState(driver, packet.state);
+						for (const auto& operation : packet.features.operations) operation();
+						packet.material->Execute();
+						const auto& geometry = packet.geometry;
+						driver.Draw(geometry.pipelineState, geometry.mesh, geometry.primitiveMode, geometry.instances);
+					});
+				}
+				else ExecuteDrawPacket(packet);
+				m_recordedMaterial = std::move(material);
+            }
 			m_previousMaterialSignature = binding.signature;
 		}
 		catch (...)
@@ -191,7 +215,7 @@ void OvRendering::Core::CompositeRenderer::DrawEntity(
 			m_recording = nullptr;
 			if (m_commands) m_commands->FailRecording();
 			m_previousMaterialSignature.reset();
-			m_recordedMaterial.reset();
+			m_recordedMaterial.reset(); m_preparedMaterial.reset();
 			throw;
 		}
 		for (const auto& feature : m_features | std::views::values)
@@ -236,7 +260,7 @@ void OvRendering::Core::CompositeRenderer::SetDrawRecordingEnabled(bool p_enable
 		m_recordingFallback2D = std::move(texture2D); m_recordingFallbackCube = std::move(textureCube);
 	}
 	m_drawRecordingEnabled = p_enabled;
-	m_previousMaterialSignature.reset(); m_recordedMaterial.reset();
+	m_previousMaterialSignature.reset(); m_recordedMaterial.reset(); m_preparedMaterial.reset();
 }
 
 void OvRendering::Core::CompositeRenderer::RecordDrawOperation(std::function<void()> p_operation)

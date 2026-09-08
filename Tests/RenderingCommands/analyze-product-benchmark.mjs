@@ -16,7 +16,7 @@ const rows = lines.map(line => {
 });
 assert(rows.length > 0, 'Empty benchmark');
 const products = [...new Set(rows.map(row => row.product))];
-assert.deepEqual(products, products[0] === 'game' ? ['game'] : ['editor', 'editor-picking']);
+assert.deepEqual(products, products[0] === 'game' ? ['game'] : products[0] === 'editor-recording' ? ['editor-recording'] : ['editor', 'editor-picking']);
 function stats(values) {
   if (!values.length) return null;
   assert(values.every(Number.isFinite));
@@ -38,10 +38,11 @@ function overlap(producer, consumer) {
 const groups = [];
 for (const product of new Set(rows.map(row => row.product))) {
   const modes = [...new Set(rows.filter(row => row.product === product).map(row => row.mode))];
-  assert.deepEqual(modes, product === 'editor-picking' ? ['commands', 'threaded'] : ['immediate', 'commands', 'threaded']);
+  assert.deepEqual(modes, product === 'editor-recording' ? ['legacy-recording', 'serial-encoding', 'parallel-encoding'] : product === 'editor-picking' ? ['commands', 'threaded'] : ['immediate', 'commands', 'threaded']);
   for (const mode of modes) {
     const samples = rows.filter(row => row.product === product && row.mode === mode);
-    const expectedPerRepeat = product === 'editor-picking' ? 192 : 320;
+    const expectedPerRepeat = product === 'editor-recording' ? 160 : product === 'editor-picking' ? 192 : 320;
+    const threaded = mode === 'threaded' || product === 'editor-recording';
     assert.equal(samples.length, 3 * expectedPerRepeat, 'Incomplete measured samples');
     assert.deepEqual([...new Set(samples.map(r => r.repeat))], [0, 1, 2]);
     const delta = (end, start, filter = () => true) => stats(samples.filter(filter).map(r => Number(r[end] - r[start]) / 1e6));
@@ -52,7 +53,7 @@ for (const product of new Set(rows.map(row => row.product))) {
       assert(r.main_start_ns <= r.render_begin_ns && r.render_begin_ns <= r.pre_present_ns && r.pre_present_ns <= r.present_return_ns);
       assert(r.gpu_end_ns >= r.gpu_begin_ns && r.gpu_begin_ns > 0);
       if (mode !== 'immediate') assert(r.present_return_ns <= r.retired_ns && r.retired_ns <= r.completion_observed_ns);
-      if (mode === 'threaded') {
+      if (threaded) {
         assert(r.main_updated_ns <= r.wait_start_ns && r.wait_start_ns <= r.admitted_ns && r.admitted_ns <= r.render_begin_ns);
         assert(r.queued_at_admission >= 1 && r.queued_at_admission <= r.inflight_at_admission && r.inflight_at_admission <= 2);
       }
@@ -70,9 +71,9 @@ for (const product of new Set(rows.map(row => row.product))) {
       assert(batch.every(r => r.run_tail_ns === tail && tail >= r.present_return_ns));
       const concurrent = overlap(batch.map(r => [r.main_start_ns, r.main_updated_ns]), batch.map(r => [r.render_begin_ns, r.pre_present_ns]));
       if (mode === 'commands') assert.equal(concurrent.frames, 0);
-      if (mode === 'threaded') assert(concurrent.frames > 0);
+      if (threaded) assert(concurrent.frames > 0);
       return {repeat, frames: batch.length, framesPerSecond: batch.length * 1e9 / (tail - batch[0].main_start_ns),
-        producerConsumerOverlap: mode === 'threaded' ? concurrent : null};
+        producerConsumerOverlap: threaded ? concurrent : null};
     });
     groups.push({product, mode, samples: samples.length, repeats,
       mainFrameMs: delta('main_end_ns', 'main_start_ns'),
@@ -87,8 +88,8 @@ for (const product of new Set(rows.map(row => row.product))) {
       frameStartToRetireMs: delta('retired_ns', 'main_start_ns', r => r.retired_ns > 0),
       frameStartToCompletionObservedMs: mode === 'immediate' ? null : delta('completion_observed_ns', 'main_start_ns'),
       frameStartToInteractionObservedMs: mode === 'immediate' ? null : delta('interaction_observed_ns', 'main_start_ns', r => r.interaction_observed_ns > 0),
-      queuedAtAdmission: mode === 'threaded' ? stats(samples.map(r => r.queued_at_admission)) : null,
-      inFlightAtAdmission: mode === 'threaded' ? stats(samples.map(r => r.inflight_at_admission)) : null});
+      queuedAtAdmission: threaded ? stats(samples.map(r => r.queued_at_admission)) : null,
+      inFlightAtAdmission: threaded ? stats(samples.map(r => r.inflight_at_admission)) : null});
   }
 }
 const output = file.replace(/\.csv$/, '-analysis.json');

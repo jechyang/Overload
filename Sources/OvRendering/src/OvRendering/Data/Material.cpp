@@ -8,6 +8,7 @@
 #include <format>
 #include <cstring>
 #include <ranges>
+#include <mutex>
 #include <stdexcept>
 
 #include <baregl/Buffer.h>
@@ -746,4 +747,147 @@ void OvRendering::Data::Material::Snapshot::Execute() const
 	if (!m_program) throw std::logic_error("Cannot replay a moved-from material snapshot");
 	m_program->Bind();
 	for (const auto& uniform : m_uniforms) Material::ExecuteUniformUpload(*m_program, uniform);
+}
+
+// Shared only within one recording. Each immutable property is encoded once even
+// when many draws carry forward the same stable/single-use signature group.
+class OvRendering::Data::Material::SnapshotInput
+{
+public:
+    struct Property
+    {
+        const std::string* name = nullptr;
+        MaterialPropertyType value;
+        std::shared_ptr<baregl::Texture> texture;
+        mutable std::once_flag encoded;
+        mutable std::optional<UniformUploadCommand> command;
+    };
+    std::shared_ptr<baregl::ShaderProgram> program;
+    uint64_t version = 0;
+    std::vector<std::shared_ptr<const Property>> properties;
+    mutable std::once_flag encoded;
+    mutable std::shared_ptr<const Snapshot> snapshot;
+};
+
+OvRendering::Data::Material::PreparedSnapshot OvRendering::Data::Material::PrepareSnapshot(
+    std::optional<const std::string_view> p_pass,
+    OvTools::Utils::OptRef<const Data::FeatureSet> p_features,
+    const std::shared_ptr<baregl::Texture>& p_emptyTexture2D,
+    const std::shared_ptr<baregl::Texture>& p_emptyTextureCube,
+    std::span<const std::shared_ptr<baregl::Texture>> p_textures,
+    const PreparedSnapshot& p_previous, bool p_uploadStable, bool p_uploadSingleUse)
+{
+    ZoneScopedN("Prepare Draw Snapshot Input");
+    if (!IsValid()) throw std::invalid_argument("Cannot prepare an invalid material");
+    auto program = m_shader->RetainVariant(p_pass, p_features.value_or(m_features));
+    if ((!p_uploadStable || !p_uploadSingleUse) && (!p_previous || p_previous->program != program))
+        throw std::invalid_argument("Prepared snapshot requires the same retained program");
+    const auto version = m_shader->GetVersion();
+    if (!p_uploadStable && !p_uploadSingleUse && p_previous->version == version) return p_previous;
+    auto result = std::make_shared<SnapshotInput>();
+    result->program = std::move(program);
+    result->version = version;
+    result->properties.reserve(m_properties.size());
+    std::vector<MaterialProperty*> consume;
+    consume.reserve(m_properties.size());
+    for (auto& [name, property] : m_properties)
+    {
+        const bool upload = property.singleUse ? p_uploadSingleUse : p_uploadStable;
+        std::shared_ptr<const SnapshotInput::Property> input;
+        if (!upload)
+        {
+            // Materials normally preserve property iteration order between draws.
+            // Fast-path that order without rebuilding a per-draw hash table; a
+            // different material/map order still resolves by name deterministically.
+            const auto index = result->properties.size();
+            if (index < p_previous->properties.size() && *p_previous->properties[index]->name == name)
+                input = p_previous->properties[index];
+            else for (const auto& previous : p_previous->properties)
+                if (*previous->name == name) { input = previous; break; }
+        }
+        else if (const auto info = result->program->GetUniformInfo(name))
+        {
+            auto entry = std::make_shared<SnapshotInput::Property>();
+            entry->name = &info->get().name;
+            entry->value = property.value;
+            using enum baregl::types::EUniformType;
+            // Reject bad types before consuming single-use properties. Conversion,
+            // matrix transposition, and command buffer allocation happen in workers.
+            bool valid = false;
+            switch (info->get().type)
+            {
+            case BOOL: valid = std::holds_alternative<bool>(entry->value); break;
+            case INT: valid = std::holds_alternative<int>(entry->value); break;
+            case FLOAT: valid = std::holds_alternative<float>(entry->value); break;
+            case FLOAT_VEC2: valid = std::holds_alternative<OvMaths::FVector2>(entry->value); break;
+            case FLOAT_VEC3: valid = std::holds_alternative<OvMaths::FVector3>(entry->value); break;
+            case FLOAT_VEC4: valid = std::holds_alternative<OvMaths::FVector4>(entry->value); break;
+            case FLOAT_MAT3: valid = std::holds_alternative<OvMaths::FMatrix3>(entry->value); break;
+            case FLOAT_MAT4: valid = std::holds_alternative<OvMaths::FMatrix4>(entry->value); break;
+            case SAMPLER_2D:
+            case SAMPLER_CUBE:
+            {
+                baregl::Texture* texture = nullptr;
+                if (const auto asset = std::get_if<Resources::Texture*>(&property.value); asset && *asset)
+                {
+                    entry->texture = (*asset)->RetainTexture();
+                    texture = entry->texture.get();
+                }
+                else if (const auto raw = std::get_if<baregl::Texture*>(&property.value)) texture = *raw;
+                if (!texture)
+                {
+                    entry->texture = info->get().type == SAMPLER_2D ? p_emptyTexture2D : p_emptyTextureCube;
+                    texture = entry->texture.get();
+                }
+                if (!entry->texture)
+                {
+                    if (texture == p_emptyTexture2D.get()) entry->texture = p_emptyTexture2D;
+                    else if (texture == p_emptyTextureCube.get()) entry->texture = p_emptyTextureCube;
+                    else for (const auto& candidate : p_textures)
+                        if (candidate.get() == texture) { entry->texture = candidate; break; }
+                }
+                if (!texture || !entry->texture || entry->texture.use_count() == 0 || !info->get().textureIndex)
+                    throw std::invalid_argument("Prepared snapshot requires owned sampler storage");
+                entry->value = texture;
+                valid = true;
+                break;
+            }
+            default: throw std::invalid_argument("Prepared snapshot has unsupported uniform type");
+            }
+            if (!valid) throw std::bad_variant_access();
+            input = std::move(entry);
+            if (property.singleUse) consume.push_back(&property);
+        }
+        if (input)
+        {
+            result->properties.push_back(std::move(input));
+        }
+    }
+    if (result->properties.size() != result->program->GetUniforms().size())
+        throw std::invalid_argument("Prepared snapshot is missing active shader properties");
+    for (auto* property : consume) property->value = property->defaultValue;
+    return result;
+}
+
+std::shared_ptr<const OvRendering::Data::Material::Snapshot> OvRendering::Data::Material::EncodeSnapshot(const PreparedSnapshot& p_input)
+{
+    ZoneScopedN("Encode Draw Snapshot");
+    if (!p_input) throw std::invalid_argument("Missing prepared snapshot");
+    std::call_once(p_input->encoded, [&] {
+    Snapshot result;
+    result.m_program = p_input->program;
+    result.m_shaderVersion = p_input->version;
+    result.m_uniforms.reserve(p_input->properties.size());
+    result.m_textures.reserve(p_input->properties.size());
+    for (const auto& property : p_input->properties)
+    {
+        std::call_once(property->encoded, [&] {
+            property->command.emplace(*PrepareUniformUpload(*p_input->program, *property->name, property->value));
+        });
+        result.m_uniforms.push_back(*property->command);
+        if (property->texture) result.m_textures.push_back(property->texture);
+    }
+    p_input->snapshot = std::make_shared<Snapshot>(std::move(result));
+    });
+    return p_input->snapshot;
 }

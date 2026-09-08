@@ -159,8 +159,21 @@ namespace OvRendering::Core
 		void ExecuteClear(const ClearCommand& p_command);
 
 		// Record one or more complete views before handing off the owned sequence.
+        // nullptr keeps serial encoding as an oracle. The pool must outlive recording.
+        void SetCommandRecordingJobs(OvTools::Jobs::JobSystem* p_jobs)
+        {
+            if (IsDrawing() || m_commands) throw std::logic_error("Set recording jobs outside a frame");
+            m_commandRecordingJobs = p_jobs;
+        }
+        void SetParallelCommandRecordingEnabled(bool p_enabled)
+        {
+            if (IsDrawing() || m_commands) throw std::logic_error("Toggle recording outside a frame");
+            m_parallelCommandRecording = p_enabled;
+        }
+        OvTools::Jobs::JobSystem* GetCommandRecordingJobs() const { return m_commandRecordingJobs; }
+        bool IsParallelCommandRecordingEnabled() const { return m_parallelCommandRecording; }
 		void BeginCommandRecording();
-		Data::RenderCommandList FinishCommandRecording();
+		Data::RenderCommandList FinishCommandRecording(bool p_deferEncoding = false);
 		void CancelCommandRecording();
         Data::RenderCommandList::Completion GetCommandCompletion() const
         { return m_commands ? m_commands->GetCompletion() : Data::RenderCommandList::Completion{}; }
@@ -187,7 +200,7 @@ namespace OvRendering::Core
 		struct GeometryDrawCommand
 		{
 			const Data::PipelineState pipelineState;
-			const std::shared_ptr<const Resources::IMesh> retainedMesh;
+			std::shared_ptr<const Resources::IMesh> retainedMesh;
 			const Resources::IMesh& mesh;
 			const baregl::types::EPrimitiveMode primitiveMode;
 			const uint32_t instances;
@@ -208,6 +221,8 @@ namespace OvRendering::Core
 
 		PassStateCommand m_passState;
 		std::unique_ptr<Data::RenderCommandList> m_commands;
+        OvTools::Jobs::JobSystem* m_commandRecordingJobs = nullptr;
+        bool m_parallelCommandRecording = true;
 
 	private:
 		static std::atomic_bool s_isDrawing;

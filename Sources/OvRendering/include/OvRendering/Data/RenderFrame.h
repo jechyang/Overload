@@ -18,6 +18,7 @@ namespace OvRendering::Data
         std::unique_ptr<Storage> m_storage;
         void Retire(bool gpuSuccess) noexcept;
         bool ObserveFence(uint32_t result);
+        void AppendImpl(RenderCommandList&& commands, bool prepared);
     public:
         enum class State { RECORDING, READY, SUBMITTED, COMPLETED, FAILED, CANCELLED };
         class Completion
@@ -42,7 +43,8 @@ namespace OvRendering::Data
         RenderFrame(const RenderFrame&) = delete;
         RenderFrame& operator=(const RenderFrame&) = delete;
         void Append(RenderCommandList&& commands);
-        void Seal();
+        void AppendRecording(RenderCommandList&& commands);
+        void Seal(OvTools::Jobs::JobSystem* jobs = nullptr);
         void Cancel();
         Completion GetCompletion() const;
         // The synchronous consumer callback must present its live target/window.

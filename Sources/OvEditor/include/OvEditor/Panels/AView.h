@@ -57,8 +57,12 @@ namespace OvEditor::Panels
         void Render();
         // CPU preparation plus retained GPU commands. Resource creation/resize still
         // requires the GL owner until the render-thread resource queue is integrated.
-        virtual OvRendering::Data::RenderCommandList RecordRenderCommands();
-        void SetCommandRecordingEnabled(bool enabled) { m_renderer->SetDrawRecordingEnabled(enabled); }
+        virtual OvRendering::Data::RenderCommandList RecordRenderCommands(bool p_deferEncoding = false);
+        void SetCommandRecordingEnabled(bool enabled, OvTools::Jobs::JobSystem* jobs = nullptr)
+        {
+            m_renderer->SetDrawRecordingEnabled(enabled);
+            m_renderer->SetCommandRecordingJobs(jobs);
+        }
         // Main/UI thread only, after successful consumption of the recorded view.
         virtual void CompleteRender() {}
 

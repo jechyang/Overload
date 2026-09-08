@@ -1,10 +1,10 @@
 # Overload 多线程改造：后续实施与新对话交接
 
-更新：2026-09-07。工作目录：H:/overload/Overload。
+更新：2026-09-08。工作目录：H:/overload/Overload。
 
 ## 从这里开始
 
-**阶段 0、1、2、3 已完成约定范围验收。Game/Editor 可选固定 Render owner，拥有型场景/多视图/UI 帧、资源回收、窗口/输入/退出和真实交叠均已闭合；最新性能验收为两配置 48 个 case、13,824 个统计帧，24 个完整 Tracy case。独占长采集发现的 Unicode 线程名崩溃已修复。最终要求核对见 MULTITHREADING_STAGE23_COMPLETION.md，计量与默认配置决定见 MULTITHREADING_FRAME_PERFORMANCE_VALIDATION.md。render_thread 默认保留 false，项目可显式开启；吞吐收益与交互延迟成本均已量化。本次阶段 2/3 任务结案，阶段 4 的多 Pass/View 并行录制属于后续独立工作。**
+**阶段 0–4 已完成各自约定范围验收。阶段 4 新增拥有型材质输入与私有命令槽，使用 JobSystem 统一编码多个 Pass/View；Main 保持可变准备顺序，GL 仍归固定 owner。Debug/Release 构建、图像/依赖/共享资源/产品压力、ASan、MutexDeque 与 Tracy 验证通过。重编码材质样本相对准备后串行减少 13.9% 总录制时间，实际三视图编辑器吞吐基本持平，因此 parallel_recording 和 render_thread 均保留默认 false。阶段 4 最终结果见 MULTITHREADING_PARALLEL_RECORDING_VALIDATION.md；阶段 2/3 历史结论见 MULTITHREADING_STAGE23_COMPLETION.md 和 MULTITHREADING_FRAME_PERFORMANCE_VALIDATION.md。本次仅完成阶段 4，未推进阶段 5/6。**
 
 本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
@@ -308,7 +308,7 @@ Editor Context 安装固定 Render owner 和资源作用域，实际产品循环
 
 按第 4、5 节原始要求逐项核对命令所有权、排序/多视图/历史、GPU 完成与删除、GL/平台/UI 归属、有界背压、JobSystem 等待关系、窗口/输入/退出、图像与性能证据，均已闭合。22 组已有专项/集成回归记录、最新两配置完整构建与 10 项复制一致性、48 个性能 case 和 24 个完整 Tracy case 已核对。默认配置与适用边界明确，详见 MULTITHREADING_STAGE23_COMPLETION.md。本任务到阶段 3 完成，不自动将下列阶段 4–6 计为已实现。
 
-## 6. 阶段 4：多 Pass/View 并行命令录制
+## 6. 阶段 4：多 Pass/View 并行命令录制（已完成约定范围验收）
 
 - 使用阶段 0 的任务依赖描述 view/pass 之间的真实数据依赖；各 job 使用私有命令缓冲或独占 arena。
 - 资源读取稳定，录制端不调用 GL；按 pass/view 既定顺序合并。透明及等值 key 顺序继续保持确定性。
@@ -316,6 +316,15 @@ Editor Context 安装固定 Render owner 和资源作用域，实际产品循环
 - 优先避免重复 Parse/姿态评估，按实测考虑帧级复用；不要在资源可变时盲目共享缓存。
 
 **验收：** 多视图/多 pass 对拍、依赖正确性、共享资源压力测试；Tracy 确认录制收益大于调度/合并开销。
+
+### 6.1 实现与最终证据（2026-09-08）
+
+- Main 按既有 view/pass 顺序固定材质 program/texture 代际和数值，消费 singleUse 并解析 feature/history 的 CPU 依赖；worker 只进行不可变输入的 uniform/packet 编码，各块独占输出位置。共享属性和完整快照通过 once_flag 编码一次，renderer/palette/临时缓存不被多个 worker 修改。
+- Editor 汇集三个 view 的未封口列表后，在 RenderFrame::Seal 统一使用阶段 0 JobSystem 的依赖 fan-in；Game 在整视图 Finish 时编码。Main 明确计算自身块，等待不重入其他 Main 回调；提交/编码/汇合失败先 drain，再将整帧失败并使历史失效。按原 pass/view 顺序消费，保持透明/等值 key 顺序与 GPU 读写依赖。
+- 少于 128 draw、没有池或少于两个 worker 时同步编码；并行上限 Main 加四个 worker。不重复 Parse/姿态评估，不扩大资源可变时的缓存共享。原即时、旧命令录制、准备后串行和固定 Render 路径均保留。
+- Debug/Release 完整构建及 10 项复制一致性通过；每配置 27,648 次多 Pass 共享材质 draw 和 1,024 份源销毁输入、跨视图依赖/失败、动态阴影/反射/曝光/后处理图像通过。Release 定向 ASan、MutexDeque 和历史 draw-input 基线通过；两配置 Editor 完整 UI/窗口/交互压力与 Game 生命周期通过。
+- 独占 Release Tracy 的 36 个完整 case 中，12/12 并行 case 实际重叠、峰值并发 5，全部任务在发布前完成。27 uniform 样本总录制中位数：旧路径 1500.6 μs、准备后串行 960.3 μs、并行 826.9 μs；Tracy 同样验证收益覆盖提交/等待/合并。真实三视图 Editor 九轮、1,440 个统计帧约 90 FPS，未发现明显整体提升，不能泛化样本收益。
+- 项目显式设置 parallel_recording=true 启用；要求拥有型命令路径，可配合同线程或固定 Render owner。默认 false，render_thread 默认也不变。完整方法、成本、限制和可复现入口见 MULTITHREADING_PARALLEL_RECORDING_VALIDATION.md 与 Tests/RenderingCommands/README.md。阶段 4 在此结案，以下阶段 5/6 保留为未来计划。
 
 ## 7. 阶段 5：RHI 与 Vulkan 后端
 
@@ -348,7 +357,7 @@ Editor Context 安装固定 Render owner 和资源作用域，实际产品循环
 - 按用户要求分阶段提交：阶段 0 为 30eb8fe，阶段 1 为 4f8da08，阶段 2 几何首增量为 50194bf，材质第二增量为 8cc2f8c，材质快照第三增量为 b1128a7，几何/模型/palette 第四增量为 abf6b13，同次 draw packet 第五增量为 2648d43，相机/灯光第六增量为 24cabec，目标/viewport/clear 第七增量为 c82d4fa，帧命令序列第八增量为本文件所属的新提交。后续每个独立可验收增量完成检查后单独提交。
 - 仅提交多线程实现、测试与验收文档。Editor.cpp 的既有注释修改通过按 hunk 暂存排除；ItemPicker、SkeletalData、OvUI、.zcode 等其他用户改动仍留在工作树。
 - 历史验收是在包含这些既有用户改动的工作区中完成，不声称逐个检出了补提交来复现历史构建。Tests/Skinning 的旧源码基准仍固定为原基准，不因补提交而变化。
-- 未创建额外任务或推送远程。阶段 2、3 已完成，最后两个实现/计量增量为 c697649、cd419de，最终审计随本文件所属提交保存。
+- 未创建额外任务或推送远程。阶段 2、3 已完成，最后两个实现/计量增量为 c697649、cd419de；本次阶段 4 的实现、测试和验收文档作为独立增量提交，用户既有修改继续留在工作树。
 
 ### 构建（已实际验证的入口）
 
@@ -403,4 +412,4 @@ MSBuild 路径：C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild
 
 ## 11. 新对话建议起始消息
 
-> 阅读 MULTITHREADING_STAGE23_COMPLETION.md、MULTITHREADING_FRAME_PERFORMANCE_VALIDATION.md 和本文件。阶段 2、3 已完成验收和分阶段提交，render_thread 默认保留 false，由项目显式开启。若继续推进，按第 6 节开始阶段 4：先核对 pass/view 依赖、录制端缓存与稳定资源读期，再做可对拍的最小并行录制增量；保留当前即时/同线程命令/双线程对照。保留用户已有修改，继续分阶段 Git 提交和后台验证。
+> 阅读本文件和 MULTITHREADING_PARALLEL_RECORDING_VALIDATION.md。阶段 0–4 已完成约定范围验收，parallel_recording 与 render_thread 默认保留 false；本次任务范围只到阶段 4，未开始阶段 5/6。后续若用户明确要求继续，再按第 7 节讨论 RHI/Vulkan，不自动扩展当前任务。保留用户已有修改、旧路径对照和分阶段 Git 提交，继续后台验证。

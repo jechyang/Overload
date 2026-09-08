@@ -459,27 +459,36 @@ OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p
 		}
 	}
 
+    OvTools::Jobs::JobSystem* recordingJobs = nullptr;
+    const auto recordView = [&](Panels::AView& view) {
+        if (auto* jobs = view.GetRenderer().GetCommandRecordingJobs())
+        {
+            frame.AppendRecording(view.RecordRenderCommands(true));
+            if (view.GetRenderer().IsParallelCommandRecordingEnabled()) recordingJobs = jobs;
+        }
+        else frame.Append(view.RecordRenderCommands());
+    };
 	if (assetView.IsOpened() && assetView.IsVisible())
 	{
 		ZoneScopedN("Asset View Rendering");
-		frame.Append(assetView.RecordRenderCommands());
+		recordView(assetView);
 	}
 
 	if (gameView.IsOpened() && gameView.IsVisible())
 	{
 		ZoneScopedN("Game View Rendering");
-		frame.Append(gameView.RecordRenderCommands());
+		recordView(gameView);
 	}
 
 	if (sceneView.IsOpened() && sceneView.IsVisible())
 	{
 		ZoneScopedN("Scene View Rendering");
-		frame.Append(sceneView.RecordRenderCommands());
+		recordView(sceneView);
         m_recordedInteraction = sceneView.GetRecordedInteraction();
 	}
     UpdateEditorPanels(p_deltaTime);
     frame.Append(m_context.uiManager->RecordRenderCommands());
-    frame.Seal();
+    frame.Seal(recordingJobs);
     m_latestFrameCompletion = frame.GetCompletion();
     return frame;
 }
@@ -506,7 +515,8 @@ void OvEditor::Core::Editor::SetFrameSubmissionEnabled(bool enabled)
     if (!enabled && m_context.renderThread) throw std::logic_error("Threaded Editor requires command submission");
     DrainRenderFrames();
     for (const auto* name : {"Asset View", "Game View", "Scene View"})
-        m_panelsManager.GetPanelAs<Panels::AView>(name).SetCommandRecordingEnabled(enabled);
+        m_panelsManager.GetPanelAs<Panels::AView>(name).SetCommandRecordingEnabled(enabled,
+            enabled && m_context.projectSettings.GetOrDefault<bool>("parallel_recording", false) ? m_context.jobSystem.get() : nullptr);
     m_context.uiManager->SetCommandRecordingEnabled(enabled);
     m_latestFrameCompletion = {}; m_recordedInteraction.reset();
     m_frameSubmissionEnabled = enabled;

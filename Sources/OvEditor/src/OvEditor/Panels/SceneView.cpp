@@ -82,10 +82,10 @@ OvEditor::Panels::SceneView::~SceneView()
     OvCore::ECS::Actor::DestroyedEvent -= m_destroyedListener;
 }
 
-OvRendering::Data::RenderCommandList OvEditor::Panels::SceneView::RecordRenderCommands()
+OvRendering::Data::RenderCommandList OvEditor::Panels::SceneView::RecordRenderCommands(bool p_deferEncoding)
 {
     m_recordedInteraction.reset();
-    return AViewControllable::RecordRenderCommands();
+    return AViewControllable::RecordRenderCommands(p_deferEncoding);
 }
 
 void OvEditor::Panels::SceneView::Update(float p_deltaTime)

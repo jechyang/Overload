@@ -9,8 +9,10 @@ const config = process.argv[2] || 'Release';
 if (!['Debug', 'Release'].includes(config)) throw Error('Expected Debug or Release');
 const asan = process.argv.includes('--asan');
 const parallel = process.argv.includes('--parallel');
+const parallelRecording = process.argv.includes('--parallel-recording');
 const gameBenchmark = process.argv.includes('--game-benchmark');
-const editorBenchmark = process.argv.includes('--editor-benchmark');
+const recordingBenchmark = process.argv.includes('--recording-benchmark');
+const editorBenchmark = process.argv.includes('--editor-benchmark') || recordingBenchmark;
 const productBenchmark = gameBenchmark || editorBenchmark;
 if (gameBenchmark && editorBenchmark) throw Error('Product benchmarks run separately');
 const editorStress = process.argv.includes('--editor-stress');
@@ -33,7 +35,7 @@ const renderFrame = process.argv.includes('--render-frame');
 const uiCommands = process.argv.includes('--ui-commands') || renderFrame || renderThread || logDispatch || resourceLifetime || textureRegistry || imguiLifetime || gpuProfiling || resourceExecutor;
 const editorUI = process.argv.includes('--editor-ui') || editorThread;
 if (editorUI && !editor) throw Error('--editor-ui requires --editor');
-const commandList = process.argv.includes('--command-list') || editorThread;
+const commandList = process.argv.includes('--command-list') || editorThread || parallelRecording;
 if (productLoop && editor && (!commandList || !editorUI)) throw Error('Editor --product-loop requires --command-list --editor-ui');
 const targetState = process.argv.includes('--target-state') || commandList;
 const frameInputs = process.argv.includes('--frame-inputs') || targetState;
@@ -43,12 +45,12 @@ const snapshots = process.argv.includes('--snapshots') || drawInputs;
 const material = process.argv.includes('--material') || snapshots;
 const geometry = process.argv.includes('--geometry') || material;
 if (geometry && (editor || parallel || asan || process.argv.includes('--current'))) throw Error('--geometry requires a baseline/current comparison');
-if (drawPackets && (geometry || parallel || asan || process.argv.includes('--current'))) throw Error('--draw-packets runs separately from other test modes except --editor');
+if (drawPackets && (geometry || parallel || (asan && !parallelRecording) || process.argv.includes('--current'))) throw Error('--draw-packets runs separately from other test modes except --editor');
 if (editor && (parallel || asan)) throw Error('--editor runs separately from --parallel/--asan');
 const mutexDeque = process.argv.includes('--mutex-deque');
 if (uiCommands && (editor || parallel || geometry || drawPackets || asan)) throw Error("--ui-commands runs separately");
 const currentOnly = gameFrame || uiCommands || asan || parallel || editor || drawPackets || process.argv.includes('--current');
-const output = path.join(root, 'Build/JobsValidation/Skinning', config + (editorBenchmark ? '-editor-benchmark' : editorStress ? '-editor-stress' : editorThread ? '-editor-thread' : '') + (gameBenchmark ? '-game-benchmark' : gameThread ? '-game-thread' : gameFrame ? '-game-frame' : '') + (resourceExecutor ? '-resource-executor' : gpuProfiling ? '-gpu-profiling' : imguiLifetime ? '-imgui-lifetime' : textureRegistry ? '-texture-registry' : resourceLifetime ? '-resource-lifetime' : logDispatch ? '-log-dispatch' : renderThread ? '-render-thread' : renderFrame ? '-render-frame' : uiCommands ? '-ui-commands' : '') + (commandList ? '-command-list' : targetState ? '-target-state' : frameInputs ? '-frame-inputs' : drawPackets ? '-draw-packets' : drawInputs ? '-draw-inputs' : snapshots ? '-snapshots' : material ? '-material' : geometry ? '-geometry' : '') + (editorUI ? '-editor-ui' : editor ? '-editor' : parallel ? '-parallel' : '') + (productLoop ? '-product-loop' : '') + (mutexDeque ? '-mutex' : '') + (asan ? '-asan' : ''));
+const output = path.join(root, 'Build/JobsValidation/Skinning', config + (parallelRecording ? '-parallel-recording' : '') + (recordingBenchmark ? '-recording-benchmark' : editorBenchmark ? '-editor-benchmark' : editorStress ? '-editor-stress' : editorThread ? '-editor-thread' : '') + (gameBenchmark ? '-game-benchmark' : gameThread ? '-game-thread' : gameFrame ? '-game-frame' : '') + (resourceExecutor ? '-resource-executor' : gpuProfiling ? '-gpu-profiling' : imguiLifetime ? '-imgui-lifetime' : textureRegistry ? '-texture-registry' : resourceLifetime ? '-resource-lifetime' : logDispatch ? '-log-dispatch' : renderThread ? '-render-thread' : renderFrame ? '-render-frame' : uiCommands ? '-ui-commands' : '') + (commandList ? '-command-list' : targetState ? '-target-state' : frameInputs ? '-frame-inputs' : drawPackets ? '-draw-packets' : drawInputs ? '-draw-inputs' : snapshots ? '-snapshots' : material ? '-material' : geometry ? '-geometry' : '') + (editorUI ? '-editor-ui' : editor ? '-editor' : parallel ? '-parallel' : '') + (productLoop ? '-product-loop' : '') + (mutexDeque ? '-mutex' : '') + (asan ? '-asan' : ''));
 fs.mkdirSync(output, { recursive: true });
 const baseline = drawInputs ? 'b1128a77b55b9d96c554aad63e743056e481f2cf' : snapshots ? '8cc2f8c5a9d992809b95d317a70dfbcfc3928442' : material ? '50194bfe7ee94eac37d63bbf84779c7c68b390e4' : geometry ? '4f8da08b854a7d57e3a2b0ce08f3d8a05039d7d9' : '73ae710a57889bfde94184c3c8f073228e998144';
 const header = 'Sources/OvCore/include/OvCore/ECS/Components/CSkinnedMeshRenderer.h';
@@ -64,7 +66,7 @@ const sdkVersion = fs.readdirSync(path.join(sdk, 'Include')).filter(x => fs.exis
 const compiler = path.join(msvc, 'bin/Hostx64/x64/cl.exe');
 const engineLibs = ['assimp','baregl','bullet3','freetype','glfw','ImGui','lua','OvAudio','OvCore','OvDebug','OvMaths','OvPhysics','OvRendering','OvTools','OvUI','OvWindowing','soloud','tinyxml2','tracy'];
 const depIncludes = ['baregl/include','ImGui/include','lua/include','sol/include','tinyxml2/include','tracy','glfw/include','bullet3/src','soloud/include','assimp/include'];
-const manifest = { baseline, config, gameBenchmark, editorBenchmark, productLoop, gameFrame, gameThread, resourceExecutor, gpuProfiling, imguiLifetime, textureRegistry, resourceLifetime, logDispatch, renderThread, renderFrame, uiCommands, editorUI, commandList, targetState, frameInputs, drawPackets, drawInputs, snapshots, material, geometry, editor, parallel, mutexDeque, asan, compiler, sdkVersion, results: [] };
+const manifest = { baseline, config, parallelRecording, recordingBenchmark, gameBenchmark, editorBenchmark, productLoop, gameFrame, gameThread, resourceExecutor, gpuProfiling, imguiLifetime, textureRegistry, resourceLifetime, logDispatch, renderThread, renderFrame, uiCommands, editorUI, commandList, targetState, frameInputs, drawPackets, drawInputs, snapshots, material, geometry, editor, parallel, mutexDeque, asan, compiler, sdkVersion, results: [] };
 fs.rmSync(path.join(output, 'result.json'), { force: true }); // Never leave a stale success after a failed rerun.
 
 function run(file, args, cwd, log, timeout = 120000) {
@@ -118,7 +120,7 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
     const stateStart = current.indexOf('		struct ViewportCommand');
     const stateEnd = current.indexOf('		struct RetainedTexturesDescriptor', stateStart);
     legacy = legacy.replace('	protected:', current.slice(stateStart, stateEnd) + '\n	protected:')
-      .replace('	private:', '		PassStateCommand m_passState;\n\t\tstd::unique_ptr<Data::RenderCommandList> m_commands;\n\n	private:');
+      .replace('	private:', '		PassStateCommand m_passState;\n\t\tstd::unique_ptr<Data::RenderCommandList> m_commands;\n        OvTools::Jobs::JobSystem* m_commandRecordingJobs = nullptr;\n        bool m_parallelCommandRecording = true;\n\n	private:');
     if (!legacy.includes('struct GeometryDrawCommand')) {
       const begin = current.indexOf('\t\tstruct GeometryDrawCommand');
       const end = current.indexOf('\t\tData::FrameDescriptor m_frameDescriptor', begin);
@@ -140,6 +142,10 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
     fs.writeFileSync(dest, fs.readFileSync(path.join(root, original), 'utf8').replaceAll('private:', 'public:'));
   }
   const extraSources = [];
+  if (parallelRecording && asan) for (const source of [
+    'Core/ABaseRenderer.cpp', 'Core/CompositeRenderer.cpp', 'Data/Material.cpp',
+    'Data/RenderCommandList.cpp', 'Data/RenderFrame.cpp'])
+    extraSources.push(path.join(root, 'Sources/OvRendering/src/OvRendering', source));
   if (targetState && !editor) extraSources.push(path.join(root, 'Sources/OvRendering/src/OvRendering/Context/Driver.cpp'));
   if (gpuProfiling) {
     // Keep the current Driver implementation and ABI; add only deterministic
@@ -212,8 +218,11 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
           if (begin < 0 || end < begin) throw Error('Missing snapshot helper boundary');
           text += '\n' + current.slice(begin, end);
         }
+        const prepared = current.indexOf('class OvRendering::Data::Material::SnapshotInput');
+        if (prepared < 0) throw Error('Missing prepared snapshot helper boundary');
+        text += '\n' + current.slice(prepared);
       }
-      fs.writeFileSync(materialCopy, '#include <algorithm>\n#include <cstring>\n#include <stdexcept>\n' + text);
+      fs.writeFileSync(materialCopy, '#include <algorithm>\n#include <cstring>\n#include <mutex>\n#include <stdexcept>\n' + text);
       extraSources.push(materialCopy);
       if (snapshots) {
         // Both immediate-path oracles use the current resource representation.
@@ -325,7 +334,7 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
     '/I' + overlay, '/I' + path.join(msvc,'include'), ...['ucrt','shared','um','winrt'].map(x => '/I' + path.join(sdk,'Include',sdkVersion,x)),
     ...fs.readdirSync(path.join(root,'Sources')).filter(x => x.startsWith('Ov')).map(x => '/I' + path.join(root,'Sources',x,'include')),
     ...depIncludes.map(x => '/I' + path.join(root,'Dependencies',x)),
-    '/Fo' + dir + '/', '/Fd' + path.join(dir,'compile.pdb'), '/Fe' + exe, path.join(root, editorBenchmark ? 'Tests/RenderingCommands/editor_benchmark.cpp' : gameBenchmark ? 'Tests/RenderingCommands/game_benchmark.cpp' : editorStress ? 'Tests/RenderingCommands/editor_stress_validation.cpp' : editorThread ? 'Tests/RenderingCommands/editor_thread_validation.cpp' : gameThread ? 'Tests/RenderingCommands/game_thread_validation.cpp' : productLoop ? 'Tests/RenderingCommands/application_loop_validation.cpp' : gameFrame ? 'Tests/RenderingCommands/game_frame_validation.cpp' : resourceExecutor ? 'Tests/RenderingCommands/resource_executor_validation.cpp' : gpuProfiling ? 'Tests/RenderingCommands/gpu_profiling_validation.cpp' : imguiLifetime ? 'Tests/RenderingCommands/imgui_lifetime_validation.cpp' : textureRegistry ? 'Tests/RenderingCommands/texture_registry_validation.cpp' : resourceLifetime ? 'Tests/RenderingCommands/resource_lifetime_validation.cpp' : logDispatch ? 'Tests/RenderingCommands/log_dispatch_validation.cpp' : renderThread ? 'Tests/RenderingCommands/render_thread_validation.cpp' : renderFrame ? 'Tests/RenderingCommands/render_frame_validation.cpp' : uiCommands ? 'Tests/RenderingCommands/ui_command_validation.cpp' : commandList && !editor ? 'Tests/RenderingCommands/command_list_validation.cpp' : targetState && !editor ? 'Tests/RenderingCommands/target_state_validation.cpp' : frameInputs && !editor ? 'Tests/RenderingCommands/frame_input_validation.cpp' : drawPackets && !editor ? 'Tests/RenderingCommands/packet_validation.cpp' : drawInputs ? 'Tests/RenderingCommands/draw_input_validation.cpp' : snapshots ? 'Tests/RenderingCommands/snapshot_validation.cpp' : material ? 'Tests/RenderingCommands/material_validation.cpp' : geometry ? 'Tests/RenderingCommands/geometry_validation.cpp' : editor ? 'Tests/Skinning/editor_validation.cpp' : parallel ? 'Tests/Skinning/parallel_validation.cpp' : 'Tests/Skinning/serial_validation.cpp'), cpp, scene, ...extraSources,
+    '/Fo' + dir + '/', '/Fd' + path.join(dir,'compile.pdb'), '/Fe' + exe, path.join(root, parallelRecording ? 'Tests/RenderingCommands/parallel_recording_validation.cpp' : recordingBenchmark ? 'Tests/RenderingCommands/recording_benchmark.cpp' : editorBenchmark ? 'Tests/RenderingCommands/editor_benchmark.cpp' : gameBenchmark ? 'Tests/RenderingCommands/game_benchmark.cpp' : editorStress ? 'Tests/RenderingCommands/editor_stress_validation.cpp' : editorThread ? 'Tests/RenderingCommands/editor_thread_validation.cpp' : gameThread ? 'Tests/RenderingCommands/game_thread_validation.cpp' : productLoop ? 'Tests/RenderingCommands/application_loop_validation.cpp' : gameFrame ? 'Tests/RenderingCommands/game_frame_validation.cpp' : resourceExecutor ? 'Tests/RenderingCommands/resource_executor_validation.cpp' : gpuProfiling ? 'Tests/RenderingCommands/gpu_profiling_validation.cpp' : imguiLifetime ? 'Tests/RenderingCommands/imgui_lifetime_validation.cpp' : textureRegistry ? 'Tests/RenderingCommands/texture_registry_validation.cpp' : resourceLifetime ? 'Tests/RenderingCommands/resource_lifetime_validation.cpp' : logDispatch ? 'Tests/RenderingCommands/log_dispatch_validation.cpp' : renderThread ? 'Tests/RenderingCommands/render_thread_validation.cpp' : renderFrame ? 'Tests/RenderingCommands/render_frame_validation.cpp' : uiCommands ? 'Tests/RenderingCommands/ui_command_validation.cpp' : commandList && !editor ? 'Tests/RenderingCommands/command_list_validation.cpp' : targetState && !editor ? 'Tests/RenderingCommands/target_state_validation.cpp' : frameInputs && !editor ? 'Tests/RenderingCommands/frame_input_validation.cpp' : drawPackets && !editor ? 'Tests/RenderingCommands/packet_validation.cpp' : drawInputs ? 'Tests/RenderingCommands/draw_input_validation.cpp' : snapshots ? 'Tests/RenderingCommands/snapshot_validation.cpp' : material ? 'Tests/RenderingCommands/material_validation.cpp' : geometry ? 'Tests/RenderingCommands/geometry_validation.cpp' : editor ? 'Tests/Skinning/editor_validation.cpp' : parallel ? 'Tests/Skinning/parallel_validation.cpp' : 'Tests/Skinning/serial_validation.cpp'), cpp, scene, ...extraSources,
     path.join(root, 'Sources/OvTools/src/OvTools/Jobs/JobSystem.cpp'),
     '/link', '/LIBPATH:' + path.join(msvc,'lib/x64'), ...['ucrt','um'].map(x => '/LIBPATH:' + path.join(sdk,'Lib',sdkVersion,x,'x64')),
     ...editorObjects,
@@ -335,7 +344,7 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
   console.log('Compiling', config, variant, asan ? 'ASan' : '');
   run(compiler, args, root, path.join(dir,'compile.log'));
   if (asan) fs.copyFileSync(path.join(msvc,'bin/Hostx64/x64/clang_rt.asan_dynamic-x86_64.dll'), path.join(dir,'clang_rt.asan_dynamic-x86_64.dll'));
-  const stdout = run(exe, [dir], path.join(root,'Build',config), path.join(dir,'run.log'), productBenchmark ? 600000 : 120000);
+  const stdout = run(exe, [dir], path.join(root,'Build',config), path.join(dir,'run.log'), productBenchmark ? 600000 : parallelRecording ? 300000 : 120000);
   console.log(stdout.split(/\r?\n/).filter(line => /^(PASS:|Single-instance|BENCH:)/.test(line)).join('\n'));
   manifest.results.push({ variant, stdout });
 }
