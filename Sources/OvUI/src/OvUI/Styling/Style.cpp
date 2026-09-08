@@ -118,7 +118,7 @@ void OvUI::Styling::Style::SetSemanticDefaults(bool darkTheme, bool lighterOnAct
 {
 	using Types::Color;
 
-	// Text/label foreground colors — bright on dark themes, saturated on light themes.
+	// Text/label foreground colors -- bright on dark themes, saturated on light themes.
 	Success = darkTheme ? Color{0.35f, 0.92f, 0.35f, 1.00f} : Color{0.08f, 0.50f, 0.08f, 1.00f};
 	Danger  = darkTheme ? Color{0.95f, 0.42f, 0.42f, 1.00f} : Color{0.72f, 0.10f, 0.10f, 1.00f};
 	Warning = darkTheme ? Color{1.00f, 0.78f, 0.20f, 1.00f} : Color{0.58f, 0.38f, 0.00f, 1.00f};
@@ -128,7 +128,7 @@ void OvUI::Styling::Style::SetSemanticDefaults(bool darkTheme, bool lighterOnAct
 	InspectorTitle = darkTheme ? Color{0.85f, 0.65f, 0.00f, 1.00f} : Color{0.55f, 0.35f, 0.00f, 1.00f};
 	Highlight      = darkTheme ? Color{1.00f, 1.00f, 0.00f, 1.00f} : Color{1.00f, 1.00f, 0.00f, 1.00f};
 
-	// Button background colors — muted enough to work as interactive backgrounds.
+	// Button background colors -- muted enough to work as interactive backgrounds.
 	SuccessButton        = darkTheme ? Color{0.15f, 0.49f, 0.15f, 1.00f} : Color{0.22f, 0.75f, 0.22f, 1.00f};
 	SuccessButtonHovered = darkTheme ? Color{0.20f, 0.64f, 0.20f, 1.00f} : Color{0.32f, 0.85f, 0.32f, 1.00f};
 	// lighter: step up from hovered (ImGui built-in style behavior)
@@ -238,7 +238,7 @@ void OvUI::Styling::Style::ApplyDuneDarkStyle()
 	GrabMinSize      = 5.0f;
 	GrabRounding     = 3.0f;
 
-	// Override semantics inherited from ApplyImDarkStyle() — this is a custom style.
+	// Override semantics inherited from ApplyImDarkStyle() -- this is a custom style.
 	SetSemanticDefaults(true, false);
 }
 

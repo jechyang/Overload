@@ -150,7 +150,7 @@ void OvEditor::Core::Editor::SetupUI()
 			}
 			else
 			{
-				// SOUND, FONT, UNKNOWN → open with OS default
+				// SOUND, FONT, UNKNOWN -> open with OS default
 				OvTools::Utils::SystemCalls::OpenFile(EDITOR_EXEC(GetRealPath(path)));
 			}
 		}
@@ -187,7 +187,7 @@ void OvEditor::Core::Editor::SetupUI()
 	OvCore::Helpers::GUIHelpers::SetActorSelectionProvider(
 		[this](uint64_t p_guid)
 		{
-			// Defer to next frame — selecting an actor rebuilds the inspector widget tree,
+			// Defer to next frame -- selecting an actor rebuilds the inspector widget tree,
 			// which would corrupt iteration if called directly from within DrawWidgets().
 			EDITOR_EXEC(DelayAction([this, p_guid]()
 			{

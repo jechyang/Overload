@@ -40,7 +40,7 @@ void OvUI::Widgets::Buttons::Toggle::_Draw_Impl()
 
 	ImDrawList* dl = ImGui::GetWindowDrawList();
 
-	// Left half — rounded left corners only
+	// Left half -- rounded left corners only
 	dl->AddRectFilled(
 		origin,
 		{ origin.x + widthA, origin.y + height },
@@ -48,7 +48,7 @@ void OvUI::Widgets::Buttons::Toggle::_Draw_Impl()
 		rounding,
 		ImDrawFlags_RoundCornersLeft);
 
-	// Right half — rounded right corners only
+	// Right half -- rounded right corners only
 	dl->AddRectFilled(
 		posB,
 		{ posB.x + widthB, posB.y + height },

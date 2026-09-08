@@ -39,7 +39,7 @@ namespace OvUI::Styling
 
 		static Style& Get();
 
-		// ---- Preset methods (data only — do NOT call ImGui) ----
+		// ---- Preset methods (data only -- do NOT call ImGui) ----
 		void ApplyImClassicStyle();
 		void ApplyImDarkStyle();
 		void ApplyImLightStyle();
@@ -54,10 +54,10 @@ namespace OvUI::Styling
 		*/
 		void ApplyToImGui(float p_scale = 1.0f);
 
-		// Current UI scale — updated by ApplyToImGui(); read via OVUI_SCALE.
+		// Current UI scale -- updated by ApplyToImGui(); read via OVUI_SCALE.
 		float scale = 1.0f;
 
-		// ---- ImGui colors — 1:1 with ImGuiCol_* ----
+		// ---- ImGui colors -- 1:1 with ImGuiCol_* ----
 		Types::Color Text;
 		Types::Color TextDisabled;
 		Types::Color WindowBg;
@@ -144,7 +144,7 @@ namespace OvUI::Styling
 		// Reuse ImGui built-in fields (e.g. Text, TextDisabled, Button) wherever possible.
 		// These are for cases that need intent-specific colors beyond what ImGui provides.
 
-		// Text/label foreground colors — bright and readable as foreground text.
+		// Text/label foreground colors -- bright and readable as foreground text.
 		Types::Color Success;
 		Types::Color Danger;
 		Types::Color Warning;
@@ -153,7 +153,7 @@ namespace OvUI::Styling
 		Types::Color InspectorTitle;
 		Types::Color Highlight;
 
-		// Button background colors — muted enough to work as interactive backgrounds.
+		// Button background colors -- muted enough to work as interactive backgrounds.
 		Types::Color SuccessButton;
 		Types::Color SuccessButtonHovered;
 		Types::Color SuccessButtonActive;
@@ -174,7 +174,7 @@ namespace OvUI::Styling
 		Style();
 
 		// Populates all 62 ImGui color members + dimension members from a pre-built ImGuiStyle.
-		// Does NOT set semantic colors — call SetSemanticDefaults() after this.
+		// Does NOT set semantic colors -- call SetSemanticDefaults() after this.
 		void PopulateFromImGuiStyle(const struct ImGuiStyle& p_style);
 
 		// Sets semantic colors. Pass darkTheme=true for dark backgrounds, false for light.

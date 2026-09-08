@@ -28,7 +28,7 @@ namespace OvRendering::Animation
 		int32_t boneIndex = -1;
 		OvMaths::FMatrix4 localBindTransform = OvMaths::FMatrix4::Identity;
 
-		// Decomposed from localBindTransform — used as default values when a track has no keys
+		// Decomposed from localBindTransform -- used as default values when a track has no keys
 		OvMaths::FVector3 bindPosition;
 		OvMaths::FQuaternion bindRotation;
 		OvMaths::FVector3 bindScale = OvMaths::FVector3(1.0f, 1.0f, 1.0f);

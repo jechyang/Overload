@@ -17,7 +17,7 @@ namespace OvUI::Types
 	* A color source that holds either a direct color value or a live const-reference to
 	* a style color, with an optional multiplicative tint modifier.
 	*
-	* A ColorEffector always has a valid source — it cannot be in a "no color" state.
+	* A ColorEffector always has a valid source -- it cannot be in a "no color" state.
 	*
 	* Usage:
 	*   ColorEffector a = Color{1,0,0,1};                  // direct value
@@ -35,7 +35,7 @@ namespace OvUI::Types
 
 		/**
 		* Create a ColorEffector bound to a live style color reference.
-		* The reference is stored — changes to the referenced color are reflected on Resolve().
+		* The reference is stored -- changes to the referenced color are reflected on Resolve().
 		*/
 		static ColorEffector Ref(const Color& p_styleColor);
 		static ColorEffector Ref(const Color& p_styleColor, const Color& p_tint);

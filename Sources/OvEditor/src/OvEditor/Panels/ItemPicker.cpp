@@ -132,7 +132,7 @@ void ItemPicker::Open(OvCore::Helpers::GUIHelpers::PickerItemList p_items, std::
 	else
 	{
 		// Use SetNextWindowPos with a bottom-left pivot so the window grows upward.
-		// Don't call SetPosition() — that uses SetWindowPos (no pivot support).
+		// Don't call SetPosition() -- that uses SetWindowPos (no pivot support).
 		m_anchorX = x;
 		m_anchorY = buttonMin.y;
 		m_usePivotAnchor = true;
