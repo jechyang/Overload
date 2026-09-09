@@ -36,6 +36,61 @@ namespace
     TraceMode traceMode = TraceMode::Staged;
     constexpr size_t kDrawCount = 8 * 4;
     using EngineConstants = std::array<float, 68>;
+    using ReflectionConstants = std::array<float, 32>;
+    struct DrawConstants { EngineConstants engine{}; ReflectionConstants reflection{}; };
+    ReflectionConstants NeutralReflection()
+    {
+        ReflectionConstants result{};
+        for (size_t i : {4, 9, 14, 19}) result[i] = 1;
+        return result;
+    }
+    std::string bindingPolicy = "clean";
+    GLuint poisonBuffer = 0, shortBuffer = 0;
+    size_t drawOrdinal = 0;
+    void PolluteBindings(unsigned step)
+    {
+        // Include absent, undersized range, and a full stale probe from another view.
+        for (GLuint binding : {0u, 1u})
+        {
+            if (step % 3 == 0) glBindBufferBase(GL_UNIFORM_BUFFER, binding, 0);
+            else if (step % 3 == 1) glBindBufferRange(GL_UNIFORM_BUFFER, binding, shortBuffer, 0, 16);
+            else glBindBufferBase(GL_UNIFORM_BUFFER, binding, poisonBuffer);
+        }
+    }
+    void AuditUniformBlocks(GLuint program, bool writeTrace)
+    {
+        GLint blocks = 0;
+        glGetProgramiv(program, GL_ACTIVE_UNIFORM_BLOCKS, &blocks);
+        Require(blocks == 2, "Standard active uniform block coverage changed");
+        if (writeTrace) Write(*traceOutput, blocks);
+        for (GLint block = 0; block < blocks; ++block)
+        {
+            std::array<char, 256> name{}; GLsizei length = 0;
+            GLint binding = 0, required = 0, buffer = 0;
+            glGetActiveUniformBlockName(program, block, GLsizei(name.size()), &length, name.data());
+            glGetActiveUniformBlockiv(program, block, GL_UNIFORM_BLOCK_BINDING, &binding);
+            glGetActiveUniformBlockiv(program, block, GL_UNIFORM_BLOCK_DATA_SIZE, &required);
+            const bool engine = std::string_view(name.data()) == "EngineUBO";
+            Require(engine || std::string_view(name.data()) == "ReflectionUBO", "unexpected active uniform block");
+            Require(binding == (engine ? 0 : 1) && required == (engine ? 272 : 128), "active uniform block contract changed");
+            glGetIntegeri_v(GL_UNIFORM_BUFFER_BINDING, binding, &buffer);
+            Require(buffer != 0, "active uniform block has no buffer");
+            GLint64 allocated = 0, start = 0, range = 0;
+            glGetNamedBufferParameteri64v(buffer, GL_BUFFER_SIZE, &allocated);
+            glGetInteger64i_v(GL_UNIFORM_BUFFER_START, binding, &start);
+            glGetInteger64i_v(GL_UNIFORM_BUFFER_SIZE, binding, &range);
+            // BindBufferBase reports zero start/size; the full data store is available.
+            const GLint64 available = range == 0 ? allocated : range;
+            Require(start >= 0 && available >= required && start + available <= allocated,
+                "active uniform block buffer/range is undersized");
+            if (writeTrace)
+            {
+                Write(*traceOutput, length); traceOutput->write(name.data(), length);
+                Write(*traceOutput, binding); Write(*traceOutput, required);
+            }
+        }
+        Require(glGetError() == GL_NO_ERROR, "GL error during uniform block audit");
+    }
     GLuint traceBuffer = 0;
     struct ConstantReadback { size_t traceOffset; float time; bool checkTime; };
     std::vector<ConstantReadback> constantReadbacks;
@@ -45,12 +100,20 @@ namespace
         GLint buffer = 0, program = 0;
         glGetIntegeri_v(GL_UNIFORM_BUFFER_BINDING, 0, &buffer);
         glGetIntegerv(GL_CURRENT_PROGRAM, &program);
-        EngineConstants constants{};
+        AuditUniformBlocks(program, true);
+        GLint reflectionBuffer = 0;
+        glGetIntegeri_v(GL_UNIFORM_BUFFER_BINDING, 1, &reflectionBuffer);
+        GLint64 engineStart = 0, reflectionStart = 0;
+        glGetInteger64i_v(GL_UNIFORM_BUFFER_START, 0, &engineStart);
+        glGetInteger64i_v(GL_UNIFORM_BUFFER_START, 1, &reflectionStart);
+        DrawConstants constants{};
         if (traceMode == TraceMode::LiveDiagnostic)
         {
             // Retain the original intrusive probe solely for reproducing the A1 diagnostic.
-            glGetNamedBufferSubData(buffer, 0, sizeof(constants), constants.data());
-            if (newPath) Require(constants[51] == expectedTime, "captured elapsed time changed");
+            glGetNamedBufferSubData(buffer, engineStart, sizeof(constants.engine), constants.engine.data());
+            glGetNamedBufferSubData(reflectionBuffer, reflectionStart, sizeof(constants.reflection), constants.reflection.data());
+            Require(constants.reflection == NeutralReflection(), "no-reflection constants changed");
+            if (newPath) Require(constants.engine[51] == expectedTime, "captured elapsed time changed");
         }
         else
         {
@@ -58,11 +121,12 @@ namespace
             // Its next object upload must not share a buffer with a synchronous readback.
             const size_t readbackOffset = constantReadbacks.size() * sizeof(constants);
             Require(constantReadbacks.size() < kDrawCount, "constant readback capacity exceeded");
-            glCopyNamedBufferSubData(buffer, traceBuffer, 0, readbackOffset, sizeof(constants));
+            glCopyNamedBufferSubData(buffer, traceBuffer, engineStart, readbackOffset, sizeof(constants.engine));
+            glCopyNamedBufferSubData(reflectionBuffer, traceBuffer, reflectionStart, readbackOffset + sizeof(constants.engine), sizeof(constants.reflection));
             constantReadbacks.push_back({static_cast<size_t>(traceOutput->tellp()), expectedTime, newPath});
         }
-        constants[51] = 0; // Old Feature samples wall time; unused by the default Standard variant.
-        traceOutput->write(reinterpret_cast<const char*>(constants.data()), sizeof(constants));
+        constants.engine[51] = 0; // Old Feature samples wall time; unused by the default Standard variant.
+        traceOutput->write(reinterpret_cast<const char*>(&constants), sizeof(constants));
         for (GLenum name : {GL_DEPTH_FUNC, GL_CULL_FACE_MODE, GL_STENCIL_REF, GL_STENCIL_VALUE_MASK,
             GL_STENCIL_WRITEMASK, GL_STENCIL_FUNC, GL_STENCIL_FAIL, GL_STENCIL_PASS_DEPTH_FAIL, GL_STENCIL_PASS_DEPTH_PASS, GL_DEPTH_WRITEMASK})
         { GLint value = 0; glGetIntegerv(name, &value); Write(*traceOutput, value); }
@@ -94,9 +158,11 @@ namespace
         for (auto f : emissive) Write(*traceOutput, f);
     }
     void APIENTRY Elements(GLenum mode, GLsizei count, GLenum type, const void* indices)
-    { TraceDraw(mode,count,type,1); oldElements(mode,count,type,indices); }
+    { TraceDraw(mode,count,type,1); oldElements(mode,count,type,indices);
+        if (newPath && bindingPolicy == "poison") PolluteBindings(static_cast<unsigned>(++drawOrdinal)); }
     void APIENTRY Instances(GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instances)
-    { TraceDraw(mode,count,type,instances); oldInstances(mode,count,type,indices,instances); }
+    { TraceDraw(mode,count,type,instances); oldInstances(mode,count,type,indices,instances);
+        if (newPath && bindingPolicy == "poison") PolluteBindings(static_cast<unsigned>(++drawOrdinal)); }
     struct Hooks
     {
         std::unique_ptr<baregl::Buffer> constants;
@@ -106,7 +172,7 @@ namespace
             if (traceMode == TraceMode::Staged)
             {
                 constants = std::make_unique<baregl::Buffer>();
-                constants->Allocate(kDrawCount * sizeof(EngineConstants), baregl::types::EAccessSpecifier::STREAM_READ);
+                constants->Allocate(kDrawCount * sizeof(DrawConstants), baregl::types::EAccessSpecifier::STREAM_READ);
                 traceBuffer = constants->GetID();
             }
             constantReadbacks.clear();
@@ -118,15 +184,16 @@ namespace
         {
             if (traceMode != TraceMode::Staged) return trace;
             Require(constantReadbacks.size() == kDrawCount, "unexpected staged draw count");
-            std::vector<EngineConstants> readbacks(constantReadbacks.size());
-            glGetNamedBufferSubData(traceBuffer, 0, readbacks.size() * sizeof(EngineConstants), readbacks.data());
+            std::vector<DrawConstants> readbacks(constantReadbacks.size());
+            glGetNamedBufferSubData(traceBuffer, 0, readbacks.size() * sizeof(DrawConstants), readbacks.data());
             Require(glGetError() == GL_NO_ERROR, "GL error reading staged constants");
             for (size_t i = 0; i < readbacks.size(); ++i)
             {
                 auto& data = readbacks[i]; const auto& record = constantReadbacks[i];
-                if (record.checkTime) Require(data[51] == record.time, "captured elapsed time changed");
-                data[51] = 0;
-                std::memcpy(trace.data() + record.traceOffset, data.data(), sizeof(data));
+                if (record.checkTime) Require(data.engine[51] == record.time, "captured elapsed time changed");
+                Require(data.reflection == NeutralReflection(), "no-reflection constants changed or inherited pollution");
+                data.engine[51] = 0;
+                std::memcpy(trace.data() + record.traceOffset, &data, sizeof(data));
             }
             return trace;
         }
@@ -181,6 +248,72 @@ void PopulateStatic(Scene& scene, Model& model, OvCore::Resources::Material& mat
     }
 }
 
+void BindingContractValidation(const std::filesystem::path& assets, OvRendering::Resources::Shader& standard,
+    const std::filesystem::path& dir)
+{
+    std::ofstream report(dir / "uniform-blocks.txt");
+    size_t variants = 0;
+    for (const auto& [features, program] : standard.GetVariants().at(""))
+    {
+        if (features.contains("SKINNING")) continue;
+        OvRendering::Core::StaticOpaqueCommandRecorder::ValidateProgram(*program);
+        ++variants;
+    }
+    const auto program = standard.GetVariant().GetID();
+    GLint blocks = 0; glGetProgramiv(program, GL_ACTIVE_UNIFORM_BLOCKS, &blocks);
+    for (GLint block = 0; block < blocks; ++block)
+    {
+        std::array<char,256> name{};
+        GLint binding = 0, size = 0, count = 0;
+        glGetActiveUniformBlockName(program, block, GLsizei(name.size()), nullptr, name.data());
+        glGetActiveUniformBlockiv(program, block, GL_UNIFORM_BLOCK_BINDING, &binding);
+        glGetActiveUniformBlockiv(program, block, GL_UNIFORM_BLOCK_DATA_SIZE, &size);
+        report << name.data() << " binding=" << binding << " bytes=" << size << '\n';
+        glGetActiveUniformBlockiv(program, block, GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS, &count);
+        std::vector<GLint> indices(count);
+        glGetActiveUniformBlockiv(program, block, GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES, indices.data());
+        for (auto index : indices)
+        {
+            const GLuint uniform = static_cast<GLuint>(index);
+            GLint offset = 0, stride = 0, row = 0, array = 0; GLenum type = 0;
+            glGetActiveUniform(program, uniform, GLsizei(name.size()), nullptr, &array, &type, name.data());
+            glGetActiveUniformsiv(program, 1, &uniform, GL_UNIFORM_OFFSET, &offset);
+            glGetActiveUniformsiv(program, 1, &uniform, GL_UNIFORM_MATRIX_STRIDE, &stride);
+            glGetActiveUniformsiv(program, 1, &uniform, GL_UNIFORM_IS_ROW_MAJOR, &row);
+            report << "  " << name.data() << " offset=" << offset << " type=" << type
+                << " array=" << array << " matrixStride=" << stride << " rowMajor=" << row << '\n';
+        }
+    }
+    report << "Validated non-skinning default Standard variants: " << variants << '\n';
+    const std::array<std::pair<std::string, std::string>, 6> badBlocks{{
+        {"layout(std140,binding=2) uniform CustomUBO { vec4 value; };", "value"},
+        {"layout(std140,binding=0) uniform ReflectionUBO { vec4 position; };", "position"},
+        {"layout(std140,binding=1) uniform ReflectionUBO { vec4 extra[16]; };", "extra[15]"},
+        {"layout(std140,binding=1) uniform ReflectionUBO { float position; };", "vec4(position)"},
+        {"layout(std140,binding=1) uniform ReflectionUBO { vec4 position; vec4 boxCenter; };", "boxCenter"},
+        {"layout(std140,row_major,binding=1) uniform ReflectionUBO { vec4 position; mat4 rotation; };", "rotation[0]"}
+    }};
+    Frontend frontend;
+    for (const auto& [declaration, value] : badBlocks)
+    {
+        auto* shader = OvRendering::Resources::Loaders::ShaderLoader::CreateFromSource(
+            "#version 450 core\nlayout(location=0) in vec3 position; void main(){gl_Position=vec4(position,1);}",
+            "#version 450 core\n" + declaration + "\nout vec4 color; void main(){color=" + value + ";}");
+        Require(shader != nullptr, "invalid block fixture failed to compile");
+        {
+            Scene scene(assets,assets); Model model("invalid UBO");
+            OvCore::Resources::Material material; material.SetShader(shader);
+            material.SetReceiveShadows(false); material.SetReceiveReflections(false);
+            PopulateStatic(scene,model,material,0); OvRendering::Entities::Camera camera;
+            bool rejected = false;
+            try { frontend.Extract({scene,camera,96,64}); } catch (const std::invalid_argument&) { rejected = true; }
+            Require(rejected, "unsupported block was published by Extract");
+        }
+        OvRendering::Resources::Loaders::ShaderLoader::Destroy(shader);
+    }
+    std::printf("PASS: %zu static Standard variants validated; unknown/binding/size/type/offset/row-major UBOs rejected before publication\n", variants);
+}
+
 void FailureValidation(Frontend& frontend, OvTools::Jobs::JobSystem& jobs,
     std::array<std::shared_ptr<const SceneSnapshot>,3> snapshots, OvRendering::Data::PipelineState state)
 {
@@ -225,6 +358,27 @@ void FrontendValidation(const std::filesystem::path& dir, std::optional<unsigned
     OvCore::ResourceManagement::ShaderManager shaders; ServiceLocator::Provide(shaders);
     const auto assets=std::filesystem::current_path()/"Data/Engine"; shaders.ProvideAssetPaths(assets,assets);
     auto* shader=shaders.GetResource(":Shaders/Standard.ovfx"); Require(shader,"missing Standard shader");
+    BindingContractValidation(assets, *shader, dir);
+    baregl::Buffer neutral, poison, undersized;
+    neutral.Allocate(128, baregl::types::EAccessSpecifier::STATIC_DRAW);
+    const auto neutralData = NeutralReflection(); neutral.Upload(neutralData.data());
+    poison.Allocate(512, baregl::types::EAccessSpecifier::STATIC_DRAW);
+    std::array<float,128> poisonData{}; poisonData.fill(71.f); poison.Upload(poisonData.data());
+    undersized.Allocate(512, baregl::types::EAccessSpecifier::STATIC_DRAW); undersized.Upload(poisonData.data());
+    poisonBuffer = poison.GetID(); shortBuffer = undersized.GetID();
+    // Negative controls prove the audit catches the legacy missing/124-byte input.
+    const auto program = shader->GetVariant().GetID();
+    for (unsigned bad = 0; bad < 3; ++bad)
+    {
+        glBindBufferBase(GL_UNIFORM_BUFFER, 0, poison.GetID());
+        if (bad == 0) glBindBufferBase(GL_UNIFORM_BUFFER, 1, 0);
+        else glBindBufferRange(GL_UNIFORM_BUFFER, 1, poison.GetID(), 0, bad == 1 ? 124 : 16);
+        bool rejected = false;
+        try { AuditUniformBlocks(program, false); } catch (const std::runtime_error&) { rejected = true; }
+        Require(rejected, "uniform block audit accepted invalid legacy input");
+    }
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, 0); glBindBufferBase(GL_UNIFORM_BUFFER, 1, 0);
+    std::puts("PASS: all active UBOs audited; missing/124-byte/short-range negative controls rejected");
     std::array<std::vector<unsigned char>,3> allPixels;
     std::array<std::string,3> allTraces;
     for (unsigned mode=selectedMode.value_or(0); mode<selectedMode.value_or(2)+1; ++mode)
@@ -251,6 +405,9 @@ void FrontendValidation(const std::filesystem::path& dir, std::optional<unsigned
             if (mode==0)
             {
                 OvCore::Rendering::SceneRenderer renderer(driver);
+                // An explicit valid external input for the unchanged A0 renderer.
+                // It does not provide a no-reflection binding when the receiver is disabled.
+                neutral.Bind(baregl::types::EBufferType::UNIFORM, 1);
 
 #ifndef FRONTEND_IMMEDIATE_ORACLE
                 renderer.SetDrawRecordingEnabled(true);
@@ -310,7 +467,10 @@ void FrontendValidation(const std::filesystem::path& dir, std::optional<unsigned
                 snapshot.reset(); prepared.reset(); frontend.reset();
                 window.MakeCurrentContext(); target->Resize(48,32); target.reset();
                 OvRendering::Data::RenderFrame product;
-                product.Append(std::move(commands)); product.Seal(); product.Submit(driver);
+                product.Append(std::move(commands)); product.Seal();
+                if (bindingPolicy == "poison") PolluteBindings(frame);
+                else { glBindBufferBase(GL_UNIFORM_BUFFER, 0, 0); glBindBufferBase(GL_UNIFORM_BUFFER, 1, 0); }
+                product.Submit(driver);
                 product.Wait();
                 product.GetCompletion().RethrowIfFailed();
                 Require(product.GetCompletion().Succeeded(),"frontend product frame did not retire successfully");
@@ -366,6 +526,7 @@ int main(int argc,char** argv) try
         Require(policy == "staged" || policy == "none" || policy == "live", "invalid trace policy");
         traceMode = policy == "none" ? TraceMode::Disabled : policy == "live" ? TraceMode::LiveDiagnostic : TraceMode::Staged;
     }
+    if (argc > 4) { bindingPolicy = argv[4]; Require(bindingPolicy == "clean" || bindingPolicy == "poison", "invalid binding policy"); }
     FrontendValidation(argv[1], selectedMode); return 0;
 }
 catch(const std::exception& e){std::fprintf(stderr,"FAIL: %s\n",e.what());return 1;}

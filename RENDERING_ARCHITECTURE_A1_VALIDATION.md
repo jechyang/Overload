@@ -1,6 +1,6 @@
 # 渲染架构 A1：主相机静态不透明切片
 
-日期：2026-09-09。静态拥有型命令切片实现并验证；首帧 98 像素差异已定位到测试的活 UBO 同步回读，改用暂存回读并补充独立冷启动对照。A1 全项仍待活跃 Uniform Block 绑定完整性核对，A2 未开始。
+日期：2026-09-10。A1 已完成验收：静态拥有型命令切片、独立冷启动对照及全部活跃 Uniform Block 的无反射绑定契约均已闭合。首帧回读干扰仍使用独立暂存方案；本次 Debug/Release 全量构建与 40 个冷启动进程、320 帧严格对照通过。A2 未开始。
 
 ## 数据与线程归属
 
@@ -80,11 +80,44 @@ Extract（Main）→ ViewPreparer（Main 或直接提交的一个 Any Worker）�
 
 原故障复现也已完成：node Tests/RenderingCommands/reproduce-frontend-readback.mjs 在 Debug/Release 各自冷启动三模式的 live 探针。两配置旧即时均得到逐帧差异 [98,0,0,0,0,0,0,0]，新串行/Worker 均为 0；六份 live trace 与对应 staged trace 完全一致，none/staged 像素也始终一致。原差异仍能被精确触发，并非测试把它忽略。原始采集与诊断 JSON 位于 Build/JobsValidation/A1FirstFrame/，正式通过结果与该机器相关诊断分开记录。
 
-### A1 后续边界
+### A1 上次交接边界（历史，现已由下节闭合）
 
 排查还发现 Standard 默认变体含第二个活跃 Uniform Block（反射常量，binding 1），原 trace 仅覆盖 binding 0。无探针且材质禁用接收时，旧 ReflectionRenderFeature 会提前返回，新静态录制桥也没有显式反射 UBO 绑定。中性反射 UBO 试验没有改变上述 98 像素差异，所以这是独立的绑定完整性问题，不能把本次像素对照通过等同于全部 shader 输入已定义。
 
-OpenGL 要求活跃 Uniform Block 绑定足够大的缓冲区；缺失时 shader 结果可能未定义，见 [OpenGL 4.5 Core 规范，Uniform Variables](https://registry.khronos.org/OpenGL/specs/gl/glspec45.core.pdf)。下一项仍在 A1：核对完整活跃块、补齐明确的无反射绑定契约和污染/冷启动验证；保留 A0 旧源码并明确区分有效基线输入与既有未定义绑定。该项尚未实施，不宣布 A1 全项验收，不进入 A2。
+OpenGL 要求活跃 Uniform Block 绑定足够大的缓冲区；缺失时 shader 结果可能未定义，见 [OpenGL 4.5 Core 规范，Uniform Variables](https://registry.khronos.org/OpenGL/specs/gl/glspec45.core.pdf)。下一项仍在 A1：核对完整活跃块、补齐明确的无反射绑定契约和污染/冷启动验证；保留 A0 旧源码并明确区分有效基线输入与既有未定义绑定。上次交接时该项尚未实施，未宣布 A1 全项验收。此次收尾见下节，仍不进入 A2。
+
+### 活跃 UBO 完整绑定收尾（2026-09-09–10，已通过）
+
+本次仅处理 A1 的绑定契约。新静态桥每 Draw 上传并绑定完整 128 字节 ReflectionUBO：position/boxCenter/boxHalfExtents 为零、rotation 为单位矩阵、brightness=0、boxProjection/local 为 32 位零，尾部填充也初始化。EngineUBO 继续提供完整 272 字节。资源由既有 ResourceExecutor 创建，常量上传只发生在 GL owner 执行阶段；命令按 shared_ptr 持有反射 buffer，覆盖前端销毁后的回放与 GPU 退役。
+
+Extract 在发布快照前核对所选实际 program 的全部活跃 Uniform Block，每请求按 program 去重，通过 ResourceExecutor 查询 GL 元数据。只接受 A1 已提供的 EngineUBO/binding 0 和 ReflectionUBO/binding 1，检查最小缓冲区尺寸、成员名/类型/偏移、数组/矩阵步长和主序；未知块或不兼容布局明确拒绝，不继承外部 UBO。Prepare/Record 不增加 GL 查询，也没有进入 A2 的 View/Stage 工作。
+
+对照输入现在显式分为有效和无效两类：旧 SceneRenderer/ABaseRenderer/CompositeRenderer、材质、Engine/Reflection Feature、Standard 及反射 shader 与 A0 固定提交保持一致；测试在旧路径绘制前外部绑定 128 字节中性反射数据。这是对 oracle 的有效输入约束，不修改旧实现。旧无绑定和 124 字节范围仅作为负例，不能用其渲染输出定义兼容性。旧 CReflectionProbe 的 124 字节载荷/分配仍是未迁移探针路径的既有问题，本项没有修改或宣称验证有探针功能，后续 A3/A4 必须处理其 std140 完整尺寸。
+
+测试扩展：逐 Draw 枚举所有活跃块，验证实际绑定 buffer、offset/range 和存储足够大；按真实绑定起点复制全部 400 字节 GPU 常量到独立暂存槽，绘制结束后回读。新增反射 128 字节全部与中性值核对（包括 padding），原引擎 68 个 float、时间断言和其他 draw/uniform/sampler/state trace 保持。每进程输出 uniform-blocks.txt，保存驱动返回的成员布局。
+
+每配置、每 oracle 共 10 个独立冷启动进程、80 帧：clean 下旧/新串行/新 Worker × none/staged，加新串行/Worker × none/staged 的 poison。新路径提交前轮换空绑定、16 字节范围、完整脏 buffer；staged 在相邻 draw 间再次污染，必须由下一条命令恢复。所有模式的完整 RGBA、五份非空 staged trace 逐字节一致才通过，不预热、不丢弃首帧、不放宽容差。
+
+负例包括缺失 UBO、124 字节范围、16 字节范围，以及经真实 shader/Extract 的未知块、错误 binding、超大块、错误类型、偏移和 row-major；同时核对 Standard 默认 pass 的全部非 SKINNING 变体。保留 Worker/无 GL/失败取消汇合、源/目标/前端销毁及空视图回归。
+
+最终验证结果：
+
+| 检查 | Debug | Release |
+| --- | --- | --- |
+| 全量解决方案（含 Game/Editor） | 通过，exit 0 | 通过，exit 0 |
+| --frontend：有效旧命令输入 / 新串行 / Worker，clean 与 poison | 10 进程、80 帧通过 | 10 进程、80 帧通过 |
+| --frontend-immediate：有效旧即时输入 / 新串行 / Worker，clean 与 poison | 10 进程、80 帧通过 | 10 进程、80 帧通过 |
+| 全部活跃 UBO、实际范围及中性数据/填充，16 个静态 Standard 变体 | 通过 | 通过 |
+| 无绑定/124 字节/短范围及 6 类 shader 契约负例 | 全部拒绝 | 全部拒绝 |
+| Worker、无 GL 准备/录制、失败/取消/恢复、源和资源生命周期 | 通过 | 通过 |
+
+共 40 个正式冷启动进程、320 个场景帧，包括全部首帧；每进程 RGBA 196608 字节，每份 staged trace 59904 字节（32 Draw 的全部活跃 UBO 及原 trace 项）。每组 10 份 RGBA 与 5 份非空 staged trace 精确一致，有/无 trace 和污染前后都不改变像素。未重跑或改写上一轮的 live 首帧诊断。
+
+构建证据：Build/a1-ubo-debug-build.log、Build/a1-ubo-release-build.log。Debug 构建期间补正错误消息保存块名的方式，随后用 ForceRebuild=true、BuildProjectReferences=false 分别重建 OvRendering/OvGame/OvEditor，最终日志为 Build/a1-ubo-debug-final-<模块>.log；再显式提供 SolutionDir 执行资源打包，验证 Build/Debug 的 Game/Editor 与最终 Bin 产物逐字节相等。中间 ForceRebuild=false 的尝试因沙箱 Known Folder/FileTracker 失败，不作为通过证据。所有生产对象与最终头文件匹配；专项使用 /W3 /WX。
+
+运行证据：Build/JobsValidation/Skinning/{Debug,Release}-{frontend,frontend-immediate}-command-list/result.json，以及 current/cold-*/ 下的原始 RGBA、draws、run.log 和 uniform-blocks.txt。汇总及 A0 旧源码 SHA-256 证据为 Build/a1-ubo-evidence.json。实际 GL 返回 EngineUBO=272、ReflectionUBO=128，反射成员 offset 为 0/16/80/96/112/116/120；bool 为 4 字节、矩阵步长为 16，均与新载荷吻合。
+
+至此 A1 全项验收闭合，仅限本文已声明的主相机静态 Opaque 范围。A2–A6 和旧有探针功能仍未迁移；不会因为本项通过而宣称完整产品视口或反射功能已经接入新前端。
 
 测试专用 ViewPreparer 源副本只在入口和首次私有 draw 生成后插入观察/故障钩子；有超时闩锁验证无当前 GL、实际 Worker 身份、失败/取消先退出后释放最后输入。故障发生时已经存在部分准备结果，仍不能发布；随后正常请求必须成功。生产入口不接收任意 Worker 回调。SystemCalls 的测试副本只将日志 AppData 路径指向输出内的 profile，避开测试账号 Known Folder 缺失；不是引擎行为修改。
 
@@ -92,4 +125,4 @@ OpenGL 要求活跃 Uniform Block 绑定足够大的缓冲区；缺失时 shader
 
 - StaticOpaqueRequest/SceneRenderExtractor 是场景输入适配器，首片外功能继续留在旧产品入口；A2–A5 扩展数据契约并迁移调用者，A6 删除旧继承链及无人使用适配代码。
 - StaticOpaqueCommandRecorder 是有限后端桥，复用 RenderCommandList/RenderFrame；A3 将其最小绑定/录制职责并入通用 DrawPacketBuilder/CommandRecorder，不建立第二套提交后端。
-- 下一会话先读 A0 与本文，继续 A1：核对活跃 Uniform Block 的完整绑定，重点检查无反射时的 binding 1；首帧回读干扰已闭合，不重复开启原排查，不进入 A2。
+- A1 已完成；本会话在验证与提交后结束，A2 未开始。后续工作仍按 A0 冻结契约和总计划推进，不能把此项中性绑定当作有探针反射功能迁移。

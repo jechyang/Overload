@@ -3,6 +3,8 @@
 #include <OvCore/ECS/Components/CModelRenderer.h>
 #include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
 #include <OvCore/Rendering/SkinningUtils.h>
+#include <OvRendering/Core/StaticOpaqueCommandRecorder.h>
+#include <unordered_set>
 #include <algorithm>
 #include <stdexcept>
 
@@ -35,6 +37,7 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     // relative groups preserving the old address order. Never sort snapshot addresses.
     std::vector<uintptr_t> identities;
     uint64_t ordinal = 0;
+    std::unordered_set<const baregl::ShaderProgram*> validatedPrograms;
     for (const auto* renderer : components.modelRenderers)
     {
         const auto& owner = renderer->owner;
@@ -60,6 +63,9 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
             // that compatibility adapter; reject before PrepareSnapshot touches it.
             for (const auto& [name, property] : material->GetProperties())
                 if (property.singleUse) throw std::invalid_argument("A1 does not yet own single-use material properties");
+            auto& program = material->GetVariant().value();
+            if (validatedPrograms.insert(&program).second)
+                OvRendering::Core::StaticOpaqueCommandRecorder::ValidateProgram(program);
             Data::StaticMeshInput item;
             item.actorId = owner.GetGUID(); item.collectionIndex = collection;
             item.drawOrder = material->GetDrawOrder(); item.position = transform.GetWorldPosition();

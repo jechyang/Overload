@@ -240,10 +240,12 @@ node Tests/Skinning/run-validation.mjs Release --frontend-immediate
 
 新 Prepare 与 Record 在无当前 GL 上下文时运行。测试副本只在 Prepare 入口和首次私有 draw 生成后插入观察/故障钩子，用有超时的闩锁验证 Worker 身份、失败/取消、半成品不发布和最后输入在汇合后释放。生产接口没有任意 Worker 回调；另一个测试源副本仅隔离 AppData 日志目录。
 
---frontend-immediate 使用冻结的旧即时入口作为 oracle，输出到 <配置>-frontend-immediate-command-list/current/。两种入口现在都运行三模式 × none/staged 共 6 个独立冷启动进程，子目录为 cold-<0|1|2>-<none|staged>；每个进程 8 帧，全部像素逐字节一致，staged 的三份非空 draw trace 逐字节一致。result.json 的 frontendComparison 记录数量、路径和严格比较结果，失败不会留下旧成功 manifest。
+--frontend-immediate 使用冻结的旧即时入口作为 oracle，输出到 <配置>-frontend-immediate-command-list/current/。每种入口运行 10 个独立冷启动进程：三模式 × none/staged 的 clean 输入，加上新串行/Worker × none/staged 的 poison 输入。clean 子目录为 cold-<0|1|2>-<none|staged>，poison 子目录追加 -poison；每进程 8 帧，全部像素逐字节一致，staged 的五份非空 draw trace 逐字节一致。result.json 的 frontendComparison 记录数量、路径和严格比较结果，失败不会留下旧成功 manifest。
 
-原首帧 98 像素差异由测试同步回读活引擎 UBO 触发。现在 Draw 前将 GPU 常量复制到独立暂存槽，全部 Draw 后回读，保留原 trace 内容及时间断言。none 不安装 draw hook；其像素必须与 staged 完全一致。测试程序参数为 <输出目录> [0|1|2] [staged|none|live]；live 仅供原回读干扰复现，单模式进程只负责采集，跨进程比较由 runner 完成。手动调用时工作目录仍为 Build/<配置>，输出目录须预先建立。
+原首帧 98 像素差异由测试同步回读活引擎 UBO 触发。现在 Draw 前将 GPU 常量复制到独立暂存槽，全部 Draw 后回读，保留原 trace 内容及时间断言，并扩展到全部活跃 Uniform Block。每 Draw 枚举块名、绑定点和最小尺寸，检查实际 buffer/range 足够大，再按实际绑定起点暂存全部 272 字节 EngineUBO 和 128 字节 ReflectionUBO。none 不安装 draw hook；其像素必须与 staged 完全一致。测试程序参数为 <输出目录> [0|1|2] [staged|none|live] [clean|poison]；live 仅供原回读干扰复现，单模式进程只负责采集，跨进程比较由 runner 完成。手动调用时工作目录仍为 Build/<配置>，输出目录须预先建立。
 
-本轮没有修改生产代码或 A0 oracle，也没有丢弃首帧或放宽容差。A1 完整验收仍保留活跃反射 UBO 绑定核对，详见根目录 RENDERING_ARCHITECTURE_A1_VALIDATION.md；暂不进入 A2。
+A0 oracle 源码保持不变。旧路径测试显式导入完整 128 字节中性反射 UBO，作为有效的基线输入；既有缺失绑定和 124 字节范围仅作为拒绝负例，不据其像素定义兼容性。新路径每次执行绘制均上传并绑定中性反射数据（单位旋转、亮度/布尔标志/填充为零），命令持有资源直到退役。poison 在提交前轮换空绑定、16 字节范围和完整脏缓冲，staged 还在相邻 Draw 之间注入污染。所有新路径必须恢复有效绑定及完整中性数据，像素和 trace 不得变化。
+
+每个进程还检查 Standard 默认 pass 的全部非 SKINNING 变体，并通过真实 shader 与 Extract 验证未知块、错误 binding、超大块、错误成员类型、偏移和行主序会在发布前拒绝。实际成员布局写入 uniform-blocks.txt。生产校验只在 Extract 期间通过既有 ResourceExecutor 到 GL owner 查询，同一请求内按 program 去重；Prepare/Record 仍无 GL。此项只收尾 A1，不进入 A2。
 
 完成两配置的 --frontend-immediate 后，可运行 node Tests/RenderingCommands/reproduce-frontend-readback.mjs。它分别冷启动三模式的 live 探针，记录与正式 none/staged 的逐帧像素差及 trace 等价性，输出 Build/JobsValidation/A1FirstFrame/diagnostic.json；这只是机器相关的故障复现，不要求其他驱动也出现 98 像素差异，不改正式验收结果。
