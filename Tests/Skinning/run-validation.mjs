@@ -9,9 +9,10 @@ const config = process.argv[2] || 'Release';
 if (!['Debug', 'Release'].includes(config)) throw Error('Expected Debug or Release');
 const asan = process.argv.includes('--asan');
 const parallel = process.argv.includes('--parallel');
+const stages = process.argv.includes('--stages');
 const frontendImmediate = process.argv.includes('--frontend-immediate');
-const frontend = process.argv.includes('--frontend') || frontendImmediate;
-if (frontend && process.argv.some(x => x.startsWith('--') && x !== '--frontend' && x !== '--frontend-immediate' && x !== '--vs')) throw Error('--frontend runs separately');
+const frontend = process.argv.includes('--frontend') || frontendImmediate || stages;
+if (frontend && process.argv.some(x => x.startsWith('--') && x !== '--frontend' && x !== '--frontend-immediate' && x !== '--stages' && x !== '--vs')) throw Error('--frontend runs separately');
 const parallelRecording = process.argv.includes('--parallel-recording');
 const gameBenchmark = process.argv.includes('--game-benchmark');
 const recordingBenchmark = process.argv.includes('--recording-benchmark');
@@ -53,7 +54,7 @@ if (editor && (parallel || asan)) throw Error('--editor runs separately from --p
 const mutexDeque = process.argv.includes('--mutex-deque');
 if (uiCommands && (editor || parallel || geometry || drawPackets || asan)) throw Error("--ui-commands runs separately");
 const currentOnly = gameFrame || uiCommands || asan || parallel || editor || drawPackets || process.argv.includes('--current');
-const output = path.join(root, 'Build/JobsValidation/Skinning', config + (frontendImmediate ? '-frontend-immediate' : frontend ? '-frontend' : '') + (parallelRecording ? '-parallel-recording' : '') + (recordingBenchmark ? '-recording-benchmark' : editorBenchmark ? '-editor-benchmark' : editorStress ? '-editor-stress' : editorThread ? '-editor-thread' : '') + (gameBenchmark ? '-game-benchmark' : gameThread ? '-game-thread' : gameFrame ? '-game-frame' : '') + (resourceExecutor ? '-resource-executor' : gpuProfiling ? '-gpu-profiling' : imguiLifetime ? '-imgui-lifetime' : textureRegistry ? '-texture-registry' : resourceLifetime ? '-resource-lifetime' : logDispatch ? '-log-dispatch' : renderThread ? '-render-thread' : renderFrame ? '-render-frame' : uiCommands ? '-ui-commands' : '') + (commandList ? '-command-list' : targetState ? '-target-state' : frameInputs ? '-frame-inputs' : drawPackets ? '-draw-packets' : drawInputs ? '-draw-inputs' : snapshots ? '-snapshots' : material ? '-material' : geometry ? '-geometry' : '') + (editorUI ? '-editor-ui' : editor ? '-editor' : parallel ? '-parallel' : '') + (productLoop ? '-product-loop' : '') + (mutexDeque ? '-mutex' : '') + (asan ? '-asan' : ''));
+const output = path.join(root, 'Build/JobsValidation/Skinning', config + (stages ? '-stages' : '') + (frontendImmediate ? '-frontend-immediate' : frontend ? '-frontend' : '') + (parallelRecording ? '-parallel-recording' : '') + (recordingBenchmark ? '-recording-benchmark' : editorBenchmark ? '-editor-benchmark' : editorStress ? '-editor-stress' : editorThread ? '-editor-thread' : '') + (gameBenchmark ? '-game-benchmark' : gameThread ? '-game-thread' : gameFrame ? '-game-frame' : '') + (resourceExecutor ? '-resource-executor' : gpuProfiling ? '-gpu-profiling' : imguiLifetime ? '-imgui-lifetime' : textureRegistry ? '-texture-registry' : resourceLifetime ? '-resource-lifetime' : logDispatch ? '-log-dispatch' : renderThread ? '-render-thread' : renderFrame ? '-render-frame' : uiCommands ? '-ui-commands' : '') + (commandList ? '-command-list' : targetState ? '-target-state' : frameInputs ? '-frame-inputs' : drawPackets ? '-draw-packets' : drawInputs ? '-draw-inputs' : snapshots ? '-snapshots' : material ? '-material' : geometry ? '-geometry' : '') + (editorUI ? '-editor-ui' : editor ? '-editor' : parallel ? '-parallel' : '') + (productLoop ? '-product-loop' : '') + (mutexDeque ? '-mutex' : '') + (asan ? '-asan' : ''));
 fs.mkdirSync(output, { recursive: true });
 const baseline = drawInputs ? 'b1128a77b55b9d96c554aad63e743056e481f2cf' : snapshots ? '8cc2f8c5a9d992809b95d317a70dfbcfc3928442' : material ? '50194bfe7ee94eac37d63bbf84779c7c68b390e4' : geometry ? '4f8da08b854a7d57e3a2b0ce08f3d8a05039d7d9' : '73ae710a57889bfde94184c3c8f073228e998144';
 const header = 'Sources/OvCore/include/OvCore/ECS/Components/CSkinnedMeshRenderer.h';
@@ -69,7 +70,7 @@ const sdkVersion = fs.readdirSync(path.join(sdk, 'Include')).filter(x => fs.exis
 const compiler = path.join(msvc, 'bin/Hostx64/x64/cl.exe');
 const engineLibs = ['assimp','baregl','bullet3','freetype','glfw','ImGui','lua','OvAudio','OvCore','OvDebug','OvMaths','OvPhysics','OvRendering','OvTools','OvUI','OvWindowing','soloud','tinyxml2','tracy'];
 const depIncludes = ['baregl/include','ImGui/include','lua/include','sol/include','tinyxml2/include','tracy','glfw/include','bullet3/src','soloud/include','assimp/include'];
-const manifest = { baseline, config, frontend, frontendImmediate, parallelRecording, recordingBenchmark, gameBenchmark, editorBenchmark, productLoop, gameFrame, gameThread, resourceExecutor, gpuProfiling, imguiLifetime, textureRegistry, resourceLifetime, logDispatch, renderThread, renderFrame, uiCommands, editorUI, commandList, targetState, frameInputs, drawPackets, drawInputs, snapshots, material, geometry, editor, parallel, mutexDeque, asan, compiler, sdkVersion, results: [] };
+const manifest = { baseline, config, stages, frontend, frontendImmediate, parallelRecording, recordingBenchmark, gameBenchmark, editorBenchmark, productLoop, gameFrame, gameThread, resourceExecutor, gpuProfiling, imguiLifetime, textureRegistry, resourceLifetime, logDispatch, renderThread, renderFrame, uiCommands, editorUI, commandList, targetState, frameInputs, drawPackets, drawInputs, snapshots, material, geometry, editor, parallel, mutexDeque, asan, compiler, sdkVersion, results: [] };
 if (frontend) {
   manifest.architectureBaseline = '620ef10fb56c287581bbd55b0c8904ef9cca26b7';
   manifest.oracle = frontendImmediate ? 'SceneRenderer immediate' : 'SceneRenderer owned commands';
@@ -345,19 +346,28 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
     if (begin < 0 || end < begin) throw Error('SystemCalls test profile boundary changed');
     system = system.slice(0, begin) + 'std::string OvTools::Utils::SystemCalls::GetPathToAppdata() { return R"(' + profile + ')"; }\n\n' + system.slice(end);
     const systemCopy = path.join(dir, 'SystemCalls.cpp'); fs.writeFileSync(systemCopy, system); extraSources.push(systemCopy);
-    const source = fs.readFileSync(path.join(root, 'Sources/OvRendering/src/OvRendering/Core/ViewPreparer.cpp'), 'utf8');
-    const marker = '    const auto checkCancel =';
-    if (!source.includes(marker)) throw Error('ViewPreparer entry changed');
-    const copy = path.join(dir, 'ViewPreparer.cpp');
-    const drawMarker = 'result->m_draws.push_back({index, state, OvMaths::FMatrix4::Transpose(mesh.model), mesh.user});';
-    if (!source.includes(drawMarker)) throw Error('Prepared draw publication boundary changed');
-    fs.writeFileSync(copy, 'extern void FrontendPrepareEntry();\nextern void FrontendPrepareDraw();\n' + source
-      .replace(marker, '    FrontendPrepareEntry();\n' + marker)
-      .replace(drawMarker, drawMarker + '\n        FrontendPrepareDraw();'));
-    extraSources.push(copy);
+    let mesh = fs.readFileSync(path.join(root, 'Sources/OvRendering/src/OvRendering/Core/MeshFeatureProcessor.cpp'), 'utf8');
+    const entry = '    MeshRangeResult result;', draw = '        result.visible.push_back({i, distance});';
+    if (!mesh.includes(entry) || !mesh.includes(draw)) throw Error('Mesh range test boundary changed');
+    mesh = 'extern void FrontendPrepareEntry();\nextern void FrontendPrepareDraw();\n' + mesh
+      .replace(entry, '    FrontendPrepareEntry();\n' + entry)
+      .replace(draw, draw + '\n        FrontendPrepareDraw();');
+    const meshCopy = path.join(dir, 'MeshFeatureProcessor.cpp');
+    if (stages) {
+      mesh = '#include <cstddef>\nextern void StageRangeEntry(size_t);\nextern void StageRangeExit(size_t);\nextern void StageRangeDraw(size_t);\n' + mesh
+        .replace(entry, '    struct Exit { size_t begin; ~Exit() { StageRangeExit(begin); } } exit{begin};\n    StageRangeEntry(begin);\n' + entry)
+        .replace(draw, draw + '\n        StageRangeDraw(begin);');
+      let coordinator = fs.readFileSync(path.join(root, 'Sources/OvRendering/src/OvRendering/Core/RenderTaskCoordinator.cpp'), 'utf8');
+      const submit = '            handles.push_back(jobs->Submit(';
+      if (!coordinator.includes(submit)) throw Error('Coordinator submission boundary changed');
+      coordinator = '#include <cstddef>\nextern void StageBeforeSubmit(size_t);\n' + coordinator.replace(submit, '            StageBeforeSubmit(slot);\n' + submit);
+      const taskCopy = path.join(dir, 'RenderTaskCoordinator.cpp'); fs.writeFileSync(taskCopy, coordinator); extraSources.push(taskCopy);
+    }
+    fs.writeFileSync(meshCopy, mesh); extraSources.push(meshCopy);
   }
   const args = ['/nologo','/std:c++20','/EHsc','/W3','/WX',config === 'Debug' ? '/MDd' : '/MD',config === 'Debug' ? '/Od' : '/O2','/bigobj','/Gy','/Zi',
     ...(frontendImmediate ? ['/DFRONTEND_IMMEDIATE_ORACLE'] : []),
+    ...(stages ? ['/DFRONTEND_STAGE_VALIDATION'] : []),
     '/DTRACY_ENABLE','/DTRACY_ON_DEMAND','/DTRACY_MEMORY_ENABLE','/DLUA_SCRIPTING','/DSOL_NO_LUA_HPP',config === 'Debug' ? '/D_DEBUG' : '/DNDEBUG',
     ...((variant === 'current' || geometry) ? ['/DSKINNING_NEW_PATH'] : []), ...((geometry || drawPackets) && variant === 'current' ? ['/DGEOMETRY_COMMANDS_NEW_PATH'] : []), ...((material || drawPackets) && variant === 'current' ? ['/DMATERIAL_COMMANDS_NEW_PATH'] : []), ...((snapshots || drawPackets) && variant === 'current' ? ['/DSNAPSHOT_NEW_PATH'] : []), ...((drawInputs || drawPackets) && variant === 'current' ? ['/DDRAW_INPUTS_NEW_PATH'] : []), ...(drawPackets ? ['/DDRAW_PACKETS_TEST'] : []), ...(commandList && editor ? ['/DEDITOR_COMMANDS_TEST'] : []), ...(editorUI ? ['/DEDITOR_UI_TEST'] : []), ...(productLoop && editor ? ['/DPRODUCT_EDITOR'] : []), ...(mutexDeque ? ['/DOVTOOLS_JOBS_USE_MUTEX_DEQUE'] : []), ...(asan ? ['/fsanitize=address', '/D_DISABLE_VECTOR_ANNOTATION', '/D_DISABLE_STRING_ANNOTATION'] : []),
     '/I' + overlay, '/I' + path.join(msvc,'include'), ...['ucrt','shared','um','winrt'].map(x => '/I' + path.join(sdk,'Include',sdkVersion,x)),
@@ -394,7 +404,9 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
       exactPixels: true, exactDrawData: true, traceDoesNotChangePixels: true, constantReadback: 'all active UBOs staged after all draws',
       uniformBlocks: [{ name: 'EngineUBO', binding: 0, bytes: 272 }, { name: 'ReflectionUBO', binding: 1, bytes: 128 }],
       legacyInput: 'external 128-byte neutral reflection UBO; unchanged A0 renderer',
-      invalidBindingControls: ['missing', '124-byte range', '16-byte range'],
+      invalidBindingControls: stages ? [] : ['missing', '124-byte range', '16-byte range'],
+      drawsPerFrame: stages ? 12 : 4,
+      preparation: stages ? 'two Worker ranges; controlled overlap, forward/reverse completion, failure/cancel/partial submit join, single Worker' : 'shared candidate preparation; serial/Worker failure and lifetime regression',
       pollution: 'new paths: absent/short/stale bindings before replay and between staged draws'  };
     console.log('PASS: 10 cold processes with valid legacy input and new-path binding pollution, exact old/serial/Worker pixels and staged draw data; tracing does not change any pixel');
   } else {

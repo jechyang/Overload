@@ -1,28 +1,14 @@
 #include <OvRendering/Core/ViewPreparer.h>
 #include <algorithm>
 #include <cmath>
-#include <numeric>
 #include <tuple>
 #include <stdexcept>
-
 using namespace OvRendering;
 
-std::shared_ptr<const Data::PreparedFrameData> Core::ViewPreparer::Prepare(
-    std::shared_ptr<const Data::RenderSceneSnapshot> p_scene,
-    Data::PipelineState p_baseState, const std::atomic_bool* p_cancel)
+Data::RenderView Core::ViewPreparer::BuildView(const Data::RenderViewInput& input)
 {
-    const auto checkCancel = [&] {
-        if (p_cancel && p_cancel->load(std::memory_order_acquire))
-            throw std::runtime_error("View preparation cancelled");
-    };
-    checkCancel();
-    if (!p_scene) throw std::invalid_argument("Missing scene snapshot");
-    auto result = std::unique_ptr<Data::PreparedFrameData>(new Data::PreparedFrameData);
-    result->m_scene = std::move(p_scene);
-    result->m_preparationThread = std::this_thread::get_id();
-    auto& view = result->m_view;
-    view.input = result->m_scene->GetView();
-    const auto& input = view.input;
+    Data::RenderView view;
+    view.input = input;
     if (!input.width || !input.height || !std::isfinite(input.elapsedTime))
         throw std::invalid_argument("Invalid render view dimensions or time");
     const auto target = input.position + input.forward;
@@ -48,51 +34,63 @@ std::shared_ptr<const Data::PreparedFrameData> Core::ViewPreparer::Prepare(
             view.frustum->CalculateFrustum(view.projection * view.view);
         }
     }
-    // Preserve SceneRenderPass's actual unconditional stencil behavior (A0).
-    p_baseState.stencilTest = true;
-    p_baseState.stencilWriteMask = 0xFF;
-    p_baseState.stencilFuncRef = 1;
-    p_baseState.stencilFuncMask = 0xFF;
-    p_baseState.stencilOpFail = baregl::types::EOperation::REPLACE;
-    p_baseState.depthOpFail = baregl::types::EOperation::REPLACE;
-    p_baseState.bothOpFail = baregl::types::EOperation::REPLACE;
-    const auto meshes = result->m_scene->GetMeshes();
-    std::vector<std::pair<size_t, float>> visible;
-    visible.reserve(meshes.size());
-    for (size_t i = 0; i < meshes.size(); ++i)
-    {
-        checkCancel();
-        const auto& mesh = meshes[i];
-        if (!mesh.geometry || !mesh.material || !mesh.instances)
-            throw std::invalid_argument("Incomplete static draw input");
-        if (view.frustum && mesh.worldBounds)
-        {
-            const auto& b = *mesh.worldBounds;
-            if (!view.frustum->SphereInFrustum(b.position.x, b.position.y, b.position.z, b.radius)) continue;
-        }
-        const float distance = OvMaths::FVector3::Distance(mesh.position, input.position);
-        if (!std::isfinite(distance)) throw std::invalid_argument("Invalid object distance");
-        visible.emplace_back(i, distance);
-    }
-    std::stable_sort(visible.begin(), visible.end(), [&](const auto& a, const auto& b) {
-        const auto& x = meshes[a.first]; const auto& y = meshes[b.first];
-        return std::tie(x.drawOrder, x.materialGroup, a.second) < std::tie(y.drawOrder, y.materialGroup, b.second);
-    });
-    for (const auto& [index, distance] : visible)
-    {
-        checkCancel();
-        const auto& mesh = meshes[index];
-        auto state = p_baseState;
-        state.depthWriting = mesh.state.depthWriting;
-        state.colorWriting.mask = mesh.state.colorWriting ? 0xF : 0;
-        state.blending = mesh.state.blendable;
-        state.culling = mesh.state.frontfaceCulling || mesh.state.backfaceCulling;
-        state.depthTest = mesh.state.depthTest;
-        if (state.culling) state.cullFace = mesh.state.backfaceCulling ?
-            (mesh.state.frontfaceCulling ? baregl::types::ECullFace::FRONT_AND_BACK : baregl::types::ECullFace::BACK) :
-            baregl::types::ECullFace::FRONT;
-        result->m_draws.push_back({index, state, OvMaths::FMatrix4::Transpose(mesh.model), mesh.user});
-    }
+    return view;
+}
+
+std::shared_ptr<const Data::PreparedFrameData> Core::ViewPreparer::Prepare(
+    std::shared_ptr<const Data::RenderSceneSnapshot> scene, Data::PipelineState baseState, const std::atomic_bool* cancel)
+{
+    const auto checkCancel = [&] {
+        if (cancel && cancel->load(std::memory_order_acquire)) throw std::runtime_error("View preparation cancelled");
+    };
     checkCancel();
+    if (!scene) throw std::invalid_argument("Missing scene snapshot");
+    auto view = BuildView(scene->GetView());
+    std::vector<MeshRangeResult> ranges;
+    ranges.push_back(MeshFeatureProcessor::PrepareRange(*scene, view, 0, scene->GetMeshes().size(), cancel));
+    return Publish(std::move(scene), std::move(view), std::move(ranges), baseState, cancel);
+}
+
+std::shared_ptr<const Data::PreparedFrameData> Core::ViewPreparer::Publish(
+    std::shared_ptr<const Data::RenderSceneSnapshot> scene, Data::RenderView view,
+    std::vector<MeshRangeResult> ranges, Data::PipelineState baseState, const std::atomic_bool* cancel)
+{
+    auto result = std::unique_ptr<Data::PreparedFrameData>(new Data::PreparedFrameData);
+    result->m_scene = std::move(scene);
+    result->m_view = std::move(view);
+    result->m_scene->GetPipeline().Validate();
+    std::vector<VisibleStaticMesh> visible;
+    for (auto& range : ranges)
+    {
+        result->m_preparationThreads.push_back(range.thread);
+        visible.insert(visible.end(), range.visible.begin(), range.visible.end());
+    }
+    result->m_preparationThread = ranges.empty() ? std::this_thread::get_id() : ranges.front().thread;
+    const auto meshes = result->m_scene->GetMeshes();
+    for (auto stage : result->m_scene->GetPipeline().stages)
+    {
+        std::vector<VisibleStaticMesh> list;
+        for (const auto& candidate : visible)
+            if (meshes[candidate.sourceIndex].stage == stage) list.push_back(candidate);
+        const auto sorting = Data::DescribeStage(stage).sorting;
+        // Whole-list sort after deterministic range merge. Never sort each chunk.
+        std::stable_sort(list.begin(), list.end(), [&](const auto& a, const auto& b) {
+            const auto& x = meshes[a.sourceIndex]; const auto& y = meshes[b.sourceIndex];
+            if (x.drawOrder != y.drawOrder) return x.drawOrder < y.drawOrder;
+            if (sorting == Data::DrawSorting::MaterialFrontToBack && x.materialGroup != y.materialGroup)
+                return x.materialGroup < y.materialGroup;
+            return sorting == Data::DrawSorting::BackToFront ? a.distance > b.distance : a.distance < b.distance;
+        });
+        result->m_lists.push_back({result->m_view.input.id, stage, result->m_draws.size(), list.size()});
+        for (const auto& candidate : list)
+        {
+            if (cancel && cancel->load(std::memory_order_acquire)) throw std::runtime_error("View preparation cancelled");
+            const auto index = candidate.sourceIndex;
+            const auto& mesh = meshes[index];
+            const auto state = MeshFeatureProcessor::BuildState(baseState, mesh.state);
+            result->m_draws.push_back({index, state, OvMaths::FMatrix4::Transpose(mesh.model), mesh.user});
+        }
+    }
+    if (cancel && cancel->load(std::memory_order_acquire)) throw std::runtime_error("View preparation cancelled");
     return std::shared_ptr<const Data::PreparedFrameData>(std::move(result));
 }

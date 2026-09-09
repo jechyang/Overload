@@ -249,3 +249,18 @@ A0 oracle 源码保持不变。旧路径测试显式导入完整 128 字节中�
 每个进程还检查 Standard 默认 pass 的全部非 SKINNING 变体，并通过真实 shader 与 Extract 验证未知块、错误 binding、超大块、错误成员类型、偏移和行主序会在发布前拒绝。实际成员布局写入 uniform-blocks.txt。生产校验只在 Extract 期间通过既有 ResourceExecutor 到 GL owner 查询，同一请求内按 program 去重；Prepare/Record 仍无 GL。此项只收尾 A1，不进入 A2。
 
 完成两配置的 --frontend-immediate 后，可运行 node Tests/RenderingCommands/reproduce-frontend-readback.mjs。它分别冷启动三模式的 live 探针，记录与正式 none/staged 的逐帧像素差及 trace 等价性，输出 Build/JobsValidation/A1FirstFrame/diagnostic.json；这只是机器相关的故障复现，不要求其他驱动也出现 98 像素差异，不改正式验收结果。
+
+## 渲染架构 A2：静态网格 View/Stage 与并行准备
+
+~~~bat
+node Tests\Skinning\run-validation.mjs Debug --stages
+node Tests\Skinning\run-validation.mjs Release --stages
+node Tests\Skinning\run-validation.mjs Debug --stages --frontend-immediate
+node Tests\Skinning\run-validation.mjs Release --stages --frontend-immediate
+~~~
+
+先完整构建对应配置，必要时追加 --vs。每组独立冷启动 10 个隐藏 GL 进程：有效旧输入、新串行、新两 Worker 的无探针/暂存 trace 对照，以及新路径无绑定/短范围/脏 UBO 污染。每进程 8 帧、96 次真实 Draw，全部 RGBA 与五份非空完整 UBO/绘制 trace 必须逐字节一致。输出在 <配置>-stages-frontend[-immediate]-command-list/；不会混入 A1 输出或改变历史基准。
+
+stage_validation.inl 复用 frontend_validation.cpp 的真实 GL/资源和 trace 设施。包含三个 Stage 的同对象多网格、完整透明/等 key 排序、override/fallback/无效原材质与类别豁免、配置顺序/子集、未知或未迁移 Stage 拒绝。受控探针只插入 MeshFeatureProcessor/RenderTaskCoordinator 的测试源副本，证明两个 Worker 同时进入、前后顺序反转仍一致；注入已有私有输出后的分支失败、第二次提交失败和取消，验证先汇合再释放输入、不发布部分列表、单 Worker 与恢复。
+
+A1 的 --frontend/--frontend-immediate 保留，准备探针随实际职责迁至 MeshFeatureProcessor；串行/并行共用同一个协调器与范围函数。实现范围、构建及验收结果见根目录 RENDERING_ARCHITECTURE_A2_VALIDATION.md。

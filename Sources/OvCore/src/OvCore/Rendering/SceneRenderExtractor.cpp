@@ -3,7 +3,7 @@
 #include <OvCore/ECS/Components/CModelRenderer.h>
 #include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
 #include <OvCore/Rendering/SkinningUtils.h>
-#include <OvRendering/Core/StaticOpaqueCommandRecorder.h>
+#include <OvRendering/Core/StaticMeshCommandRecorder.h>
 #include <unordered_set>
 #include <algorithm>
 #include <stdexcept>
@@ -15,13 +15,31 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     const StaticOpaqueRequest& p_request,
     const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black)
 {
+    StaticSceneRequest request{p_request};
+    request.pipeline.stages = {Data::RenderStage::Opaque};
+    return ExtractImpl(request, true, p_white, p_black);
+}
+
+std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor::ExtractScene(
+    const StaticSceneRequest& p_request,
+    const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black)
+{
+    return ExtractImpl(p_request, false, p_white, p_black);
+}
+
+std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor::ExtractImpl(
+    const StaticSceneRequest& p_request, bool p_opaqueOnly,
+    const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black)
+{
+    p_request.pipeline.Validate();
     const auto& components = p_request.scene.GetFastAccessComponents();
     const auto anyActive = [](const auto& list) {
         return std::any_of(list.begin(), list.end(), [](const auto* c) { return c->owner.IsActive(); });
     };
     if (anyActive(components.lights) || anyActive(components.reflectionProbes) || anyActive(components.postProcessStacks))
-        throw std::invalid_argument("A1 static view does not own lighting, reflection or post-processing");
+        throw std::invalid_argument("Static scene view does not own lighting, reflection or post-processing");
     auto builder = std::unique_ptr<Data::RenderSceneSnapshot>(new Data::RenderSceneSnapshot);
+    builder->m_pipeline = p_request.pipeline;
     auto& view = builder->m_view;
     const auto& camera = p_request.camera;
     view.id = p_request.viewId; view.sceneGeneration = p_request.sceneGeneration;
@@ -45,28 +63,40 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
         const auto* materials = owner.GetComponent<ECS::Components::CMaterialRenderer>();
         if (!materials || !Rendering::SatisfiesVisibility(materials->GetVisibilityFlags(), Rendering::EVisibilityFlags::GEOMETRY)) continue;
         if (Rendering::SkinningUtils::IsSkinningActive(owner.GetComponent<ECS::Components::CSkinnedMeshRenderer>()))
-            throw std::invalid_argument("A1 static view does not own skinning");
+            throw std::invalid_argument("Static scene view does not own skinning");
         const auto& transform = owner.transform.GetFTransform();
         for (const auto* mesh : renderer->GetModel()->GetMeshes())
         {
             const auto collection = ordinal++;
-            if (mesh->GetMaterialIndex() >= kMaxMaterialCount) continue;
-            auto* material = materials->GetMaterials().at(mesh->GetMaterialIndex());
+            auto* sourceMaterial = mesh->GetMaterialIndex() < kMaxMaterialCount ?
+                materials->GetMaterials().at(mesh->GetMaterialIndex()) : nullptr;
+            auto* material = p_request.overrideMaterial ? p_request.overrideMaterial :
+                (sourceMaterial ? sourceMaterial : p_request.fallbackMaterial);
             if (!material || !material->IsValid()) continue;
-            if (material->IsUserInterface() || material->IsBlendable())
-                throw std::invalid_argument("A1 static view does not own Transparent or SceneUI");
+            if (p_opaqueOnly && (material->IsUserInterface() || material->IsBlendable()))
+                throw std::invalid_argument("Static scene view does not own Transparent or SceneUI");
+            const auto stage = material->IsUserInterface() ? Data::RenderStage::SceneUI :
+                material->IsBlendable() ? Data::RenderStage::Transparent : Data::RenderStage::Opaque;
+            if (material != p_request.fallbackMaterial &&
+                ((stage == Data::RenderStage::SceneUI && !p_request.includeUI) ||
+                 (stage == Data::RenderStage::Transparent && !p_request.includeTransparent) ||
+                 (stage == Data::RenderStage::Opaque && !p_request.includeOpaque))) continue;
+            if (std::find(p_request.pipeline.stages.begin(), p_request.pipeline.stages.end(), stage) == p_request.pipeline.stages.end()) continue;
+            const auto description = Data::DescribeStage(stage);
             if (!material->SupportsProjectionMode(view.projectionMode) || material->GetGPUInstances() <= 0) continue;
             if (typeid(*mesh) != typeid(OvRendering::Resources::Mesh) || material->HasFeature("SKINNING") ||
-                material->IsShadowReceiver() || material->IsReflectionReceiver())
-                throw std::invalid_argument("A1 requires standard static geometry without shadow/reflection receivers");
+                (description.shadowReceiver && material->IsShadowReceiver()) ||
+                (description.reflectionReceiver && material->IsReflectionReceiver()))
+                throw std::invalid_argument("Static scene requires standard static geometry without shadow/reflection receivers");
             // Do not consume singleUse out of the old filtered draw order. A3 owns
             // that compatibility adapter; reject before PrepareSnapshot touches it.
             for (const auto& [name, property] : material->GetProperties())
-                if (property.singleUse) throw std::invalid_argument("A1 does not yet own single-use material properties");
-            auto& program = material->GetVariant().value();
+                if (property.singleUse) throw std::invalid_argument("Static scene does not yet own single-use material properties");
+            auto& program = material->GetVariant(description.technique).value();
             if (validatedPrograms.insert(&program).second)
-                OvRendering::Core::StaticOpaqueCommandRecorder::ValidateProgram(program);
+                OvRendering::Core::StaticMeshCommandRecorder::ValidateProgram(program);
             Data::StaticMeshInput item;
+            item.stage = stage;
             item.actorId = owner.GetGUID(); item.collectionIndex = collection;
             item.drawOrder = material->GetDrawOrder(); item.position = transform.GetWorldPosition();
             item.model = transform.GetWorldMatrix(); item.user = materials->GetUserMatrix();
@@ -91,7 +121,7 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
                 item.worldBounds = bounds;
             }
             item.geometry = mesh->RetainGeometry();
-            item.material = material->PrepareSnapshot(std::nullopt, std::nullopt, p_white, p_black, {}, {}, true, true);
+            item.material = material->PrepareSnapshot(description.technique, std::nullopt, p_white, p_black, {}, {}, true, true);
             identities.push_back(reinterpret_cast<uintptr_t>(material));
             builder->m_meshes.push_back(std::move(item));
         }

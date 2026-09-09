@@ -2,7 +2,7 @@
 #include <atomic>
 #include <thread>
 #include <OvCore/Rendering/SceneRenderExtractor.h>
-#include <OvRendering/Core/StaticOpaqueCommandRecorder.h>
+#include <OvRendering/Core/StaticMeshCommandRecorder.h>
 #include <OvTools/Jobs/JobSystem.h>
 
 namespace OvCore::Rendering
@@ -13,6 +13,7 @@ namespace OvCore::Rendering
     {
     public:
         RenderFrontend() = default;
+        std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> ExtractScene(const StaticSceneRequest& p_request) const;
         std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> Extract(const StaticOpaqueRequest& p_request) const;
         std::shared_ptr<const OvRendering::Data::PreparedFrameData> Prepare(
             std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> p_scene,
@@ -24,6 +25,6 @@ namespace OvCore::Rendering
     private:
         void RequireOwner() const;
         std::thread::id m_owner = std::this_thread::get_id();
-        OvRendering::Core::StaticOpaqueCommandRecorder m_recorder;
+        OvRendering::Core::StaticMeshCommandRecorder m_recorder;
     };
 }

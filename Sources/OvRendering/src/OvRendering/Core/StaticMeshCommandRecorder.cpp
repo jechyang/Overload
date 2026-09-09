@@ -1,5 +1,6 @@
-#include <OvRendering/Core/StaticOpaqueCommandRecorder.h>
+#include <OvRendering/Core/StaticMeshCommandRecorder.h>
 #include <OvRendering/Context/Driver.h>
+#include <OvRendering/Core/PipelineRunner.h>
 #include <baregl/ResourceExecutor.h>
 #include <baregl/detail/glad/glad.h>
 #include <algorithm>
@@ -40,7 +41,7 @@ namespace
     static_assert(sizeof(EngineConstants) == 272 && offsetof(EngineConstants, user) == 208);
 }
 
-void Core::StaticOpaqueCommandRecorder::ValidateProgram(const baregl::ShaderProgram& p_program)
+void Core::StaticMeshCommandRecorder::ValidateProgram(const baregl::ShaderProgram& p_program)
 {
     baregl::ResourceExecutor::Invoke([&] {
         const auto program = p_program.GetID();
@@ -53,12 +54,12 @@ void Core::StaticOpaqueCommandRecorder::ValidateProgram(const baregl::ShaderProg
             const std::string blockName(name.data());
             const bool engine = blockName == "EngineUBO";
             if (!engine && blockName != "ReflectionUBO")
-                throw std::invalid_argument("A1 has no binding provider for uniform block: " + std::string(blockName));
+                throw std::invalid_argument("Static scene has no binding provider for uniform block: " + std::string(blockName));
             GLint binding = 0, size = 0, members = 0;
             glGetActiveUniformBlockiv(program, block, GL_UNIFORM_BLOCK_BINDING, &binding);
             glGetActiveUniformBlockiv(program, block, GL_UNIFORM_BLOCK_DATA_SIZE, &size);
             if (binding != (engine ? 0 : 1) || size <= 0 || size > static_cast<GLint>(engine ? sizeof(EngineConstants) : sizeof(NoReflectionConstants)))
-                throw std::invalid_argument("A1 uniform block binding/size mismatch: " + std::string(blockName));
+                throw std::invalid_argument("Static scene uniform block binding/size mismatch: " + std::string(blockName));
             glGetActiveUniformBlockiv(program, block, GL_UNIFORM_BLOCK_ACTIVE_UNIFORMS, &members);
             std::vector<GLint> indices(members);
             glGetActiveUniformBlockiv(program, block, GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES, indices.data());
@@ -79,13 +80,13 @@ void Core::StaticOpaqueCommandRecorder::ValidateProgram(const baregl::ShaderProg
                     return m.name == memberName && m.offset == offset && m.type == type;
                 });
                 if (found == expected.end() || arraySize != 1 || arrayStride != 0 || rowMajor != 0 || stride != (type == GL_FLOAT_MAT4 ? 16 : 0))
-                    throw std::invalid_argument("A1 uniform block layout mismatch: " + std::string(blockName));
+                    throw std::invalid_argument("Static scene uniform block layout mismatch: " + std::string(blockName));
             }
         }
     });
 }
 
-Core::StaticOpaqueCommandRecorder::StaticOpaqueCommandRecorder()
+Core::StaticMeshCommandRecorder::StaticMeshCommandRecorder()
 {
     m_white = std::make_shared<baregl::Texture>(baregl::types::ETextureType::TEXTURE_2D);
     m_black = std::make_shared<baregl::Texture>(baregl::types::ETextureType::TEXTURE_CUBE);
@@ -104,12 +105,12 @@ Core::StaticOpaqueCommandRecorder::StaticOpaqueCommandRecorder()
     m_noReflection->Allocate(sizeof(NoReflectionConstants), baregl::types::EAccessSpecifier::STREAM_DRAW);
 }
 
-Data::RenderCommandList Core::StaticOpaqueCommandRecorder::Record(
+Data::RenderCommandList Core::StaticMeshCommandRecorder::Record(
     std::shared_ptr<const Data::PreparedFrameData> p_frame,
     std::optional<baregl::Framebuffer::Snapshot> p_target) const
 {
-    if (!p_frame || p_frame->GetView().stage != Data::RenderStage::Opaque)
-        throw std::invalid_argument("Static recorder requires published Opaque data");
+    if (!p_frame)
+        throw std::invalid_argument("Static recorder requires published scene data");
     Data::RenderCommandList commands;
     try
     {
@@ -119,7 +120,8 @@ Data::RenderCommandList Core::StaticOpaqueCommandRecorder::Record(
             driver.SetViewport(0, 0, view.input.width, view.input.height);
             driver.Clear(view.input.clearColor, view.input.clearDepth, view.input.clearStencil, view.input.clearValue);
         });
-        for (const auto& draw : p_frame->GetDraws())
+        PipelineRunner::Run(*p_frame, [&](Data::RenderStage, std::span<const Data::PreparedStaticDraw> draws) {
+        for (const auto& draw : draws)
         {
             const auto& source = p_frame->GetScene().GetMeshes()[draw.sourceIndex];
             auto material = Data::Material::EncodeSnapshot(source.material);
@@ -140,6 +142,7 @@ Data::RenderCommandList Core::StaticOpaqueCommandRecorder::Record(
                 driver.Draw(state, *geometry, baregl::types::EPrimitiveMode::TRIANGLES, instances);
             });
         }
+        });
         commands.Append([engine = m_engine, lights = m_emptyLights, hasDraws = !p_frame->GetDraws().empty()](Context::Driver&) {
             if (hasDraws) { engine->Unbind(); lights->Unbind(); }
             baregl::Framebuffer::BindDefault();

@@ -1,5 +1,6 @@
 #pragma once
 #include <OvCore/SceneSystem/Scene.h>
+#include <OvCore/Rendering/ScenePipeline.h>
 #include <OvRendering/Data/PreparedFrameData.h>
 #include <OvRendering/Entities/Camera.h>
 
@@ -18,14 +19,30 @@ namespace OvCore::Rendering
         std::optional<OvRendering::Data::Frustum> frustumOverride;
     };
 
+    struct StaticSceneRequest : StaticOpaqueRequest
+    {
+        OvRendering::Data::RenderPipeline pipeline = ScenePipeline::StaticMeshes();
+        OvRendering::Data::Material* overrideMaterial = nullptr;
+        OvRendering::Data::Material* fallbackMaterial = nullptr;
+        bool includeOpaque = true, includeTransparent = true, includeUI = true;
+    };
+
     class SceneRenderExtractor final
     {
     public:
+        static std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> ExtractScene(
+            const StaticSceneRequest& p_request,
+            const std::shared_ptr<baregl::Texture>& p_white,
+            const std::shared_ptr<baregl::Texture>& p_black);
         // Call in the main-thread stable scene-read interval. No alias to source
         // scene, camera, transform, material or asset escapes this boundary.
         static std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> Extract(
             const StaticOpaqueRequest& p_request,
             const std::shared_ptr<baregl::Texture>& p_white,
             const std::shared_ptr<baregl::Texture>& p_black);
+    private:
+        static std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> ExtractImpl(
+            const StaticSceneRequest& p_request, bool p_opaqueOnly,
+            const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black);
     };
 }

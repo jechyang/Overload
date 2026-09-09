@@ -8,10 +8,10 @@ namespace OvRendering::Core
 {
     // A1 backend bridge. Resource creation uses the existing GL owner/ResourceExecutor.
     // Record itself is CPU-only; buffers are written only by command execution.
-    class StaticOpaqueCommandRecorder final
+    class StaticMeshCommandRecorder final
     {
     public:
-        StaticOpaqueCommandRecorder();
+        StaticMeshCommandRecorder();
         // Extract-time resource validation, dispatched to the GL owner.
         // A1 owns only the standard engine and no-reflection uniform blocks.
         static void ValidateProgram(const baregl::ShaderProgram& p_program);

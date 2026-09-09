@@ -34,7 +34,11 @@ namespace
     bool newPath = false;
     enum class TraceMode { Disabled, Staged, LiveDiagnostic };
     TraceMode traceMode = TraceMode::Staged;
+#ifdef FRONTEND_STAGE_VALIDATION
+    constexpr size_t kDrawCount = 8 * 12;
+#else
     constexpr size_t kDrawCount = 8 * 4;
+#endif
     using EngineConstants = std::array<float, 68>;
     using ReflectionConstants = std::array<float, 32>;
     struct DrawConstants { EngineConstants engine{}; ReflectionConstants reflection{}; };
@@ -256,7 +260,7 @@ void BindingContractValidation(const std::filesystem::path& assets, OvRendering:
     for (const auto& [features, program] : standard.GetVariants().at(""))
     {
         if (features.contains("SKINNING")) continue;
-        OvRendering::Core::StaticOpaqueCommandRecorder::ValidateProgram(*program);
+        OvRendering::Core::StaticMeshCommandRecorder::ValidateProgram(*program);
         ++variants;
     }
     const auto program = standard.GetVariant().GetID();
@@ -513,6 +517,9 @@ void FrontendValidation(const std::filesystem::path& dir, std::optional<unsigned
     if (!selectedMode || *selectedMode != 0)
         std::puts("PASS: source scene/material/model destroyed, target resized/destroyed, frontend destroyed before RenderFrame replay");
 }
+#ifdef FRONTEND_STAGE_VALIDATION
+#include "stage_validation.inl"
+#endif
 int main(int argc,char** argv) try
 {
     std::setvbuf(stdout,nullptr,_IONBF,0);
@@ -527,6 +534,11 @@ int main(int argc,char** argv) try
         traceMode = policy == "none" ? TraceMode::Disabled : policy == "live" ? TraceMode::LiveDiagnostic : TraceMode::Staged;
     }
     if (argc > 4) { bindingPolicy = argv[4]; Require(bindingPolicy == "clean" || bindingPolicy == "poison", "invalid binding policy"); }
-    FrontendValidation(argv[1], selectedMode); return 0;
+#ifdef FRONTEND_STAGE_VALIDATION
+    StageValidation(argv[1], selectedMode);
+#else
+    FrontendValidation(argv[1], selectedMode);
+#endif
+    return 0;
 }
 catch(const std::exception& e){std::fprintf(stderr,"FAIL: %s\n",e.what());return 1;}
