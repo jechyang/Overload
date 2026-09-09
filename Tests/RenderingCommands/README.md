@@ -221,3 +221,21 @@ node Tests/Skinning/run-validation.mjs Release --recording-benchmark
 所有性能运行保持独占，不与构建、其他引擎测试或 Tracy 客户端并发。未连接 Tracy 的专项数据用 analyze-parallel-recording.mjs 分析 parallel-recording-metrics.csv；完成 Release 专项编译后，单独运行 capture-parallel-recording.mjs。随后用 tracy-csvexport.exe -u -f Record 导出 Build/JobsValidation/tracy-parallel-recording-release.tracy，传给 analyze-parallel-recording-tracy.mjs；分析器检查完整 36 组、真实 worker 区间重叠及封口前结束，不使用固定 sleep 作为工作量。
 
 生产项目设置 parallel_recording=true 才启用新录制准备/编码；默认 false，适用于 render_commands=true 下的同线程或固定 Render owner。低层 renderer 通过 SetCommandRecordingJobs 提供池，以 SetParallelCommandRecordingEnabled(false) 保留准备后串行 oracle。历史 material/snapshot/draw-input 基准只补充链接所需新辅助函数及基类新增尾部字段，旧 Bind/Upload/DrawEntity 和基准提交保持不变。详细所有权、失败边界和测量结果见根目录 MULTITHREADING_PARALLEL_RECORDING_VALIDATION.md。
+
+
+## 渲染架构 A1：静态不透明前端
+
+完整构建 Debug/Release 后分别运行：
+
+~~~bat
+node Tests/Skinning/run-validation.mjs Debug --frontend
+node Tests/Skinning/run-validation.mjs Release --frontend
+~~~
+
+可追加 --vs 指定 VS2022。输出独立放在 <配置>-frontend-command-list/current/，链接新构建的生产 RenderFrontend、提取器和录制桥。保持全部历史模式的 baseline 不变；新 manifest 单独记录 architectureBaseline=620ef10fb56c287581bbd55b0c8904ef9cca26b7 和 oracle 类型。旧 SceneRenderer/材质/Feature 实现与 A0 固定源码相同。
+
+专项使用真实 Standard 材质、静态三角形和已声明的受限场景配置。旧拥有型命令路径、新 Prepare 串行、新 Prepare 单 Worker 各 8 帧，精确比较 RGBA、绘制参数/顺序、矩阵、材质 uniform/sampler 内容和关键 GL 状态。覆盖透视/正交、裁剪、稳定等 key、实例、源变更/销毁、目标 resize/销毁、前端销毁后 RenderFrame 回放，以及空视图和未支持输入拒绝。
+
+新 Prepare 与 Record 在无当前 GL 上下文时运行。测试副本只在 Prepare 入口和首次私有 draw 生成后插入观察/故障钩子，用有超时的闩锁验证 Worker 身份、失败/取消、半成品不发布和最后输入在汇合后释放。生产接口没有任意 Worker 回调；另一个测试源副本仅隔离 AppData 日志目录。
+
+--frontend-immediate 是独立即时 oracle 诊断，输出到 <配置>-frontend-immediate-command-list/current/。Debug/Release 均通过 --frontend；两配置的 --frontend-immediate 均失败，即时旧路径首帧有 98 个像素差异，命令 oracle 三路一致；不将该诊断的失败算作通过，不放宽像素容差。A1 全项验收与下次交接见根目录 RENDERING_ARCHITECTURE_A1_VALIDATION.md。

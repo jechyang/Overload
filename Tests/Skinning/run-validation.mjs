@@ -9,6 +9,9 @@ const config = process.argv[2] || 'Release';
 if (!['Debug', 'Release'].includes(config)) throw Error('Expected Debug or Release');
 const asan = process.argv.includes('--asan');
 const parallel = process.argv.includes('--parallel');
+const frontendImmediate = process.argv.includes('--frontend-immediate');
+const frontend = process.argv.includes('--frontend') || frontendImmediate;
+if (frontend && process.argv.some(x => x.startsWith('--') && x !== '--frontend' && x !== '--frontend-immediate' && x !== '--vs')) throw Error('--frontend runs separately');
 const parallelRecording = process.argv.includes('--parallel-recording');
 const gameBenchmark = process.argv.includes('--game-benchmark');
 const recordingBenchmark = process.argv.includes('--recording-benchmark');
@@ -35,7 +38,7 @@ const renderFrame = process.argv.includes('--render-frame');
 const uiCommands = process.argv.includes('--ui-commands') || renderFrame || renderThread || logDispatch || resourceLifetime || textureRegistry || imguiLifetime || gpuProfiling || resourceExecutor;
 const editorUI = process.argv.includes('--editor-ui') || editorThread;
 if (editorUI && !editor) throw Error('--editor-ui requires --editor');
-const commandList = process.argv.includes('--command-list') || editorThread || parallelRecording;
+const commandList = process.argv.includes('--command-list') || editorThread || parallelRecording || frontend;
 if (productLoop && editor && (!commandList || !editorUI)) throw Error('Editor --product-loop requires --command-list --editor-ui');
 const targetState = process.argv.includes('--target-state') || commandList;
 const frameInputs = process.argv.includes('--frame-inputs') || targetState;
@@ -50,7 +53,7 @@ if (editor && (parallel || asan)) throw Error('--editor runs separately from --p
 const mutexDeque = process.argv.includes('--mutex-deque');
 if (uiCommands && (editor || parallel || geometry || drawPackets || asan)) throw Error("--ui-commands runs separately");
 const currentOnly = gameFrame || uiCommands || asan || parallel || editor || drawPackets || process.argv.includes('--current');
-const output = path.join(root, 'Build/JobsValidation/Skinning', config + (parallelRecording ? '-parallel-recording' : '') + (recordingBenchmark ? '-recording-benchmark' : editorBenchmark ? '-editor-benchmark' : editorStress ? '-editor-stress' : editorThread ? '-editor-thread' : '') + (gameBenchmark ? '-game-benchmark' : gameThread ? '-game-thread' : gameFrame ? '-game-frame' : '') + (resourceExecutor ? '-resource-executor' : gpuProfiling ? '-gpu-profiling' : imguiLifetime ? '-imgui-lifetime' : textureRegistry ? '-texture-registry' : resourceLifetime ? '-resource-lifetime' : logDispatch ? '-log-dispatch' : renderThread ? '-render-thread' : renderFrame ? '-render-frame' : uiCommands ? '-ui-commands' : '') + (commandList ? '-command-list' : targetState ? '-target-state' : frameInputs ? '-frame-inputs' : drawPackets ? '-draw-packets' : drawInputs ? '-draw-inputs' : snapshots ? '-snapshots' : material ? '-material' : geometry ? '-geometry' : '') + (editorUI ? '-editor-ui' : editor ? '-editor' : parallel ? '-parallel' : '') + (productLoop ? '-product-loop' : '') + (mutexDeque ? '-mutex' : '') + (asan ? '-asan' : ''));
+const output = path.join(root, 'Build/JobsValidation/Skinning', config + (frontendImmediate ? '-frontend-immediate' : frontend ? '-frontend' : '') + (parallelRecording ? '-parallel-recording' : '') + (recordingBenchmark ? '-recording-benchmark' : editorBenchmark ? '-editor-benchmark' : editorStress ? '-editor-stress' : editorThread ? '-editor-thread' : '') + (gameBenchmark ? '-game-benchmark' : gameThread ? '-game-thread' : gameFrame ? '-game-frame' : '') + (resourceExecutor ? '-resource-executor' : gpuProfiling ? '-gpu-profiling' : imguiLifetime ? '-imgui-lifetime' : textureRegistry ? '-texture-registry' : resourceLifetime ? '-resource-lifetime' : logDispatch ? '-log-dispatch' : renderThread ? '-render-thread' : renderFrame ? '-render-frame' : uiCommands ? '-ui-commands' : '') + (commandList ? '-command-list' : targetState ? '-target-state' : frameInputs ? '-frame-inputs' : drawPackets ? '-draw-packets' : drawInputs ? '-draw-inputs' : snapshots ? '-snapshots' : material ? '-material' : geometry ? '-geometry' : '') + (editorUI ? '-editor-ui' : editor ? '-editor' : parallel ? '-parallel' : '') + (productLoop ? '-product-loop' : '') + (mutexDeque ? '-mutex' : '') + (asan ? '-asan' : ''));
 fs.mkdirSync(output, { recursive: true });
 const baseline = drawInputs ? 'b1128a77b55b9d96c554aad63e743056e481f2cf' : snapshots ? '8cc2f8c5a9d992809b95d317a70dfbcfc3928442' : material ? '50194bfe7ee94eac37d63bbf84779c7c68b390e4' : geometry ? '4f8da08b854a7d57e3a2b0ce08f3d8a05039d7d9' : '73ae710a57889bfde94184c3c8f073228e998144';
 const header = 'Sources/OvCore/include/OvCore/ECS/Components/CSkinnedMeshRenderer.h';
@@ -66,7 +69,11 @@ const sdkVersion = fs.readdirSync(path.join(sdk, 'Include')).filter(x => fs.exis
 const compiler = path.join(msvc, 'bin/Hostx64/x64/cl.exe');
 const engineLibs = ['assimp','baregl','bullet3','freetype','glfw','ImGui','lua','OvAudio','OvCore','OvDebug','OvMaths','OvPhysics','OvRendering','OvTools','OvUI','OvWindowing','soloud','tinyxml2','tracy'];
 const depIncludes = ['baregl/include','ImGui/include','lua/include','sol/include','tinyxml2/include','tracy','glfw/include','bullet3/src','soloud/include','assimp/include'];
-const manifest = { baseline, config, parallelRecording, recordingBenchmark, gameBenchmark, editorBenchmark, productLoop, gameFrame, gameThread, resourceExecutor, gpuProfiling, imguiLifetime, textureRegistry, resourceLifetime, logDispatch, renderThread, renderFrame, uiCommands, editorUI, commandList, targetState, frameInputs, drawPackets, drawInputs, snapshots, material, geometry, editor, parallel, mutexDeque, asan, compiler, sdkVersion, results: [] };
+const manifest = { baseline, config, frontend, frontendImmediate, parallelRecording, recordingBenchmark, gameBenchmark, editorBenchmark, productLoop, gameFrame, gameThread, resourceExecutor, gpuProfiling, imguiLifetime, textureRegistry, resourceLifetime, logDispatch, renderThread, renderFrame, uiCommands, editorUI, commandList, targetState, frameInputs, drawPackets, drawInputs, snapshots, material, geometry, editor, parallel, mutexDeque, asan, compiler, sdkVersion, results: [] };
+if (frontend) {
+  manifest.architectureBaseline = '620ef10fb56c287581bbd55b0c8904ef9cca26b7';
+  manifest.oracle = frontendImmediate ? 'SceneRenderer immediate' : 'SceneRenderer owned commands';
+}
 fs.rmSync(path.join(output, 'result.json'), { force: true }); // Never leave a stale success after a failed rerun.
 
 function run(file, args, cwd, log, timeout = 120000) {
@@ -328,13 +335,35 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
       return 'extern void BenchmarkBeforeImmediateRender();\n' + source.replace(boundary,'        BenchmarkBeforeImmediateRender();\n'+boundary);
     });
   }
+  if (frontend) {
+    // Isolate test logging/configuration from the interactive Windows profile.
+    // The sandbox account may have no registered Known Folder at all.
+    const profile = path.join(dir, 'profile'); fs.mkdirSync(profile, { recursive: true });
+    let system = fs.readFileSync(path.join(root, 'Sources/OvTools/src/OvTools/Utils/SystemCalls.cpp'), 'utf8');
+    const begin = system.indexOf('std::string OvTools::Utils::SystemCalls::GetPathToAppdata()');
+    const end = system.indexOf('bool OvTools::Utils::SystemCalls::ExecuteCommand', begin);
+    if (begin < 0 || end < begin) throw Error('SystemCalls test profile boundary changed');
+    system = system.slice(0, begin) + 'std::string OvTools::Utils::SystemCalls::GetPathToAppdata() { return R"(' + profile + ')"; }\n\n' + system.slice(end);
+    const systemCopy = path.join(dir, 'SystemCalls.cpp'); fs.writeFileSync(systemCopy, system); extraSources.push(systemCopy);
+    const source = fs.readFileSync(path.join(root, 'Sources/OvRendering/src/OvRendering/Core/ViewPreparer.cpp'), 'utf8');
+    const marker = '    const auto checkCancel =';
+    if (!source.includes(marker)) throw Error('ViewPreparer entry changed');
+    const copy = path.join(dir, 'ViewPreparer.cpp');
+    const drawMarker = 'result->m_draws.push_back({index, state, OvMaths::FMatrix4::Transpose(mesh.model), mesh.user});';
+    if (!source.includes(drawMarker)) throw Error('Prepared draw publication boundary changed');
+    fs.writeFileSync(copy, 'extern void FrontendPrepareEntry();\nextern void FrontendPrepareDraw();\n' + source
+      .replace(marker, '    FrontendPrepareEntry();\n' + marker)
+      .replace(drawMarker, drawMarker + '\n        FrontendPrepareDraw();'));
+    extraSources.push(copy);
+  }
   const args = ['/nologo','/std:c++20','/EHsc','/W3','/WX',config === 'Debug' ? '/MDd' : '/MD',config === 'Debug' ? '/Od' : '/O2','/bigobj','/Gy','/Zi',
+    ...(frontendImmediate ? ['/DFRONTEND_IMMEDIATE_ORACLE'] : []),
     '/DTRACY_ENABLE','/DTRACY_ON_DEMAND','/DTRACY_MEMORY_ENABLE','/DLUA_SCRIPTING','/DSOL_NO_LUA_HPP',config === 'Debug' ? '/D_DEBUG' : '/DNDEBUG',
     ...((variant === 'current' || geometry) ? ['/DSKINNING_NEW_PATH'] : []), ...((geometry || drawPackets) && variant === 'current' ? ['/DGEOMETRY_COMMANDS_NEW_PATH'] : []), ...((material || drawPackets) && variant === 'current' ? ['/DMATERIAL_COMMANDS_NEW_PATH'] : []), ...((snapshots || drawPackets) && variant === 'current' ? ['/DSNAPSHOT_NEW_PATH'] : []), ...((drawInputs || drawPackets) && variant === 'current' ? ['/DDRAW_INPUTS_NEW_PATH'] : []), ...(drawPackets ? ['/DDRAW_PACKETS_TEST'] : []), ...(commandList && editor ? ['/DEDITOR_COMMANDS_TEST'] : []), ...(editorUI ? ['/DEDITOR_UI_TEST'] : []), ...(productLoop && editor ? ['/DPRODUCT_EDITOR'] : []), ...(mutexDeque ? ['/DOVTOOLS_JOBS_USE_MUTEX_DEQUE'] : []), ...(asan ? ['/fsanitize=address', '/D_DISABLE_VECTOR_ANNOTATION', '/D_DISABLE_STRING_ANNOTATION'] : []),
     '/I' + overlay, '/I' + path.join(msvc,'include'), ...['ucrt','shared','um','winrt'].map(x => '/I' + path.join(sdk,'Include',sdkVersion,x)),
     ...fs.readdirSync(path.join(root,'Sources')).filter(x => x.startsWith('Ov')).map(x => '/I' + path.join(root,'Sources',x,'include')),
     ...depIncludes.map(x => '/I' + path.join(root,'Dependencies',x)),
-    '/Fo' + dir + '/', '/Fd' + path.join(dir,'compile.pdb'), '/Fe' + exe, path.join(root, parallelRecording ? 'Tests/RenderingCommands/parallel_recording_validation.cpp' : recordingBenchmark ? 'Tests/RenderingCommands/recording_benchmark.cpp' : editorBenchmark ? 'Tests/RenderingCommands/editor_benchmark.cpp' : gameBenchmark ? 'Tests/RenderingCommands/game_benchmark.cpp' : editorStress ? 'Tests/RenderingCommands/editor_stress_validation.cpp' : editorThread ? 'Tests/RenderingCommands/editor_thread_validation.cpp' : gameThread ? 'Tests/RenderingCommands/game_thread_validation.cpp' : productLoop ? 'Tests/RenderingCommands/application_loop_validation.cpp' : gameFrame ? 'Tests/RenderingCommands/game_frame_validation.cpp' : resourceExecutor ? 'Tests/RenderingCommands/resource_executor_validation.cpp' : gpuProfiling ? 'Tests/RenderingCommands/gpu_profiling_validation.cpp' : imguiLifetime ? 'Tests/RenderingCommands/imgui_lifetime_validation.cpp' : textureRegistry ? 'Tests/RenderingCommands/texture_registry_validation.cpp' : resourceLifetime ? 'Tests/RenderingCommands/resource_lifetime_validation.cpp' : logDispatch ? 'Tests/RenderingCommands/log_dispatch_validation.cpp' : renderThread ? 'Tests/RenderingCommands/render_thread_validation.cpp' : renderFrame ? 'Tests/RenderingCommands/render_frame_validation.cpp' : uiCommands ? 'Tests/RenderingCommands/ui_command_validation.cpp' : commandList && !editor ? 'Tests/RenderingCommands/command_list_validation.cpp' : targetState && !editor ? 'Tests/RenderingCommands/target_state_validation.cpp' : frameInputs && !editor ? 'Tests/RenderingCommands/frame_input_validation.cpp' : drawPackets && !editor ? 'Tests/RenderingCommands/packet_validation.cpp' : drawInputs ? 'Tests/RenderingCommands/draw_input_validation.cpp' : snapshots ? 'Tests/RenderingCommands/snapshot_validation.cpp' : material ? 'Tests/RenderingCommands/material_validation.cpp' : geometry ? 'Tests/RenderingCommands/geometry_validation.cpp' : editor ? 'Tests/Skinning/editor_validation.cpp' : parallel ? 'Tests/Skinning/parallel_validation.cpp' : 'Tests/Skinning/serial_validation.cpp'), cpp, scene, ...extraSources,
+    '/Fo' + dir + '/', '/Fd' + path.join(dir,'compile.pdb'), '/Fe' + exe, path.join(root, frontend ? 'Tests/RenderingCommands/frontend_validation.cpp' : parallelRecording ? 'Tests/RenderingCommands/parallel_recording_validation.cpp' : recordingBenchmark ? 'Tests/RenderingCommands/recording_benchmark.cpp' : editorBenchmark ? 'Tests/RenderingCommands/editor_benchmark.cpp' : gameBenchmark ? 'Tests/RenderingCommands/game_benchmark.cpp' : editorStress ? 'Tests/RenderingCommands/editor_stress_validation.cpp' : editorThread ? 'Tests/RenderingCommands/editor_thread_validation.cpp' : gameThread ? 'Tests/RenderingCommands/game_thread_validation.cpp' : productLoop ? 'Tests/RenderingCommands/application_loop_validation.cpp' : gameFrame ? 'Tests/RenderingCommands/game_frame_validation.cpp' : resourceExecutor ? 'Tests/RenderingCommands/resource_executor_validation.cpp' : gpuProfiling ? 'Tests/RenderingCommands/gpu_profiling_validation.cpp' : imguiLifetime ? 'Tests/RenderingCommands/imgui_lifetime_validation.cpp' : textureRegistry ? 'Tests/RenderingCommands/texture_registry_validation.cpp' : resourceLifetime ? 'Tests/RenderingCommands/resource_lifetime_validation.cpp' : logDispatch ? 'Tests/RenderingCommands/log_dispatch_validation.cpp' : renderThread ? 'Tests/RenderingCommands/render_thread_validation.cpp' : renderFrame ? 'Tests/RenderingCommands/render_frame_validation.cpp' : uiCommands ? 'Tests/RenderingCommands/ui_command_validation.cpp' : commandList && !editor ? 'Tests/RenderingCommands/command_list_validation.cpp' : targetState && !editor ? 'Tests/RenderingCommands/target_state_validation.cpp' : frameInputs && !editor ? 'Tests/RenderingCommands/frame_input_validation.cpp' : drawPackets && !editor ? 'Tests/RenderingCommands/packet_validation.cpp' : drawInputs ? 'Tests/RenderingCommands/draw_input_validation.cpp' : snapshots ? 'Tests/RenderingCommands/snapshot_validation.cpp' : material ? 'Tests/RenderingCommands/material_validation.cpp' : geometry ? 'Tests/RenderingCommands/geometry_validation.cpp' : editor ? 'Tests/Skinning/editor_validation.cpp' : parallel ? 'Tests/Skinning/parallel_validation.cpp' : 'Tests/Skinning/serial_validation.cpp'), cpp, scene, ...extraSources,
     path.join(root, 'Sources/OvTools/src/OvTools/Jobs/JobSystem.cpp'),
     '/link', '/LIBPATH:' + path.join(msvc,'lib/x64'), ...['ucrt','um'].map(x => '/LIBPATH:' + path.join(sdk,'Lib',sdkVersion,x,'x64')),
     ...editorObjects,
