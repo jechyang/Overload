@@ -373,9 +373,31 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
   console.log('Compiling', config, variant, asan ? 'ASan' : '');
   run(compiler, args, root, path.join(dir,'compile.log'));
   if (asan) fs.copyFileSync(path.join(msvc,'bin/Hostx64/x64/clang_rt.asan_dynamic-x86_64.dll'), path.join(dir,'clang_rt.asan_dynamic-x86_64.dll'));
-  const stdout = run(exe, [dir], path.join(root,'Build',config), path.join(dir,'run.log'), productBenchmark ? 600000 : parallelRecording ? 300000 : 120000);
-  console.log(stdout.split(/\r?\n/).filter(line => /^(PASS:|Single-instance|BENCH:)/.test(line)).join('\n'));
-  manifest.results.push({ variant, stdout });
+  if (frontend) {
+    // Each mode gets a fresh process/context and an independent uninstrumented oracle.
+    const captures = [];
+    for (const trace of ['none', 'staged']) for (let mode = 0; mode < 3; ++mode) {
+      const captureDir = path.join(dir, 'cold-' + mode + '-' + trace);
+      fs.mkdirSync(captureDir, { recursive: true });
+      const stdout = run(exe, [captureDir, String(mode), trace], path.join(root, 'Build', config), path.join(captureDir, 'run.log'), 120000);
+      captures.push({ mode, trace, directory: captureDir });
+      manifest.results.push({ variant, mode, trace, stdout });
+      console.log('PASS: cold mode', mode, trace, '8 frames');
+    }
+    const pixels = captures.map(c => fs.readFileSync(path.join(c.directory, 'frontend-' + c.mode + '.rgba')));
+    if (pixels[0].length !== 8 * 96 * 64 * 4 || pixels.some(p => !p.equals(pixels[0])))
+      throw Error('Cold old/serial/Worker or traced/untraced pixels differ');
+    const traces = captures.filter(c => c.trace === 'staged').map(c => fs.readFileSync(path.join(c.directory, 'frontend-' + c.mode + '.draws')));
+    if (!traces[0].length || traces.some(t => !t.equals(traces[0])))
+      throw Error('Cold old/serial/Worker logical draw data differ');
+    manifest.frontendComparison = { captures, pixelBytes: pixels[0].length, traceBytes: traces[0].length,
+      exactPixels: true, exactDrawData: true, traceDoesNotChangePixels: true, constantReadback: 'staged after all draws' };
+    console.log('PASS: 6 cold processes, exact old/serial/Worker pixels and staged draw data; tracing does not change any pixel');
+  } else {
+    const stdout = run(exe, [dir], path.join(root,'Build',config), path.join(dir,'run.log'), productBenchmark ? 600000 : parallelRecording ? 300000 : 120000);
+    console.log(stdout.split(/\r?\n/).filter(line => /^(PASS:|Single-instance|BENCH:)/.test(line)).join('\n'));
+    manifest.results.push({ variant, stdout });
+  }
 }
 if (!currentOnly) {
   for (const file of drawInputs ? ['draw-input-trace.bin', 'draw-input-frames.bin', 'material-state.bin', 'material-trace.bin', 'geometry-frames.bin', 'draws.bin', 'frames.bin'] : material ? ['material-state.bin', 'material-trace.bin', 'geometry-frames.bin', 'draws.bin', 'frames.bin'] : geometry ? ['geometry-frames.bin', 'draws.bin', 'frames.bin'] : ['states.bin', 'frames.bin']) {

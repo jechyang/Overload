@@ -32,15 +32,35 @@ namespace
     PFNGLDRAWELEMENTSINSTANCEDPROC oldInstances;
     float expectedTime = 0;
     bool newPath = false;
+    enum class TraceMode { Disabled, Staged, LiveDiagnostic };
+    TraceMode traceMode = TraceMode::Staged;
+    constexpr size_t kDrawCount = 8 * 4;
+    using EngineConstants = std::array<float, 68>;
+    GLuint traceBuffer = 0;
+    struct ConstantReadback { size_t traceOffset; float time; bool checkTime; };
+    std::vector<ConstantReadback> constantReadbacks;
     void TraceDraw(GLenum mode, GLsizei count, GLenum type, unsigned instances)
     {
         Write(*traceOutput, mode); Write(*traceOutput, count); Write(*traceOutput, type); Write(*traceOutput, instances);
         GLint buffer = 0, program = 0;
         glGetIntegeri_v(GL_UNIFORM_BUFFER_BINDING, 0, &buffer);
         glGetIntegerv(GL_CURRENT_PROGRAM, &program);
-        std::array<float, 68> constants{};
-        glGetNamedBufferSubData(buffer, 0, sizeof(constants), constants.data());
-        if (newPath) Require(constants[51] == expectedTime, "captured elapsed time changed");
+        EngineConstants constants{};
+        if (traceMode == TraceMode::LiveDiagnostic)
+        {
+            // Retain the original intrusive probe solely for reproducing the A1 diagnostic.
+            glGetNamedBufferSubData(buffer, 0, sizeof(constants), constants.data());
+            if (newPath) Require(constants[51] == expectedTime, "captured elapsed time changed");
+        }
+        else
+        {
+            // Copy at the draw boundary, but never read the live UBO on the CPU here.
+            // Its next object upload must not share a buffer with a synchronous readback.
+            const size_t readbackOffset = constantReadbacks.size() * sizeof(constants);
+            Require(constantReadbacks.size() < kDrawCount, "constant readback capacity exceeded");
+            glCopyNamedBufferSubData(buffer, traceBuffer, 0, readbackOffset, sizeof(constants));
+            constantReadbacks.push_back({static_cast<size_t>(traceOutput->tellp()), expectedTime, newPath});
+        }
         constants[51] = 0; // Old Feature samples wall time; unused by the default Standard variant.
         traceOutput->write(reinterpret_cast<const char*>(constants.data()), sizeof(constants));
         for (GLenum name : {GL_DEPTH_FUNC, GL_CULL_FACE_MODE, GL_STENCIL_REF, GL_STENCIL_VALUE_MASK,
@@ -79,9 +99,43 @@ namespace
     { TraceDraw(mode,count,type,instances); oldInstances(mode,count,type,indices,instances); }
     struct Hooks
     {
-        Hooks(std::ostream& out) { traceOutput = &out; oldElements = glad_glDrawElements; oldInstances = glad_glDrawElementsInstanced;
-            glad_glDrawElements = Elements; glad_glDrawElementsInstanced = Instances; }
-        ~Hooks() { glad_glDrawElements = oldElements; glad_glDrawElementsInstanced = oldInstances; traceOutput = nullptr; }
+        std::unique_ptr<baregl::Buffer> constants;
+        Hooks(std::ostream& out)
+        {
+            if (traceMode == TraceMode::Disabled) return;
+            if (traceMode == TraceMode::Staged)
+            {
+                constants = std::make_unique<baregl::Buffer>();
+                constants->Allocate(kDrawCount * sizeof(EngineConstants), baregl::types::EAccessSpecifier::STREAM_READ);
+                traceBuffer = constants->GetID();
+            }
+            constantReadbacks.clear();
+            traceOutput = &out;
+            oldElements = glad_glDrawElements; oldInstances = glad_glDrawElementsInstanced;
+            glad_glDrawElements = Elements; glad_glDrawElementsInstanced = Instances;
+        }
+        std::string Finish(std::string trace)
+        {
+            if (traceMode != TraceMode::Staged) return trace;
+            Require(constantReadbacks.size() == kDrawCount, "unexpected staged draw count");
+            std::vector<EngineConstants> readbacks(constantReadbacks.size());
+            glGetNamedBufferSubData(traceBuffer, 0, readbacks.size() * sizeof(EngineConstants), readbacks.data());
+            Require(glGetError() == GL_NO_ERROR, "GL error reading staged constants");
+            for (size_t i = 0; i < readbacks.size(); ++i)
+            {
+                auto& data = readbacks[i]; const auto& record = constantReadbacks[i];
+                if (record.checkTime) Require(data[51] == record.time, "captured elapsed time changed");
+                data[51] = 0;
+                std::memcpy(trace.data() + record.traceOffset, data.data(), sizeof(data));
+            }
+            return trace;
+        }
+        ~Hooks()
+        {
+            if (traceMode == TraceMode::Disabled) return;
+            glad_glDrawElements = oldElements; glad_glDrawElementsInstanced = oldInstances;
+            traceOutput = nullptr; traceBuffer = 0;
+        }
     };
 }
 void FrontendPrepareEntry()
@@ -160,7 +214,7 @@ void FailureValidation(Frontend& frontend, OvTools::Jobs::JobSystem& jobs,
     std::puts("PASS: Worker gate, no GL, failure/cancellation do not publish, input retained through join, recovery");
 }
 
-void FrontendValidation(const std::filesystem::path& dir)
+void FrontendValidation(const std::filesystem::path& dir, std::optional<unsigned> selectedMode)
 {
     OvWindowing::Settings::DeviceSettings ds; ds.contextMajorVersion=4; ds.contextMinorVersion=5;
     OvWindowing::Context::Device device(ds);
@@ -173,7 +227,7 @@ void FrontendValidation(const std::filesystem::path& dir)
     auto* shader=shaders.GetResource(":Shaders/Standard.ovfx"); Require(shader,"missing Standard shader");
     std::array<std::vector<unsigned char>,3> allPixels;
     std::array<std::string,3> allTraces;
-    for (unsigned mode=0; mode<3; ++mode)
+    for (unsigned mode=selectedMode.value_or(0); mode<selectedMode.value_or(2)+1; ++mode)
     {
         std::ostringstream trace(std::ios::binary); Hooks hooks(trace);
         newPath = mode != 0;
@@ -267,7 +321,7 @@ void FrontendValidation(const std::filesystem::path& dir)
             allPixels[mode].insert(allPixels[mode].end(),pixels.begin(),pixels.end());
             TracyGpuCollect;
         }
-        allTraces[mode]=trace.str();
+        allTraces[mode]=hooks.Finish(trace.str());
         std::ofstream imageFile(dir/("frontend-"+std::to_string(mode)+".rgba"),std::ios::binary);
         imageFile.write(reinterpret_cast<const char*>(allPixels[mode].data()),allPixels[mode].size());
         std::ofstream traceFile(dir/("frontend-"+std::to_string(mode)+".draws"),std::ios::binary); traceFile<<allTraces[mode];
@@ -285,16 +339,33 @@ void FrontendValidation(const std::filesystem::path& dir)
         Require(commands.GetState()==OvRendering::Data::RenderCommandList::State::COMPLETED,"empty view did not complete");
         Pixels(output);
     }
-    std::puts("PASS: empty view, unsupported singleUse/Transparent rejection, invalid view does not publish");
-    Require(allPixels[0]==allPixels[1] && allPixels[1]==allPixels[2],"old/serial/Worker pixels differ");
-    Require(allTraces[0]==allTraces[1] && allTraces[1]==allTraces[2],"old/serial/Worker logical draw data differ");
-    std::puts("PASS: 8 frames x old/serial/Worker, Standard material, projection/culling/instances/equal keys, exact pixels and draw parameters");
-    std::puts("PASS: source scene/material/model destroyed, target resized/destroyed, frontend destroyed before RenderFrame replay");
+    std::puts("PASS: empty view");
+    if (!selectedMode || *selectedMode != 0)
+        std::puts("PASS: unsupported singleUse/Transparent rejection, invalid view does not publish");
+    if (!selectedMode)
+    {
+        Require(allPixels[0]==allPixels[1] && allPixels[1]==allPixels[2],"old/serial/Worker pixels differ");
+        if (traceMode != TraceMode::Disabled)
+            Require(allTraces[0]==allTraces[1] && allTraces[1]==allTraces[2],"old/serial/Worker logical draw data differ");
+        std::puts("PASS: 8 frames x old/serial/Worker, exact pixels and enabled draw traces");
+    }
+    else std::printf("PASS: cold mode %u completed 8 frames; cross-process comparison is performed by the runner\n", *selectedMode);
+    if (!selectedMode || *selectedMode != 0)
+        std::puts("PASS: source scene/material/model destroyed, target resized/destroyed, frontend destroyed before RenderFrame replay");
 }
 int main(int argc,char** argv) try
 {
     std::setvbuf(stdout,nullptr,_IONBF,0);
     _CrtSetReportMode(_CRT_ASSERT,_CRTDBG_MODE_FILE);_CrtSetReportFile(_CRT_ASSERT,_CRTDBG_FILE_STDERR);
-    Require(argc>1,"pass output directory"); FrontendValidation(argv[1]); return 0;
+    Require(argc>1,"pass output directory [0|1|2] [staged|none|live]");
+    std::optional<unsigned> selectedMode;
+    if (argc > 2) { selectedMode = static_cast<unsigned>(std::stoul(argv[2])); Require(*selectedMode < 3, "invalid mode"); }
+    if (argc > 3)
+    {
+        const std::string policy = argv[3];
+        Require(policy == "staged" || policy == "none" || policy == "live", "invalid trace policy");
+        traceMode = policy == "none" ? TraceMode::Disabled : policy == "live" ? TraceMode::LiveDiagnostic : TraceMode::Staged;
+    }
+    FrontendValidation(argv[1], selectedMode); return 0;
 }
 catch(const std::exception& e){std::fprintf(stderr,"FAIL: %s\n",e.what());return 1;}

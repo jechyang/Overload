@@ -292,7 +292,7 @@ A0 记录现有实际优先级；A3 再固化冲突规则。语义上由引擎�
 
 ### A1：建立快照与任务边界，贯通最小路径
 
-进度（2026-09-09）：已实现主相机静态 Opaque 的拥有型命令切片，见 [A1 实施与验证记录](RENDERING_ARCHITECTURE_A1_VALIDATION.md)。Debug/Release 全量构建以及新/旧命令路径串行与 Worker 对照均已通过。旧即时入口首帧对照仍有未解释差异，因此暂不宣布 A1 全项验收，不推进 A2。
+进度（2026-09-09）：已实现主相机静态 Opaque 的拥有型命令切片，见 [A1 实施与验证记录](RENDERING_ARCHITECTURE_A1_VALIDATION.md)。Debug/Release 全量构建以及新/旧命令路径串行与 Worker 对照均已通过。旧即时入口首帧差异已定位到测试活 UBO 同步回读，修正观测方式并补充独立冷启动对照。A1 全项仍保留活跃反射 Uniform Block 绑定完整性核对，不推进 A2。
 
 交付：薄 RenderFrontend 入口、提取适配器、最小 ViewPreparer、RenderSceneSnapshot、RenderView、PreparedFrameData 的可写 builder/只读发布边界，以及临时旧路径适配器。静态路径从 SceneRenderer 的隐式 BeginFrame 准备中分离，以有限输出接口接入现有命令后端；尚未迁移的职责仍明确留在旧入口。
 
@@ -431,4 +431,4 @@ A0 已单独完成。A1 本次实现的 **主相机静态不透明命令切片**
 - [阶段 2/3 完成记录](MULTITHREADING_STAGE23_COMPLETION.md)
 - [命令与产品回归入口](Tests/RenderingCommands/README.md)
 
-当前已完成 A0，交付 [语义基线与迁移契约](RENDERING_ARCHITECTURE_A0_BASELINE.md)；A1 静态命令切片已实现，验收与剩余问题见 [A1 记录](RENDERING_ARCHITECTURE_A1_VALIDATION.md)。A2–A6 未开始。下一会话继续 A1，先闭合即时入口首帧对照问题。后续每个增量补充结果与剩余工作，完成一项后独立 commit，并结束当前会话提示用户开启新会话。
+当前已完成 A0，交付 [语义基线与迁移契约](RENDERING_ARCHITECTURE_A0_BASELINE.md)；A1 静态命令切片已实现，验收与剩余问题见 [A1 记录](RENDERING_ARCHITECTURE_A1_VALIDATION.md)。A2–A6 未开始。下一会话继续 A1，核对活跃 Uniform Block 的完整绑定，重点检查无反射时的 binding 1；首帧回读干扰已闭合。后续每个增量补充结果与剩余工作，完成一项后独立 commit，并结束当前会话提示用户开启新会话。

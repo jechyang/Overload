@@ -230,6 +230,8 @@ node Tests/Skinning/run-validation.mjs Release --recording-benchmark
 ~~~bat
 node Tests/Skinning/run-validation.mjs Debug --frontend
 node Tests/Skinning/run-validation.mjs Release --frontend
+node Tests/Skinning/run-validation.mjs Debug --frontend-immediate
+node Tests/Skinning/run-validation.mjs Release --frontend-immediate
 ~~~
 
 可追加 --vs 指定 VS2022。输出独立放在 <配置>-frontend-command-list/current/，链接新构建的生产 RenderFrontend、提取器和录制桥。保持全部历史模式的 baseline 不变；新 manifest 单独记录 architectureBaseline=620ef10fb56c287581bbd55b0c8904ef9cca26b7 和 oracle 类型。旧 SceneRenderer/材质/Feature 实现与 A0 固定源码相同。
@@ -238,4 +240,10 @@ node Tests/Skinning/run-validation.mjs Release --frontend
 
 新 Prepare 与 Record 在无当前 GL 上下文时运行。测试副本只在 Prepare 入口和首次私有 draw 生成后插入观察/故障钩子，用有超时的闩锁验证 Worker 身份、失败/取消、半成品不发布和最后输入在汇合后释放。生产接口没有任意 Worker 回调；另一个测试源副本仅隔离 AppData 日志目录。
 
---frontend-immediate 是独立即时 oracle 诊断，输出到 <配置>-frontend-immediate-command-list/current/。Debug/Release 均通过 --frontend；两配置的 --frontend-immediate 均失败，即时旧路径首帧有 98 个像素差异，命令 oracle 三路一致；不将该诊断的失败算作通过，不放宽像素容差。A1 全项验收与下次交接见根目录 RENDERING_ARCHITECTURE_A1_VALIDATION.md。
+--frontend-immediate 使用冻结的旧即时入口作为 oracle，输出到 <配置>-frontend-immediate-command-list/current/。两种入口现在都运行三模式 × none/staged 共 6 个独立冷启动进程，子目录为 cold-<0|1|2>-<none|staged>；每个进程 8 帧，全部像素逐字节一致，staged 的三份非空 draw trace 逐字节一致。result.json 的 frontendComparison 记录数量、路径和严格比较结果，失败不会留下旧成功 manifest。
+
+原首帧 98 像素差异由测试同步回读活引擎 UBO 触发。现在 Draw 前将 GPU 常量复制到独立暂存槽，全部 Draw 后回读，保留原 trace 内容及时间断言。none 不安装 draw hook；其像素必须与 staged 完全一致。测试程序参数为 <输出目录> [0|1|2] [staged|none|live]；live 仅供原回读干扰复现，单模式进程只负责采集，跨进程比较由 runner 完成。手动调用时工作目录仍为 Build/<配置>，输出目录须预先建立。
+
+本轮没有修改生产代码或 A0 oracle，也没有丢弃首帧或放宽容差。A1 完整验收仍保留活跃反射 UBO 绑定核对，详见根目录 RENDERING_ARCHITECTURE_A1_VALIDATION.md；暂不进入 A2。
+
+完成两配置的 --frontend-immediate 后，可运行 node Tests/RenderingCommands/reproduce-frontend-readback.mjs。它分别冷启动三模式的 live 探针，记录与正式 none/staged 的逐帧像素差及 trace 等价性，输出 Build/JobsValidation/A1FirstFrame/diagnostic.json；这只是机器相关的故障复现，不要求其他驱动也出现 98 像素差异，不改正式验收结果。
