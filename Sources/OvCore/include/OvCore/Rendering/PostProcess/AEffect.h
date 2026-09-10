@@ -5,10 +5,11 @@
 */
 
 #pragma once
+#include <OvDebug/Assertion.h>
 
-#include <OvRendering/Core/ARenderPass.h>
+
 #include <OvRendering/Data/Material.h>
-#include <OvRendering/Core/CompositeRenderer.h>
+#include <OvRendering/Core/FullscreenCommandRecorder.h>
 
 namespace OvCore::Rendering::PostProcess
 {
@@ -30,7 +31,7 @@ namespace OvCore::Rendering::PostProcess
 		* Constructor of the effect class
 		* @param p_renderer
 		*/
-		AEffect(OvRendering::Core::CompositeRenderer& p_renderer);
+		AEffect() = default;
 
 		/**
 		* Virtual destructor
@@ -53,13 +54,12 @@ namespace OvCore::Rendering::PostProcess
 		* @param p_settings
 		*/
 		virtual void Draw(
+            OvRendering::Core::FullscreenCommandRecorder& recorder,
 			OvRendering::Data::PipelineState p_pso,
 			baregl::Framebuffer& p_src,
 			baregl::Framebuffer& p_dst,
 			const EffectSettings& p_settings
 		) = 0;
 
-	protected:
-		OvRendering::Core::CompositeRenderer& m_renderer;
 	};
 }

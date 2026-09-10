@@ -87,6 +87,18 @@ std::unique_ptr<Data::PreparedFrameData> Core::ViewPreparer::BuildDrawLists(
 void Core::ViewPreparer::SortStage(std::vector<VisibleStaticMesh>& list, std::span<const Data::MeshInput> meshes, Data::RenderStage stage)
 {
     const auto sorting = Data::DescribeStage(stage).sorting;
+    if (stage == Data::RenderStage::Picking)
+    {
+        std::stable_sort(list.begin(),list.end(),[&](const auto& a,const auto& b) {
+            const auto& x=meshes[a.sourceIndex];const auto& y=meshes[b.sourceIndex];
+            if(x.sourceStage!=y.sourceStage)return x.sourceStage<y.sourceStage;
+            if(x.drawOrder!=y.drawOrder)return x.drawOrder<y.drawOrder;
+            const bool transparent=x.sourceStage!=Data::RenderStage::Opaque;
+            if(!transparent&&x.materialGroup!=y.materialGroup)return x.materialGroup<y.materialGroup;
+            return transparent?a.distance>b.distance:a.distance<b.distance;
+        });
+        return;
+    }
     if (sorting == Data::DrawSorting::Collection) return;
     // Whole-list sort after deterministic range merge. Never sort each chunk.
     std::stable_sort(list.begin(), list.end(), [&](const auto& a, const auto& b) {

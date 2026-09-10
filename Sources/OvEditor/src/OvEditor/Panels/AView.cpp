@@ -1,3 +1,4 @@
+#include <OvRendering/Context/Driver.h>
 /**
 * @project: Overload
 * @author: Overload Tech.
@@ -18,16 +19,11 @@ OvEditor::Panels::AView::AView
 	bool p_opened,
 	const OvUI::Settings::PanelWindowSettings& p_windowSettings
 ) : PanelWindow(p_title, p_opened, p_windowSettings),
-	m_framebuffer(p_title)
+	m_surface(p_title,static_cast<uint32_t>(GetSize().x),static_cast<uint32_t>(GetSize().y))
 {
-	OvCore::Rendering::FramebufferUtil::SetupFramebuffer(
-		m_framebuffer,
-		static_cast<uint32_t>(GetSize().x),
-		static_cast<uint32_t>(GetSize().y),
-		true, true, false
-	);
 
-	const auto tex = m_framebuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR);
+	m_shadowFallback.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\ShadowFallback.ovfx"]);
+	const auto tex = m_surface.GetColor();
 	m_image = &CreateWidget<OvUI::Widgets::Visual::Image>(tex, OvMaths::FVector2{0.f, 0.f});
 	scrollable = false;
 }
@@ -43,90 +39,62 @@ void OvEditor::Panels::AView::_Draw_Impl()
 	ImGui::PopStyleVar();
 }
 
-void OvEditor::Panels::AView::InitFrame()
-{
-	m_renderer->AddDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>(
-		CreateSceneDescriptor()
-	);
-}
-
+void OvEditor::Panels::AView::InitFrame() {}
 void OvEditor::Panels::AView::Render()
 {
-	auto [winWidth, winHeight] = GetSafeSize();
-	m_image->size = OvMaths::FVector2(static_cast<float>(winWidth), static_cast<float>(winHeight));
-
-	auto camera = GetCamera();
-	auto scene = GetScene();
-
-	if (winWidth > 0 && winHeight > 0 && camera && scene)
-	{
-		FrameMarkStart(name.c_str());
-
-		m_framebuffer.Resize(winWidth, winHeight);
-		m_image->textureID = m_framebuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR);
-
-		InitFrame();
-
-		OvRendering::Data::FrameDescriptor frameDescriptor;
-		frameDescriptor.renderWidth = winWidth;
-		frameDescriptor.renderHeight = winHeight;
-		frameDescriptor.camera = camera;
-		frameDescriptor.outputBuffer = m_framebuffer;
-
-		m_renderer->BeginFrame(frameDescriptor);
-		DrawFrame();
-		if (!m_renderer->IsRecordingCommands()) CompleteRender();
-		m_renderer->EndFrame();
-		FrameMarkEnd(name.c_str());
-		m_renderer->SubmitRenderOperation([](auto& driver) { driver.OnFrameCompleted(); });
-	}
+    auto commands=RecordRenderCommands();commands.Execute(*EDITOR_CONTEXT(driver));CompleteRender();
 }
-
-OvRendering::Data::RenderCommandList OvEditor::Panels::AView::RecordRenderCommands(bool p_deferEncoding)
+OvRendering::Data::RenderCommandList OvEditor::Panels::AView::RecordRenderCommands(bool deferEncoding)
 {
-    m_renderer->SetDrawRecordingEnabled(true);
-    m_renderer->BeginCommandRecording();
-    try
+    OvRendering::Data::RenderCommandList commands;
+    m_completion=commands.GetCompletion();m_frameInfo={};
+    const auto [width,height]=GetSafeSize();m_image->size={float(width),float(height)};
+    if(width&&height&&GetCamera()&&GetScene())
     {
-        Render();
-        return m_renderer->FinishCommandRecording(p_deferEncoding);
+        FrameMarkStart(name.c_str());
+        m_surface.Resize(width,height);
+        m_image->textureID=m_surface.GetColor();
+        InitFrame();
+        auto request=CreateSceneRequest();
+        GetCamera()->CacheMatrices(width,height);
+        const auto state=EDITOR_CONTEXT(driver)->CreatePipelineState();
+        OvCore::Rendering::SceneFrameRequest frameRequest{request,m_surface.GetTarget(),m_shadowFallback};
+        frameRequest.postProcess=&m_postProcess;frameRequest.postProcessTarget=&m_surface.GetFramebuffer();frameRequest.postProcessState=state;
+        auto frame=m_frontend.PrepareFrame(m_frontend.ExtractFrame(frameRequest),state,m_jobs);
+        const auto view=frame->GetPreparedViews().back()->GetView();
+        m_frameInfo=frame->GetFrameInfo();
+        commands.Append(m_frontend.RecordFrame(std::move(frame),m_jobs));
+        m_overlayRequest=CreateOverlayRequest();
+        if(m_overlayRequest.grid||m_overlayRequest.debugObjects)
+        {
+            if(!m_overlays)m_overlays=std::make_unique<Rendering::EditorOverlayCollector>();
+            commands.AppendRecording(m_overlays->Extract(request.scene,m_overlayRequest,view,state,m_surface.GetTarget()));
+            m_frameInfo+=m_overlays->GetFrameInfo();
+        }
+        if(m_overlayRequest.picking)
+        {
+            if(!m_picking)m_picking=std::make_unique<Rendering::PickingCollector>();
+            commands.AppendRecording(m_picking->Extract(request,m_overlayRequest,state,m_jobs));
+            m_frameInfo+=m_picking->GetFrameInfo();
+        }
+        OnViewRecorded();
+        commands.Append([](auto& driver){driver.OnFrameCompleted();});
+        FrameMarkEnd(name.c_str());
     }
-    catch (...)
-    {
-        const auto error = std::current_exception();
-        try { if (m_renderer->IsDrawing()) m_renderer->EndFrame(); } catch (...) {}
-        m_renderer->CancelCommandRecording();
-        std::rethrow_exception(error);
-    }
+    if(!deferEncoding)commands.Seal(m_jobs);
+    return commands;
 }
-
-void OvEditor::Panels::AView::DrawFrame()
+std::pair<uint16_t,uint16_t> OvEditor::Panels::AView::GetSafeSize() const
 {
-	m_renderer->DrawFrame();
+    const float title=ImGui::GetFrameHeight();const auto& size=GetSize();
+    return {static_cast<uint16_t>(std::max(0.0f,size.x)),static_cast<uint16_t>(std::max(0.0f,size.y-title))};
 }
-
-std::pair<uint16_t, uint16_t> OvEditor::Panels::AView::GetSafeSize() const
+OvCore::Rendering::SceneRenderRequest OvEditor::Panels::AView::CreateSceneRequest()
 {
-	const float kTitleBarHeight = ImGui::GetFrameHeight(); // accounts for the imgui window title bar
-	const auto& size = GetSize();
-	return {
-		static_cast<uint16_t>(size.x),
-		static_cast<uint16_t>(std::max(0.0f, size.y - kTitleBarHeight))
-	}; 
+    const auto [width,height]=GetSafeSize();
+    return {{*GetScene(),*GetCamera(),width,height,0,0,std::chrono::duration<float>(std::chrono::high_resolution_clock::now()-m_startTime).count()}};
 }
-
-const OvCore::Rendering::SceneRenderer& OvEditor::Panels::AView::GetRenderer() const
+OvEditor::Rendering::EditorOverlayRequest OvEditor::Panels::AView::CreateOverlayRequest()
 {
-	return *m_renderer.get();
-}
-
-OvCore::Rendering::SceneRenderer::SceneDescriptor OvEditor::Panels::AView::CreateSceneDescriptor()
-{
-	auto scene = GetScene();
-
-	OVASSERT(scene, "No scene assigned to this view!");
-
-	return {
-		*scene
-	};
+    Rendering::EditorOverlayRequest request;request.scene=GetScene()->GetLifetimeToken();return request;
 }

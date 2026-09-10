@@ -18,7 +18,6 @@
 #include <OvDebug/Assertion.h>
 
 #include "OvEditor/Rendering/DebugModelRenderFeature.h"
-#include "OvEditor/Rendering/DebugSceneRenderer.h"
 #include "OvEditor/Core/EditorResources.h"
 #include "OvEditor/Panels/AView.h"
 #include "OvEditor/Settings/EditorSettings.h"

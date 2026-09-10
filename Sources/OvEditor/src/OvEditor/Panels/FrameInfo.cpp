@@ -8,7 +8,7 @@
 
 #include <OvDebug/Logger.h>
 
-#include <OvRendering/Features/FrameInfoRenderFeature.h>
+#include <OvRendering/Data/FrameInfo.h>
 
 #include "OvEditor/Panels/FrameInfo.h"
 #include "OvEditor/Core/EditorActions.h"
@@ -46,8 +46,6 @@ OvEditor::Panels::FrameInfo::FrameInfo
 const OvRendering::Data::FrameInfo& GetFrameInfoFromView(const OvEditor::Panels::AView& p_view)
 {
 	return p_view
-		.GetRenderer()
-		.GetFeature<OvRendering::Features::FrameInfoRenderFeature>()
 		.GetFrameInfo();
 }
 

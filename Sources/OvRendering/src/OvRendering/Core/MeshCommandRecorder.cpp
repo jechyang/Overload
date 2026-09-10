@@ -27,6 +27,17 @@ namespace
     static_assert(sizeof(EngineConstants) == 272 && offsetof(EngineConstants, user) == 208);
 }
 
+bool Core::MeshCommandRecorder::ProgramCache::Validate(const std::shared_ptr<baregl::ShaderProgram>& program)
+{
+    if (!program) throw std::invalid_argument("Missing shader program generation");
+    if (const auto found=m_entries.find(program.get()); found!=m_entries.end() && !found->second.program.expired())
+        return found->second.skinning;
+    std::erase_if(m_entries,[](const auto& entry){return entry.second.program.expired();});
+    const bool skinning=MeshCommandRecorder::ValidateProgram(*program);
+    m_entries.insert_or_assign(program.get(),Entry{program,skinning});
+    return skinning;
+}
+
 bool Core::MeshCommandRecorder::ValidateProgram(const baregl::ShaderProgram& p_program)
 {
     bool skinning = false;

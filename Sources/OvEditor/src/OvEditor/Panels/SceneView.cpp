@@ -7,8 +7,6 @@
 #include <cmath>
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
 
-#include <OvEditor/Rendering/DebugSceneRenderer.h>
-#include <OvEditor/Rendering/PickingRenderPass.h>
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Panels/SceneView.h>
 #include <OvEditor/Panels/GameView.h>
@@ -19,7 +17,7 @@
 namespace
 {
 	OvTools::Utils::OptRef<OvCore::ECS::Actor> GetActorFromPickingResult(
-		OvEditor::Rendering::PickingRenderPass::PickingResult p_result
+		OvEditor::Rendering::PickingResult p_result
 	)
 	{
 		if (p_result)
@@ -42,7 +40,6 @@ OvEditor::Panels::SceneView::SceneView
 ) : AViewControllable(p_title, p_opened, p_windowSettings),
 	m_sceneManager(EDITOR_CONTEXT(sceneManager))
 {
-	m_renderer = std::make_unique<OvEditor::Rendering::DebugSceneRenderer>(*EDITOR_CONTEXT(driver));
 
 	m_camera.SetFar(5000.0f);
 
@@ -113,32 +110,16 @@ void OvEditor::Panels::SceneView::Update(float p_deltaTime)
 	}
 }
 
-void OvEditor::Panels::SceneView::InitFrame()
+void OvEditor::Panels::SceneView::InitFrame() { AViewControllable::InitFrame(); }
+OvEditor::Rendering::EditorOverlayRequest OvEditor::Panels::SceneView::CreateOverlayRequest()
 {
-	AViewControllable::InitFrame();
-
-	OvTools::Utils::OptRef<OvCore::ECS::Actor> selectedActor;
-
-	if (EDITOR_EXEC(IsAnyActorSelected()))
-	{
-		selectedActor = EDITOR_EXEC(GetSelectedActor());
-	}
-
-	m_renderer->AddDescriptor<Rendering::DebugSceneRenderer::DebugSceneDescriptor>({
-		m_currentOperation,
-		m_highlightedActor,
-		selectedActor,
-		m_highlightedGizmoDirection
-	});
-
-	auto& pickingPass = m_renderer->GetPass<OvEditor::Rendering::PickingRenderPass>("Picking");
-
-	// Enable picking pass only when the scene view is hovered, not picking, and not operating the camera
-	pickingPass.SetEnabled(
-		IsHovered() &&
-		!m_gizmoOperations.IsPicking() &&
-		!m_cameraController.IsOperating()
-	);
+    auto request=AViewControllable::CreateOverlayRequest();request.debugObjects=true;
+    request.picking=IsHovered()&&!m_gizmoOperations.IsPicking()&&!m_cameraController.IsOperating();
+    request.operation=m_currentOperation;request.highlightedDirection=m_highlightedGizmoDirection;
+    if(EDITOR_EXEC(IsAnyActorSelected()))request.selected=EDITOR_EXEC(GetSelectedActor()).GetGUID();
+    if(m_highlightedActor)request.highlighted=m_highlightedActor->GetGUID();
+    request.gameViewSize=EDITOR_PANEL(OvEditor::Panels::GameView,"Game View").GetSafeSize();
+    return request;
 }
 
 OvCore::SceneSystem::Scene* OvEditor::Panels::SceneView::GetScene()
@@ -157,10 +138,10 @@ OvEditor::Core::EGizmoOperation OvEditor::Panels::SceneView::GetGizmoOperation()
 	return m_currentOperation;
 }
 
-OvCore::Rendering::SceneRenderer::SceneDescriptor OvEditor::Panels::SceneView::CreateSceneDescriptor()
+OvCore::Rendering::SceneRenderRequest OvEditor::Panels::SceneView::CreateSceneRequest()
 {
-	auto descriptor = AViewControllable::CreateSceneDescriptor();
-	descriptor.fallbackMaterial = m_fallbackMaterial;
+	auto descriptor = AViewControllable::CreateSceneRequest();
+	descriptor.fallbackMaterial = &m_fallbackMaterial;
 
 	if (Settings::EditorSettings::DebugFrustumCulling)
 	{
@@ -178,12 +159,7 @@ OvCore::Rendering::SceneRenderer::SceneDescriptor OvEditor::Panels::SceneView::C
 	return descriptor;
 }
 
-void OvEditor::Panels::SceneView::DrawFrame()
-{
-    m_recordedInteraction.reset();
-	OvEditor::Panels::AViewControllable::DrawFrame();
-    if (m_renderer->IsRecordingCommands()) m_recordedInteraction = CaptureInteraction();
-}
+void OvEditor::Panels::SceneView::OnViewRecorded() { m_recordedInteraction = CaptureInteraction(); }
 
 void OvEditor::Panels::SceneView::CompleteRender()
 {
@@ -222,13 +198,9 @@ std::shared_ptr<OvEditor::Panels::SceneView::Interaction> OvEditor::Panels::Scen
         Settings::EditorSettings::TranslationSnapUnit, Settings::EditorSettings::RotationSnapUnit, Settings::EditorSettings::ScalingSnapUnit};
     if (auto* scene = GetScene()) input->scene = scene->GetLifetimeToken();
     if (EDITOR_EXEC(IsAnyActorSelected())) input->selectedGUID = EDITOR_EXEC(GetSelectedActor()).GetGUID();
-    input->pickingAvailable = m_renderer->GetPass<Rendering::PickingRenderPass>("Picking").IsEnabled();
-    if (m_renderer->IsRecordingCommands())
-    {
-        input->completion = m_renderer->GetCommandCompletion();
-        auto& pass = m_renderer->GetPass<Rendering::PickingRenderPass>("Picking");
-        if (pass.IsEnabled()) input->readback = pass.GetRecordedReadback();
-    }
+    input->pickingAvailable=m_overlayRequest.picking;
+    input->completion=m_completion;
+    if(input->pickingAvailable&&m_picking)input->readback=m_picking->GetReadback();
     return input;
 }
 
@@ -242,7 +214,7 @@ bool OvEditor::Panels::SceneView::CompleteInteraction(const std::shared_ptr<Inte
     auto* scene = GetScene();
     if (!scene || input->scene != scene->GetLifetimeToken())
     { m_gizmoOperations.StopPicking(); m_gizmoTargetGUID = 0; m_highlightedActor.reset(); m_highlightedGizmoDirection.reset(); return false; }
-    Rendering::PickingRenderPass::PickingResult result;
+    Rendering::PickingResult result;
     const float x = input->mouse.x, y = input->size.y-input->mouse.y;
     if (input->readback && std::isfinite(x) && std::isfinite(y) && x >= 0 && y >= 0 && x < input->size.x && y < input->size.y &&
         input->readback->GetSize() == std::pair<uint32_t,uint32_t>{uint32_t(input->size.x),uint32_t(input->size.y)})
@@ -255,13 +227,13 @@ bool OvEditor::Panels::SceneView::CompleteInteraction(const std::shared_ptr<Inte
 void OvEditor::Panels::SceneView::HandleActorPicking()
 {
     const auto input = CaptureInteraction();
-    Rendering::PickingRenderPass::PickingResult result;
+    Rendering::PickingResult result;
     if ((!m_gizmoOperations.IsPicking() || input->released) && input->hovered && !input->resizing && input->pickingAvailable)
         result = GetPickingResult();
     ApplyInteraction(*input, result);
 }
 
-void OvEditor::Panels::SceneView::ApplyInteraction(const Interaction& input, Rendering::PickingRenderPass::PickingResult result)
+void OvEditor::Panels::SceneView::ApplyInteraction(const Interaction& input, Rendering::PickingResult result)
 {
     auto* scene = GetScene();
     if (!scene || input.scene != scene->GetLifetimeToken()) return;
@@ -297,7 +269,7 @@ void OvEditor::Panels::SceneView::ApplyInteraction(const Interaction& input, Ren
     }
 }
 
-OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Panels::SceneView::GetPickingResult()
+OvEditor::Rendering::PickingResult OvEditor::Panels::SceneView::GetPickingResult()
 {
 	auto [mouseX, mouseY] = EDITOR_CONTEXT(inputManager)->GetMousePosition();
 	mouseX -= m_position.x;
@@ -308,17 +280,13 @@ OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Panels::SceneVie
     if (!currentScene) return std::nullopt;
     auto& scene = *currentScene;
 
-	auto& actorPickingFeature = m_renderer->GetPass<OvEditor::Rendering::PickingRenderPass>("Picking");
+	if(!m_picking)return std::nullopt;
 
-    const auto readback = actorPickingFeature.GetRecordedReadback();
+    const auto readback = m_picking->GetReadback();
     const auto [width, height] = GetSafeSize();
     if (!std::isfinite(mouseX) || !std::isfinite(mouseY) || mouseX < 0 || mouseY < 0 || mouseX >= width || mouseY >= height) return std::nullopt;
     if (readback && readback->GetSize() != std::pair<uint32_t, uint32_t>{width, height}) return std::nullopt;
-	auto result = actorPickingFeature.ReadbackPickingResult(
-		scene,
-		static_cast<uint32_t>(mouseX),
-		static_cast<uint32_t>(mouseY)
-	);
+	auto result = readback ? readback->Resolve(scene,static_cast<uint32_t>(mouseX),static_cast<uint32_t>(mouseY)) : Rendering::PickingResult{};
     if (readback && result && std::holds_alternative<Core::GizmoBehaviour::EDirection>(*result))
     {
         if (!EDITOR_EXEC(IsAnyActorSelected()) ||
@@ -345,7 +313,7 @@ void OvEditor::Panels::SceneView::OnMaterialDropped(const std::string& p_path)
     ApplyMaterialDrop(p_path, GetPickingResult());
 }
 
-void OvEditor::Panels::SceneView::ApplyMaterialDrop(const std::string& p_path, Rendering::PickingRenderPass::PickingResult pickingResult)
+void OvEditor::Panels::SceneView::ApplyMaterialDrop(const std::string& p_path, Rendering::PickingResult pickingResult)
 {
 
 	if (auto actor = GetActorFromPickingResult(pickingResult))

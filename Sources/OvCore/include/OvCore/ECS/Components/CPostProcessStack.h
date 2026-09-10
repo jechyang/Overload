@@ -63,7 +63,7 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns the post process setting stack
 		*/
-		const OvCore::Rendering::PostProcess::PostProcessStack& GetStack();
+		const OvCore::Rendering::PostProcess::PostProcessStack& GetStack() const;
 
 		/**
 		* Returns the bloom settings

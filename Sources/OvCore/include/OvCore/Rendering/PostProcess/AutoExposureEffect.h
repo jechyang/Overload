@@ -39,7 +39,7 @@ namespace OvCore::Rendering::PostProcess
 		* Constructor of the AutoExposureEffect class
 		* @param p_renderer
 		*/
-		AutoExposureEffect(OvRendering::Core::CompositeRenderer& p_renderer);
+		AutoExposureEffect();
 
 		/**
 		* Render the Auto-Exposure effect
@@ -50,6 +50,7 @@ namespace OvCore::Rendering::PostProcess
 		* @param p_settings
 		*/
 		virtual void Draw(
+            OvRendering::Core::FullscreenCommandRecorder& recorder,
 			OvRendering::Data::PipelineState p_pso,
 			baregl::Framebuffer& p_src,
 			baregl::Framebuffer& p_dst,

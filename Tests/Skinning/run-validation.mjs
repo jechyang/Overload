@@ -9,8 +9,11 @@ const config = process.argv[2] || 'Release';
 if (!['Debug', 'Release'].includes(config)) throw Error('Expected Debug or Release');
 const asan = process.argv.includes('--asan');
 const parallel = process.argv.includes('--parallel');
-const auxiliary = process.argv.includes('--auxiliary');
-if (auxiliary && process.argv.some(x => x.startsWith('--') && x !== '--auxiliary' && x !== '--vs')) throw Error('--auxiliary runs separately');
+const effectsOracle = process.argv.includes('--effects-oracle');
+if(effectsOracle && process.argv.some(x=>x.startsWith('--') && !['--effects-oracle','--vs'].includes(x)))throw Error('--effects-oracle runs separately');
+const postprocess = process.argv.includes('--postprocess');
+const auxiliary = process.argv.includes('--auxiliary') || postprocess;
+if (auxiliary && process.argv.some(x => x.startsWith('--') && x !== '--auxiliary' && x !== '--postprocess' && x !== '--vs')) throw Error('--auxiliary runs separately');
 const bindings = process.argv.includes('--bindings');
 const stages = process.argv.includes('--stages') || bindings;
 const frontendImmediate = process.argv.includes('--frontend-immediate');
@@ -42,7 +45,7 @@ const renderFrame = process.argv.includes('--render-frame');
 const uiCommands = process.argv.includes('--ui-commands') || renderFrame || renderThread || logDispatch || resourceLifetime || textureRegistry || imguiLifetime || gpuProfiling || resourceExecutor;
 const editorUI = process.argv.includes('--editor-ui') || editorThread;
 if (editorUI && !editor) throw Error('--editor-ui requires --editor');
-const commandList = process.argv.includes('--command-list') || editorThread || parallelRecording || frontend || auxiliary;
+const commandList = effectsOracle || process.argv.includes('--command-list') || editorThread || parallelRecording || frontend || auxiliary;
 if (productLoop && editor && (!commandList || !editorUI)) throw Error('Editor --product-loop requires --command-list --editor-ui');
 const targetState = process.argv.includes('--target-state') || commandList;
 const frameInputs = process.argv.includes('--frame-inputs') || targetState;
@@ -57,7 +60,7 @@ if (editor && (parallel || asan)) throw Error('--editor runs separately from --p
 const mutexDeque = process.argv.includes('--mutex-deque');
 if (uiCommands && (editor || parallel || geometry || drawPackets || asan)) throw Error("--ui-commands runs separately");
 const currentOnly = gameFrame || uiCommands || asan || parallel || editor || drawPackets || process.argv.includes('--current');
-const output = path.join(root, 'Build/JobsValidation/Skinning', config + (auxiliary ? '-auxiliary' : '') + (bindings ? '-bindings' : stages ? '-stages' : '') + (frontendImmediate ? '-frontend-immediate' : frontend ? '-frontend' : '') + (parallelRecording ? '-parallel-recording' : '') + (recordingBenchmark ? '-recording-benchmark' : editorBenchmark ? '-editor-benchmark' : editorStress ? '-editor-stress' : editorThread ? '-editor-thread' : '') + (gameBenchmark ? '-game-benchmark' : gameThread ? '-game-thread' : gameFrame ? '-game-frame' : '') + (resourceExecutor ? '-resource-executor' : gpuProfiling ? '-gpu-profiling' : imguiLifetime ? '-imgui-lifetime' : textureRegistry ? '-texture-registry' : resourceLifetime ? '-resource-lifetime' : logDispatch ? '-log-dispatch' : renderThread ? '-render-thread' : renderFrame ? '-render-frame' : uiCommands ? '-ui-commands' : '') + (commandList ? '-command-list' : targetState ? '-target-state' : frameInputs ? '-frame-inputs' : drawPackets ? '-draw-packets' : drawInputs ? '-draw-inputs' : snapshots ? '-snapshots' : material ? '-material' : geometry ? '-geometry' : '') + (editorUI ? '-editor-ui' : editor ? '-editor' : parallel ? '-parallel' : '') + (productLoop ? '-product-loop' : '') + (mutexDeque ? '-mutex' : '') + (asan ? '-asan' : ''));
+const output = path.join(root, 'Build/JobsValidation/Skinning', config + (effectsOracle ? '-effects-oracle' : '') + (postprocess ? '-postprocess' : auxiliary ? '-auxiliary' : '') + (bindings ? '-bindings' : stages ? '-stages' : '') + (frontendImmediate ? '-frontend-immediate' : frontend ? '-frontend' : '') + (parallelRecording ? '-parallel-recording' : '') + (recordingBenchmark ? '-recording-benchmark' : editorBenchmark ? '-editor-benchmark' : editorStress ? '-editor-stress' : editorThread ? '-editor-thread' : '') + (gameBenchmark ? '-game-benchmark' : gameThread ? '-game-thread' : gameFrame ? '-game-frame' : '') + (resourceExecutor ? '-resource-executor' : gpuProfiling ? '-gpu-profiling' : imguiLifetime ? '-imgui-lifetime' : textureRegistry ? '-texture-registry' : resourceLifetime ? '-resource-lifetime' : logDispatch ? '-log-dispatch' : renderThread ? '-render-thread' : renderFrame ? '-render-frame' : uiCommands ? '-ui-commands' : '') + (commandList ? '-command-list' : targetState ? '-target-state' : frameInputs ? '-frame-inputs' : drawPackets ? '-draw-packets' : drawInputs ? '-draw-inputs' : snapshots ? '-snapshots' : material ? '-material' : geometry ? '-geometry' : '') + (editorUI ? '-editor-ui' : editor ? '-editor' : parallel ? '-parallel' : '') + (productLoop ? '-product-loop' : '') + (mutexDeque ? '-mutex' : '') + (asan ? '-asan' : ''));
 fs.mkdirSync(output, { recursive: true });
 const baseline = drawInputs ? 'b1128a77b55b9d96c554aad63e743056e481f2cf' : snapshots ? '8cc2f8c5a9d992809b95d317a70dfbcfc3928442' : material ? '50194bfe7ee94eac37d63bbf84779c7c68b390e4' : geometry ? '4f8da08b854a7d57e3a2b0ce08f3d8a05039d7d9' : '73ae710a57889bfde94184c3c8f073228e998144';
 const header = 'Sources/OvCore/include/OvCore/ECS/Components/CSkinnedMeshRenderer.h';
@@ -73,7 +76,7 @@ const sdkVersion = fs.readdirSync(path.join(sdk, 'Include')).filter(x => fs.exis
 const compiler = path.join(msvc, 'bin/Hostx64/x64/cl.exe');
 const engineLibs = ['assimp','baregl','bullet3','freetype','glfw','ImGui','lua','OvAudio','OvCore','OvDebug','OvMaths','OvPhysics','OvRendering','OvTools','OvUI','OvWindowing','soloud','tinyxml2','tracy'];
 const depIncludes = ['baregl/include','ImGui/include','lua/include','sol/include','tinyxml2/include','tracy','glfw/include','bullet3/src','soloud/include','assimp/include'];
-const manifest = { baseline, config, auxiliary, bindings, stages, frontend, frontendImmediate, parallelRecording, recordingBenchmark, gameBenchmark, editorBenchmark, productLoop, gameFrame, gameThread, resourceExecutor, gpuProfiling, imguiLifetime, textureRegistry, resourceLifetime, logDispatch, renderThread, renderFrame, uiCommands, editorUI, commandList, targetState, frameInputs, drawPackets, drawInputs, snapshots, material, geometry, editor, parallel, mutexDeque, asan, compiler, sdkVersion, results: [] };
+const manifest = { baseline, config, effectsOracle, postprocess, auxiliary, bindings, stages, frontend, frontendImmediate, parallelRecording, recordingBenchmark, gameBenchmark, editorBenchmark, productLoop, gameFrame, gameThread, resourceExecutor, gpuProfiling, imguiLifetime, textureRegistry, resourceLifetime, logDispatch, renderThread, renderFrame, uiCommands, editorUI, commandList, targetState, frameInputs, drawPackets, drawInputs, snapshots, material, geometry, editor, parallel, mutexDeque, asan, compiler, sdkVersion, results: [] };
 if (frontend) {
   manifest.architectureBaseline = '620ef10fb56c287581bbd55b0c8904ef9cca26b7';
   manifest.oracle = frontendImmediate ? 'SceneRenderer immediate' : 'SceneRenderer owned commands';
@@ -169,6 +172,18 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
       .replace('} profilingGuard;', '} profilingGuard;\n\tGpuProfilingAfterInitialize();');
     const driverCopy = path.join(dir, 'Driver.cpp'); fs.writeFileSync(driverCopy, driver); extraSources.push(driverCopy);
   }
+  if (effectsOracle) {
+    const names=['PostProcess/AEffect','PostProcess/AutoExposureEffect','PostProcess/BloomEffect','PostProcess/TonemappingEffect','PostProcess/FXAAEffect','PostProcessRenderPass'];
+    for(const name of names) {
+      const dest=path.join(overlay,'OvCore/Rendering',name+'.h');fs.mkdirSync(path.dirname(dest),{recursive:true});
+      fs.writeFileSync(dest,cp.execFileSync('git',['-c','safe.directory='+root.replaceAll('\\','/'),'show','f9ab4cb:Sources/OvCore/include/OvCore/Rendering/'+name+'.h'],{cwd:root,windowsHide:true}));
+      const source=name==='PostProcess/AEffect'?'PostProcess/APostProcessEffect':name;
+      const file=path.join(dir,path.basename(source)+'.cpp');
+      fs.writeFileSync(file,cp.execFileSync('git',['-c','safe.directory='+root.replaceAll('\\','/'),'show','f9ab4cb:Sources/OvCore/src/OvCore/Rendering/'+source+'.cpp'],{cwd:root,windowsHide:true}));extraSources.push(file);
+    }
+    // Compile the owner with the oracle pass layout as well.
+    extraSources.push(path.join(root,'Sources/OvCore/src/OvCore/Rendering/SceneRenderer.cpp'));
+  }
   const editorObjects = [];
   if (geometry) {
     // Directly linking ABaseRenderer.cpp moves its legacy static Camera before
@@ -255,9 +270,35 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
     }
   }
   if (editor) {
+    // A5 removed this production class. The temporary oracle is loaded from A4,
+    // never included in the product build; A6 removes the remaining old test chain.
+    const editorOracle = 'f9ab4cb';
+    for (const [source, dest] of [
+      ['Sources/OvEditor/include/OvEditor/Rendering/DebugSceneRenderer.h', path.join(overlay,'OvEditor/Rendering/DebugSceneRenderer.h')],
+      ['Sources/OvEditor/src/OvEditor/Rendering/DebugSceneRenderer.cpp', path.join(dir,'DebugSceneRendererOracle.cpp')],
+      ['Sources/OvEditor/include/OvEditor/Rendering/PickingRenderPass.h', path.join(overlay,'OvEditor/Rendering/PickingRenderPass.h')],
+      ['Sources/OvEditor/src/OvEditor/Rendering/PickingRenderPass.cpp', path.join(dir,'PickingRenderPassOracle.cpp')]
+    ]) {
+      fs.mkdirSync(path.dirname(dest),{recursive:true});
+      let oracle=cp.execFileSync('git',['-c','safe.directory='+root.replaceAll('\\','/'),'show',editorOracle+':'+source],{cwd:root,windowsHide:true,encoding:'utf8'}).replaceAll('\r\n','\n');
+      if(source.endsWith('PickingRenderPass.h')) {
+        const begin=oracle.indexOf('using PickingResult ='),end=oracle.indexOf('std::shared_ptr<const Readback> GetRecordedReadback',begin);
+        if(begin<0||end<begin)throw Error('A4 picking header boundary changed');
+        oracle='#include <OvEditor/Rendering/PickingReadback.h>\n'+oracle.slice(0,begin)+'using PickingResult = OvEditor::Rendering::PickingResult;\n        using Readback = PickingReadback;\n        '+oracle.slice(end);
+        oracle=oracle.replaceAll('private:','public:');
+      }
+      if(source.endsWith('PickingRenderPass.cpp')) {
+        const begin=oracle.indexOf('OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Rendering::PickingRenderPass::Readback::Resolve(');
+        const end=oracle.indexOf('void OvEditor::Rendering::PickingRenderPass::Draw(',begin);
+        if(begin<0||end<begin)throw Error('A4 picking source boundary changed');
+        oracle=oracle.slice(0,begin)+oracle.slice(end);
+      }
+      fs.writeFileSync(dest,oracle);
+      if(dest.endsWith('.cpp'))extraSources.push(dest);
+    }
     // Access-only overlays for state inspection; the editor mode/view code is
     // linked from the actual solution objects. No test branches in production.
-    for (const name of ['Core/Application.h', 'Core/Editor.h', 'Core/PanelsManager.h', 'Panels/SceneView.h', 'Core/GizmoBehaviour.h', 'Panels/TextureDebugger.h', 'Panels/Console.h', 'Panels/AView.h', 'Rendering/PickingRenderPass.h']) {
+    for (const name of ['Core/Application.h', 'Core/Editor.h', 'Core/PanelsManager.h', 'Panels/SceneView.h', 'Core/GizmoBehaviour.h', 'Panels/TextureDebugger.h', 'Panels/Console.h', 'Panels/AView.h', 'Rendering/PickingReadback.h']) {
       const dest = path.join(overlay, 'OvEditor', name);
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.writeFileSync(dest, fs.readFileSync(path.join(root, 'Sources/OvEditor/include/OvEditor', name), 'utf8').replaceAll('private:', 'public:').replaceAll('protected:', 'public:'));
@@ -280,7 +321,7 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
     fs.writeFileSync(callsFile, calls.slice(0, body) + '{ return ' + JSON.stringify(path.join(dir, 'AppData').replaceAll('\\', '/')) + '; }' + calls.slice(end));
     extraSources.push(contextFile, callsFile);
     editorObjects.push(...fs.readdirSync(path.join(root, 'Bin-Int', config, 'OvEditor'))
-      .filter(x => x.endsWith('.obj') && !['Main.obj', 'Context.obj', ...(productBenchmark ? ['Editor.obj'] : [])].includes(x))
+      .filter(x => x.endsWith('.obj') && !['Main.obj', 'Context.obj', 'DebugSceneRenderer.obj', 'PickingRenderPass.obj', ...(productBenchmark ? ['Editor.obj'] : [])].includes(x))
       .map(x => path.join(root, 'Bin-Int', config, 'OvEditor', x)));
   }
   if (gameFrame) {
@@ -406,6 +447,7 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
     ...(frontendImmediate ? ['/DFRONTEND_IMMEDIATE_ORACLE'] : []),
     ...(stages ? ['/DFRONTEND_STAGE_VALIDATION'] : []),
     ...(bindings ? ['/DFRONTEND_BINDING_VALIDATION'] : []),
+    ...(postprocess ? ['/DA5_POSTPROCESS'] : []),
     '/DTRACY_ENABLE','/DTRACY_ON_DEMAND','/DTRACY_MEMORY_ENABLE','/DLUA_SCRIPTING','/DSOL_NO_LUA_HPP',config === 'Debug' ? '/D_DEBUG' : '/DNDEBUG',
     ...((variant === 'current' || geometry) ? ['/DSKINNING_NEW_PATH'] : []), ...((geometry || drawPackets) && variant === 'current' ? ['/DGEOMETRY_COMMANDS_NEW_PATH'] : []), ...((material || drawPackets) && variant === 'current' ? ['/DMATERIAL_COMMANDS_NEW_PATH'] : []), ...((snapshots || drawPackets) && variant === 'current' ? ['/DSNAPSHOT_NEW_PATH'] : []), ...((drawInputs || drawPackets) && variant === 'current' ? ['/DDRAW_INPUTS_NEW_PATH'] : []), ...(drawPackets ? ['/DDRAW_PACKETS_TEST'] : []), ...(commandList && editor ? ['/DEDITOR_COMMANDS_TEST'] : []), ...(editorUI ? ['/DEDITOR_UI_TEST'] : []), ...(productLoop && editor ? ['/DPRODUCT_EDITOR'] : []), ...(mutexDeque ? ['/DOVTOOLS_JOBS_USE_MUTEX_DEQUE'] : []), ...(asan ? ['/fsanitize=address', '/D_DISABLE_VECTOR_ANNOTATION', '/D_DISABLE_STRING_ANNOTATION'] : []),
     '/I' + overlay, '/I' + path.join(msvc,'include'), ...['ucrt','shared','um','winrt'].map(x => '/I' + path.join(sdk,'Include',sdkVersion,x)),
@@ -463,7 +505,7 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
       pollution: 'new paths: absent/short/stale bindings before replay and between staged draws'  };
     console.log('PASS: 10 cold processes with valid legacy input and new-path binding pollution, exact old/serial/Worker pixels and staged draw data; tracing does not change any pixel');
   } else {
-    const stdout = run(exe, [dir], path.join(root,'Build',config), path.join(dir,'run.log'), productBenchmark ? 600000 : parallelRecording ? 300000 : 120000);
+    const stdout = run(exe, [dir], path.join(root,'Build',config), path.join(dir,'run.log'), productBenchmark ? 600000 : (parallelRecording || editorStress) ? 300000 : 120000);
     console.log(stdout.split(/\r?\n/).filter(line => /^(PASS:|Single-instance|BENCH:)/.test(line)).join('\n'));
     manifest.results.push({ variant, stdout });
   }
@@ -478,5 +520,17 @@ if (!currentOnly) {
     }
     console.log(`EXACT MATCH: ${file}, ${a.length} bytes`);
   }
+}
+if (effectsOracle) {
+  const current=path.join(root,'Build/JobsValidation/Skinning',config+'-command-list');
+  if(!fs.existsSync(path.join(current,'result.json')))throw Error('Run --command-list before --effects-oracle');
+  const captures=['immediate','delayed','dynamic-immediate','dynamic-delayed','dynamic-repeat','dynamic-packet','dynamic-recovered'];
+  for(const capture of captures) {
+    const oracle=fs.readFileSync(path.join(output,'current',capture,'frames.bin'));
+    const actual=fs.readFileSync(path.join(current,'current',capture,'frames.bin'));
+    if(!oracle.length||!oracle.equals(actual))throw Error('A4 effect oracle differs: '+capture);
+  }
+  manifest.effectsComparison={baseline:'f9ab4cb',captures,framesPerCapture:24,exactPixels:true};
+  console.log('PASS: A4 original effects and explicit fullscreen pipeline match in all 7 image sequences');
 }
 fs.writeFileSync(path.join(output,'result.json'), JSON.stringify(manifest, null, 2));

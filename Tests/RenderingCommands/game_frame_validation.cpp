@@ -10,7 +10,6 @@
 #include <imgui.h>
 #include <sstream>
 #include "product_loop_validation.inl"
-void RenderCurrentScene(OvCore::Rendering::SceneRenderer&,const OvGame::Core::Context&);
 int main(int argc,char** argv) try
 {
     std::setvbuf(stdout,nullptr,_IONBF,0);_CrtSetReportMode(_CRT_ASSERT,_CRTDBG_MODE_FILE);_CrtSetReportFile(_CRT_ASSERT,_CRTDBG_FILE_STDERR);
@@ -28,7 +27,7 @@ int main(int argc,char** argv) try
     OvGame::Core::Game game(context);game.Update(1.f/60);ImGui::GetIO().ConfigInputTextCursorBlink=false;
     auto clear=[&]{context.driver->OnFrameCompleted();glBindFramebuffer(GL_FRAMEBUFFER,0);glDisable(GL_SCISSOR_TEST);glClearColor(.08f,.12f,.18f,1);glClear(GL_COLOR_BUFFER_BIT);};
     auto pixels=[&]{glBindFramebuffer(GL_READ_FRAMEBUFFER,0);const auto [w,h]=context.window->GetFramebufferSize();std::vector<uint8_t> data(size_t(w)*h*4);glReadPixels(0,0,w,h,GL_RGBA,GL_UNSIGNED_BYTE,data.data());return data;};
-    auto immediate=[&]{clear();game.m_sceneRenderer.SetDrawRecordingEnabled(false);RenderCurrentScene(game.m_sceneRenderer,context);const auto [w,h]=context.window->GetSize();context.framebuffer->BlitToBackBuffer(w,h);if(game.m_showDebugInformation)context.uiManager->Render();};
+    auto immediate=[&]{clear();game.Update(0.0f);};
     std::ofstream evidence(dir/"game-render-frame.bin",std::ios::binary);int pairs=0;
     for(bool debugUI:{false,true})
     {

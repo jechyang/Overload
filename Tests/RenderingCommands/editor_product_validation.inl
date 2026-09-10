@@ -22,7 +22,7 @@ void EditorProductValidation(OvEditor::Core::Editor& editor,OvEditor::Core::Cont
             editor.PostUpdate();Require(delayed==i+1,"Editor delayed action ran an unexpected number of times");
             Require(!context.inputManager->IsKeyPressed(OvWindowing::Inputs::EKey::KEY_SPACE),"Editor events survived PostUpdate");
             if(owned)Require(completion.Succeeded()&&!editor.m_pendingFrame,"Editor frame did not retire exactly once");
-            const auto [w,h]=view.GetSafeSize();std::vector<uint8_t> pixels(size_t(w)*h*4);view.m_framebuffer.RecordTarget().ReadRGBA8(pixels);
+            const auto [w,h]=view.GetSafeSize();std::vector<uint8_t> pixels(size_t(w)*h*4);view.GetOutputTarget().ReadRGBA8(pixels);
             if(owned)Require(pixels==images[i],"product Editor Game view image differs");else images.push_back(std::move(pixels));
         }
         Require(ProductFenceHook::count==(owned?8:0),"Editor did not create exactly one fence per owned frame");

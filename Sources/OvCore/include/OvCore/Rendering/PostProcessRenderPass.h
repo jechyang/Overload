@@ -1,37 +1,17 @@
-/**
-* @project: Overload
-* @author: Overload Tech.
-* @licence: MIT
-*/
-
 #pragma once
-
 #include <OvRendering/Core/ARenderPass.h>
-#include <baregl/Framebuffer.h>
-#include <OvCore/Rendering/PingPongFramebuffer.h>
-#include <OvCore/Rendering/PostProcess/AEffect.h>
-
+#include <OvCore/Rendering/PostProcess/PostProcessPipeline.h>
 namespace OvCore::Rendering
 {
-	/**
-	* Draw post-processing effects
-	*/
-	class PostProcessRenderPass : public OvRendering::Core::ARenderPass
-	{
-	public:
-		bool SupportsCommandRecording() const override { return typeid(*this) == typeid(PostProcessRenderPass); }
-		/**
-		* Constructor of the post-process render pass
-		* @param p_renderer
-		*/
-		PostProcessRenderPass(OvRendering::Core::CompositeRenderer& p_renderer);
-
-	protected:
-		virtual void Draw(OvRendering::Data::PipelineState p_pso) override;
-
-	private:
-		OvRendering::Data::Material m_blitMaterial;
-		std::vector<std::unique_ptr<PostProcess::AEffect>> m_effects;
-		PingPongFramebuffer m_pingPongBuffers;
-	};
+    // Temporary input adapter for SceneRenderer; removed with its last caller in A6.
+    class PostProcessRenderPass : public OvRendering::Core::ARenderPass
+    {
+    public:
+        bool SupportsCommandRecording() const override { return typeid(*this) == typeid(PostProcessRenderPass); }
+        explicit PostProcessRenderPass(OvRendering::Core::CompositeRenderer& renderer);
+    protected:
+        void Draw(OvRendering::Data::PipelineState state) override;
+    private:
+        PostProcess::PostProcessPipeline m_pipeline;
+    };
 }

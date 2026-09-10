@@ -27,6 +27,8 @@ namespace OvRendering::Data
         std::vector<ResourceUse> reads, writes;
         // An explicit post-write operation, executed after the final cube face.
         std::shared_ptr<baregl::Texture> generateMipmaps;
+        // Fixed full-screen sequence after this view, before the following SceneUI view.
+        bool postProcessAfter = false;
     };
     // Fixed GPU order, independent of the order in which CPU view jobs finish.
     // Imported/history availability is supplied only at the owner planning boundary.

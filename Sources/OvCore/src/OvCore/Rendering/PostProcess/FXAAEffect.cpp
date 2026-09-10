@@ -9,12 +9,13 @@
 #include <OvCore/ResourceManagement/ShaderManager.h>
 #include <OvRendering/Utils/Profiling.h>
 
-OvCore::Rendering::PostProcess::FXAAEffect::FXAAEffect(OvRendering::Core::CompositeRenderer& p_renderer) : AEffect(p_renderer)
+OvCore::Rendering::PostProcess::FXAAEffect::FXAAEffect()
 {
 	m_material.SetShader(OVSERVICE(OvCore::ResourceManagement::ShaderManager)[":Shaders\\PostProcess\\FXAA.ovfx"]);
 }
 
 void OvCore::Rendering::PostProcess::FXAAEffect::Draw(
+    OvRendering::Core::FullscreenCommandRecorder& recorder,
 	OvRendering::Data::PipelineState p_pso,
 	baregl::Framebuffer& p_src,
 	baregl::Framebuffer& p_dst,
@@ -22,7 +23,7 @@ void OvCore::Rendering::PostProcess::FXAAEffect::Draw(
 )
 {
 	ZoneScoped;
-	OV_GPU_ZONE(m_renderer, "FXAAEffect");
+	OV_GPU_ZONE(recorder, "FXAAEffect");
 
-	m_renderer.Blit(p_pso, p_src, p_dst, m_material);
+	recorder.Blit(p_pso, p_src, p_dst, m_material);
 }

@@ -9,12 +9,13 @@
 #include <OvCore/ResourceManagement/ShaderManager.h>
 #include <OvRendering/Utils/Profiling.h>
 
-OvCore::Rendering::PostProcess::TonemappingEffect::TonemappingEffect(OvRendering::Core::CompositeRenderer& p_renderer) : AEffect(p_renderer)
+OvCore::Rendering::PostProcess::TonemappingEffect::TonemappingEffect()
 {
 	m_tonemappingMaterial.SetShader(OVSERVICE(OvCore::ResourceManagement::ShaderManager)[":Shaders\\PostProcess\\Tonemapping.ovfx"]);
 }
 
 void OvCore::Rendering::PostProcess::TonemappingEffect::Draw(
+    OvRendering::Core::FullscreenCommandRecorder& recorder,
 	OvRendering::Data::PipelineState p_pso,
 	baregl::Framebuffer& p_src,
 	baregl::Framebuffer& p_dst,
@@ -22,7 +23,7 @@ void OvCore::Rendering::PostProcess::TonemappingEffect::Draw(
 )
 {
 	ZoneScoped;
-	OV_GPU_ZONE(m_renderer, "TonemappingEffect");
+	OV_GPU_ZONE(recorder, "TonemappingEffect");
 
 	const auto& tonemappingSettings = static_cast<const TonemappingSettings&>(p_settings);
 
@@ -30,5 +31,5 @@ void OvCore::Rendering::PostProcess::TonemappingEffect::Draw(
 	m_tonemappingMaterial.SetProperty("_Exposure", tonemappingSettings.exposure, true);
 	m_tonemappingMaterial.SetProperty("_Mode", static_cast<int>(tonemappingSettings.mode), true);
 	m_tonemappingMaterial.SetProperty("_GammaCorrection", static_cast<int>(tonemappingSettings.gammaCorrection), true);
-	m_renderer.Blit(p_pso, p_src, p_dst, m_tonemappingMaterial);
+	recorder.Blit(p_pso, p_src, p_dst, m_tonemappingMaterial);
 }

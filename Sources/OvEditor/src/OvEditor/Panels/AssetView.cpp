@@ -8,12 +8,8 @@
 #include <OvCore/ECS/Components/CAmbientSphereLight.h>
 #include <OvCore/ECS/Components/CDirectionalLight.h>
 #include <OvCore/ECS/Components/CReflectionProbe.h>
-#include <OvCore/Rendering/SceneRenderer.h>
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Panels/AssetView.h>
-#include <OvEditor/Rendering/GridRenderPass.h>
-#include <OvEditor/Rendering/DebugModelRenderFeature.h>
-#include <OvRendering/Features/FrameInfoRenderFeature.h>
 #include <OvTools/Utils/PathParser.h>
 #include <OvUI/Plugins/DDTarget.h>
 
@@ -24,19 +20,6 @@ OvEditor::Panels::AssetView::AssetView
 	const OvUI::Settings::PanelWindowSettings& p_windowSettings
 ) : AViewControllable(p_title, p_opened, p_windowSettings)
 {
-	using namespace OvRendering::Features;
-	using namespace OvEditor::Rendering;
-	using namespace OvRendering::Settings;
-	using enum OvRendering::Features::EFeatureExecutionPolicy;
-
-	m_renderer = std::make_unique<OvCore::Rendering::SceneRenderer>(*EDITOR_CONTEXT(driver));
-
-	m_renderer->AddFeature<DebugModelRenderFeature, NEVER>();
-	m_renderer->AddFeature<DebugShapeRenderFeature, NEVER>();
-	m_renderer->AddFeature<FrameInfoRenderFeature, ALWAYS>();
-
-	m_renderer->AddPass<OvEditor::Rendering::GridRenderPass>("Grid", OvRendering::Settings::ERenderPassOrder::Debug);
-
 	m_camera.SetFar(5000.0f);
 
 	m_scene.AddDefaultLights();

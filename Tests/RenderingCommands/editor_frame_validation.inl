@@ -16,7 +16,7 @@ void EditorFrameValidation(OvEditor::Core::Editor& editor,OvEditor::Core::Contex
     for(int i=0;i<240;++i)asset.Update(1.f/60);
     auto clear=[&]{context.driver->OnFrameCompleted();glBindFramebuffer(GL_FRAMEBUFFER,0);glDisable(GL_SCISSOR_TEST);glClearColor(.08f,.12f,.18f,1);glClear(GL_COLOR_BUFFER_BIT);};
     auto pixels=[&]{glBindFramebuffer(GL_READ_FRAMEBUFFER,0);const auto [w,h]=context.window->GetFramebufferSize();std::vector<uint8_t> data(size_t(w)*h*4);glReadPixels(0,0,w,h,GL_RGBA,GL_UNSIGNED_BYTE,data.data());return data;};
-    auto immediate=[&]{for(auto* view:std::array<OvEditor::Panels::AView*,3>{&asset,&game,&scene})view->m_renderer->SetDrawRecordingEnabled(false);clear();editor.RenderViews(0);editor.UpdateEditorPanels(0);ui.Render();};
+    auto immediate=[&]{clear();editor.RenderViews(0);editor.UpdateEditorPanels(0);ui.Render();};
     for(int i=0;i<4;++i){clear();ui.Render();}
     for(int i=0;i<4;++i)immediate();
     Require(asset.IsVisible()&&game.IsVisible()&&scene.IsVisible(),"aggregate fixture did not show all three views");
@@ -25,7 +25,7 @@ void EditorFrameValidation(OvEditor::Core::Editor& editor,OvEditor::Core::Contex
     {
         immediate();const auto expected=pixels();
         std::vector<std::vector<uint8_t>> viewExpected;
-        for(auto* view:std::array<OvEditor::Panels::AView*,3>{&asset,&game,&scene}){const auto [w,h]=view->GetSafeSize();viewExpected.emplace_back(size_t(w)*h*4);view->m_framebuffer.RecordTarget().ReadRGBA8(viewExpected.back());}
+        for(auto* view:std::array<OvEditor::Panels::AView*,3>{&asset,&game,&scene}){const auto [w,h]=view->GetSafeSize();viewExpected.emplace_back(size_t(w)*h*4);view->GetOutputTarget().ReadRGBA8(viewExpected.back());}
         clear();auto frame=editor.RecordRenderFrame(0);const auto done=frame.GetCompletion();
         Require(!editor.CompleteRenderFrame(done),"Editor accepted unsubmitted frame");
         Require(frame.Submit(*context.driver),"Editor aggregate submit failed");
@@ -34,7 +34,7 @@ void EditorFrameValidation(OvEditor::Core::Editor& editor,OvEditor::Core::Contex
         size_t viewIndex=0;
         for(auto* view:std::array<OvEditor::Panels::AView*,3>{&asset,&game,&scene})
         {
-            const auto [w,h]=view->GetSafeSize();std::vector<uint8_t> data(size_t(w)*h*4);view->m_framebuffer.RecordTarget().ReadRGBA8(data);
+            const auto [w,h]=view->GetSafeSize();std::vector<uint8_t> data(size_t(w)*h*4);view->GetOutputTarget().ReadRGBA8(data);
             Require(data==viewExpected[viewIndex++],"Editor aggregate source view differs from immediate frame");
         }
         Require(actual==expected,"Editor three-view/UI aggregate differs from immediate frame");

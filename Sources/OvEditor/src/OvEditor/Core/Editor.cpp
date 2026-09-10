@@ -1,3 +1,4 @@
+#include <OvRendering/Context/Driver.h>
 /**
 * @project: Overload
 * @author: Overload Tech.
@@ -461,10 +462,10 @@ OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p
 
     OvTools::Jobs::JobSystem* recordingJobs = nullptr;
     const auto recordView = [&](Panels::AView& view) {
-        if (auto* jobs = view.GetRenderer().GetCommandRecordingJobs())
+        if (auto* jobs = view.GetCommandRecordingJobs())
         {
             frame.AppendRecording(view.RecordRenderCommands(true));
-            if (view.GetRenderer().IsParallelCommandRecordingEnabled()) recordingJobs = jobs;
+            recordingJobs = jobs;
         }
         else frame.Append(view.RecordRenderCommands());
     };

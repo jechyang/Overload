@@ -74,6 +74,7 @@ namespace OvEditor::Panels
 		void ResetClearColor();
 
 	protected:
+        Rendering::EditorOverlayRequest CreateOverlayRequest() override;
 		OvMaths::FVector3 m_gridColor;
 		OvRendering::Entities::Camera m_camera;
 		OvEditor::Core::CameraController m_cameraController;

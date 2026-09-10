@@ -28,24 +28,21 @@ void Save(Scene& scene, const std::filesystem::path& path)
 std::vector<unsigned char> ViewPixels(OvEditor::Panels::AView& view)
 {
 #ifdef EDITOR_COMMANDS_TEST
-    view.m_renderer->SetDrawRecordingEnabled(false);
     view.Render();
     const auto [referenceWidth,referenceHeight]=view.GetSafeSize();
     std::vector<uint8_t> reference(size_t(referenceWidth)*referenceHeight*4);
-    view.m_framebuffer.RecordTarget().ReadRGBA8(reference);
+    view.GetOutputTarget().ReadRGBA8(reference);
     auto commands=view.RecordRenderCommands();
     commands.Execute(*EDITOR_CONTEXT(driver));
     view.CompleteRender();
 #else
     view.Render();
 #endif
-    Require(view.m_image->textureID.id == view.m_framebuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)->GetID(), "view image retained a stale attachment after resize");
+    Require(view.m_image->textureID.id == view.GetOutputTexture()->GetID(), "view image retained a stale attachment after resize");
     const auto [width, height] = view.GetSafeSize();
     Require(width > 0 && height > 0, "view has no render target");
     std::vector<unsigned char> pixels(size_t(width) * height * 4);
-    view.m_framebuffer.Bind();
-    glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-    view.m_framebuffer.Unbind();
+    view.GetOutputTarget().ReadRGBA8(pixels);
 #ifdef EDITOR_COMMANDS_TEST
     Require(pixels==reference,"real view immediate/delayed command images differ");
 #endif
@@ -93,7 +90,7 @@ int main(int argc, char** argv) try
     auto& asset = editor.m_panelsManager.GetPanelAs<OvEditor::Panels::AssetView>("Asset View");
     for (auto* panel : std::array<OvEditor::Panels::AView*, 3>{&game, &view, &asset}) { panel->Open(); panel->SetSize({320, 260}); }
 #ifdef DRAW_PACKETS_TEST
-    for (auto* panel : std::array<OvEditor::Panels::AView*, 3>{&game, &view, &asset}) panel->m_renderer->SetDrawRecordingEnabled(true);
+    for (auto* panel : std::array<OvEditor::Panels::AView*, 3>{&game, &view, &asset}) panel->SetCommandRecordingEnabled(true,context.jobSystem.get());
 #endif
     context.uiManager->Render(); // Initialize ImGui font/frame state for the real view renderers.
     auto* model = context.modelManager.GetResource(":Models/Mannequin.fbx");

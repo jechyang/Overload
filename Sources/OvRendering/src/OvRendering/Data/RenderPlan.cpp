@@ -62,6 +62,8 @@ void RenderPlan::Validate(std::span<const std::shared_ptr<const RenderSceneSnaps
             require((attached & use.subresources) == use.subresources, "Wrong output attachment or cubemap face");
             available[use.resource] |= use.subresources;
         }
+        if (pass.postProcessAfter)
+            require(pass.target.has_value() && std::find(pass.stages.begin(),pass.stages.end(),RenderStage::SceneUI)==pass.stages.end(), "Post-process output must precede SceneUI");
         if (pass.generateMipmaps)
         {
             const auto id = pass.generateMipmaps->RetainStorage().GetID();

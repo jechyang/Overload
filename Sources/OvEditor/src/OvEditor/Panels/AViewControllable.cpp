@@ -5,8 +5,6 @@
 */
 
 #include "OvEditor/Panels/AViewControllable.h"
-#include "OvEditor/Rendering/DebugSceneRenderer.h"
-#include "OvEditor/Rendering/GridRenderPass.h"
 #include "OvEditor/Core/EditorActions.h"
 #include "OvEditor/Settings/EditorSettings.h"
 
@@ -41,10 +39,6 @@ void OvEditor::Panels::AViewControllable::InitFrame()
 
 	AView::InitFrame();
 
-	m_renderer->AddDescriptor<Rendering::GridRenderPass::GridDescriptor>({
-		m_gridColor,
-		m_camera.GetPosition()
-	});
 }
 
 void OvEditor::Panels::AViewControllable::ResetCameraTransform()
@@ -81,4 +75,9 @@ void OvEditor::Panels::AViewControllable::ResetGridColor()
 void OvEditor::Panels::AViewControllable::ResetClearColor()
 {
 	m_camera.SetClearColor(kDefaultClearColor);
+}
+
+OvEditor::Rendering::EditorOverlayRequest OvEditor::Panels::AViewControllable::CreateOverlayRequest()
+{
+    auto request=AView::CreateOverlayRequest();request.grid=true;request.gridColor=m_gridColor;return request;
 }

@@ -1,3 +1,8 @@
+#include <OvCore/Rendering/RenderFrontend.h>
+#include <OvEditor/Core/EditorActions.h>
+#include <OvEditor/Rendering/EditorOverlayCollector.h>
+#include <OvEditor/Rendering/PickingCollector.h>
+#include <OvEditor/Rendering/PickingRenderPass.h>
 #include <OvEditor/Rendering/DebugSceneRenderer.h>
 #include <OvEditor/Rendering/GridRenderPass.h>
 #include <OvCore/ECS/Components/CPhysicalBox.h>
@@ -71,14 +76,32 @@ void EditorCommandValidation(OvEditor::Core::Context& context, OvRendering::Reso
                     renderer.AddDescriptor<Renderer::DebugSceneDescriptor>({.gizmoOperation=static_cast<OvEditor::Core::EGizmoOperation>(iteration%3),.selectedActor=selected});
                     renderer.AddDescriptor<OvEditor::Rendering::GridRenderPass::GridDescriptor>({{.17f,.17f,.17f},camera.GetPosition()});
                 };
+                OvCore::Rendering::RenderFrontend frontend;
+                OvEditor::Rendering::EditorOverlayCollector overlays;
+                OvEditor::Rendering::PickingCollector newPicking;
+                OvRendering::Data::Material shadow(context.shaderManager[":Shaders\\ShadowFallback.ovfx"]);
+                const auto recordFrontend=[&] {
+                    OvCore::Rendering::SceneRenderRequest request{{scene,camera,160,120}};request.fallbackMaterial=material;
+                    OvCore::Rendering::SceneFrameRequest frameRequest{request,target.RecordTarget(),shadow};
+                    const auto state=context.driver->CreatePipelineState();
+                    auto prepared=frontend.PrepareFrame(frontend.ExtractFrame(frameRequest),state,context.jobSystem.get());
+                    const auto view=prepared->GetPreparedViews().back()->GetView();
+                    List result;result.Append(frontend.RecordFrame(std::move(prepared),context.jobSystem.get()));
+                    auto& selected=iteration%3==0?skin.owner:iteration%3==1?cameraActor:probe.owner;
+                    OvEditor::Rendering::EditorOverlayRequest overlay;overlay.grid=true;overlay.debugObjects=true;overlay.picking=true;
+                    overlay.scene=scene.GetLifetimeToken();overlay.selected=selected.GetGUID();overlay.operation=static_cast<OvEditor::Core::EGizmoOperation>(iteration%3);
+                    overlay.gridColor={.17f,.17f,.17f};overlay.gameViewSize=EDITOR_PANEL(OvEditor::Panels::GameView,"Game View").GetSafeSize();
+                    result.AppendRecording(overlays.Extract(scene,overlay,view,state,target.RecordTarget()));
+                    result.AppendRecording(newPicking.Extract(request,overlay,state,context.jobSystem.get()));
+                    return result;
+                };
                 if(delayed && iteration==0)
                 {
                     for(int mode=0;mode<3;++mode)
                     {
-                        prepare();renderer.BeginCommandRecording();renderer.BeginFrame(frame);renderer.DrawFrame();renderer.EndFrame();
-                        auto failedReadback=picking.GetRecordedReadback();
-                        if(mode==1)renderer.SubmitRenderOperation([](auto&){throw std::runtime_error("failure after picking readback");});
-                        auto failed=renderer.FinishCommandRecording();
+                        auto failed=recordFrontend();auto failedReadback=newPicking.GetReadback();
+                        if(mode==1)failed.Append([](auto&){throw std::runtime_error("failure after picking readback");});
+                        failed.Seal(context.jobSystem.get());
                         if(mode==0)failed.Cancel();
                         if(mode==1){bool caught=false;try{failed.Execute(*context.driver);}catch(const std::runtime_error&){caught=true;}Require(caught,"readback failure injection missing");}
                         if(mode==2){auto abandoned=std::move(failed);}
@@ -86,12 +109,12 @@ void EditorCommandValidation(OvEditor::Core::Context& context, OvRendering::Reso
                     }
                 }
                 prepare();
-                {EditorReadHook hook;if(delayed)renderer.BeginCommandRecording();renderer.BeginFrame(frame);renderer.DrawFrame();renderer.EndFrame();
-                 if(delayed)Require(editorReadCalls==0,"recording performed picking GPU readback");}
+                {EditorReadHook hook;
+                 if(delayed) { commands.emplace(recordFrontend());commands->Seal(context.jobSystem.get());Require(editorReadCalls==0,"recording performed picking GPU readback"); }
+                 else { renderer.BeginFrame(frame);renderer.DrawFrame();renderer.EndFrame(); }}
                 if(delayed)
                 {
-                    readback=picking.GetRecordedReadback();Require(readback && !readback->IsReady(),"picking published before command completion");
-                    commands.emplace(renderer.FinishCommandRecording());
+                    readback=newPicking.GetReadback();Require(readback && !readback->IsReady(),"picking published before command completion");
                     if(iteration%2==0)
                     {
                         commands->Execute(*context.driver);

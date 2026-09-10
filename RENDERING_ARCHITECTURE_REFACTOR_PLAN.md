@@ -1,6 +1,6 @@
 # Overload 多线程渲染架构重构计划
 
-日期：2026-09-10。状态：A0–A4 实现与验收已完成；A4 辅助视图、显式资源计划、跨视图并行 Prepare/Record 和历史失败恢复的 Debug/Release 验收已闭合；A5–A6 未开始。
+日期：2026-09-10。状态：A0–A5 实现与验收已完成；A5 产品视口、编辑器工具、Picking 与后处理的 Debug/Release 构建及 16 项最终验收已闭合，见 [A5 记录](RENDERING_ARCHITECTURE_A5_VALIDATION.md)；A6 未开始。
 
 ## 1. 目标与范围
 
@@ -342,6 +342,8 @@ A0 记录现有实际优先级；A3 再固化冲突规则。语义上由引擎�
 
 ### A5：迁移编辑器工具、拾取和后处理
 
+状态（2026-09-10）：实现与验收已完成，见 [A5 实施与验证记录](RENDERING_ARCHITECTURE_A5_VALIDATION.md)。三视口和 Game 接入显式前端，工具/Picking/后处理脱离产品旧链；Debug/Release 构建、原版后处理精确对照、完整 UI/交互和在途产品压力验收全部通过。
+
 交付：显式 Debug/Overlay 收集器，Outline/Gizmo 的数据与 Pass 步骤；Picking View/Stage 和拥有型结果；后处理设置快照及独立历史状态入口。
 
 AssetView 当前使用自建预览 Scene 与 ECS 组件，继续复用场景提取入口；不预设它需要单独的非 ECS 适配器。AView/SceneView 改为提供显式视口与拾取请求，DebugSceneRenderer 的配置职责移入编辑器流水线配置，随后删除旧类，调试组件查询移至 EditorOverlayCollector。SceneUI 走自身 Stage；最终 ImGui 继续使用已有拥有型 UI 快照和后端，不强行变成 MeshFeatureProcessor。后处理继续使用现有 Effect 和 ping-pong 资源，但 Record 不再读取 CPostProcessStack；Blit 改为显式输入输出和绑定，脱离隐式 Feature 链。
@@ -437,4 +439,4 @@ A0 已单独完成。A1 本次实现的 **主相机静态不透明命令切片**
 - [阶段 2/3 完成记录](MULTITHREADING_STAGE23_COMPLETION.md)
 - [命令与产品回归入口](Tests/RenderingCommands/README.md)
 
-当前 A0–A3 已完成并提交；A4 实现与最终验收已完成，提交状态见 [A4 记录](RENDERING_ARCHITECTURE_A4_VALIDATION.md)。本会话只处理 A4，不进入 A5。完成 A4 验证与独立提交后，下一会话继续 A5 的编辑器覆盖层、Picking、后处理和视口接入。后续每个增量补充结果与剩余工作，完成一项后独立 commit，并提示用户开启新会话。
+A0–A5 已完成。本会话 A5 的产品视口、覆盖层、Picking 和后处理迁移已通过 Debug/Release 最终验收，见 [A5 记录](RENDERING_ARCHITECTURE_A5_VALIDATION.md)。A5 以独立 commit 收尾；下一会话继续 A6 的旧链清理、总体并发和管线扩展示例验收。每个增量独立 commit，并提示用户开启新会话。

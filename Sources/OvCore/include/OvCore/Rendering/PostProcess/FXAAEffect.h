@@ -26,7 +26,7 @@ namespace OvCore::Rendering::PostProcess
 		* Constructor of the FXAAEffect class
 		* @param p_renderer
 		*/
-		FXAAEffect(OvRendering::Core::CompositeRenderer& p_renderer);
+		FXAAEffect();
 
 		/**
 		* Render the FXAA effect
@@ -37,6 +37,7 @@ namespace OvCore::Rendering::PostProcess
 		* @param p_settings
 		*/
 		virtual void Draw(
+            OvRendering::Core::FullscreenCommandRecorder& recorder,
 			OvRendering::Data::PipelineState p_pso,
 			baregl::Framebuffer& p_src,
 			baregl::Framebuffer& p_dst,

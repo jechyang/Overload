@@ -1,3 +1,4 @@
+#include <OvRendering/Context/Driver.h>
 /**
 * @project: Overload
 * @author: Overload Tech.
@@ -12,13 +13,8 @@
 #include <OvTools/Utils/PathParser.h>
 #include <OvUI/Widgets/Texts/Text.h>
 
-#ifdef _DEBUG
-#include <OvRendering/Features/FrameInfoRenderFeature.h>
-#endif
-
 OvGame::Core::Game::Game(Context & p_context) :
 	m_context(p_context),
-	m_sceneRenderer(*p_context.driver),
 	m_fpsCounter(*p_context.window)
 	#ifdef _DEBUG
 	,
@@ -26,15 +22,13 @@ OvGame::Core::Game::Game(Context & p_context) :
 	m_frameInfo(*m_context.window)
 	#endif
 {
+	m_shadowFallback.SetShader(m_context.shaderManager[":Shaders\\ShadowFallback.ovfx"]);
 	m_context.uiManager->SetCanvas(m_canvas);
 	m_canvas.AddPanel(m_fpsCounter);
 	#ifdef _DEBUG
 	m_canvas.AddPanel(m_driverInfo);
 	m_canvas.AddPanel(m_frameInfo);
-	m_sceneRenderer.AddFeature<
-		OvRendering::Features::FrameInfoRenderFeature,
-		OvRendering::Features::EFeatureExecutionPolicy::ALWAYS
-	>();
+
 	#endif
 
 	std::string startupScenePath = m_context.projectSettings.Get<std::string>("start_scene");
@@ -66,44 +60,6 @@ void OvGame::Core::Game::PreUpdate()
     CollectCompletedFrames();
 
 	m_context.device->PollEvents();
-}
-
-void RenderCurrentScene(
-	OvCore::Rendering::SceneRenderer& p_renderer,
-	const OvGame::Core::Context& p_context
-)
-{
-	ZoneScoped;
-
-	if (auto currentScene = p_context.sceneManager.GetCurrentScene())
-	{
-		if (auto camera = currentScene->FindMainCamera())
-		{
-			auto [windowWidth, windowHeight] = p_context.window->GetSize();
-
-			p_renderer.AddDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>({
-				*currentScene,
-			});
-
-			OvRendering::Data::FrameDescriptor frameDescriptor;
-			frameDescriptor.renderWidth = windowWidth;
-			frameDescriptor.renderHeight = windowHeight;
-			frameDescriptor.camera = camera->GetCamera();
-			frameDescriptor.outputBuffer = *p_context.framebuffer;
-
-			p_renderer.BeginFrame(frameDescriptor);
-			p_renderer.DrawFrame();
-			p_renderer.EndFrame();
-		}
-		else
-		{
-			p_renderer.Clear(true, true, true);
-		}
-	}
-	else
-	{
-		p_renderer.Clear(true, true, true);
-	}
 }
 
 void OvGame::Core::Game::Update(float p_deltaTime)
@@ -141,9 +97,7 @@ void OvGame::Core::Game::Update(float p_deltaTime)
         if (frame) frame->Append(RecordSceneCommands());
         else
         {
-            RenderCurrentScene(m_sceneRenderer, m_context);
-            const auto [windowWidth, windowHeight] = m_context.window->GetSize();
-            m_context.framebuffer->BlitToBackBuffer(windowWidth, windowHeight);
+            auto commands=RecordSceneCommands();commands.Execute(*m_context.driver);
         }
 	}
 
@@ -156,9 +110,7 @@ void OvGame::Core::Game::Update(float p_deltaTime)
 	{
 		m_fpsCounter.Update(p_deltaTime);
 		#ifdef _DEBUG
-		auto& frameInfoRenderFeature = m_sceneRenderer.GetFeature<OvRendering::Features::FrameInfoRenderFeature>();
-		auto& frameInfo = frameInfoRenderFeature.GetFrameInfo();
-		m_frameInfo.Update(frameInfo);
+		m_frameInfo.Update(m_renderStats);
 		#endif
         if (frame) frame->Append(m_context.uiManager->RecordRenderCommands());
         else m_context.uiManager->Render();
@@ -212,8 +164,7 @@ void OvGame::Core::Game::SetFrameSubmissionEnabled(bool enabled)
     if (m_pendingFrame) throw std::logic_error("Cannot switch Game submission mode during a frame");
     if (!enabled && m_context.renderThread) throw std::logic_error("Threaded Game requires command submission");
     DrainRenderFrames();
-    m_sceneRenderer.SetDrawRecordingEnabled(enabled);
-    m_sceneRenderer.SetCommandRecordingJobs(enabled && m_context.projectSettings.GetOrDefault<bool>("parallel_recording", false) ? m_context.jobSystem.get() : nullptr);
+    m_renderJobs = enabled && m_context.projectSettings.GetOrDefault<bool>("parallel_recording", false) ? m_context.jobSystem.get() : nullptr;
     m_context.uiManager->SetCommandRecordingEnabled(enabled);
     m_frameSubmissionEnabled = enabled;
 }
@@ -229,30 +180,29 @@ OvRendering::Data::RenderFrame OvGame::Core::Game::RecordRenderFrame()
 
 OvRendering::Data::RenderCommandList OvGame::Core::Game::RecordSceneCommands()
 {
-    m_sceneRenderer.SetDrawRecordingEnabled(true);
-    m_sceneRenderer.BeginCommandRecording();
-    try
+    OvRendering::Data::RenderCommandList commands;m_renderStats={};
+    auto* scene=m_context.sceneManager.GetCurrentScene();
+    const auto [width,height]=m_context.window->GetSize();
+    if(scene&&width&&height)
     {
-        if (m_context.sceneManager.GetCurrentScene())
+        if(auto camera=scene->FindMainCamera())
         {
-            RenderCurrentScene(m_sceneRenderer, m_context);
-            const auto [width, height] = m_context.window->GetSize();
-            const auto target = m_context.framebuffer->RecordTarget();
-            m_sceneRenderer.SubmitRenderOperation([target, width, height](auto&) {
-                const auto [sourceWidth, sourceHeight] = target.GetSize();
-                glBlitNamedFramebuffer(target.GetID(), 0, 0, 0, sourceWidth, sourceHeight,
-                    0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-            });
+            OvCore::Rendering::SceneRenderRequest request{{*scene,camera->GetCamera(),width,height,0,0,
+                std::chrono::duration<float>(std::chrono::high_resolution_clock::now()-m_renderStart).count()}};
+            const auto state=m_context.driver->CreatePipelineState();
+            OvCore::Rendering::SceneFrameRequest frameRequest{request,m_context.framebuffer->RecordTarget(),m_shadowFallback};
+            frameRequest.postProcess=&m_postProcess;frameRequest.postProcessTarget=m_context.framebuffer.get();frameRequest.postProcessState=state;
+            auto frame=m_frontend.PrepareFrame(m_frontend.ExtractFrame(frameRequest),state,m_renderJobs);
+            m_renderStats=frame->GetFrameInfo();
+            commands.Append(m_frontend.RecordFrame(std::move(frame),m_renderJobs));
         }
-        return m_sceneRenderer.FinishCommandRecording();
+        else commands.Append([target=m_context.framebuffer->RecordTarget()](auto& driver){target.Bind();driver.Clear(true,true,true);});
+        commands.Append([target=m_context.framebuffer->RecordTarget(),width,height](auto&) {
+            const auto [sourceWidth,sourceHeight]=target.GetSize();
+            glBlitNamedFramebuffer(target.GetID(),0,0,0,sourceWidth,sourceHeight,0,0,width,height,GL_COLOR_BUFFER_BIT,GL_LINEAR);
+        });
     }
-    catch (...)
-    {
-        const auto error = std::current_exception();
-        try { if (m_sceneRenderer.IsDrawing()) m_sceneRenderer.EndFrame(); } catch (...) {}
-        m_sceneRenderer.CancelCommandRecording();
-        std::rethrow_exception(error);
-    }
+    commands.Seal();return commands;
 }
 
 void OvGame::Core::Game::CollectCompletedFrames()

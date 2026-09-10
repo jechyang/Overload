@@ -284,3 +284,14 @@ RenderTaskCoordinator 的测试编译副本用有超时的闩锁证明跨 View �
 
 输出位于 `Build/JobsValidation/Skinning/<配置>-auxiliary-command-list/`。
 每模式 `frames.bin` 为 344064 字节、`shadows.bin` 为 86016 字节、`cubes.bin` 为 458304 字节。只有全部进程与严格比较通过才生成成功 `result.json`。实现边界及验收见根目录 `RENDERING_ARCHITECTURE_A4_VALIDATION.md`。
+
+## A5 编辑器工具、拾取和后处理
+
+先完成对应 Debug/Release 解决方案构建，再运行以下入口（不要在同一配置的构建写入库/PDB 时链接测试）：
+
+- `--postprocess`：在 A4 五种独立进程模式中加入曝光、Bloom、Tonemapping、FXAA 和可见 SceneUI；14 帧主画面、阴影和所有 cube mip 严格一致，覆盖失败/取消/源设置销毁/resize。输出位于 `<配置>-postprocess-command-list`。
+- `--command-list` 后运行 `--effects-oracle`：从 A4 提交 f9ab4cb 编译原版 Effect 和其 owner，比较 7 组 24 帧图像。原版不进入产品构建；输出位于 `<配置>-effects-oracle-command-list`。
+- `--editor --command-list --editor-ui --product-loop`：工具旧即时/新 Worker 精确对照，真实三视口、完整 UI、Picking/材质拖放、播放及场景切换。已删除的 DebugSceneRenderer/PickingRenderPass 仅由测试从 A4 历史提交读取。
+- `--editor-stress`、`--game-thread`：真实产品 Render owner、稳态在途录制、队列/交互/resize/最小化和停机。
+
+调用形式为 `node Tests/Skinning/run-validation.mjs Debug --postprocess --vs "<VS2022>"`；Release 替换配置名。结果、数据归属和临时 oracle 清理范围见根目录 `RENDERING_ARCHITECTURE_A5_VALIDATION.md`。

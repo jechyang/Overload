@@ -13,30 +13,28 @@
 #include <OvCore/ECS/Components/CPointLight.h>
 #include <OvCore/ECS/Components/CSpotLight.h>
 #include <OvCore/Rendering/EngineDrawableDescriptor.h>
-#include <OvCore/Rendering/ReflectionRenderFeature.h>
 
 #include <OvDebug/Assertion.h>
+#include <OvEditor/Rendering/EditorOverlayCollector.h>
+#include <OvEditor/Rendering/DebugShapeCollector.h>
+#include <cstring>
+#include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
+#include <OvCore/ECS/Components/CAmbientBoxLight.h>
+#include <OvCore/ECS/Components/CAmbientSphereLight.h>
 
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Core/EditorResources.h>
-#include <OvEditor/Panels/AView.h>
-#include <OvEditor/Panels/GameView.h>
-#include <OvEditor/Rendering/DebugModelRenderFeature.h>
-#include <OvEditor/Rendering/DebugSceneRenderer.h>
-#include <OvEditor/Rendering/GizmoRenderFeature.h>
-#include <OvEditor/Rendering/GridRenderPass.h>
-#include <OvEditor/Rendering/OutlineRenderFeature.h>
-#include <OvEditor/Rendering/PickingRenderPass.h>
+#include <OvEditor/Rendering/GizmoCollector.h>
+#include <OvEditor/Rendering/OutlineCollector.h>
 #include <OvEditor/Settings/EditorSettings.h>
 
-#include <OvRendering/Features/DebugShapeRenderFeature.h>
-#include <OvRendering/Features/FrameInfoRenderFeature.h>
-#include <OvRendering/Features/LightingRenderFeature.h>
 #include <OvRendering/Utils/Profiling.h>
 
 using namespace OvMaths;
 using namespace OvRendering::Resources;
 using namespace OvCore::Resources;
+using namespace OvEditor::Rendering;
+struct CollectedSelection { OvEditor::Core::EGizmoOperation gizmoOperation; OvTools::Utils::OptRef<OvCore::ECS::Actor> highlightedActor, selectedActor; std::optional<OvEditor::Core::GizmoBehaviour::EDirection> highlightedGizmoDirection; };
 
 namespace
 {
@@ -95,29 +93,15 @@ namespace
 		}.GenerateMatrix();
 	}
 
-	std::shared_ptr<baregl::Buffer> CreateDebugLightBuffer()
-	{
-		auto lightBuffer = std::make_shared<baregl::Buffer>();
-
-		const auto lightMatrices = std::to_array<OvMaths::FMatrix4>({
-			CreateDebugDirectionalLight(),
-			CreateDebugAmbientLight()
-		});
-
-		lightBuffer->Allocate(sizeof(lightMatrices), baregl::types::EAccessSpecifier::STATIC_READ);
-		lightBuffer->Upload(lightMatrices.data());
-
-		return lightBuffer;
-	}
+	std::vector<OvMaths::FMatrix4> CreateDebugLights() { return {CreateDebugDirectionalLight(),CreateDebugAmbientLight()}; }
 }
 
-class DebugCamerasRenderPass : public OvRendering::Core::ARenderPass
+class DebugCamerasCollector
 {
 public:
-	bool SupportsCommandRecording() const override { return typeid(*this) == typeid(DebugCamerasRenderPass); }
-	DebugCamerasRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) : OvRendering::Core::ARenderPass(p_renderer)
+	DebugCamerasCollector(OvCore::Rendering::ToolDrawCollector& p_collector) : m_collector(p_collector)
 	{
-		m_fakeLightsBuffer = CreateDebugLightBuffer();
+		m_fakeLights = CreateDebugLights();
 
 		m_cameraMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Standard.ovfx"]);
 		m_cameraMaterial.SetProperty("u_Albedo", FVector4{ 0.0f, 0.447f, 1.0f, 1.0f });
@@ -127,29 +111,17 @@ public:
 		m_cameraMaterial.SetProperty("u_BuiltInToneMapping", true);
 	}
 
-protected:
-	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
+public:
+	void Draw(OvRendering::Data::PipelineState p_pso, OvCore::SceneSystem::Scene& scene)
 	{
 		ZoneScoped;
-		OV_GPU_ZONE(m_renderer, "DebugCamerasRenderPass");
+		OV_GPU_ZONE(m_collector, "DebugCamerasCollector");
 
-		using namespace OvRendering::Features;
 
-		const auto lightingRenderFeature = OvTools::Utils::OptRef<LightingRenderFeature>{
-			m_renderer.HasFeature<LightingRenderFeature>() ?
-			m_renderer.GetFeature<LightingRenderFeature>() :
-			OvTools::Utils::OptRef<LightingRenderFeature>{std::nullopt}
-		};
 
-		// Override the light buffer with fake lights
-		if (lightingRenderFeature)
-			lightingRenderFeature->BindOverride(m_fakeLightsBuffer);
-		else
-			m_renderer.SubmitRenderOperation([buffer = m_fakeLightsBuffer](auto&) { buffer->Bind(baregl::types::EBufferType::SHADER_STORAGE, 0); });
+		m_collector.SetLights(m_fakeLights);
 
-		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
-
-		for (auto camera : sceneDescriptor.scene.GetFastAccessComponents().cameras)
+		for (auto camera : scene.GetFastAccessComponents().cameras)
 		{
 			auto& actor = camera->owner;
 
@@ -158,30 +130,26 @@ protected:
 				auto& model = *EDITOR_CONTEXT(editorResources)->GetModel("Camera");
 				auto modelMatrix = CalculateUnscaledModelMatrix(actor);
 
-				m_renderer.GetFeature<OvEditor::Rendering::DebugModelRenderFeature>()
+				m_collector
 					.DrawModelWithSingleMaterial(p_pso, model, m_cameraMaterial, modelMatrix);
 			}
 		}
 
-		if (lightingRenderFeature)
-		{
-			// Bind back the original light buffer
-			lightingRenderFeature->Bind();
-		}
+		m_collector.SetLights({});
 	}
 
 private:
+    OvCore::Rendering::ToolDrawCollector& m_collector;
 	OvCore::Resources::Material m_cameraMaterial;
-	std::shared_ptr<baregl::Buffer> m_fakeLightsBuffer;
+	std::vector<OvMaths::FMatrix4> m_fakeLights;
 };
 
-class DebugReflectionProbesRenderPass : public OvRendering::Core::ARenderPass
+class DebugReflectionProbesCollector
 {
 public:
-	bool SupportsCommandRecording() const override { return typeid(*this) == typeid(DebugReflectionProbesRenderPass); }
-	DebugReflectionProbesRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) : OvRendering::Core::ARenderPass(p_renderer)
+	DebugReflectionProbesCollector(OvCore::Rendering::ToolDrawCollector& p_collector) : m_collector(p_collector)
 	{
-		m_fakeLightsBuffer = CreateDebugLightBuffer();
+		m_fakeLights = CreateDebugLights();
 
 		m_reflectiveMaterial.SetDepthTest(false);
 		m_reflectiveMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Standard.ovfx"]);
@@ -192,30 +160,17 @@ public:
 		m_reflectiveMaterial.SetProperty("u_BuiltInToneMapping", true);
 	}
 
-protected:
-	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
+public:
+	void Draw(OvRendering::Data::PipelineState p_pso, OvCore::SceneSystem::Scene& scene)
 	{
 		ZoneScoped;
-		OV_GPU_ZONE(m_renderer, "DebugReflectionProbesRenderPass");
+		OV_GPU_ZONE(m_collector, "DebugReflectionProbesCollector");
 
-		using namespace OvRendering::Features;
 
-		const auto lightingRenderFeature = OvTools::Utils::OptRef<LightingRenderFeature>{
-			m_renderer.HasFeature<LightingRenderFeature>() ?
-			m_renderer.GetFeature<LightingRenderFeature>() :
-			OvTools::Utils::OptRef<LightingRenderFeature>{std::nullopt}
-		};
 
-		// Override the light buffer with fake lights
-		if (lightingRenderFeature)
-			lightingRenderFeature->BindOverride(m_fakeLightsBuffer);
-		else
-			m_renderer.SubmitRenderOperation([buffer = m_fakeLightsBuffer](auto&) { buffer->Bind(baregl::types::EBufferType::SHADER_STORAGE, 0); });
+		m_collector.SetLights(m_fakeLights);
 
-		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
-		auto& reflectionRenderFeature = m_renderer.GetFeature<OvCore::Rendering::ReflectionRenderFeature>();
-
-		for (auto reflectionProbe : sceneDescriptor.scene.GetFastAccessComponents().reflectionProbes)
+		for (auto reflectionProbe : scene.GetFastAccessComponents().reflectionProbes)
 		{
 			auto& actor = reflectionProbe->owner;
 
@@ -231,32 +186,30 @@ protected:
 						OvMaths::FVector3::One * OvEditor::Settings::EditorSettings::ReflectionProbeScale
 					);
 
-				reflectionRenderFeature.PrepareProbe(*reflectionProbe);
-				reflectionRenderFeature.SendProbeData(m_reflectiveMaterial, *reflectionProbe);
-				reflectionRenderFeature.BindProbe(*reflectionProbe);
+				OvRendering::Data::ReflectionReceiverBindings binding;
+                binding.map = reflectionProbe->GetCubemap();
+                const auto bytes = reflectionProbe->CaptureUniformData();
+                std::memcpy(&binding.constants,bytes.data(),bytes.size());
+                m_collector.SetReflection(binding);
 
-				m_renderer.GetFeature<OvEditor::Rendering::DebugModelRenderFeature>()
+				m_collector
 					.DrawModelWithRetainedTextures(p_pso, model, m_reflectiveMaterial, modelMatrix, {reflectionProbe->GetCubemap()});
 			}
 		}
 
-		if (lightingRenderFeature)
-		{
-			// Bind back the original light buffer
-			lightingRenderFeature->Bind();
-		}
+		m_collector.SetLights({});
 	}
 
 private:
+    OvCore::Rendering::ToolDrawCollector& m_collector;
 	OvCore::Resources::Material m_reflectiveMaterial;
-	std::shared_ptr<baregl::Buffer> m_fakeLightsBuffer;
+	std::vector<OvMaths::FMatrix4> m_fakeLights;
 };
 
-class DebugLightsRenderPass : public OvRendering::Core::ARenderPass
+class DebugLightsCollector
 {
 public:
-	bool SupportsCommandRecording() const override { return typeid(*this) == typeid(DebugLightsRenderPass); }
-	DebugLightsRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) : OvRendering::Core::ARenderPass(p_renderer)
+	DebugLightsCollector(OvCore::Rendering::ToolDrawCollector& p_collector) : m_collector(p_collector)
 	{
 		m_lightMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Billboard"));
 		m_lightMaterial.SetProperty("u_Diffuse", FVector4{ 1.f, 1.f, 0.5f, 0.5f });
@@ -265,17 +218,16 @@ public:
 		m_lightMaterial.SetDepthTest(false);
 	}
 
-protected:
-	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
+public:
+	void Draw(OvRendering::Data::PipelineState p_pso, OvCore::SceneSystem::Scene& scene)
 	{
 		ZoneScoped;
-		OV_GPU_ZONE(m_renderer, "DebugLightsRenderPass");
+		OV_GPU_ZONE(m_collector, "DebugLightsCollector");
 
-		auto& sceneDescriptor = m_renderer.GetDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>();
 
 		m_lightMaterial.SetProperty("u_Scale", OvEditor::Settings::EditorSettings::LightBillboardScale * 0.1f);
 
-		for (auto light : sceneDescriptor.scene.GetFastAccessComponents().lights)
+		for (auto light : scene.GetFastAccessComponents().lights)
 		{
 			auto& actor = light->owner;
 
@@ -295,38 +247,38 @@ protected:
 				m_lightMaterial.SetProperty("u_DiffuseMap", lightTexture);
 				m_lightMaterial.SetProperty("u_Diffuse", OvMaths::FVector4(lightColor.x, lightColor.y, lightColor.z, 0.75f));
 
-				m_renderer.GetFeature<OvEditor::Rendering::DebugModelRenderFeature>()
+				m_collector
 					.DrawModelWithSingleMaterial(p_pso, model, m_lightMaterial, modelMatrix);
 			}
 		}
 	}
 
 private:
+    OvCore::Rendering::ToolDrawCollector& m_collector;
 	OvCore::Resources::Material m_lightMaterial;
 };
 
-class DebugActorRenderPass : public OvRendering::Core::ARenderPass
+class DebugActorCollector
 {
 public:
-	bool SupportsCommandRecording() const override { return typeid(*this) == typeid(DebugActorRenderPass); }
-	DebugActorRenderPass(OvRendering::Core::CompositeRenderer& p_renderer) : OvRendering::Core::ARenderPass(p_renderer),
-		m_debugShapeFeature(m_renderer.GetFeature<OvRendering::Features::DebugShapeRenderFeature>())
-	{
-		
-	}
+	DebugActorCollector(OvCore::Rendering::ToolDrawCollector& collector, DebugShapeCollector& shapes, OutlineCollector& outline, GizmoCollector& gizmo) : m_collector(collector), m_debugShapeFeature(shapes), m_outline(outline), m_gizmo(gizmo) {}
 
-protected:
-	OvRendering::Features::DebugShapeRenderFeature& m_debugShapeFeature;
+public:
+	OvCore::Rendering::ToolDrawCollector& m_collector;
+    DebugShapeCollector& m_debugShapeFeature;
+    OutlineCollector& m_outline;
+    GizmoCollector& m_gizmo;
+    std::pair<uint16_t,uint16_t> m_gameViewSize{16,9};
 
-	virtual void Draw(OvRendering::Data::PipelineState p_pso) override
+	void Draw(OvRendering::Data::PipelineState p_pso, const CollectedSelection& debugSceneDescriptor, std::pair<uint16_t,uint16_t> gameViewSize)
 	{
-		ZoneScoped;
-		OV_GPU_ZONE(m_renderer, "DebugActorRenderPass");
+		m_gameViewSize = gameViewSize;
+        ZoneScoped;
+		OV_GPU_ZONE(m_collector, "DebugActorCollector");
 
 		// Clear stencil buffer for outline rendering
-		m_renderer.Clear(false, false, true);
+		m_collector.Clear(false, false, true);
 
-		auto& debugSceneDescriptor = m_renderer.GetDescriptor<OvEditor::Rendering::DebugSceneRenderer::DebugSceneDescriptor>();
 
 		if (debugSceneDescriptor.selectedActor)
 		{
@@ -334,15 +286,15 @@ protected:
 			const bool isActorHovered = debugSceneDescriptor.highlightedActor && debugSceneDescriptor.highlightedActor->GetID() == selectedActor.GetID();
 
 			DrawActorDebugElements(selectedActor);
-			m_renderer.GetFeature<OvEditor::Rendering::OutlineRenderFeature>().DrawOutline(
+			m_outline.DrawOutline(
 				selectedActor,
 				isActorHovered ?
 				kHoveredOutlineColor :
 				kSelectedOutlineColor,
 				kSelectedOutlineWidth
 			);
-			m_renderer.Clear(false, true, false, OvMaths::FVector3::Zero);
-			m_renderer.GetFeature<OvEditor::Rendering::GizmoRenderFeature>().DrawGizmo(
+			m_collector.Clear(false, true, false);
+			m_gizmo.DrawGizmo(
 				selectedActor.transform.GetWorldPosition(),
 				selectedActor.transform.GetWorldRotation(),
 				debugSceneDescriptor.gizmoOperation,
@@ -350,7 +302,7 @@ protected:
 				debugSceneDescriptor.highlightedGizmoDirection
 			);
 		}
-		
+
 		if (debugSceneDescriptor.highlightedActor)
 		{
 			auto& highlightedActor = debugSceneDescriptor.highlightedActor.value();
@@ -358,7 +310,7 @@ protected:
 			// Render the outline only if the actor is not already selected (as its outline render should have been handled already).
 			if (!debugSceneDescriptor.selectedActor || highlightedActor.GetID() != debugSceneDescriptor.selectedActor->GetID())
 			{
-				m_renderer.GetFeature<OvEditor::Rendering::OutlineRenderFeature>().DrawOutline(highlightedActor, kHoveredOutlineColor, kHoveredOutlineWidth);
+				m_outline.DrawOutline(highlightedActor, kHoveredOutlineColor, kHoveredOutlineWidth);
 			}
 		}
 	}
@@ -440,7 +392,7 @@ protected:
 		const OvMaths::FVector3& h
 	)
 	{
-		auto pso = m_renderer.CreatePipelineState();
+		auto pso = m_collector.CreatePipelineState();
 
 		// Convenient lambda to draw a frustum line
 		auto draw = [&](const FVector3& p_start, const FVector3& p_end, const float planeDistance) {
@@ -534,8 +486,7 @@ protected:
 
 	void DrawCameraFrustum(OvCore::ECS::Components::CCamera& p_camera)
 	{
-		auto& gameView = EDITOR_PANEL(OvEditor::Panels::GameView, "Game View");
-		auto gameViewSize = gameView.GetSafeSize();
+		auto gameViewSize = m_gameViewSize;
 
 		if (gameViewSize.first == 0 || gameViewSize.second == 0)
 		{
@@ -556,7 +507,7 @@ protected:
 
 	void DrawReflectionProbeInfluenceVolume(OvCore::ECS::Components::CReflectionProbe& p_reflectionProbe)
 	{
-		auto pso = m_renderer.CreatePipelineState();
+		auto pso = m_collector.CreatePipelineState();
 		pso.depthTest = false;
 		const auto& size = p_reflectionProbe.GetInfluenceSize();
 		const auto position = p_reflectionProbe.owner.transform.GetWorldPosition();
@@ -576,7 +527,7 @@ protected:
 		using namespace OvCore::ECS::Components;
 		using namespace OvPhysics::Entities;
 
-		auto pso = m_renderer.CreatePipelineState();
+		auto pso = m_collector.CreatePipelineState();
 		pso.depthTest = false;
 
 		/* Draw the box collider if any */
@@ -632,7 +583,7 @@ protected:
 
 	void DrawLightBounds(OvCore::ECS::Components::CLight& p_light)
 	{
-		auto pso = m_renderer.CreatePipelineState();
+		auto pso = m_collector.CreatePipelineState();
 		pso.depthTest = false;
 
 		auto& data = p_light.GetData();
@@ -650,7 +601,7 @@ protected:
 
 	void DrawAmbientBoxVolume(OvCore::ECS::Components::CAmbientBoxLight& p_ambientBoxLight)
 	{
-		auto pso = m_renderer.CreatePipelineState();
+		auto pso = m_collector.CreatePipelineState();
 		pso.depthTest = false;
 
 		auto& data = p_ambientBoxLight.GetData();
@@ -668,7 +619,7 @@ protected:
 
 	void DrawAmbientSphereVolume(OvCore::ECS::Components::CAmbientSphereLight& p_ambientSphereLight)
 	{
-		auto pso = m_renderer.CreatePipelineState();
+		auto pso = m_collector.CreatePipelineState();
 		pso.depthTest = false;
 
 		auto& data = p_ambientSphereLight.GetData();
@@ -690,10 +641,10 @@ protected:
 		using namespace OvPhysics::Entities;
 		using enum OvCore::ECS::Components::CModelRenderer::EFrustumBehaviour;
 
-		auto pso = m_renderer.CreatePipelineState();
+		auto pso = m_collector.CreatePipelineState();
 
 		const auto frustumBehaviour = p_modelRenderer.GetFrustumBehaviour();
-		
+
 		if (frustumBehaviour == DISABLED)
 		{
 			return; // No bounds to draw
@@ -753,24 +704,65 @@ protected:
 	}
 };
 
-OvEditor::Rendering::DebugSceneRenderer::DebugSceneRenderer(OvRendering::Context::Driver& p_driver) :
-	OvCore::Rendering::SceneRenderer(p_driver, true /* enable stencil write, required by the grid */)
+
+struct OvEditor::Rendering::EditorOverlayCollector::Impl
 {
-	using namespace OvRendering::Features;
-	using namespace OvEditor::Rendering;
-	using namespace OvRendering::Settings;
-	using enum OvRendering::Features::EFeatureExecutionPolicy;
+    OvCore::Rendering::ToolDrawCollector tools;
+    DebugShapeCollector shapes{tools};
+    OutlineCollector outline{tools};
+    GizmoCollector gizmo{tools};
+    DebugCamerasCollector cameras{tools};
+    DebugReflectionProbesCollector probes{tools};
+    DebugLightsCollector lights{tools};
+    DebugActorCollector actor{tools,shapes,outline,gizmo};
+    OvRendering::Data::Material gridMaterial;
+    Impl()
+    {
+        gridMaterial.SetShader(EDITOR_CONTEXT(editorResources)->GetShader("Grid"));
+        gridMaterial.SetBlendable(true);gridMaterial.SetBackfaceCulling(false);
+        gridMaterial.SetDepthWriting(false);gridMaterial.SetDepthTest(true);
+    }
+    void Grid(const EditorOverlayRequest& request,const OvRendering::Data::RenderView& view)
+    {
+        const auto pso=tools.CreatePipelineState();
+	constexpr float gridSize = 5000.0f;
 
-	AddFeature<FrameInfoRenderFeature, ALWAYS>();
-	AddFeature<DebugShapeRenderFeature, FRAME_EVENTS_ONLY>();
-	AddFeature<DebugModelRenderFeature, NEVER>();
-	AddFeature<OutlineRenderFeature, NEVER>();
-	AddFeature<GizmoRenderFeature, NEVER>();
+	OvMaths::FMatrix4 model =
+		OvMaths::FMatrix4::Translation({ view.input.position.x, 0.0f, view.input.position.z }) *
+		OvMaths::FMatrix4::Scaling({ gridSize * 2.0f, 1.f, gridSize * 2.0f });
 
-	AddPass<GridRenderPass>("Grid", ERenderPassOrder::Debug);
-	AddPass<DebugCamerasRenderPass>("Debug Cameras", ERenderPassOrder::Debug);
-	AddPass<DebugReflectionProbesRenderPass>("Debug Reflection Probes", ERenderPassOrder::Debug);
-	AddPass<DebugLightsRenderPass>("Debug Lights", ERenderPassOrder::Debug);
-	AddPass<DebugActorRenderPass>("Debug Actor", ERenderPassOrder::Debug);
-	AddPass<PickingRenderPass>("Picking", ERenderPassOrder::Debug);
+	gridMaterial.SetProperty("u_Color", request.gridColor);
+
+	tools
+		.DrawModelWithSingleMaterial(pso, *EDITOR_CONTEXT(editorResources)->GetModel("Plane"), gridMaterial, model);
+
+	constexpr float kLineWidth = 1.0f;
+
+	shapes.DrawLine(pso, OvMaths::FVector3(-gridSize + view.input.position.x, 0.0f, 0.0f), OvMaths::FVector3(gridSize + view.input.position.x, 0.0f, 0.0f), OvMaths::FVector3::Right, kLineWidth);
+	shapes.DrawLine(pso, OvMaths::FVector3(0.0f, -gridSize + view.input.position.y, 0.0f), OvMaths::FVector3(0.0f, gridSize + view.input.position.y, 0.0f), OvMaths::FVector3::Up, kLineWidth);
+	shapes.DrawLine(pso, OvMaths::FVector3(0.0f, 0.0f, -gridSize + view.input.position.z), OvMaths::FVector3(0.0f, 0.0f, gridSize + view.input.position.z), OvMaths::FVector3::Forward, kLineWidth);
+
+    }
+};
+OvEditor::Rendering::EditorOverlayCollector::EditorOverlayCollector() : m_impl(std::make_unique<Impl>()) {}
+OvEditor::Rendering::EditorOverlayCollector::~EditorOverlayCollector() = default;
+OvRendering::Data::RenderCommandList OvEditor::Rendering::EditorOverlayCollector::Extract(
+    OvCore::SceneSystem::Scene& scene,const EditorOverlayRequest& request,const OvRendering::Data::RenderView& view,
+    OvRendering::Data::PipelineState state,baregl::Framebuffer::Snapshot target)
+{
+    if(request.scene != scene.GetLifetimeToken())throw std::invalid_argument("Overlay request belongs to another scene");
+    auto& impl=*m_impl;
+    impl.tools.Begin(view,state,target);impl.shapes.Begin(view);
+    if(request.grid)impl.Grid(request,view);
+    if(request.debugObjects)
+    {
+        impl.cameras.Draw(state,scene);impl.probes.Draw(state,scene);impl.lights.Draw(state,scene);
+        CollectedSelection selection{request.operation,std::nullopt,std::nullopt,request.highlightedDirection};
+        if(auto* actor=scene.FindActorByGUID(request.highlighted))selection.highlightedActor=*actor;
+        if(auto* actor=scene.FindActorByGUID(request.selected))selection.selectedActor=*actor;
+        impl.actor.Draw(state,selection,request.gameViewSize);
+    }
+    return impl.tools.Finish();
 }
+
+const OvRendering::Data::FrameInfo& OvEditor::Rendering::EditorOverlayCollector::GetFrameInfo() const { return m_impl->tools.GetFrameInfo(); }

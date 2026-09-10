@@ -13,6 +13,7 @@
 #include <OvDebug/Logger.h>
 
 #include <OvGame/Core/Context.h>
+#include <OvRendering/Context/Driver.h>
 #include <OvTools/Utils/PathParser.h>
 
 using namespace OvCore::Global;

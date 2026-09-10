@@ -16,7 +16,7 @@ void TinyViewValidation(const std::filesystem::path& project)
         for(const auto [w,h]:sizes)
         {
             fixture.views[0]->SetSize({float(w),float(h)+ImGui::GetFrameHeight()});
-            editor.Update(0);auto target=fixture.views[0]->m_framebuffer.RecordTarget();
+            editor.Update(0);auto target=fixture.views[0]->GetOutputTarget();
             Require(target.GetSize()==std::pair{w,h},"tiny view did not exercise requested dimensions");
             editor.PostUpdate();editor.DrainRenderFrames();
             std::vector<uint8_t> pixels(size_t(w)*h*4);OnOwner(context,[&](auto&){target.ReadRGBA8(pixels);Require(glGetError()==GL_NO_ERROR,"tiny Bloom GL error");});

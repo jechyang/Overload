@@ -4,7 +4,13 @@
 #undef main
 #include <OvCore/Rendering/RenderFrontend.h>
 #include <OvCore/Rendering/EngineBufferRenderFeature.h>
+#include <OvCore/ECS/Components/CPostProcessStack.h>
 #include <set>
+#ifdef A5_POSTPROCESS
+constexpr size_t extraViews = 1;
+#else
+constexpr size_t extraViews = 0;
+#endif
 #include <condition_variable>
 #include <mutex>
 #include <future>
@@ -83,6 +89,20 @@ void AuxiliaryValidation(const std::filesystem::path& dir, unsigned mode)
     OvCore::Resources::Material transparent;transparent.SetShader(fallbackShader);transparent.SetBlendable(true);transparent.SetDepthWriting(false);
     transparent.SetProperty("u_Albedo",FVector4{.2f,.7f,.8f,.45f});
     Scene scene(assets,assets);auto& skin=Add(scene,model);skin.SetAnimation(std::optional<uint32_t>{0u});
+#ifdef A5_POSTPROCESS
+    auto& postSettings = scene.CreateActor("post process").AddComponent<CPostProcessStack>();
+    auto exposure = postSettings.GetAutoExposureSettings(); exposure.progressive = false;
+    postSettings.SetAutoExposureSettings(exposure);
+    OvCore::Resources::Material uiMaterial;
+    uiMaterial.SetShader(shaders.GetResource(":Shaders/Unlit.ovfx"));
+    uiMaterial.SetUserInterface(true);uiMaterial.SetBlendable(true);uiMaterial.SetDepthWriting(false);uiMaterial.SetDepthTest(false);
+    uiMaterial.SetProperty("u_Diffuse",FVector4{.9f,.15f,.4f,.6f});
+    auto& uiActor=scene.CreateActor("scene UI after effects");
+    uiActor.AddComponent<CModelRenderer>().SetModel(model);
+    uiActor.AddComponent<CMaterialRenderer>().FillWithMaterial(uiMaterial);
+    uiActor.transform.SetLocalScale(FVector3{.25f,.25f,.25f});
+    uiActor.transform.SetLocalPosition(bounds.position+FVector3{bounds.radius*.5f,0,bounds.radius});
+#endif
     skin.owner.AddComponent<CMaterialRenderer>().FillWithMaterial(material);
     skin.owner.GetComponent<CModelRenderer>()->SetFrustumBehaviour(CModelRenderer::EFrustumBehaviour::DISABLED);
     auto& ghost=Add(scene,model);ghost.SetAnimation(std::optional<uint32_t>{0u});
@@ -104,14 +124,22 @@ void AuxiliaryValidation(const std::filesystem::path& dir, unsigned mode)
     camera.SetFar(1000);camera.SetClearColor({.15f,.2f,.3f});camera.CacheMatrices(96,64);
     baregl::Framebuffer target;FramebufferUtil::SetupFramebuffer(target,96,64,true,true,false);
     SceneRenderer legacy(driver);legacy.SetDrawRecordingEnabled(mode!=4);RenderFrontend frontend;
+    PostProcess::PostProcessPipeline postProcess;
+    const auto extract = [&](const SceneRenderRequest& main, bool shadows=true, bool reflections=true) {
+        SceneFrameRequest request{main,target.RecordTarget(),fallback,shadows,reflections};
+#ifdef A5_POSTPROCESS
+        request.postProcess=&postProcess;request.postProcessTarget=&target;request.postProcessState=driver.CreatePipelineState();
+#endif
+        return frontend.ExtractFrame(request);
+    };
     // Fixed neutral input for the legacy path's unused reflection block before capture.
     baregl::Buffer neutral;Data::ReflectionConstants constants;neutral.Allocate(sizeof(constants),baregl::types::EAccessSpecifier::STREAM_DRAW);neutral.Upload(&constants);
     std::ofstream images(dir/"frames.bin",std::ios::binary), cubes(dir/"cubes.bin",std::ios::binary), shadows(dir/"shadows.bin",std::ios::binary);
     const auto record = [&](unsigned index) {
         SceneRenderRequest main{{scene,camera,96,64,7,9,float(index)*.125f}};
-        auto frame=frontend.ExtractFrame({main,target.RecordTarget(),fallback});
-        if(index==0) { Require(frame->GetViews().size()==8,"first capture must initialize six faces");ValidatePlanFailures(*frame); }
-        else Require(frame->GetViews().size()==(index>=7?4:3),"progressive capture changed faces per frame");
+        auto frame=extract(main);
+        if(index==0) { Require(frame->GetViews().size()==8+extraViews,"first capture must initialize six faces");ValidatePlanFailures(*frame); }
+        else Require(frame->GetViews().size()==(index>=7?4:3)+extraViews,"progressive capture changed faces per frame");
         frame=frontend.PrepareFrame(std::move(frame),driver.CreatePipelineState(),mode==1?nullptr:&jobs);
         size_t shadowIndex=0;
         for(const auto& view:frame->GetPreparedViews())if(view->GetScene().GetPipeline().stages==std::vector{Data::RenderStage::ShadowCaster})
@@ -174,8 +202,8 @@ void AuxiliaryValidation(const std::filesystem::path& dir, unsigned mode)
         probe.SetRefreshMode(CReflectionProbe::ERefreshMode::ON_DEMAND);
         const auto capture=[&](const std::atomic_bool* cancel=nullptr) {
             SceneRenderRequest main{{scene,camera,96,64,7,9,0}};
-            auto frame=frontend.ExtractFrame({main,target.RecordTarget(),fallback});
-            Require(frame->GetViews().size()==8,"failed history did not rebuild all faces");
+            auto frame=extract(main);
+            Require(frame->GetViews().size()==8+extraViews,"failed history did not rebuild all faces");
             return frame;
         };
         probe.RequestCapture(true);
@@ -240,13 +268,16 @@ void AuxiliaryValidation(const std::filesystem::path& dir, unsigned mode)
         Require(recoveredImage==reference,"GPU failure recovery changed image");
         {
             SceneRenderRequest main{{scene,camera,96,64,7,9,0}};
-            auto disabled=frontend.ExtractFrame({main,target.RecordTarget(),fallback,false,false});
-            Require(disabled->GetViews().size()==1,"disabled producers still submitted auxiliary views");
+            auto disabled=extract(main,false,false);
+            Require(disabled->GetViews().size()==1+extraViews,"disabled producers still submitted auxiliary views");
             auto disabledCommands=frontend.RecordFrame(frontend.PrepareFrame(std::move(disabled),driver.CreatePipelineState(),&jobs),&jobs);
             disabledCommands.Execute(driver);
         }
         // Retained target generations and all view inputs survive source mutations/destruction.
         probe.RequestCapture(true);auto detached=capture();const auto retainedTarget=target.RecordTarget();
+#ifdef A5_POSTPROCESS
+        scene.DestroyActor(postSettings.owner);scene.DestroyActor(uiActor);
+#endif
         target.Resize(80,48);probe.SetCubemapResolution(32);material.SetProperty("u_EmissiveIntensity",5.0f);
         scene.DestroyActor(skin.owner);scene.DestroyActor(ghost.owner);scene.DestroyActor(light.owner);scene.DestroyActor(secondLight.owner);scene.DestroyActor(probe.owner);
         auto owned=frontend.RecordFrame(frontend.PrepareFrame(std::move(detached),driver.CreatePipelineState(),&jobs),&jobs);owned.Execute(driver);

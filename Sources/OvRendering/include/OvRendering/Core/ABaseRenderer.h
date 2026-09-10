@@ -182,6 +182,8 @@ namespace OvRendering::Core
         bool UseRenderHistory(Data::RenderCommandList::History& p_history)
         { return m_commands ? m_commands->UseHistory(p_history) : p_history.PrepareImmediate(); }
 		void SubmitRenderOperation(Data::RenderCommandList::Operation p_operation);
+        // Temporary A5 bridge for callers removed in A6. Child history shares parent failure.
+        void SubmitCommandList(Data::RenderCommandList commands);
 		static void ExecutePassState(Context::Driver& p_driver, const PassStateCommand& p_command);
 
 		struct RetainedTexturesDescriptor

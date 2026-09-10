@@ -39,7 +39,7 @@ namespace OvCore::Rendering::PostProcess
 		* Constructor of the BloomEffect class
 		* @param p_renderer
 		*/
-		BloomEffect(OvRendering::Core::CompositeRenderer& p_renderer);
+		BloomEffect();
 
 		/**
 		* Returns true if the effect is applicable with the given settings.
@@ -57,6 +57,7 @@ namespace OvCore::Rendering::PostProcess
 		* @param p_settings
 		*/
 		virtual void Draw(
+            OvRendering::Core::FullscreenCommandRecorder& recorder,
 			OvRendering::Data::PipelineState p_pso,
 			baregl::Framebuffer& p_src,
 			baregl::Framebuffer& p_dst,

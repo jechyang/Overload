@@ -120,6 +120,8 @@ namespace baregl
 		{
 		public:
 			Snapshot() = default;
+            // CPU-side generation identity; comparing outputs must not realize a GL target.
+            bool operator==(const Snapshot& other) const { return m_data == other.m_data; }
 			void Bind() const;
 			// GL owner or bound ResourceExecutor. Tightly packed full image; restores read target and pack state.
 			void ReadRGBA8(std::span<uint8_t> p_pixels) const;

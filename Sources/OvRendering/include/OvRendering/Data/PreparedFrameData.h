@@ -53,6 +53,7 @@ namespace OvRendering::Data
         OvMaths::FMatrix4 model, user;
         std::optional<Geometry::BoundingSphere> worldBounds;
         RenderStage stage = RenderStage::Opaque;
+        RenderStage sourceStage = RenderStage::Opaque;
         StateMask state;
         uint32_t instances = 1;
         bool transparent = false;

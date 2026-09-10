@@ -47,8 +47,7 @@ namespace
 	};
 }
 
-OvCore::Rendering::PostProcess::BloomEffect::BloomEffect(OvRendering::Core::CompositeRenderer& p_renderer) :
-	AEffect(p_renderer),
+OvCore::Rendering::PostProcess::BloomEffect::BloomEffect() :
 	m_bloomSamplingBuffers{
 		baregl::Framebuffer{"BloomSamplingBuffer0"},
 		baregl::Framebuffer{"BloomSamplingBuffer1"},
@@ -100,6 +99,7 @@ bool OvCore::Rendering::PostProcess::BloomEffect::IsApplicable(const EffectSetti
 }
 
 void OvCore::Rendering::PostProcess::BloomEffect::Draw(
+    OvRendering::Core::FullscreenCommandRecorder& recorder,
 	OvRendering::Data::PipelineState p_pso,
 	baregl::Framebuffer& p_src,
 	baregl::Framebuffer& p_dst,
@@ -107,7 +107,7 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 )
 {
 	ZoneScoped;
-	OV_GPU_ZONE(m_renderer, "BloomEffect");
+	OV_GPU_ZONE(recorder, "BloomEffect");
 
 	using enum OvRendering::Settings::EBlitFlags;
 
@@ -141,7 +141,7 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 
 	// First we want to copy the input image to another buffer to avoid modifying the original image.
 	// This could also be made into a filtering pass, so we can exclude low luminance pixels.
-	m_renderer.Blit(p_pso, p_src, m_bloomOutputBuffer, m_blitMaterial);
+	recorder.Blit(p_pso, p_src, m_bloomOutputBuffer, m_blitMaterial);
 
 	auto downsamplingPass = [&](
 		baregl::Framebuffer& p_src,
@@ -149,7 +149,7 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 		const OvMaths::FVector2& p_srcRes 
 	) {
 		m_downsamplingMaterial.SetProperty("_InputResolution", p_srcRes, true);
-		m_renderer.Blit(p_pso, p_src, p_dst, m_downsamplingMaterial, DEFAULT & ~RESIZE_DST_TO_MATCH_SRC);
+		recorder.Blit(p_pso, p_src, p_dst, m_downsamplingMaterial, DEFAULT & ~RESIZE_DST_TO_MATCH_SRC);
 	};
 
 	// First downsample pass, using karis average filter
@@ -186,7 +186,7 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 		baregl::Framebuffer& p_src,
 		baregl::Framebuffer& p_dst
 	) {
-		m_renderer.Blit(upsamplingPSO, p_src, p_dst, m_upsamplingMaterial, (DEFAULT & ~RESIZE_DST_TO_MATCH_SRC) | USE_MATERIAL_STATE_MASK);
+		recorder.Blit(upsamplingPSO, p_src, p_dst, m_upsamplingMaterial, (DEFAULT & ~RESIZE_DST_TO_MATCH_SRC) | USE_MATERIAL_STATE_MASK);
 	};
 
 	// Blur and upsample back to the original resolution
@@ -202,5 +202,5 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 	m_bloomMaterial.SetProperty("_BloomTexture", &bloomTex.value().get());
 	m_bloomMaterial.SetProperty("_BloomStrength", std::min(bloomSettings.intensity * 0.04f, 1.0f));
 	const std::array bloomOwners{m_bloomOutputBuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)};
-	m_renderer.BlitWithRetainedTextures(p_pso, p_src, p_dst, m_bloomMaterial, DEFAULT, bloomOwners);
+	recorder.BlitWithRetainedTextures(p_pso, p_src, p_dst, m_bloomMaterial, DEFAULT, bloomOwners);
 }

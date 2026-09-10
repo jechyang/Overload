@@ -17,41 +17,44 @@ using namespace OvRendering;
 
 std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor::Extract(
     const StaticOpaqueRequest& p_request,
-    const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black)
+    const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black, Core::MeshCommandRecorder::ProgramCache* programs)
 {
     SceneRenderRequest request{p_request};
     request.pipeline.stages = {Data::RenderStage::Opaque};
-    return ExtractImpl(request, true, p_white, p_black);
+    return ExtractImpl(request, true, p_white, p_black, false, {}, nullptr, nullptr, programs);
 }
 
 std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor::ExtractScene(
     const SceneRenderRequest& p_request,
-    const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black)
+    const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black, Core::MeshCommandRecorder::ProgramCache* programs)
 {
-    return ExtractImpl(p_request, false, p_white, p_black);
+    return ExtractImpl(p_request, false, p_white, p_black, p_request.pipeline.stages == std::vector{Data::RenderStage::Picking}, {}, nullptr, nullptr, programs);
 }
 
 std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor::ExtractImpl(
     const SceneRenderRequest& p_request, bool p_opaqueOnly,
-    const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black, bool p_planned, std::span<const Data::ReflectionProbeInput> p_probes, MaterialCache* p_cache, const Data::RenderViewInput* p_lightView)
+    const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black, bool p_planned, std::span<const Data::ReflectionProbeInput> p_probes, MaterialCache* p_cache, const Data::RenderViewInput* p_lightView, Core::MeshCommandRecorder::ProgramCache* programs)
 {
     p_request.pipeline.Validate();
+    const bool picking = p_request.pipeline.stages == std::vector{Data::RenderStage::Picking};
+    if (picking && !p_request.pickingFallback) throw std::invalid_argument("Picking requires its explicit fallback provider");
     const bool shadow = p_request.pipeline.stages == std::vector{Data::RenderStage::ShadowCaster};
     const bool capture = p_request.pipeline.stages == std::vector{Data::RenderStage::ReflectionCapture};
     for (auto stage : p_request.pipeline.stages)
-        if ((stage == Data::RenderStage::ShadowCaster || stage == Data::RenderStage::ReflectionCapture) && !shadow && !capture)
+        if ((stage == Data::RenderStage::ShadowCaster || stage == Data::RenderStage::ReflectionCapture || stage == Data::RenderStage::Picking) && !shadow && !capture && !picking)
             throw std::invalid_argument("Auxiliary stages require an exclusive view");
     const auto& components = p_request.scene.GetFastAccessComponents();
     const auto anyActive = [](const auto& list) {
         return std::any_of(list.begin(), list.end(), [](const auto* c) { return c->owner.IsActive(); });
     };
-    if ((p_opaqueOnly && anyActive(components.lights)) || (!p_planned && anyActive(components.reflectionProbes)) || anyActive(components.postProcessStacks))
+    if ((p_opaqueOnly && anyActive(components.lights)) || (!p_planned && anyActive(components.reflectionProbes)) || (!p_planned && anyActive(components.postProcessStacks)))
         throw std::invalid_argument("Static scene view does not own lighting, reflection or post-processing");
     auto builder = std::unique_ptr<Data::RenderSceneSnapshot>(new Data::RenderSceneSnapshot);
     builder->m_pipeline = p_request.pipeline;
     auto& view = builder->m_view;
     view = CaptureView(p_request);
-    if (shadow || capture) { view.clearColor = true; view.clearDepth = true; view.clearStencil = true; view.clearValue = {}; }
+    if (p_request.preserveOutput) view.clearColor = view.clearDepth = view.clearStencil = false;
+    if (shadow || capture || picking) { view.clearColor = true; view.clearDepth = true; view.clearStencil = true; view.clearValue = {}; }
     if (shadow)
     {
         view.cullGeometry = false; view.frustumOverride.reset();
@@ -91,7 +94,8 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     if (p_request.reflection.map) receiverTextures.push_back(p_request.reflection.map);
     for (const auto& probe : p_probes) if (probe.receiver.map) receiverTextures.push_back(probe.receiver.map);
     uint64_t ordinal = 0;
-    std::unordered_map<const baregl::ShaderProgram*, bool> validatedPrograms;
+    Core::MeshCommandRecorder::ProgramCache localPrograms;
+    auto& programCache=programs?*programs:localPrograms;
     for (const auto* renderer : components.modelRenderers)
     {
         const auto& owner = renderer->owner;
@@ -122,14 +126,22 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
             if (capture && (material->IsUserInterface() || !material->IsCapturedByReflectionProbes())) continue;
             const auto category = material->IsUserInterface() ? Data::RenderStage::SceneUI :
                 material->IsBlendable() ? Data::RenderStage::Transparent : Data::RenderStage::Opaque;
-            const auto stage = shadow ? Data::RenderStage::ShadowCaster : capture ? Data::RenderStage::ReflectionCapture : category;
+            auto* sortingMaterial = material;
+            const auto stage = picking ? Data::RenderStage::Picking : shadow ? Data::RenderStage::ShadowCaster : capture ? Data::RenderStage::ReflectionCapture : category;
             if (!shadow && material != p_request.fallbackMaterial &&
-                ((stage == Data::RenderStage::SceneUI && !p_request.includeUI) ||
-                 (stage == Data::RenderStage::Transparent && !p_request.includeTransparent) ||
-                 (stage == Data::RenderStage::Opaque && !p_request.includeOpaque))) continue;
+                ((category == Data::RenderStage::SceneUI && !p_request.includeUI) ||
+                 (category == Data::RenderStage::Transparent && !p_request.includeTransparent) ||
+                 (category == Data::RenderStage::Opaque && !p_request.includeOpaque))) continue;
             if (std::find(p_request.pipeline.stages.begin(), p_request.pipeline.stages.end(), stage) == p_request.pipeline.stages.end()) continue;
             const auto description = Data::DescribeStage(stage);
             if ((!shadow && !material->SupportsProjectionMode(view.projectionMode)) || material->GetGPUInstances() <= 0) continue;
+            const bool pickingSkinned = picking && hasSkin && mesh->HasSkinningData() && originalSkinning;
+            if (picking)
+            {
+                material = !pickingSkinned && material->HasPass("PICKING_PASS") ? material : p_request.pickingFallback;
+                if (!material || !material->IsValid()) throw std::invalid_argument("Picking requires its fallback material");
+                if (!material->SupportsProjectionMode(view.projectionMode) || material->GetGPUInstances() <= 0) continue;
+            }
             if (typeid(*mesh) != typeid(OvRendering::Resources::Mesh))
                 throw std::invalid_argument("Scene requires standard retained geometry");
             if (p_opaqueOnly && (material->HasFeature("SKINNING") ||
@@ -144,16 +156,15 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
                 }
             std::optional<Data::FeatureSet> features;
             const bool hasPalette = hasSkin && (shadow || mesh->HasSkinningData());
-            if (hasPalette && (!shadow || originalSkinning) && material->SupportsFeature("SKINNING"))
+            if (hasPalette && (!picking || pickingSkinned) && (!shadow || originalSkinning) && material->SupportsFeature("SKINNING"))
                 features = Rendering::SkinningUtils::BuildFeatureSet(&material->GetFeatures());
             const auto featureRef = features ? OvTools::Utils::OptRef<const Data::FeatureSet>(*features) : std::nullopt;
-            auto& program = material->GetVariant(description.technique, featureRef).value();
-            if (!validatedPrograms.contains(&program))
-                validatedPrograms.emplace(&program, OvRendering::Core::MeshCommandRecorder::ValidateProgram(program));
+            const auto program=material->GetShader()->RetainVariant(description.technique,features?*features:material->GetFeatures());
+            const bool programSkinning=programCache.Validate(program);
             Data::MeshInput item;
-            item.stage = stage;
+            item.stage = stage; item.sourceStage = category;
             item.transparent = material->IsBlendable();
-            item.skinning.enabled = validatedPrograms.at(&program) || (features && features->contains("SKINNING")) || material->HasFeature("SKINNING");
+            item.skinning.enabled = programSkinning || (features && features->contains("SKINNING")) || material->HasFeature("SKINNING");
             if (item.skinning.enabled && hasPalette)
             {
                 item.skinning.poseVersion = skin->GetPoseVersion();
@@ -162,7 +173,7 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
             }
             auto reflection = p_request.reflection;
             item.actorId = owner.GetGUID(); item.collectionIndex = collection;
-            item.drawOrder = material->GetDrawOrder(); item.position = transform.GetWorldPosition();
+            item.drawOrder = sortingMaterial->GetDrawOrder(); item.position = transform.GetWorldPosition();
             item.model = transform.GetWorldMatrix(); item.user = materials->GetUserMatrix();
             if (description.reflectionReceiver && material->IsReflectionReceiver())
             {
@@ -196,6 +207,7 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
                 item.reflection = reflection.constants;
             }
             item.state = material->GenerateStateMask(); item.instances = static_cast<uint32_t>(material->GetGPUInstances());
+            if (picking) item.state.frontfaceCulling = item.state.backfaceCulling = false;
             if (shadow)
             {
                 item.state.blendable = false; item.state.depthTest = true;
@@ -226,6 +238,11 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
             // Capture without consumption; the ordered compatibility boundary below
             // alone owns source singleUse consumption. Overrides are separate owned values.
             Data::Material::PropertyOverrides overrides;
+            if (picking && material->HasProperty("_PickingColor"))
+            {
+                const auto id = static_cast<uint32_t>(owner.GetID());
+                overrides["_PickingColor"] = OvMaths::FVector4{float(id & 255)/255.0f,float((id>>8)&255)/255.0f,float((id>>16)&255)/255.0f,1};
+            }
             if (description.shadowReceiver && material->IsShadowReceiver() && p_request.shadow.map &&
                 material->HasProperty("_ShadowMap") && material->HasProperty("_LightSpaceMatrix"))
             {
@@ -238,7 +255,7 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
             overridesToResolve.push_back(std::move(overrides));
             materialsToResolve.push_back(material);
             featuresToResolve.push_back(std::move(features));
-            identities.push_back(reinterpret_cast<uintptr_t>(material));
+            identities.push_back(reinterpret_cast<uintptr_t>(sortingMaterial));
             builder->m_meshes.push_back(std::move(item));
         }
     }

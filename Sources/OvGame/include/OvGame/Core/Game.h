@@ -7,7 +7,8 @@
 #pragma once
 
 #include <OvCore/ECS/Components/CCamera.h>
-#include <OvCore/Rendering/SceneRenderer.h>
+#include <OvCore/Rendering/RenderFrontend.h>
+#include <OvRendering/Data/FrameInfo.h>
 
 #include <OvGame/Core/Context.h>
 
@@ -74,7 +75,12 @@ namespace OvGame::Core
 		OvGame::Core::Context& m_context;
 		OvUI::Modules::Canvas m_canvas;
 
-		OvCore::Rendering::SceneRenderer m_sceneRenderer;
+		OvCore::Rendering::RenderFrontend m_frontend;
+        OvCore::Rendering::PostProcess::PostProcessPipeline m_postProcess;
+        OvRendering::Data::Material m_shadowFallback;
+        OvRendering::Data::FrameInfo m_renderStats;
+        OvTools::Jobs::JobSystem* m_renderJobs = nullptr;
+        std::chrono::high_resolution_clock::time_point m_renderStart=std::chrono::high_resolution_clock::now();
 
 		/* Debug elements */
 		OvGame::Utils::FPSCounter	m_fpsCounter;

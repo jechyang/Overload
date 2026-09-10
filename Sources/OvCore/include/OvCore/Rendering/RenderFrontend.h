@@ -8,8 +8,7 @@
 
 namespace OvCore::Rendering
 {
-    // Thin application entry. The explicitly selected mesh pipeline is separate
-    // from still-unmigrated SceneRenderer callers, never a fallback after failure.
+    // Application entry: capture on the owner, then prepare and encode owned views.
     class RenderFrontend final
     {
     public:
@@ -33,5 +32,6 @@ namespace OvCore::Rendering
         void RequireOwner() const;
         std::thread::id m_owner = std::this_thread::get_id();
         OvRendering::Core::MeshCommandRecorder m_recorder;
+        mutable OvRendering::Core::MeshCommandRecorder::ProgramCache m_programs;
     };
 }

@@ -390,3 +390,10 @@ void OvRendering::Core::ABaseRenderer::SubmitRenderOperation(Data::RenderCommand
 
 OvRendering::Utils::GpuScope OvRendering::Core::ABaseRenderer::ProfileGpuScope(const tracy::SourceLocationData* p_source)
 { return Utils::GpuScope(m_commands.get(), p_source); }
+
+void OvRendering::Core::ABaseRenderer::SubmitCommandList(Data::RenderCommandList commands)
+{
+    m_previousMaterialSignature.reset();
+    if (m_commands) m_commands->Append(std::move(commands));
+    else commands.Execute(m_driver);
+}

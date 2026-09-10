@@ -13,13 +13,13 @@ void RenderFrontend::RequireOwner() const
 std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> RenderFrontend::ExtractScene(const SceneRenderRequest& p_request) const
 {
     RequireOwner();
-    return SceneRenderExtractor::ExtractScene(p_request, m_recorder.GetFallback2D(), m_recorder.GetFallbackCube());
+    return SceneRenderExtractor::ExtractScene(p_request, m_recorder.GetFallback2D(), m_recorder.GetFallbackCube(), &m_programs);
 }
 
 std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> RenderFrontend::Extract(const StaticOpaqueRequest& p_request) const
 {
     RequireOwner();
-    return SceneRenderExtractor::Extract(p_request, m_recorder.GetFallback2D(), m_recorder.GetFallbackCube());
+    return SceneRenderExtractor::Extract(p_request, m_recorder.GetFallback2D(), m_recorder.GetFallbackCube(), &m_programs);
 }
 
 std::shared_ptr<const OvRendering::Data::PreparedFrameData> RenderFrontend::Prepare(
@@ -41,7 +41,7 @@ OvRendering::Data::RenderCommandList RenderFrontend::Record(
 std::unique_ptr<SceneFrame> RenderFrontend::ExtractFrame(const SceneFrameRequest& request) const
 {
     RequireOwner();
-    return SceneFrameExtractor::Extract(request,m_recorder.GetFallback2D(),m_recorder.GetFallbackCube());
+    return SceneFrameExtractor::Extract(request,m_recorder.GetFallback2D(),m_recorder.GetFallbackCube(), &m_programs);
 }
 std::unique_ptr<SceneFrame> RenderFrontend::PrepareFrame(std::unique_ptr<SceneFrame> frame,
     OvRendering::Data::PipelineState state, OvTools::Jobs::JobSystem* jobs, const std::atomic_bool* cancel) const
@@ -50,6 +50,11 @@ std::unique_ptr<SceneFrame> RenderFrontend::PrepareFrame(std::unique_ptr<SceneFr
     if (!frame || !frame->m_prepared.empty()) throw std::invalid_argument("Frame missing or already prepared");
     frame->m_plan.Validate(frame->m_views);
     frame->m_prepared = OvRendering::Core::RenderTaskCoordinator::PrepareViews(frame->m_views,state,jobs,cancel);
+    for(const auto& prepared:frame->m_prepared)for(const auto& draw:prepared->GetDraws())
+    {
+        const auto& mesh=prepared->GetScene().GetMeshes()[draw.sourceIndex];
+        frame->m_info.Add(mesh.geometry->GetVertexCount(),mesh.geometry->GetIndexCount(),mesh.instances);
+    }
     return frame;
 }
 OvRendering::Data::RenderCommandList RenderFrontend::RecordFrame(std::unique_ptr<SceneFrame> frame,
@@ -64,6 +69,8 @@ OvRendering::Data::RenderCommandList RenderFrontend::RecordFrame(std::unique_ptr
     for (const auto& pass : frame->m_plan.passes)
     {
         frame->m_commands.Append(std::move(blocks[pass.view]));
+        if (frame->m_postProcessAfterView == pass.view)
+            frame->m_commands.Append(std::move(*frame->m_postProcessCommands));
         if (pass.generateMipmaps)
             frame->m_commands.Append([texture=pass.generateMipmaps](auto&) { texture->GenerateMipmaps(); });
     }

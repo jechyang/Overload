@@ -224,7 +224,7 @@ int EDITOR_THREAD_TEST_MAIN(int argc,char** argv) try
             editor.PreUpdate();editor.Update(.02f);
             const auto pose=SceneState(*context.sceneManager.GetCurrentScene());
             if(threaded)Require(pose==poses.at(i),"Editor threaded pose mismatch");else poses.push_back(pose);
-            targets.clear();for(auto* view:fixture.views)targets.push_back(view->m_framebuffer.RecordTarget());
+            targets.clear();for(auto* view:fixture.views)targets.push_back(view->GetOutputTarget());
             auto interaction=editor.m_recordedInteraction;auto done=editor.m_pendingFrame->GetCompletion();
             editor.PostUpdate();editor.DrainRenderFrames();
             Require(done.Succeeded()&&interaction&&interaction->consumed,"Editor successful frame lost interaction");
@@ -257,7 +257,7 @@ int EDITOR_THREAD_TEST_MAIN(int argc,char** argv) try
             ViewsFixture fixture(editor,context);OwnerChecks checks(context);
             for(int i=0;i<8;++i){editor.PreUpdate();editor.Update(.02f);submitted=editor.m_pendingFrame->GetCompletion();editor.PostUpdate();}
             editor.Update(.02f);abandoned=editor.m_pendingFrame->GetCompletion();
-            survivor=fixture.views[1]->m_framebuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)->RetainStorage();
+            survivor=fixture.views[1]->GetOutputTexture()->RetainStorage();
         }
         Require(submitted.Succeeded()&&abandoned.IsRetired()&&!abandoned.Succeeded()&&!survivor.GetID(),"Editor restart lost drain/cancel/resource invalidation");
         Require(!glfwGetCurrentContext(),"Editor exit left Main owning GL");

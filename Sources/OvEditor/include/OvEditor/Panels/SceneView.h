@@ -8,7 +8,7 @@
 
 #include <OvEditor/Core/GizmoBehaviour.h>
 #include <OvEditor/Panels/AViewControllable.h>
-#include <OvEditor/Rendering/PickingRenderPass.h>
+#include <OvEditor/Rendering/PickingReadback.h>
 #include <OvTools/Eventing/Event.h>
 
 namespace OvEditor::Panels
@@ -34,7 +34,7 @@ namespace OvEditor::Panels
         struct Interaction
         {
             OvRendering::Data::RenderCommandList::Completion completion;
-            std::shared_ptr<const Rendering::PickingRenderPass::Readback> readback;
+            std::shared_ptr<const Rendering::PickingReadback> readback;
             OvCore::SceneSystem::Scene::LifetimeToken scene;
             OvMaths::FVector2 mouse, size;
             OvMaths::FVector3 cameraPosition;
@@ -75,15 +75,16 @@ namespace OvEditor::Panels
 		Core::EGizmoOperation GetGizmoOperation() const;
 
 	protected:
-		virtual OvCore::Rendering::SceneRenderer::SceneDescriptor CreateSceneDescriptor() override;
+		OvCore::Rendering::SceneRenderRequest CreateSceneRequest() override;
+        Rendering::EditorOverlayRequest CreateOverlayRequest() override;
 
 	private:
-		virtual void DrawFrame() override;
+		void OnViewRecorded() override;
         std::shared_ptr<Interaction> CaptureInteraction();
-        void ApplyInteraction(const Interaction& input, Rendering::PickingRenderPass::PickingResult result);
-        void ApplyMaterialDrop(const std::string& path, Rendering::PickingRenderPass::PickingResult result);
+        void ApplyInteraction(const Interaction& input, Rendering::PickingResult result);
+        void ApplyMaterialDrop(const std::string& path, Rendering::PickingResult result);
 		void HandleActorPicking();
-		OvEditor::Rendering::PickingRenderPass::PickingResult GetPickingResult();
+		OvEditor::Rendering::PickingResult GetPickingResult();
 		void OnSceneDropped(const std::string& p_path);
 		void OnModelDropped(const std::string& p_path);
 		void OnMaterialDropped(const std::string& p_path);

@@ -5,6 +5,7 @@
 */
 
 #pragma once
+#include <typeindex>
 
 #include <OvCore/Rendering/PostProcess/AEffect.h>
 

@@ -1,5 +1,6 @@
 #include <OvCore/Rendering/SceneFrameExtractor.h>
 #include <OvCore/ECS/Components/CLight.h>
+#include <OvCore/ECS/Components/CPostProcessStack.h>
 #include <OvCore/ECS/Components/CReflectionProbe.h>
 #include <OvRendering/Data/FrameDescriptor.h>
 #include <algorithm>
@@ -10,7 +11,8 @@ using namespace OvCore::Rendering;
 using namespace OvRendering;
 
 std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest& request,
-    const std::shared_ptr<baregl::Texture>& white, const std::shared_ptr<baregl::Texture>& black)
+    const std::shared_ptr<baregl::Texture>& white, const std::shared_ptr<baregl::Texture>& black,
+    Core::MeshCommandRecorder::ProgramCache* programs)
 {
     auto frame = std::unique_ptr<SceneFrame>(new SceneFrame);
     auto main = request.main;
@@ -31,7 +33,7 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
     const auto addView = [&](const SceneRenderRequest& input, std::optional<baregl::Framebuffer::Snapshot> target,
         std::string name, std::vector<Data::ResourceUse> reads, std::vector<Data::ResourceUse> writes,
         std::span<const Data::ReflectionProbeInput> probes = {}) -> Data::RenderPlanPass& {
-        auto scene = SceneRenderExtractor::ExtractImpl(input, false, white, black, true, probes, &materialCache, &lightingView);
+        auto scene = SceneRenderExtractor::ExtractImpl(input, false, white, black, true, probes, &materialCache, &lightingView, programs);
         const auto index = frame->m_views.size();
         frame->m_views.push_back(std::move(scene));
         frame->m_plan.passes.push_back({std::move(name),index,input.viewId,input.pipeline.stages,std::move(target),std::move(reads),std::move(writes),{}});
@@ -128,7 +130,32 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
         const auto& desc = main.reflection.map->GetDesc();
         mainReads.push_back({addResource(main.reflection.map,static_cast<uint16_t>(desc.width),static_cast<uint16_t>(desc.height),63,63,Data::ResourceOrigin::Imported),63});
     }
-    addView(main,request.target,"MainView",std::move(mainReads),{},probes);
+    std::optional<PostProcess::PostProcessSnapshot> settings;
+    for (const auto* stack : main.scene.GetFastAccessComponents().postProcessStacks)
+        if (stack && stack->owner.IsActive()) { settings = PostProcess::PostProcessSnapshot::Capture(stack->GetStack()); break; }
+    if (settings)
+    {
+        if (!request.postProcess || !request.postProcessTarget || !request.target)
+            throw std::invalid_argument("Post-processing requires a viewport owner and output");
+        if (request.postProcessTarget->RecordTarget() != *request.target)
+            throw std::invalid_argument("Post-processing output mismatch");
+        auto geometry = main;
+        geometry.includeUI = false;
+        std::erase(geometry.pipeline.stages,Data::RenderStage::SceneUI);
+        addView(geometry,request.target,"MainView",mainReads,{},probes);
+        frame->m_plan.passes.back().postProcessAfter = true;
+        frame->m_postProcessAfterView = frame->m_views.size()-1;
+        frame->m_postProcessCommands = std::make_unique<Data::RenderCommandList>(request.postProcess->Record(*settings,*request.postProcessTarget,request.postProcessState));
+        frame->m_info=request.postProcess->GetFrameInfo();
+        if (main.includeUI && std::find(main.pipeline.stages.begin(),main.pipeline.stages.end(),Data::RenderStage::SceneUI) != main.pipeline.stages.end())
+        {
+            auto ui = main; ui.viewId = viewId(); ui.includeOpaque = ui.includeTransparent = false;
+            ui.pipeline.stages = {Data::RenderStage::SceneUI}; ui.preserveOutput = true;
+            materialCache = {}; // Final blit changes the legacy material binding before UI.
+            addView(ui,request.target,"SceneUI",mainReads,{},probes);
+        }
+    }
+    else addView(main,request.target,"MainView",std::move(mainReads),{},probes);
     frame->m_plan.Validate(frame->m_views);
     return frame;
 }

@@ -11,6 +11,23 @@
 
 void EditorUIValidation(OvEditor::Core::Editor& editor,OvEditor::Core::Context& context,const std::filesystem::path& dir)
 {
+    // Driver readback performance messages are external input to Console. Keep
+    // both UI frames on identical input while forwarding every other diagnostic.
+    struct StableDiagnostics {
+        GLDEBUGPROC callback=nullptr;const void* user=nullptr;
+        static void APIENTRY Forward(GLenum source,GLenum type,GLuint id,GLenum severity,
+            GLsizei length,const GLchar* message,const void* parameter) {
+            const auto& self=*static_cast<const StableDiagnostics*>(parameter);
+            if(type!=GL_DEBUG_TYPE_PERFORMANCE&&self.callback)
+                self.callback(source,type,id,severity,length,message,self.user);
+        }
+        StableDiagnostics() {
+            void* value=nullptr;glGetPointerv(GL_DEBUG_CALLBACK_FUNCTION,&value);callback=reinterpret_cast<GLDEBUGPROC>(value);
+            glGetPointerv(GL_DEBUG_CALLBACK_USER_PARAM,&value);user=value;
+            glDebugMessageCallback(Forward,this);
+        }
+        ~StableDiagnostics(){glDebugMessageCallback(callback,user);}
+    } stableDiagnostics;
     auto& ui=*context.uiManager;ui.EnableEditorLayoutSave(false);ImGui::GetIO().ConfigInputTextCursorBlink=false;
     auto& scene=*context.sceneManager.GetCurrentScene();Require(!scene.GetActors().empty(),"UI fixture has no actors");
     editor.m_editorActions.SelectActor(*scene.GetActors().back());
