@@ -1,12 +1,12 @@
 #pragma once
 #include <OvRendering/Data/FrameInfo.h>
 #include <OvRendering/Core/MeshCommandRecorder.h>
-#include <OvRendering/Entities/Drawable.h>
+#include <OvCore/Rendering/ToolDrawInput.h>
 #include <OvRendering/Resources/Model.h>
 #include <OvRendering/Utils/Profiling.h>
 namespace OvCore::Rendering
 {
-    // Main-thread extraction adapter. Only owned values enter deferred packet encoding.
+    // Main-thread tool extraction. Only owned values enter deferred packet encoding.
     class ToolDrawCollector final
     {
     public:
@@ -15,12 +15,12 @@ namespace OvCore::Rendering
         void Begin(OvRendering::Data::RenderView view, OvRendering::Data::PipelineState state,
             std::optional<baregl::Framebuffer::Snapshot> target);
         OvRendering::Data::RenderCommandList Finish();
-        void DrawEntity(OvRendering::Data::PipelineState state, const OvRendering::Entities::Drawable& drawable,
+        void CollectMesh(OvRendering::Data::PipelineState state, const OvCore::Rendering::ToolDrawInput& drawable,
             const OvRendering::Data::Material::PropertyOverrides& overrides = {},
             std::span<const std::shared_ptr<baregl::Texture>> textures = {});
-        void DrawModelWithSingleMaterial(OvRendering::Data::PipelineState state, OvRendering::Resources::Model& model,
+        void CollectModel(OvRendering::Data::PipelineState state, OvRendering::Resources::Model& model,
             OvRendering::Data::Material& material, const OvMaths::FMatrix4& transform);
-        void DrawModelWithRetainedTextures(OvRendering::Data::PipelineState state, OvRendering::Resources::Model& model,
+        void CollectModelWithTextures(OvRendering::Data::PipelineState state, OvRendering::Resources::Model& model,
             OvRendering::Data::Material& material, const OvMaths::FMatrix4& transform,
             std::vector<std::shared_ptr<baregl::Texture>> textures);
         void Clear(bool color, bool depth, bool stencil, const OvMaths::FVector4& value = {});

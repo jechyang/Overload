@@ -12,7 +12,6 @@
 #include <OvMaths/FMatrix4.h>
 #include <OvMaths/FTransform.h>
 
-#include <OvRendering/Data/FrameDescriptor.h>
 #include <OvRendering/Entities/Camera.h>
 #include <OvRendering/Entities/Entity.h>
 #include <OvRendering/Resources/Texture.h>
@@ -46,7 +45,7 @@ namespace OvRendering::Entities
 		/**
 		* Generate and cache light space matrix for the light
 		*/
-		void PrepareForShadowRendering(const OvRendering::Data::FrameDescriptor& p_frameDescriptor);
+		void PrepareForShadowRendering(const OvMaths::FVector3& cameraPosition);
 
 		/**
 		* Returns true if the light is setup for shadow rendering

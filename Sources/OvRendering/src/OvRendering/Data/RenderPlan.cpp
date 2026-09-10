@@ -5,12 +5,14 @@
 using namespace OvRendering::Data;
 void RenderPlan::Validate(std::span<const std::shared_ptr<const RenderSceneSnapshot>> views) const
 {
-    const auto require = [](bool value, const char* message) { if (!value) throw std::invalid_argument(message); };
+    std::string scope="RenderPlan";
+    const auto require = [&](bool value, const char* message) { if (!value) throw std::invalid_argument(scope+": "+message); };
     std::vector<uint8_t> available;
     std::unordered_set<uint64_t> identities;
     std::unordered_set<uint32_t> storages;
     for (const auto& resource : resources)
     {
+        scope="RenderPlan resource "+std::to_string(resource.id);
         require(resource.id && identities.insert(resource.id).second, "Duplicate or missing resource identity");
         require(resource.storage.GetID() && storages.insert(resource.storage.GetID()).second, "Duplicate or missing storage generation");
         require(resource.width && resource.height && (resource.subresources == 1 || resource.subresources == 63), "Invalid resource extent/subresources");
@@ -18,12 +20,14 @@ void RenderPlan::Validate(std::span<const std::shared_ptr<const RenderSceneSnaps
         require(resource.origin != ResourceOrigin::CurrentFrame || !resource.available, "Current-frame content has no producer");
         available.push_back(resource.available);
     }
+    scope="RenderPlan views";
     std::unordered_set<uint64_t> viewIds;
     for (const auto& view : views)
         require(view && viewIds.insert(view->GetView().id).second, "Missing or duplicate view identity");
     std::vector<bool> used(views.size());
     for (const auto& pass : passes)
     {
+        scope="RenderPlan pass "+pass.name+" (view "+std::to_string(pass.viewId)+")";
         require(pass.view < views.size(), "Pass references missing view");
         const auto& view = *views[pass.view];
         require(pass.viewId == view.GetView().id && pass.stages == view.GetPipeline().stages, "Wrong View/Stage reference");

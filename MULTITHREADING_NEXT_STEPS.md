@@ -1,12 +1,14 @@
 # Overload 多线程改造：后续实施与新对话交接
 
-更新：2026-09-08。工作目录：H:/overload/Overload。
+更新：2026-09-10。工作目录：H:/overload/Overload。
 
 ## 从这里开始
 
-**阶段 0–4 已完成各自约定范围验收。阶段 4 新增拥有型材质输入与私有命令槽，使用 JobSystem 统一编码多个 Pass/View；Main 保持可变准备顺序，GL 仍归固定 owner。Debug/Release 构建、图像/依赖/共享资源/产品压力、ASan、MutexDeque 与 Tracy 验证通过。重编码材质样本相对准备后串行减少 13.9% 总录制时间，实际三视图编辑器吞吐基本持平，因此 parallel_recording 和 render_thread 均保留默认 false。阶段 4 最终结果见 MULTITHREADING_PARALLEL_RECORDING_VALIDATION.md；阶段 2/3 历史结论见 MULTITHREADING_STAGE23_COMPLETION.md 和 MULTITHREADING_FRAME_PERFORMANCE_VALIDATION.md。本次仅完成阶段 4，未推进阶段 5/6。**
+**阶段 0–4 已完成各自约定范围验收。阶段 4 新增拥有型材质输入与私有命令槽，使用 JobSystem 统一编码多个 Pass/View；Main 保持可变准备顺序，GL 仍归固定 owner。Debug/Release 构建、图像/依赖/共享资源/产品压力、ASan、MutexDeque 与 Tracy 验证通过。重编码材质样本相对准备后串行减少 13.9% 总录制时间，实际三视图编辑器吞吐基本持平，因此 parallel_recording 和 render_thread 均保留默认 false。阶段 4 最终结果见 MULTITHREADING_PARALLEL_RECORDING_VALIDATION.md；阶段 2/3 历史结论见 MULTITHREADING_STAGE23_COMPLETION.md 和 MULTITHREADING_FRAME_PERFORMANCE_VALIDATION.md。该段记录阶段 4 的历史验收，阶段 5/6 尚未实施。**
 
-本文件是新对话的首要入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
+A0–A6 的渲染职责拆分与旧链清理已完成：Debug/Release 完整构建、28 项运行验收和实际 Editor/Game 多 Worker Prepare/Record 通过。最终记录见 RENDERING_ARCHITECTURE_A6_VALIDATION.md，模块说明见 RENDERING_ARCHITECTURE.md。A0–A6 是阶段 4 后、RHI/Vulkan 前的独立增量；以下阶段 0–4 记录保留历史结论。
+
+本文件是后续阶段的路线入口。后续阶段按先后依赖推进，每次完成一个可独立验收的增量。下文的阶段编号用于细化原计划第 12 节；阶段 1 当前实现见 3.4/3.5/3.6 节及对应三份验收文档，其余设计建议不是已实现接口。
 
 阶段 2、3 下列各增量保留实施当时的历史状态；其中“下一步/尚未完成”不表示这些工作现在仍然待办，当前结论以顶部状态和最终验收报告为准。
 
@@ -18,10 +20,10 @@
 - JobSystem 已有依赖计数、Submit、Wait/WaitAll、ParallelFor、工作窃取、MainThread 亲和队列、异常回调；Chase-Lev 和 MutexDeque 双实现已做对照。
 - Editor/Game 的 Context 已创建并注册 JobSystem。
 - Scene::Update 新增接收 JobSystem 的重载，Editor/Game 已使用；连续、无脚本且仅含已核实组件的 Actor 可进行蒙皮批次评估，在下一处任意回调前等待并发布。原串行重载保留。
-- ParseScene 与 FilterDrawables 已按连续块并行、按块序合并，返回前等待所有任务，包括异常展开路径。
-- Parse 串行门槛 max(128, 2×worker)，Filter 为 max(256, 2×worker)；大批次目标约 4×worker 个块。不要未经测量重新调整。
+- 当前统一 RenderFrontend 在稳定 Main 提取拥有型场景/材质输入，RenderTaskCoordinator 分块或按 View 并行 Prepare/Record，独占输出并确定顺序汇合；失败/取消/部分提交路径同样等待已提交任务。
+- 旧 ParseScene/FilterDrawables 及 Renderer 继承链已删除。下文阈值和 Tracy Parse/Filter 标签仅描述历史阶段，不是当前调参入口。
 - **Game/Editor 均可选固定 RenderThread（render_thread=true），GL 和呈现在 Render，更新/平台/UI 在 Main。** Game 帧命令拥有消费数据，场景内 CPU 并行仍依赖稳定读写边界。
-- 每个编辑器视图有独立 renderer。Filter 也会在 DrawFrame 内的反射 pass 调用，不能假设它只在 BeginFrame 运行。
+- 编辑器视口持有各自的前端、输出与动态历史 owner；主视图/阴影/反射/Picking 使用显式 View 和资源计划，工具由 Collector 提取。
 
 ### 阶段 0 的验收结论
 
@@ -50,7 +52,7 @@
 7. **停机先停止生产，再结束消费者。** 现有 JobSystem 析构不能与外部 Submit/Wait/Pump 并发。未来持久任务/Render 线程必须显式 drain/join，不能只依靠 Context 成员析构顺序。
 8. **GL 上下文单一所有者。** 阶段 1、2 的 worker 不调用 GL、窗口 API 或 UI；Render 线程引入时再统一调整上下文、GPU 资源创建和销毁。
 9. ServiceLocator 的 Provide/注册不是并行接口；不要让 worker 修改服务注册表。
-10. 每阶段保留串行/旧路径作对照，先保证等价，再衡量整体收益。不要把测试里的固定 sleep 间隔当作帧率或调度耗时。
+10. 每阶段保留同实现的串行调度对照和固定历史图像，先保证等价，再衡量整体收益。A6 后不在当前源码或测试中保留第二套旧渲染实现。不要把测试里的固定 sleep 间隔当作帧率或调度耗时。
 
 ## 3. 阶段 1：蒙皮姿态评估任务化（已完成约定范围验收）
 

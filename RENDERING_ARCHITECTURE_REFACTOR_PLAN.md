@@ -1,6 +1,6 @@
 # Overload 多线程渲染架构重构计划
 
-日期：2026-09-10。状态：A0–A5 实现与验收已完成；A5 产品视口、编辑器工具、Picking 与后处理的 Debug/Release 构建及 16 项最终验收已闭合，见 [A5 记录](RENDERING_ARCHITECTURE_A5_VALIDATION.md)；A6 未开始。
+日期：2026-09-10。状态：A0–A6 实现与验收已完成。A6 已删除旧链并完成 Debug/Release 完整构建、28 项真实运行验收、86 份对应 A5 文件的精确哈希对照及实际 Editor/Game 多 Worker Prepare/Record 验证，见 [A6 记录](RENDERING_ARCHITECTURE_A6_VALIDATION.md)。
 
 ## 1. 目标与范围
 
@@ -354,6 +354,8 @@ AssetView 当前使用自建预览 Scene 与 ECS 组件，继续复用场景提�
 
 ### A6：完成并发验收，删除旧链路并验证管线扩展
 
+状态（2026-09-10）：实现与验收完成，见 [A6 记录](RENDERING_ARCHITECTURE_A6_VALIDATION.md)。已删除授权清单中的 54 项旧链文件，唯一新入口与最小管线配置示例落地；Debug/Release 完整构建及 28 项运行验收通过，包括实际产品多 Worker Prepare/Record 与 RenderThread 组合。
+
 交付：迁移后的唯一生产数据准备路径；明确的模块依赖、扩展示例和错误信息；更新架构文档与旧路线的后续入口。
 
 按第 3.2 节逐项核对 Renderer 方法与状态归属；所有产品调用者使用唯一新入口，通过管线配置组合功能。删除旧 Renderer 继承链、无人使用的成员/工具、旧注册入口及构建引用。清理 AView 对内部 Pass 名称和可变 Feature 的控制，以及旧直接模型绘制/Blit 旁路。
@@ -439,4 +441,4 @@ A0 已单独完成。A1 本次实现的 **主相机静态不透明命令切片**
 - [阶段 2/3 完成记录](MULTITHREADING_STAGE23_COMPLETION.md)
 - [命令与产品回归入口](Tests/RenderingCommands/README.md)
 
-A0–A5 已完成。本会话 A5 的产品视口、覆盖层、Picking 和后处理迁移已通过 Debug/Release 最终验收，见 [A5 记录](RENDERING_ARCHITECTURE_A5_VALIDATION.md)。A5 以独立 commit 收尾；下一会话继续 A6 的旧链清理、总体并发和管线扩展示例验收。每个增量独立 commit，并提示用户开启新会话。
+A0–A6 已完成，A5 历史基线为 935423e。A6 的旧链清理、总体并发和管线扩展示例验收已闭合，见 [A6 记录](RENDERING_ARCHITECTURE_A6_VALIDATION.md)，以独立 commit 收尾；后续 RHI/Vulkan 和 fiber/job graph 属于新会话的独立范围，见 [后续路线](MULTITHREADING_NEXT_STEPS.md)。

@@ -6,7 +6,6 @@
 
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
 #include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
-#include <OvCore/Rendering/EngineDrawableDescriptor.h>
 #include <OvCore/Rendering/SkinningUtils.h>
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Rendering/OutlineCollector.h>
@@ -52,7 +51,7 @@ namespace
 	}
 
 	void ApplySkinningIfNeeded(
-		OvRendering::Entities::Drawable& p_drawable,
+		OvCore::Rendering::ToolDrawInput& p_drawable,
 		const OvCore::ECS::Components::CSkinnedMeshRenderer* p_skinnedRenderer,
 		bool p_skinningEnabled,
 		OvCore::Resources::Material& p_targetMaterial
@@ -60,7 +59,7 @@ namespace
 	{
 		if (p_skinningEnabled)
 		{
-			OvCore::Rendering::SkinningUtils::ApplyToDrawable(
+			OvCore::Rendering::SkinningUtils::CaptureToolSkinning(
 				p_drawable,
 				*p_skinnedRenderer,
 				&p_targetMaterial.GetFeatures()
@@ -257,12 +256,8 @@ void OvEditor::Rendering::OutlineCollector::DrawModelToStencil(
 
 		auto stateMask = targetMaterial.GenerateStateMask();
 
-		auto engineDrawableDescriptor = OvCore::Rendering::EngineDrawableDescriptor{
-			p_worldMatrix,
-			OvMaths::FMatrix4::Identity
-		};
 
-		OvRendering::Entities::Drawable element;
+		OvCore::Rendering::ToolDrawInput element;
 		element.mesh = *mesh;
 		element.material = targetMaterial;
 		element.stateMask = stateMask;
@@ -270,10 +265,10 @@ void OvEditor::Rendering::OutlineCollector::DrawModelToStencil(
 		element.stateMask.colorWriting = false;
 		element.pass = outlinePassName;
 
-		element.AddDescriptor(engineDrawableDescriptor);
+		element.model = p_worldMatrix;
 		ApplySkinningIfNeeded(element, p_skinnedRenderer, skinningEnabled, targetMaterial);
 
-		m_collector.DrawEntity(p_pso, element);
+		m_collector.CollectMesh(p_pso, element);
 	}
 }
 
@@ -311,21 +306,17 @@ void OvEditor::Rendering::OutlineCollector::DrawModelOutline(
 
 		auto stateMask = targetMaterial.GenerateStateMask();
 
-		auto engineDrawableDescriptor = OvCore::Rendering::EngineDrawableDescriptor{
-			p_worldMatrix,
-			OvMaths::FMatrix4::Identity
-		};
 
-		OvRendering::Entities::Drawable drawable;
+		OvCore::Rendering::ToolDrawInput drawable;
 		drawable.mesh = *mesh;
 		drawable.material = targetMaterial;
 		drawable.stateMask = stateMask;
 		drawable.stateMask.depthTest = false;
 		drawable.pass = outlinePassName;
 
-		drawable.AddDescriptor(engineDrawableDescriptor);
+		drawable.model = p_worldMatrix;
 		ApplySkinningIfNeeded(drawable, p_skinnedRenderer, skinningEnabled, targetMaterial);
 
-		m_collector.DrawEntity(p_pso, drawable, overrides);
+		m_collector.CollectMesh(p_pso, drawable, overrides);
 	}
 }

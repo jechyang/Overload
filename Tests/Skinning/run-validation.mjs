@@ -2,23 +2,24 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import cp from 'node:child_process';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const config = process.argv[2] || 'Release';
 if (!['Debug', 'Release'].includes(config)) throw Error('Expected Debug or Release');
+for (const retired of ['--effects-oracle','--frontend-immediate','--draw-inputs','--draw-packets','--frame-inputs'])
+  if(process.argv.includes(retired))throw Error(retired+' was retired by A6; use --command-list, --bindings and --auxiliary. Historical implementation is in Git 935423e.');
+const pipeline = process.argv.includes('--pipeline');
 const asan = process.argv.includes('--asan');
 const parallel = process.argv.includes('--parallel');
-const effectsOracle = process.argv.includes('--effects-oracle');
-if(effectsOracle && process.argv.some(x=>x.startsWith('--') && !['--effects-oracle','--vs'].includes(x)))throw Error('--effects-oracle runs separately');
 const postprocess = process.argv.includes('--postprocess');
 const auxiliary = process.argv.includes('--auxiliary') || postprocess;
 if (auxiliary && process.argv.some(x => x.startsWith('--') && x !== '--auxiliary' && x !== '--postprocess' && x !== '--vs')) throw Error('--auxiliary runs separately');
 const bindings = process.argv.includes('--bindings');
 const stages = process.argv.includes('--stages') || bindings;
-const frontendImmediate = process.argv.includes('--frontend-immediate');
-const frontend = process.argv.includes('--frontend') || frontendImmediate || stages;
-if (frontend && process.argv.some(x => x.startsWith('--') && x !== '--frontend' && x !== '--frontend-immediate' && x !== '--stages' && x !== '--bindings' && x !== '--vs')) throw Error('--frontend runs separately');
+const frontend = process.argv.includes('--frontend') || stages;
+if (frontend && process.argv.some(x => x.startsWith('--') && x !== '--frontend' && x !== '--stages' && x !== '--bindings' && x !== '--vs')) throw Error('--frontend runs separately');
 const parallelRecording = process.argv.includes('--parallel-recording');
 const gameBenchmark = process.argv.includes('--game-benchmark');
 const recordingBenchmark = process.argv.includes('--recording-benchmark');
@@ -45,24 +46,18 @@ const renderFrame = process.argv.includes('--render-frame');
 const uiCommands = process.argv.includes('--ui-commands') || renderFrame || renderThread || logDispatch || resourceLifetime || textureRegistry || imguiLifetime || gpuProfiling || resourceExecutor;
 const editorUI = process.argv.includes('--editor-ui') || editorThread;
 if (editorUI && !editor) throw Error('--editor-ui requires --editor');
-const commandList = effectsOracle || process.argv.includes('--command-list') || editorThread || parallelRecording || frontend || auxiliary;
+const commandList = pipeline || process.argv.includes('--command-list') || editorThread || parallelRecording || frontend || auxiliary;
 if (productLoop && editor && (!commandList || !editorUI)) throw Error('Editor --product-loop requires --command-list --editor-ui');
 const targetState = process.argv.includes('--target-state') || commandList;
-const frameInputs = process.argv.includes('--frame-inputs') || targetState;
-const drawPackets = process.argv.includes('--draw-packets') || frameInputs;
-const drawInputs = process.argv.includes('--draw-inputs');
-const snapshots = process.argv.includes('--snapshots') || drawInputs;
+const snapshots = process.argv.includes('--snapshots');
 const material = process.argv.includes('--material') || snapshots;
 const geometry = process.argv.includes('--geometry') || material;
-if (geometry && (editor || parallel || asan || process.argv.includes('--current'))) throw Error('--geometry requires a baseline/current comparison');
-if (drawPackets && (geometry || parallel || (asan && !parallelRecording) || process.argv.includes('--current'))) throw Error('--draw-packets runs separately from other test modes except --editor');
+if (geometry && (editor || parallel || asan)) throw Error('--geometry runs separately');
 if (editor && (parallel || asan)) throw Error('--editor runs separately from --parallel/--asan');
 const mutexDeque = process.argv.includes('--mutex-deque');
-if (uiCommands && (editor || parallel || geometry || drawPackets || asan)) throw Error("--ui-commands runs separately");
-const currentOnly = gameFrame || uiCommands || asan || parallel || editor || drawPackets || process.argv.includes('--current');
-const output = path.join(root, 'Build/JobsValidation/Skinning', config + (effectsOracle ? '-effects-oracle' : '') + (postprocess ? '-postprocess' : auxiliary ? '-auxiliary' : '') + (bindings ? '-bindings' : stages ? '-stages' : '') + (frontendImmediate ? '-frontend-immediate' : frontend ? '-frontend' : '') + (parallelRecording ? '-parallel-recording' : '') + (recordingBenchmark ? '-recording-benchmark' : editorBenchmark ? '-editor-benchmark' : editorStress ? '-editor-stress' : editorThread ? '-editor-thread' : '') + (gameBenchmark ? '-game-benchmark' : gameThread ? '-game-thread' : gameFrame ? '-game-frame' : '') + (resourceExecutor ? '-resource-executor' : gpuProfiling ? '-gpu-profiling' : imguiLifetime ? '-imgui-lifetime' : textureRegistry ? '-texture-registry' : resourceLifetime ? '-resource-lifetime' : logDispatch ? '-log-dispatch' : renderThread ? '-render-thread' : renderFrame ? '-render-frame' : uiCommands ? '-ui-commands' : '') + (commandList ? '-command-list' : targetState ? '-target-state' : frameInputs ? '-frame-inputs' : drawPackets ? '-draw-packets' : drawInputs ? '-draw-inputs' : snapshots ? '-snapshots' : material ? '-material' : geometry ? '-geometry' : '') + (editorUI ? '-editor-ui' : editor ? '-editor' : parallel ? '-parallel' : '') + (productLoop ? '-product-loop' : '') + (mutexDeque ? '-mutex' : '') + (asan ? '-asan' : ''));
+if (uiCommands && (editor || parallel || geometry || asan)) throw Error("--ui-commands runs separately");
+const output = path.join(root, 'Build/JobsValidation/Skinning', config + (pipeline ? '-pipeline' : '') + (postprocess ? '-postprocess' : auxiliary ? '-auxiliary' : '') + (bindings ? '-bindings' : stages ? '-stages' : '') + (frontend ? '-frontend' : '') + (parallelRecording ? '-parallel-recording' : '') + (recordingBenchmark ? '-recording-benchmark' : editorBenchmark ? '-editor-benchmark' : editorStress ? '-editor-stress' : editorThread ? '-editor-thread' : '') + (gameBenchmark ? '-game-benchmark' : gameThread ? '-game-thread' : gameFrame ? '-game-frame' : '') + (resourceExecutor ? '-resource-executor' : gpuProfiling ? '-gpu-profiling' : imguiLifetime ? '-imgui-lifetime' : textureRegistry ? '-texture-registry' : resourceLifetime ? '-resource-lifetime' : logDispatch ? '-log-dispatch' : renderThread ? '-render-thread' : renderFrame ? '-render-frame' : uiCommands ? '-ui-commands' : '') + (commandList ? '-command-list' : targetState ? '-target-state' : snapshots ? '-snapshots' : material ? '-material' : geometry ? '-geometry' : '') + (editorUI ? '-editor-ui' : editor ? '-editor' : parallel ? '-parallel' : '') + (productLoop ? '-product-loop' : '') + (mutexDeque ? '-mutex' : '') + (asan ? '-asan' : ''));
 fs.mkdirSync(output, { recursive: true });
-const baseline = drawInputs ? 'b1128a77b55b9d96c554aad63e743056e481f2cf' : snapshots ? '8cc2f8c5a9d992809b95d317a70dfbcfc3928442' : material ? '50194bfe7ee94eac37d63bbf84779c7c68b390e4' : geometry ? '4f8da08b854a7d57e3a2b0ce08f3d8a05039d7d9' : '73ae710a57889bfde94184c3c8f073228e998144';
 const header = 'Sources/OvCore/include/OvCore/ECS/Components/CSkinnedMeshRenderer.h';
 const source = 'Sources/OvCore/src/OvCore/ECS/Components/CSkinnedMeshRenderer.cpp';
 const vswhere = 'C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe';
@@ -75,12 +70,13 @@ const sdk = process.env.WindowsSdkDir || 'C:/Program Files (x86)/Windows Kits/10
 const sdkVersion = fs.readdirSync(path.join(sdk, 'Include')).filter(x => fs.existsSync(path.join(sdk, 'Lib', x, 'um/x64/kernel32.lib'))).sort((a,b) => a.localeCompare(b, undefined, { numeric: true })).at(-1);
 const compiler = path.join(msvc, 'bin/Hostx64/x64/cl.exe');
 const engineLibs = ['assimp','baregl','bullet3','freetype','glfw','ImGui','lua','OvAudio','OvCore','OvDebug','OvMaths','OvPhysics','OvRendering','OvTools','OvUI','OvWindowing','soloud','tinyxml2','tracy'];
-const depIncludes = ['baregl/include','ImGui/include','lua/include','sol/include','tinyxml2/include','tracy','glfw/include','bullet3/src','soloud/include','assimp/include'];
-const manifest = { baseline, config, effectsOracle, postprocess, auxiliary, bindings, stages, frontend, frontendImmediate, parallelRecording, recordingBenchmark, gameBenchmark, editorBenchmark, productLoop, gameFrame, gameThread, resourceExecutor, gpuProfiling, imguiLifetime, textureRegistry, resourceLifetime, logDispatch, renderThread, renderFrame, uiCommands, editorUI, commandList, targetState, frameInputs, drawPackets, drawInputs, snapshots, material, geometry, editor, parallel, mutexDeque, asan, compiler, sdkVersion, results: [] };
-if (frontend) {
-  manifest.architectureBaseline = '620ef10fb56c287581bbd55b0c8904ef9cca26b7';
-  manifest.oracle = frontendImmediate ? 'SceneRenderer immediate' : 'SceneRenderer owned commands';
+function productObjects(project,exclude) {
+  const projectText=fs.readFileSync(path.join(root,'Sources',project,project+'.vcxproj'),'utf8');
+  const active=new Set([...projectText.matchAll(/<ClCompile Include="([^"]+\.cpp)"/g)].map(m=>path.win32.basename(m[1],'.cpp')+'.obj'));
+  return fs.readdirSync(path.join(root,'Bin-Int',config,project)).filter(x=>active.has(x)&&!exclude.includes(x)).map(x=>path.join(root,'Bin-Int',config,project,x));
 }
+const depIncludes = ['baregl/include','ImGui/include','lua/include','sol/include','tinyxml2/include','tracy','glfw/include','bullet3/src','soloud/include','assimp/include'];
+const manifest = { config, pipeline, postprocess, auxiliary, bindings, stages, frontend, parallelRecording, recordingBenchmark, gameBenchmark, editorBenchmark, productLoop, gameFrame, gameThread, resourceExecutor, gpuProfiling, imguiLifetime, textureRegistry, resourceLifetime, logDispatch, renderThread, renderFrame, uiCommands, editorUI, commandList, targetState, snapshots, material, geometry, editor, parallel, mutexDeque, asan, compiler, sdkVersion, results: [] };
 fs.rmSync(path.join(output, 'result.json'), { force: true }); // Never leave a stale success after a failed rerun.
 
 function run(file, args, cwd, log, timeout = 120000) {
@@ -92,14 +88,13 @@ function run(file, args, cwd, log, timeout = 120000) {
   return fs.readFileSync(log, 'utf8');
 }
 
-for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
+{
+  const variant = 'current';
   const dir = path.join(output, variant);
   const overlay = path.join(dir, 'include');
   fs.mkdirSync(dir, { recursive: true });
   for (const [name, original] of [['OvCore/ECS/Components/CSkinnedMeshRenderer.h', header], ['OvRendering/Resources/Model.h', 'Sources/OvRendering/include/OvRendering/Resources/Model.h']]) {
-    const text = variant === 'baseline' && !geometry && original === header
-      ? cp.execFileSync('git', ['-c', `safe.directory=${root.replaceAll('\\','/')}`, 'show', `${baseline}:${original}`], { cwd: root, encoding: 'utf8', windowsHide: true })
-      : fs.readFileSync(path.join(root, original), 'utf8');
+    const text = fs.readFileSync(path.join(root, original), 'utf8');
     const dest = path.join(overlay, name);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     // Access-only overlay: no production test API or global preprocessor macro.
@@ -109,56 +104,20 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
         .replace('private:\r\n\t\tstd::vector<Mesh*>', 'public:\r\n\t\tstd::vector<Mesh*>'));
   }
   const cpp = path.join(dir, 'CSkinnedMeshRenderer.cpp');
-  fs.writeFileSync(cpp, variant === 'baseline' && !geometry
-    ? cp.execFileSync('git', ['-c', `safe.directory=${root.replaceAll('\\','/')}`, 'show', `${baseline}:${source}`], { cwd: root, windowsHide: true })
-    : fs.readFileSync(path.join(root, source)));
+  fs.writeFileSync(cpp, fs.readFileSync(path.join(root, source)));
   const exe = path.join(dir, 'skinning-validation.exe');
   const scene = path.join(dir, 'Scene.cpp');
   const sceneSource = 'Sources/OvCore/src/OvCore/SceneSystem/Scene.cpp';
-  fs.writeFileSync(scene, variant === 'baseline' && !geometry
-    ? cp.execFileSync('git', ['-c', `safe.directory=${root.replaceAll('\\','/')}`, 'show', `${baseline}:${sceneSource}`], { cwd: root, windowsHide: true })
-    : fs.readFileSync(path.join(root, sceneSource)));
-  // Keep legacy draw logic while matching current renderer instance layout.
-  if (geometry && variant === 'baseline') {
-    const original = 'Sources/OvRendering/include/OvRendering/Core/ABaseRenderer.h';
-    const dest = path.join(overlay, 'OvRendering/Core/ABaseRenderer.h');
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    let legacy = cp.execFileSync('git', ['-c', 'safe.directory=' + root.split(path.sep).join('/'), 'show', baseline + ':' + original], { cwd: root, windowsHide: true, encoding: 'utf8' });
-    const current = fs.readFileSync(path.join(root, original), 'utf8');
-    // Keep the old vtable and draw implementation, append current helper types/state.
-    const blitStart = current.indexOf('\t\tvoid BlitWithRetainedTextures(');
-    const blitEnd = current.indexOf(');', blitStart) + 2;
-    const ownersStart = current.indexOf('\t\tstruct RetainedTexturesDescriptor');
-    const ownersEnd = current.indexOf('};', ownersStart) + 2;
-    legacy = '#include <span>\n#include <OvRendering/Data/RenderCommandList.h>\n#include <OvRendering/Utils/Profiling.h>\n' + legacy.replace('public:', 'public:\n        Utils::GpuScope ProfileGpuScope(const tracy::SourceLocationData* p_source);').replace('\tprotected:', current.slice(blitStart, blitEnd) + '\n' + current.slice(ownersStart, ownersEnd) + '\n\tprotected:');
-    const stateStart = current.indexOf('		struct ViewportCommand');
-    const stateEnd = current.indexOf('		struct RetainedTexturesDescriptor', stateStart);
-    legacy = legacy.replace('	protected:', current.slice(stateStart, stateEnd) + '\n	protected:')
-      .replace('	private:', '		PassStateCommand m_passState;\n\t\tstd::unique_ptr<Data::RenderCommandList> m_commands;\n        OvTools::Jobs::JobSystem* m_commandRecordingJobs = nullptr;\n        bool m_parallelCommandRecording = true;\n\n	private:');
-    if (!legacy.includes('struct GeometryDrawCommand')) {
-      const begin = current.indexOf('\t\tstruct GeometryDrawCommand');
-      const end = current.indexOf('\t\tData::FrameDescriptor m_frameDescriptor', begin);
-      if (begin < 0 || end < begin) throw Error('Missing geometry helper declarations');
-      legacy = legacy.replace('\tprotected:', '\tprotected:\n' + current.slice(begin, end));
-    }
-    fs.writeFileSync(dest, legacy);
-  }
+  fs.writeFileSync(scene, fs.readFileSync(path.join(root, sceneSource)));
   if (targetState && !editor) {
     const original = 'Sources/OvRendering/include/OvRendering/Context/Driver.h';
     const dest = path.join(overlay, 'OvRendering/Context/Driver.h');
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.writeFileSync(dest, fs.readFileSync(path.join(root, original), 'utf8').replaceAll('private:', 'public:'));
   }
-  if (drawPackets) {
-    const original = 'Sources/OvCore/include/OvCore/ECS/Components/CReflectionProbe.h';
-    const dest = path.join(overlay, 'OvCore/ECS/Components/CReflectionProbe.h');
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    const probeHeader = fs.readFileSync(path.join(root, original), 'utf8');
-    fs.writeFileSync(dest, auxiliary ? probeHeader : probeHeader.replaceAll('private:', 'public:'));
-  }
   const extraSources = [];
   if (parallelRecording && asan) for (const source of [
-    'Core/ABaseRenderer.cpp', 'Core/CompositeRenderer.cpp', 'Data/Material.cpp',
+    'Core/MeshCommandRecorder.cpp', 'Core/DrawPacketBuilder.cpp', 'Data/Material.cpp',
     'Data/RenderCommandList.cpp', 'Data/RenderFrame.cpp'])
     extraSources.push(path.join(root, 'Sources/OvRendering/src/OvRendering', source));
   if (targetState && !editor) extraSources.push(path.join(root, 'Sources/OvRendering/src/OvRendering/Context/Driver.cpp'));
@@ -172,130 +131,8 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
       .replace('} profilingGuard;', '} profilingGuard;\n\tGpuProfilingAfterInitialize();');
     const driverCopy = path.join(dir, 'Driver.cpp'); fs.writeFileSync(driverCopy, driver); extraSources.push(driverCopy);
   }
-  if (effectsOracle) {
-    const names=['PostProcess/AEffect','PostProcess/AutoExposureEffect','PostProcess/BloomEffect','PostProcess/TonemappingEffect','PostProcess/FXAAEffect','PostProcessRenderPass'];
-    for(const name of names) {
-      const dest=path.join(overlay,'OvCore/Rendering',name+'.h');fs.mkdirSync(path.dirname(dest),{recursive:true});
-      fs.writeFileSync(dest,cp.execFileSync('git',['-c','safe.directory='+root.replaceAll('\\','/'),'show','f9ab4cb:Sources/OvCore/include/OvCore/Rendering/'+name+'.h'],{cwd:root,windowsHide:true}));
-      const source=name==='PostProcess/AEffect'?'PostProcess/APostProcessEffect':name;
-      const file=path.join(dir,path.basename(source)+'.cpp');
-      fs.writeFileSync(file,cp.execFileSync('git',['-c','safe.directory='+root.replaceAll('\\','/'),'show','f9ab4cb:Sources/OvCore/src/OvCore/Rendering/'+source+'.cpp'],{cwd:root,windowsHide:true}));extraSources.push(file);
-    }
-    // Compile the owner with the oracle pass layout as well.
-    extraSources.push(path.join(root,'Sources/OvCore/src/OvCore/Rendering/SceneRenderer.cpp'));
-  }
   const editorObjects = [];
-  if (geometry) {
-    // Directly linking ABaseRenderer.cpp moves its legacy static Camera before
-    // library initializers. Initialize the math constants it uses first, in
-    // both variants, without altering the baseline renderer source.
-    for (const name of ['FVector3', 'FQuaternion', 'FMatrix3', 'FMatrix4']) {
-      extraSources.push(path.join(root, 'Sources/OvMaths/src/OvMaths', name + '.cpp'));
-    }
-    const rendererSource = 'Sources/OvRendering/src/OvRendering/Core/ABaseRenderer.cpp';
-    const rendererCopy = path.join(dir, 'ABaseRenderer.cpp');
-    let rendererText = variant === 'baseline'
-      ? cp.execFileSync('git', ['-c', `safe.directory=${root.replaceAll('\\','/')}`, 'show', `${baseline}:${rendererSource}`], { cwd: root, windowsHide: true, encoding: 'utf8' })
-      : fs.readFileSync(path.join(root, rendererSource), 'utf8');
-    if (variant === 'baseline') {
-      const current = fs.readFileSync(path.join(root, rendererSource), 'utf8');
-      const begin = current.indexOf('void OvRendering::Core::ABaseRenderer::BlitWithRetainedTextures(');
-      const end = current.indexOf('bool OvRendering::Core::ABaseRenderer::IsDrawable', begin);
-      if (begin < 0 || end < begin) throw Error('Missing retained blit helper boundary');
-      rendererText += '\n' + current.slice(begin, end);
-      const stateBegin = current.indexOf('void OvRendering::Core::ABaseRenderer::BindTarget(');
-      if (stateBegin < 0) throw Error('Missing pass state helpers');
-      rendererText += '\n' + current.slice(stateBegin);
-      if (!rendererText.includes('ABaseRenderer::PrepareGeometryDraw(')) {
-        const begin = current.indexOf('OvRendering::Core::ABaseRenderer::GeometryDrawCommand');
-        const end = current.indexOf('void OvRendering::Core::ABaseRenderer::DrawEntity(', begin);
-        if (begin < 0 || end < begin) throw Error('Missing geometry helper definitions');
-        rendererText += '\n' + current.slice(begin, end);
-      }
-      rendererText = '#include <OvRendering/Utils/Profiling.h>\n' + rendererText;
-    }
-    fs.writeFileSync(rendererCopy, rendererText);
-    extraSources.push(rendererCopy);
-    if (material) {
-      const materialSource = 'Sources/OvRendering/src/OvRendering/Data/Material.cpp';
-      const materialCopy = path.join(dir, 'Material.cpp');
-      let text = variant === 'baseline'
-        ? cp.execFileSync('git', ['-c', `safe.directory=${root.replaceAll('\\','/')}`, 'show', `${baseline}:${materialSource}`], { cwd: root, windowsHide: true, encoding: 'utf8' })
-        : fs.readFileSync(path.join(root, materialSource), 'utf8');
-      if (variant === 'baseline' && !snapshots) {
-        // Normalize the legacy uninitialized hash seed. Comparing undefined
-        // stack contents is not a valid oracle for intended cache semantics.
-        if (!text.includes('MaterialSignatureSet signature;')) throw Error('Legacy hash seed normalization no longer matches');
-        text = text.replace('MaterialSignatureSet signature;', 'MaterialSignatureSet signature{};');
-      }
-      if (variant === 'baseline') {
-        // Current CompositeRenderer links the opt-in snapshot helpers even when
-        // disabled. Supply only missing helper definitions; keep old Bind/Upload.
-        const current = fs.readFileSync(path.join(root, materialSource), 'utf8');
-        const names = ['OvRendering::Data::Material::BindingCommand OvRendering::Data::Material::PrepareBinding(',
-          'void OvRendering::Data::Material::ExecuteBinding(',
-          'std::optional<OvRendering::Data::Material::UniformUploadCommand> OvRendering::Data::Material::PrepareUniformUpload(',
-          'void OvRendering::Data::Material::ExecuteUniformUpload(',
-          'OvRendering::Data::Material::Snapshot OvRendering::Data::Material::RecordSnapshot(',
-          'OvRendering::Data::Material::Snapshot OvRendering::Data::Material::RecordCachedSnapshot(',
-          'void OvRendering::Data::Material::Snapshot::Execute()'];
-        for (let i = 0; i < names.length; ++i) if (!text.includes(names[i])) {
-          const begin = current.indexOf(names[i]);
-          const end = current.indexOf('\n}', begin) + 2;
-          if (begin < 0 || end < begin) throw Error('Missing snapshot helper boundary');
-          text += '\n' + current.slice(begin, end);
-        }
-        const prepared = current.indexOf('class OvRendering::Data::Material::SnapshotInput');
-        if (prepared < 0) throw Error('Missing prepared snapshot helper boundary');
-        text += '\n' + current.slice(prepared);
-      }
-      fs.writeFileSync(materialCopy, '#include <algorithm>\n#include <cstring>\n#include <mutex>\n#include <stdexcept>\n' + text);
-      extraSources.push(materialCopy);
-      if (snapshots) {
-        // Both immediate-path oracles use the current resource representation.
-        // Lifetime/reload checks exercise the new APIs separately on current.
-        for (const name of ['Shader', 'Texture']) extraSources.push(path.join(root, 'Sources/OvRendering/src/OvRendering/Resources', name + '.cpp'));
-      }
-    }
-  }
-  if (drawInputs) {
-    extraSources.push(path.join(root, 'Sources/OvRendering/src/OvRendering/Resources/Mesh.cpp'));
-    for (const name of ['EngineBufferRenderFeature', 'SkinningRenderFeature']) {
-      const original = 'Sources/OvCore/src/OvCore/Rendering/' + name + '.cpp';
-      const dest = path.join(dir, name + '.cpp');
-      fs.writeFileSync(dest, variant === 'baseline'
-        ? cp.execFileSync('git', ['-c', 'safe.directory=' + root.split(path.sep).join('/'), 'show', baseline + ':' + original], { cwd: root, windowsHide: true })
-        : fs.readFileSync(path.join(root, original)));
-      extraSources.push(dest);
-    }
-  }
   if (editor) {
-    // A5 removed this production class. The temporary oracle is loaded from A4,
-    // never included in the product build; A6 removes the remaining old test chain.
-    const editorOracle = 'f9ab4cb';
-    for (const [source, dest] of [
-      ['Sources/OvEditor/include/OvEditor/Rendering/DebugSceneRenderer.h', path.join(overlay,'OvEditor/Rendering/DebugSceneRenderer.h')],
-      ['Sources/OvEditor/src/OvEditor/Rendering/DebugSceneRenderer.cpp', path.join(dir,'DebugSceneRendererOracle.cpp')],
-      ['Sources/OvEditor/include/OvEditor/Rendering/PickingRenderPass.h', path.join(overlay,'OvEditor/Rendering/PickingRenderPass.h')],
-      ['Sources/OvEditor/src/OvEditor/Rendering/PickingRenderPass.cpp', path.join(dir,'PickingRenderPassOracle.cpp')]
-    ]) {
-      fs.mkdirSync(path.dirname(dest),{recursive:true});
-      let oracle=cp.execFileSync('git',['-c','safe.directory='+root.replaceAll('\\','/'),'show',editorOracle+':'+source],{cwd:root,windowsHide:true,encoding:'utf8'}).replaceAll('\r\n','\n');
-      if(source.endsWith('PickingRenderPass.h')) {
-        const begin=oracle.indexOf('using PickingResult ='),end=oracle.indexOf('std::shared_ptr<const Readback> GetRecordedReadback',begin);
-        if(begin<0||end<begin)throw Error('A4 picking header boundary changed');
-        oracle='#include <OvEditor/Rendering/PickingReadback.h>\n'+oracle.slice(0,begin)+'using PickingResult = OvEditor::Rendering::PickingResult;\n        using Readback = PickingReadback;\n        '+oracle.slice(end);
-        oracle=oracle.replaceAll('private:','public:');
-      }
-      if(source.endsWith('PickingRenderPass.cpp')) {
-        const begin=oracle.indexOf('OvEditor::Rendering::PickingRenderPass::PickingResult OvEditor::Rendering::PickingRenderPass::Readback::Resolve(');
-        const end=oracle.indexOf('void OvEditor::Rendering::PickingRenderPass::Draw(',begin);
-        if(begin<0||end<begin)throw Error('A4 picking source boundary changed');
-        oracle=oracle.slice(0,begin)+oracle.slice(end);
-      }
-      fs.writeFileSync(dest,oracle);
-      if(dest.endsWith('.cpp'))extraSources.push(dest);
-    }
     // Access-only overlays for state inspection; the editor mode/view code is
     // linked from the actual solution objects. No test branches in production.
     for (const name of ['Core/Application.h', 'Core/Editor.h', 'Core/PanelsManager.h', 'Panels/SceneView.h', 'Core/GizmoBehaviour.h', 'Panels/TextureDebugger.h', 'Panels/Console.h', 'Panels/AView.h', 'Rendering/PickingReadback.h']) {
@@ -320,9 +157,7 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
     if (depth) throw Error('Unclosed Appdata isolation function');
     fs.writeFileSync(callsFile, calls.slice(0, body) + '{ return ' + JSON.stringify(path.join(dir, 'AppData').replaceAll('\\', '/')) + '; }' + calls.slice(end));
     extraSources.push(contextFile, callsFile);
-    editorObjects.push(...fs.readdirSync(path.join(root, 'Bin-Int', config, 'OvEditor'))
-      .filter(x => x.endsWith('.obj') && !['Main.obj', 'Context.obj', 'DebugSceneRenderer.obj', 'PickingRenderPass.obj', ...(productBenchmark ? ['Editor.obj'] : [])].includes(x))
-      .map(x => path.join(root, 'Bin-Int', config, 'OvEditor', x)));
+    editorObjects.push(...productObjects('OvEditor',['Main.obj','Context.obj',...(productBenchmark?['Editor.obj']:[])]));
   }
   if (gameFrame) {
     const dest = path.join(overlay, 'OvGame/Core/Game.h');
@@ -338,9 +173,7 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
       .replace('std::filesystem::current_path() / "Data" / "User" / "Assets"', 'std::filesystem::path(' + gameProject + ') / "Assets"')
       .replace('std::filesystem::current_path() / "Data" / "User" / "Game.ini"', 'std::filesystem::path(' + gameProject + ') / "Game.ini"');
     const contextFile = path.join(dir, 'GameContext.cpp'); fs.writeFileSync(contextFile, contextText); extraSources.push(contextFile);
-    editorObjects.push(...fs.readdirSync(path.join(root, 'Bin-Int', config, 'OvGame'))
-      .filter(x => x.endsWith('.obj') && !['Main.obj', 'Context.obj', ...(productBenchmark ? ['Game.obj'] : [])].includes(x))
-      .map(x => path.join(root, 'Bin-Int', config, 'OvGame', x)));
+    editorObjects.push(...productObjects('OvGame',['Main.obj','Context.obj',...(productBenchmark?['Game.obj']:[])]));
   }
   if (gameThread || editorThread) {
     // Current production Window implementation, with a single readback boundary
@@ -376,7 +209,7 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
     });
     const product = editorBenchmark ? 'Editor' : 'Game';
     copy('Sources/Ov'+product+'/src/Ov'+product+'/Core/'+product+'.cpp', source => {
-      const boundary = editorBenchmark ? '        RenderViews(p_deltaTime);' : '            RenderCurrentScene(m_sceneRenderer, m_context);';
+      const boundary = editorBenchmark ? '        RenderViews(p_deltaTime);' : '            auto commands=RecordSceneCommands();commands.Execute(*m_context.driver);';
       if (!source.includes(boundary)) throw Error('Immediate benchmark boundary changed');
       return 'extern void BenchmarkBeforeImmediateRender();\n' + source.replace(boundary,'        BenchmarkBeforeImmediateRender();\n'+boundary);
     });
@@ -443,17 +276,26 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
     const file=path.join(dir,'RenderTaskCoordinator.cpp');fs.writeFileSync(file,source);extraSources.push(file);
 
   }
+  if ((editorThread || gameThread) && !productBenchmark) {
+    let source=fs.readFileSync(path.join(root,'Sources/OvRendering/src/OvRendering/Core/RenderTaskCoordinator.cpp'),'utf8');
+    source='#include <cstddef>\nextern void ProductTaskEntry(int,size_t,size_t);\n'+source;
+    for(const [phase,entry] of [[1,'return Prepare(scenes[i],baseState,nullptr,cancel);'],[2,'return Record(frames[i],recorder,targets[i],nullptr,cancel);']]) {
+      if(!source.includes(entry))throw Error('Product task boundary changed');
+      source=source.replace(entry,'ProductTaskEntry('+phase+',i,'+(phase===1?'scenes':'frames')+'.size()); '+entry);
+    }
+    const copy=path.join(dir,'RenderTaskCoordinator.cpp');fs.writeFileSync(copy,source);
+    extraSources.push(copy,path.join(root,'Tests/RenderingCommands/product_concurrency_probe.cpp'));
+  }
   const args = ['/nologo','/std:c++20','/EHsc','/W3','/WX',config === 'Debug' ? '/MDd' : '/MD',config === 'Debug' ? '/Od' : '/O2','/bigobj','/Gy','/Zi',
-    ...(frontendImmediate ? ['/DFRONTEND_IMMEDIATE_ORACLE'] : []),
     ...(stages ? ['/DFRONTEND_STAGE_VALIDATION'] : []),
     ...(bindings ? ['/DFRONTEND_BINDING_VALIDATION'] : []),
     ...(postprocess ? ['/DA5_POSTPROCESS'] : []),
     '/DTRACY_ENABLE','/DTRACY_ON_DEMAND','/DTRACY_MEMORY_ENABLE','/DLUA_SCRIPTING','/DSOL_NO_LUA_HPP',config === 'Debug' ? '/D_DEBUG' : '/DNDEBUG',
-    ...((variant === 'current' || geometry) ? ['/DSKINNING_NEW_PATH'] : []), ...((geometry || drawPackets) && variant === 'current' ? ['/DGEOMETRY_COMMANDS_NEW_PATH'] : []), ...((material || drawPackets) && variant === 'current' ? ['/DMATERIAL_COMMANDS_NEW_PATH'] : []), ...((snapshots || drawPackets) && variant === 'current' ? ['/DSNAPSHOT_NEW_PATH'] : []), ...((drawInputs || drawPackets) && variant === 'current' ? ['/DDRAW_INPUTS_NEW_PATH'] : []), ...(drawPackets ? ['/DDRAW_PACKETS_TEST'] : []), ...(commandList && editor ? ['/DEDITOR_COMMANDS_TEST'] : []), ...(editorUI ? ['/DEDITOR_UI_TEST'] : []), ...(productLoop && editor ? ['/DPRODUCT_EDITOR'] : []), ...(mutexDeque ? ['/DOVTOOLS_JOBS_USE_MUTEX_DEQUE'] : []), ...(asan ? ['/fsanitize=address', '/D_DISABLE_VECTOR_ANNOTATION', '/D_DISABLE_STRING_ANNOTATION'] : []),
+    '/DSKINNING_NEW_PATH', ...((geometry || commandList) ? ['/DGEOMETRY_COMMANDS_NEW_PATH'] : []), ...((material || commandList) ? ['/DMATERIAL_COMMANDS_NEW_PATH'] : []), ...((snapshots || commandList) ? ['/DSNAPSHOT_NEW_PATH'] : []), ...(commandList && editor ? ['/DEDITOR_COMMANDS_TEST'] : []), ...(editorUI ? ['/DEDITOR_UI_TEST'] : []), ...(productLoop && editor ? ['/DPRODUCT_EDITOR'] : []), ...(mutexDeque ? ['/DOVTOOLS_JOBS_USE_MUTEX_DEQUE'] : []), ...(asan ? ['/fsanitize=address', '/D_DISABLE_VECTOR_ANNOTATION', '/D_DISABLE_STRING_ANNOTATION'] : []),
     '/I' + overlay, '/I' + path.join(msvc,'include'), ...['ucrt','shared','um','winrt'].map(x => '/I' + path.join(sdk,'Include',sdkVersion,x)),
     ...fs.readdirSync(path.join(root,'Sources')).filter(x => x.startsWith('Ov')).map(x => '/I' + path.join(root,'Sources',x,'include')),
     ...depIncludes.map(x => '/I' + path.join(root,'Dependencies',x)),
-    '/Fo' + dir + '/', '/Fd' + path.join(dir,'compile.pdb'), '/Fe' + exe, path.join(root, auxiliary ? 'Tests/RenderingCommands/auxiliary_validation.cpp' : frontend ? 'Tests/RenderingCommands/frontend_validation.cpp' : parallelRecording ? 'Tests/RenderingCommands/parallel_recording_validation.cpp' : recordingBenchmark ? 'Tests/RenderingCommands/recording_benchmark.cpp' : editorBenchmark ? 'Tests/RenderingCommands/editor_benchmark.cpp' : gameBenchmark ? 'Tests/RenderingCommands/game_benchmark.cpp' : editorStress ? 'Tests/RenderingCommands/editor_stress_validation.cpp' : editorThread ? 'Tests/RenderingCommands/editor_thread_validation.cpp' : gameThread ? 'Tests/RenderingCommands/game_thread_validation.cpp' : productLoop ? 'Tests/RenderingCommands/application_loop_validation.cpp' : gameFrame ? 'Tests/RenderingCommands/game_frame_validation.cpp' : resourceExecutor ? 'Tests/RenderingCommands/resource_executor_validation.cpp' : gpuProfiling ? 'Tests/RenderingCommands/gpu_profiling_validation.cpp' : imguiLifetime ? 'Tests/RenderingCommands/imgui_lifetime_validation.cpp' : textureRegistry ? 'Tests/RenderingCommands/texture_registry_validation.cpp' : resourceLifetime ? 'Tests/RenderingCommands/resource_lifetime_validation.cpp' : logDispatch ? 'Tests/RenderingCommands/log_dispatch_validation.cpp' : renderThread ? 'Tests/RenderingCommands/render_thread_validation.cpp' : renderFrame ? 'Tests/RenderingCommands/render_frame_validation.cpp' : uiCommands ? 'Tests/RenderingCommands/ui_command_validation.cpp' : commandList && !editor ? 'Tests/RenderingCommands/command_list_validation.cpp' : targetState && !editor ? 'Tests/RenderingCommands/target_state_validation.cpp' : frameInputs && !editor ? 'Tests/RenderingCommands/frame_input_validation.cpp' : drawPackets && !editor ? 'Tests/RenderingCommands/packet_validation.cpp' : drawInputs ? 'Tests/RenderingCommands/draw_input_validation.cpp' : snapshots ? 'Tests/RenderingCommands/snapshot_validation.cpp' : material ? 'Tests/RenderingCommands/material_validation.cpp' : geometry ? 'Tests/RenderingCommands/geometry_validation.cpp' : editor ? 'Tests/Skinning/editor_validation.cpp' : parallel ? 'Tests/Skinning/parallel_validation.cpp' : 'Tests/Skinning/serial_validation.cpp'), cpp, scene, ...extraSources,
+    '/Fo' + dir + '/', '/Fd' + path.join(dir,'compile.pdb'), '/Fe' + exe, path.join(root, pipeline ? 'Tests/RenderingCommands/pipeline_validation.cpp' : auxiliary ? 'Tests/RenderingCommands/auxiliary_validation.cpp' : frontend ? 'Tests/RenderingCommands/frontend_validation.cpp' : parallelRecording ? 'Tests/RenderingCommands/parallel_recording_validation.cpp' : recordingBenchmark ? 'Tests/RenderingCommands/recording_benchmark.cpp' : editorBenchmark ? 'Tests/RenderingCommands/editor_benchmark.cpp' : gameBenchmark ? 'Tests/RenderingCommands/game_benchmark.cpp' : editorStress ? 'Tests/RenderingCommands/editor_stress_validation.cpp' : editorThread ? 'Tests/RenderingCommands/editor_thread_validation.cpp' : gameThread ? 'Tests/RenderingCommands/game_thread_validation.cpp' : productLoop ? 'Tests/RenderingCommands/application_loop_validation.cpp' : gameFrame ? 'Tests/RenderingCommands/game_frame_validation.cpp' : resourceExecutor ? 'Tests/RenderingCommands/resource_executor_validation.cpp' : gpuProfiling ? 'Tests/RenderingCommands/gpu_profiling_validation.cpp' : imguiLifetime ? 'Tests/RenderingCommands/imgui_lifetime_validation.cpp' : textureRegistry ? 'Tests/RenderingCommands/texture_registry_validation.cpp' : resourceLifetime ? 'Tests/RenderingCommands/resource_lifetime_validation.cpp' : logDispatch ? 'Tests/RenderingCommands/log_dispatch_validation.cpp' : renderThread ? 'Tests/RenderingCommands/render_thread_validation.cpp' : renderFrame ? 'Tests/RenderingCommands/render_frame_validation.cpp' : uiCommands ? 'Tests/RenderingCommands/ui_command_validation.cpp' : commandList && !editor ? 'Tests/RenderingCommands/command_list_validation.cpp' : targetState && !editor ? 'Tests/RenderingCommands/target_state_validation.cpp' : snapshots ? 'Tests/RenderingCommands/snapshot_validation.cpp' : material ? 'Tests/RenderingCommands/material_validation.cpp' : geometry ? 'Tests/RenderingCommands/geometry_validation.cpp' : editor ? 'Tests/Skinning/editor_validation.cpp' : parallel ? 'Tests/Skinning/parallel_validation.cpp' : 'Tests/Skinning/serial_validation.cpp'), cpp, scene, ...extraSources,
     path.join(root, 'Sources/OvTools/src/OvTools/Jobs/JobSystem.cpp'),
     '/link', '/LIBPATH:' + path.join(msvc,'lib/x64'), ...['ucrt','um'].map(x => '/LIBPATH:' + path.join(sdk,'Lib',sdkVersion,x,'x64')),
     ...editorObjects,
@@ -465,7 +307,7 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
   if (asan) fs.copyFileSync(path.join(msvc,'bin/Hostx64/x64/clang_rt.asan_dynamic-x86_64.dll'), path.join(dir,'clang_rt.asan_dynamic-x86_64.dll'));
   if (auxiliary) {
     const captures=[];
-    for (const mode of [0,1,2,3,4]) {
+    for (const mode of [1,2,3]) {
       const captureDir=path.join(dir,'mode-'+mode);fs.mkdirSync(captureDir,{recursive:true});
       const stdout=run(exe,[captureDir,String(mode)],path.join(root,'Build',config),path.join(captureDir,'run.log'),120000);
       captures.push(captureDir);manifest.results.push({mode,stdout});console.log('PASS: auxiliary mode',mode);
@@ -473,13 +315,13 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
     for(const name of ['frames.bin','shadows.bin','cubes.bin']) {
       const reference=fs.readFileSync(path.join(captures[0],name));
       if(!reference.length || captures.some(dir=>!fs.readFileSync(path.join(dir,name)).equals(reference)))
-        throw Error('Auxiliary old/serial/two Worker/one Worker/immediate '+name+' differ');
+        throw Error('Auxiliary serial/two Worker/one Worker '+name+' differ');
     }
-    manifest.auxiliaryComparison={exactMain:true,exactShadow:true,exactCubeMips:true,framesPerMode:14,modes:5};
+    manifest.auxiliaryComparison={exactMain:true,exactShadow:true,exactCubeMips:true,framesPerMode:14,modes:3};
   } else if (frontend) {
-    // Each mode gets a fresh process/context and an independent uninstrumented oracle.
+    // Each scheduling/trace mode gets a fresh process/context; compare all captures to serial.
     const captures = [];
-    for (const bindings of ['clean', 'poison']) for (const trace of ['none', 'staged']) for (let mode = bindings === 'clean' ? 0 : 1; mode < 3; ++mode) {
+    for (const bindings of ['clean', 'poison']) for (const trace of ['none', 'staged']) for (let mode = 1; mode < 3; ++mode) {
       const captureDir = path.join(dir, 'cold-' + mode + '-' + trace + (bindings === 'clean' ? '' : '-poison'));
       fs.mkdirSync(captureDir, { recursive: true });
       const stdout = run(exe, [captureDir, String(mode), trace, bindings], path.join(root, 'Build', config), path.join(captureDir, 'run.log'), 120000);
@@ -489,48 +331,37 @@ for (const variant of currentOnly ? ['current'] : ['baseline', 'current']) {
     }
     const pixels = captures.map(c => fs.readFileSync(path.join(c.directory, 'frontend-' + c.mode + '.rgba')));
     if (pixels[0].length !== 8 * 96 * 64 * 4 || pixels.some(p => !p.equals(pixels[0])))
-      throw Error('Cold old/serial/Worker or traced/untraced pixels differ');
+      throw Error('Cold serial/Worker or traced/untraced pixels differ');
     const traces = captures.filter(c => c.trace === 'staged').map(c => fs.readFileSync(path.join(c.directory, 'frontend-' + c.mode + '.draws')));
     if (!traces[0].length || traces.some(t => !t.equals(traces[0])))
-      throw Error('Cold old/serial/Worker logical draw data differ');
+      throw Error('Cold serial/Worker logical draw data differ');
     manifest.frontendComparison = { captures, pixelBytes: pixels[0].length, traceBytes: traces[0].length,
       exactPixels: true, exactDrawData: true, traceDoesNotChangePixels: true, constantReadback: 'all active UBOs staged after all draws',
       uniformBlocks: [{ name: 'EngineUBO', binding: 0, bytes: 272 }, { name: 'ReflectionUBO', binding: 1, bytes: 128 }],
-      legacyInput: 'external 128-byte neutral reflection UBO; unchanged A0 renderer',
       invalidBindingControls: stages ? [] : ['missing', '124-byte range', '16-byte range'],
       drawsPerFrame: stages ? 12 : 4,
       bindingAndRecording: bindings ? 'two Worker private binding ranges and command blocks; controlled overlap/reverse/fail/cancel/partial submit; single Worker and recovery' : null,
       storageBlocks: bindings ? [{name:'LightSSBO',binding:0,bytes:64},{name:'SkinningSSBO',binding:1,bytes:'64 identity / 192 pose'}] : [],
       preparation: stages ? 'two Worker ranges; controlled overlap, forward/reverse completion, failure/cancel/partial submit join, single Worker' : 'shared candidate preparation; serial/Worker failure and lifetime regression',
       pollution: 'new paths: absent/short/stale bindings before replay and between staged draws'  };
-    console.log('PASS: 10 cold processes with valid legacy input and new-path binding pollution, exact old/serial/Worker pixels and staged draw data; tracing does not change any pixel');
+    console.log('PASS: 8 cold processes with clean/poisoned explicit bindings, exact serial/Worker pixels and staged draw data; tracing does not change any pixel');
   } else {
     const stdout = run(exe, [dir], path.join(root,'Build',config), path.join(dir,'run.log'), productBenchmark ? 600000 : (parallelRecording || editorStress) ? 300000 : 120000);
     console.log(stdout.split(/\r?\n/).filter(line => /^(PASS:|Single-instance|BENCH:)/.test(line)).join('\n'));
     manifest.results.push({ variant, stdout });
   }
 }
-if (!currentOnly) {
-  for (const file of drawInputs ? ['draw-input-trace.bin', 'draw-input-frames.bin', 'material-state.bin', 'material-trace.bin', 'geometry-frames.bin', 'draws.bin', 'frames.bin'] : material ? ['material-state.bin', 'material-trace.bin', 'geometry-frames.bin', 'draws.bin', 'frames.bin'] : geometry ? ['geometry-frames.bin', 'draws.bin', 'frames.bin'] : ['states.bin', 'frames.bin']) {
-    const a = fs.readFileSync(path.join(output,'baseline',file));
-    const b = fs.readFileSync(path.join(output,'current',file));
-    if (!a.equals(b)) {
-      let first = 0; while (first < Math.min(a.length, b.length) && a[first] === b[first]) ++first;
-      throw Error(`${file} differs at byte ${first}; lengths ${a.length}/${b.length}`);
-    }
-    console.log(`EXACT MATCH: ${file}, ${a.length} bytes`);
-  }
-}
-if (effectsOracle) {
-  const current=path.join(root,'Build/JobsValidation/Skinning',config+'-command-list');
-  if(!fs.existsSync(path.join(current,'result.json')))throw Error('Run --command-list before --effects-oracle');
-  const captures=['immediate','delayed','dynamic-immediate','dynamic-delayed','dynamic-repeat','dynamic-packet','dynamic-recovered'];
-  for(const capture of captures) {
-    const oracle=fs.readFileSync(path.join(output,'current',capture,'frames.bin'));
-    const actual=fs.readFileSync(path.join(current,'current',capture,'frames.bin'));
-    if(!oracle.length||!oracle.equals(actual))throw Error('A4 effect oracle differs: '+capture);
-  }
-  manifest.effectsComparison={baseline:'f9ab4cb',captures,framesPerCapture:24,exactPixels:true};
-  console.log('PASS: A4 original effects and explicit fullscreen pipeline match in all 7 image sequences');
+// A5 baseline is data only: never compile or patch historical renderer sources.
+const golden=JSON.parse(fs.readFileSync(path.join(root,'Tests/RenderingCommands/a5-image-baseline.json'),'utf8'));
+const relative=path.relative(root,output).replaceAll('\\','/')+'/current/';
+const expected=golden.files.filter(f=>f.path.startsWith(relative)&&
+  (/(?:^|\/)frames\.bin$|(?:shadows|cubes)\.bin$|editor-command-frames\.bin$|\.(rgba|draws)$/.test(f.path))&&
+  (!auxiliary||/\/mode-[123]\//.test(f.path))&&(!frontend||/\/cold-[12]-/.test(f.path)));
+manifest.historicalComparison={baseline:golden.baseline,files:[]};
+for(const item of expected) {
+  const bytes=fs.readFileSync(path.join(root,item.path));
+  if(bytes.length!==item.bytes||crypto.createHash('sha256').update(bytes).digest('hex')!==item.sha256)
+    throw Error('A5 exact baseline differs: '+item.path);
+  manifest.historicalComparison.files.push(item.path);
 }
 fs.writeFileSync(path.join(output,'result.json'), JSON.stringify(manifest, null, 2));

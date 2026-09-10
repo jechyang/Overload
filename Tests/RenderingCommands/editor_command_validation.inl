@@ -2,9 +2,6 @@
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Rendering/EditorOverlayCollector.h>
 #include <OvEditor/Rendering/PickingCollector.h>
-#include <OvEditor/Rendering/PickingRenderPass.h>
-#include <OvEditor/Rendering/DebugSceneRenderer.h>
-#include <OvEditor/Rendering/GridRenderPass.h>
 #include <OvCore/ECS/Components/CPhysicalBox.h>
 
 size_t editorReadCalls=0;
@@ -40,8 +37,7 @@ void CheckReadbackPacking(const baregl::Framebuffer::Snapshot& target,const std:
 void EditorCommandValidation(OvEditor::Core::Context& context, OvRendering::Resources::Model* model,
     OvCore::Resources::Material* material, const std::filesystem::path& dir)
 {
-    using Renderer=OvEditor::Rendering::DebugSceneRenderer;
-    using Picking=OvEditor::Rendering::PickingRenderPass;
+    using Readback=OvEditor::Rendering::PickingReadback;
     using List=OvRendering::Data::RenderCommandList;
     const auto bounds=model->GetBoundingSphere();
     std::ofstream images(dir/"editor-command-frames.bin",std::ios::binary);
@@ -52,7 +48,7 @@ void EditorCommandValidation(OvEditor::Core::Context& context, OvRendering::Reso
         for(bool delayed:{false,true})
         {
             std::optional<List> commands;
-            std::shared_ptr<const Picking::Readback> readback;
+            std::shared_ptr<const Readback> readback;
             baregl::Framebuffer::Snapshot output;
             tinyxml2::XMLDocument serialized;
             {
@@ -67,15 +63,6 @@ void EditorCommandValidation(OvEditor::Core::Context& context, OvRendering::Reso
                 baregl::Framebuffer target;OvCore::Rendering::FramebufferUtil::SetupFramebuffer(target,160,120,true,true,false);output=target.RecordTarget();
                 OvRendering::Entities::Camera camera;camera.SetPosition(bounds.position+FVector3{0,bounds.radius*.5f,bounds.radius*7});
                 camera.SetRotation(FQuaternion(FVector3{0,180,0}));camera.SetFar(1000);camera.CacheMatrices(160,120);
-                OvRendering::Data::FrameDescriptor frame{.renderWidth=160,.renderHeight=120,.camera=camera,.outputBuffer=target};
-                Renderer renderer(*context.driver);renderer.SetDrawRecordingEnabled(delayed);
-                auto& picking=renderer.GetPass<Picking>("Picking");
-                auto prepare=[&] {
-                    renderer.AddDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>({.scene=scene,.fallbackMaterial=*material});
-                    auto& selected=iteration%3==0?skin.owner:iteration%3==1?cameraActor:probe.owner;
-                    renderer.AddDescriptor<Renderer::DebugSceneDescriptor>({.gizmoOperation=static_cast<OvEditor::Core::EGizmoOperation>(iteration%3),.selectedActor=selected});
-                    renderer.AddDescriptor<OvEditor::Rendering::GridRenderPass::GridDescriptor>({{.17f,.17f,.17f},camera.GetPosition()});
-                };
                 OvCore::Rendering::RenderFrontend frontend;
                 OvEditor::Rendering::EditorOverlayCollector overlays;
                 OvEditor::Rendering::PickingCollector newPicking;
@@ -84,7 +71,7 @@ void EditorCommandValidation(OvEditor::Core::Context& context, OvRendering::Reso
                     OvCore::Rendering::SceneRenderRequest request{{scene,camera,160,120}};request.fallbackMaterial=material;
                     OvCore::Rendering::SceneFrameRequest frameRequest{request,target.RecordTarget(),shadow};
                     const auto state=context.driver->CreatePipelineState();
-                    auto prepared=frontend.PrepareFrame(frontend.ExtractFrame(frameRequest),state,context.jobSystem.get());
+                    auto prepared=frontend.PrepareFrame(frontend.ExtractFrame(frameRequest),state,delayed?context.jobSystem.get():nullptr);
                     const auto view=prepared->GetPreparedViews().back()->GetView();
                     List result;result.Append(frontend.RecordFrame(std::move(prepared),context.jobSystem.get()));
                     auto& selected=iteration%3==0?skin.owner:iteration%3==1?cameraActor:probe.owner;
@@ -101,17 +88,16 @@ void EditorCommandValidation(OvEditor::Core::Context& context, OvRendering::Reso
                     {
                         auto failed=recordFrontend();auto failedReadback=newPicking.GetReadback();
                         if(mode==1)failed.Append([](auto&){throw std::runtime_error("failure after picking readback");});
-                        failed.Seal(context.jobSystem.get());
+                        failed.Seal(delayed?context.jobSystem.get():nullptr);
                         if(mode==0)failed.Cancel();
                         if(mode==1){bool caught=false;try{failed.Execute(*context.driver);}catch(const std::runtime_error&){caught=true;}Require(caught,"readback failure injection missing");}
                         if(mode==2){auto abandoned=std::move(failed);}
                         Require(!failedReadback->IsReady() && !failedReadback->Resolve(scene,80,60),"failed/abandoned frame published picking results");
                     }
                 }
-                prepare();
                 {EditorReadHook hook;
-                 if(delayed) { commands.emplace(recordFrontend());commands->Seal(context.jobSystem.get());Require(editorReadCalls==0,"recording performed picking GPU readback"); }
-                 else { renderer.BeginFrame(frame);renderer.DrawFrame();renderer.EndFrame(); }}
+                 if(delayed) { commands.emplace(recordFrontend());commands->Seal(delayed?context.jobSystem.get():nullptr);Require(editorReadCalls==0,"recording performed picking GPU readback"); }
+                 else { auto referenceCommands=recordFrontend();referenceCommands.Seal();referenceCommands.Execute(*context.driver); }}
                 if(delayed)
                 {
                     readback=newPicking.GetReadback();Require(readback && !readback->IsReady(),"picking published before command completion");
@@ -137,7 +123,7 @@ void EditorCommandValidation(OvEditor::Core::Context& context, OvRendering::Reso
                 else
                 {
                     reference.resize(160*120*4);output.ReadRGBA8(reference);
-                    referencePicking.resize(160*120*4);picking.m_actorPickingFramebuffer.RecordTarget().ReadRGBA8(referencePicking);
+                    referencePicking=newPicking.GetReadback()->pixels;
                 }
                 auto* rootNode=serialized.NewElement("root");serialized.InsertFirstChild(rootNode);scene.OnSerialize(serialized,rootNode);
             }

@@ -15,24 +15,15 @@
 using namespace OvCore;
 using namespace OvRendering;
 
-std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor::Extract(
-    const StaticOpaqueRequest& p_request,
-    const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black, Core::MeshCommandRecorder::ProgramCache* programs)
-{
-    SceneRenderRequest request{p_request};
-    request.pipeline.stages = {Data::RenderStage::Opaque};
-    return ExtractImpl(request, true, p_white, p_black, false, {}, nullptr, nullptr, programs);
-}
-
 std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor::ExtractScene(
     const SceneRenderRequest& p_request,
     const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black, Core::MeshCommandRecorder::ProgramCache* programs)
 {
-    return ExtractImpl(p_request, false, p_white, p_black, p_request.pipeline.stages == std::vector{Data::RenderStage::Picking}, {}, nullptr, nullptr, programs);
+    return ExtractImpl(p_request, p_white, p_black, p_request.pipeline.stages == std::vector{Data::RenderStage::Picking}, {}, nullptr, nullptr, programs);
 }
 
 std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor::ExtractImpl(
-    const SceneRenderRequest& p_request, bool p_opaqueOnly,
+    const SceneRenderRequest& p_request,
     const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black, bool p_planned, std::span<const Data::ReflectionProbeInput> p_probes, MaterialCache* p_cache, const Data::RenderViewInput* p_lightView, Core::MeshCommandRecorder::ProgramCache* programs)
 {
     p_request.pipeline.Validate();
@@ -47,8 +38,8 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     const auto anyActive = [](const auto& list) {
         return std::any_of(list.begin(), list.end(), [](const auto* c) { return c->owner.IsActive(); });
     };
-    if ((p_opaqueOnly && anyActive(components.lights)) || (!p_planned && anyActive(components.reflectionProbes)) || (!p_planned && anyActive(components.postProcessStacks)))
-        throw std::invalid_argument("Static scene view does not own lighting, reflection or post-processing");
+    if ((!p_planned && anyActive(components.reflectionProbes)) || (!p_planned && anyActive(components.postProcessStacks)))
+        throw std::invalid_argument("ExtractScene: reflection/post-processing require ExtractFrame");
     auto builder = std::unique_ptr<Data::RenderSceneSnapshot>(new Data::RenderSceneSnapshot);
     builder->m_pipeline = p_request.pipeline;
     auto& view = builder->m_view;
@@ -81,7 +72,7 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
         if (!component->owner.IsActive()) continue;
         const auto& light = component->GetData();
         if (light.castShadows && !p_request.shadow.map && !p_planned && !shadow && !capture)
-            throw std::invalid_argument("Shadow producer requires an explicit imported receiver map until A4");
+            throw std::invalid_argument("ExtractScene: shadow receiver requires an imported map or ExtractFrame");
         builder->m_lights.push_back({light.transform->GetWorldPosition(), light.CalculateEffectRange(), light.GenerateMatrix()});
     }
     std::vector<uintptr_t> identities;
@@ -104,7 +95,6 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
         if (!materials || !Rendering::SatisfiesVisibility(materials->GetVisibilityFlags(), shadow ? Rendering::EVisibilityFlags::SHADOW : capture ? Rendering::EVisibilityFlags::REFLECTION : Rendering::EVisibilityFlags::GEOMETRY)) continue;
         const auto* skin = owner.GetComponent<ECS::Components::CSkinnedMeshRenderer>();
         const bool hasSkin = Rendering::SkinningUtils::IsSkinningActive(skin);
-        if (p_opaqueOnly && hasSkin) throw std::invalid_argument("Static opaque adapter does not own skinning");
         const auto& transform = owner.transform.GetFTransform();
         for (const auto* mesh : renderer->GetModel()->GetMeshes())
         {
@@ -114,8 +104,6 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
             auto* material = p_request.overrideMaterial ? p_request.overrideMaterial :
                 (sourceMaterial ? sourceMaterial : p_request.fallbackMaterial);
             if (!material || !material->IsValid()) continue;
-            if (p_opaqueOnly && (material->IsUserInterface() || material->IsBlendable()))
-                throw std::invalid_argument("Static scene view does not own Transparent or SceneUI");
             const bool originalSkinning = material->SupportsFeature("SKINNING");
             if (shadow)
             {
@@ -144,14 +132,9 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
             }
             if (typeid(*mesh) != typeid(OvRendering::Resources::Mesh))
                 throw std::invalid_argument("Scene requires standard retained geometry");
-            if (p_opaqueOnly && (material->HasFeature("SKINNING") ||
-                (description.shadowReceiver && material->IsShadowReceiver()) ||
-                (description.reflectionReceiver && material->IsReflectionReceiver())))
-                throw std::invalid_argument("Static opaque adapter does not own feature bindings");
             for (const auto& [name, property] : material->GetProperties())
                 if (property.singleUse)
                 {
-                    if (p_opaqueOnly) throw std::invalid_argument("Static opaque adapter does not own single-use properties");
                     resolveSingleUse = true;
                 }
             std::optional<Data::FeatureSet> features;
@@ -306,7 +289,7 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     return std::shared_ptr<const Data::RenderSceneSnapshot>(std::move(builder));
 }
 
-Data::RenderViewInput Rendering::SceneRenderExtractor::CaptureView(const StaticOpaqueRequest& p_request)
+Data::RenderViewInput Rendering::SceneRenderExtractor::CaptureView(const SceneViewRequest& p_request)
 {
     Data::RenderViewInput view;
     const auto& camera = p_request.camera;

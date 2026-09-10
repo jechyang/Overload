@@ -8,9 +8,8 @@
 #include <string>
 
 #include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
-#include <OvCore/Rendering/SkinningDrawableDescriptor.h>
 #include <OvCore/Rendering/SkinningUtils.h>
-#include <OvRendering/Entities/Drawable.h>
+#include <OvCore/Rendering/ToolDrawInput.h>
 
 bool OvCore::Rendering::SkinningUtils::IsSkinningActive(const OvCore::ECS::Components::CSkinnedMeshRenderer* p_renderer)
 {
@@ -24,27 +23,10 @@ OvRendering::Data::FeatureSet OvCore::Rendering::SkinningUtils::BuildFeatureSet(
 	return features;
 }
 
-void OvCore::Rendering::SkinningUtils::ApplyDescriptor(
-	OvRendering::Entities::Drawable& p_drawable,
-	const OvCore::ECS::Components::CSkinnedMeshRenderer& p_renderer
-)
+void OvCore::Rendering::SkinningUtils::CaptureToolSkinning(
+    ToolDrawInput& input, const ECS::Components::CSkinnedMeshRenderer& renderer,
+    const OvRendering::Data::FeatureSet* base)
 {
-	const auto& boneMatrices = p_renderer.GetBoneMatricesTransposed();
-
-	p_drawable.SetDescriptor<OvCore::Rendering::SkinningDrawableDescriptor>({
-		.matrices = boneMatrices.data(),
-		.count = static_cast<uint32_t>(boneMatrices.size()),
-		.poseVersion = p_renderer.GetPoseVersion(),
-		.boundsScale = p_renderer.GetMeshBoundsScale()
-	});
-}
-
-void OvCore::Rendering::SkinningUtils::ApplyToDrawable(
-	OvRendering::Entities::Drawable& p_drawable,
-	const OvCore::ECS::Components::CSkinnedMeshRenderer& p_renderer,
-	const OvRendering::Data::FeatureSet* p_baseFeatures
-)
-{
-	p_drawable.featureSetOverride = BuildFeatureSet(p_baseFeatures);
-	ApplyDescriptor(p_drawable, p_renderer);
+    input.featureSetOverride=BuildFeatureSet(base);
+    input.palette=renderer.GetBoneMatricesTransposed();
 }

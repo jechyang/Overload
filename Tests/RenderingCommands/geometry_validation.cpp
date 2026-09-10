@@ -19,15 +19,7 @@ namespace OvDebug
     }
 }
 
-struct ProbeRenderer : Core::ABaseRenderer
-{
-    using ABaseRenderer::ABaseRenderer;
-    void DrawFrame() override {}
-#ifdef GEOMETRY_COMMANDS_NEW_PATH
-    using ABaseRenderer::PrepareGeometryDraw;
-#endif
-};
-
+#include <OvRendering/Core/MeshFeatureProcessor.h>
 Data::StateMask Mask(unsigned bits)
 {
     Data::StateMask mask;
@@ -42,54 +34,16 @@ Data::StateMask Mask(unsigned bits)
 
 void PreparationValidation()
 {
-#ifdef GEOMETRY_COMMANDS_NEW_PATH
-    // No GL context exists here. Any mesh access during preparation is a failure.
-    struct BorrowedMesh : Resources::IMesh
+    for(unsigned bits=0;bits<64;++bits)
     {
-        void Bind() const override { throw std::runtime_error("prepare bound mesh"); }
-        void Unbind() const override { throw std::runtime_error("prepare unbound mesh"); }
-        uint32_t GetVertexCount() const override { throw std::runtime_error("prepare read vertices"); }
-        uint32_t GetIndexCount() const override { throw std::runtime_error("prepare read indices"); }
-        const Geometry::BoundingSphere& GetBoundingSphere() const override { throw std::runtime_error("prepare read bounds"); }
-    } mesh;
-    for (unsigned bits = 0; bits < 64; ++bits)
-    {
-        Data::PipelineState base;
-        base.stencilFuncRef = 37; base.stencilWriteMask = 0xA5;
-        base.lineWidthPow2 = 2; base.scissorTest = true;
-        base.cullFace = ECullFace::FRONT_AND_BACK;
-        const auto command = [&]
-        {
-            Data::Material material;
-            material.SetGPUInstances(7);
-            Entities::Drawable drawable;
-            drawable.mesh = mesh; drawable.material = material;
-            drawable.stateMask = Mask(bits); drawable.primitiveMode = EPrimitiveMode::LINES;
-            const auto prepared = ProbeRenderer::PrepareGeometryDraw(base, drawable);
-            material.SetGPUInstances(1); drawable.stateMask = Mask(63 - bits);
-            drawable.primitiveMode = EPrimitiveMode::TRIANGLES;
-            return prepared;
-        }(); // Material and Drawable are gone; only the mesh remains borrowed.
-        const auto& p = command.pipelineState;
-        Require(&command.mesh == &mesh && command.instances == 7 && command.primitiveMode == EPrimitiveMode::LINES, "command retained mutable draw input");
-        Require(p.depthWriting == bool(bits & 1) && p.colorWriting.mask == ((bits & 2) ? 15 : 0) && p.blending == bool(bits & 4) && p.depthTest == bool(bits & 32), "captured draw state changed");
-        Require(p.culling == bool(bits & 24), "captured culling changed");
-        const auto expectedCull = (bits & 24) == 24 || !(bits & 24) ? ECullFace::FRONT_AND_BACK : (bits & 16) ? ECullFace::BACK : ECullFace::FRONT;
-        Require(p.cullFace == expectedCull && p.stencilFuncRef == 37 && p.stencilWriteMask == 0xA5 && p.lineWidthPow2 == 2 && p.scissorTest, "base pass state was lost");
+        Data::PipelineState base;base.stencilFuncRef=37;base.stencilWriteMask=0xA5;
+        base.lineWidthPow2=2;base.scissorTest=true;base.cullFace=ECullFace::FRONT_AND_BACK;
+        const auto p=Core::MeshFeatureProcessor::BuildState(base,Mask(bits),Data::RenderStage::Picking);
+        Require(p.depthWriting==bool(bits&1)&&p.colorWriting.mask==((bits&2)?15:0)&&p.blending==bool(bits&4)&&p.depthTest==bool(bits&32),"explicit draw mask changed");
+        const auto expectedCull=(bits&24)==24||!(bits&24)?ECullFace::FRONT_AND_BACK:(bits&16)?ECullFace::BACK:ECullFace::FRONT;
+        Require(p.culling==bool(bits&24)&&p.cullFace==expectedCull&&p.stencilFuncRef==37&&p.stencilWriteMask==0xA5&&p.lineWidthPow2==2&&p.scissorTest,"explicit pass state lost");
     }
-    Data::Material material;
-    Entities::Drawable drawable;
-    auto reject = [&]
-    {
-        bool threw = false;
-        try { (void)ProbeRenderer::PrepareGeometryDraw({}, drawable); }
-        catch (const std::invalid_argument&) { threw = true; }
-        Require(threw, "invalid geometry accepted");
-    };
-    reject(); drawable.mesh = mesh; reject(); drawable.material = material;
-    material.SetGPUInstances(0); reject(); material.SetGPUInstances(-1); reject();
-    std::puts("PASS: 64 CPU-only snapshots survive Drawable/Material mutation and destruction; invalid input rejected");
-#endif
+    std::puts("PASS: 64 CPU-only state combinations preserve explicit pass state");
 }
 
 // Observe actual GL entry points and then forward to the real driver. This
@@ -129,7 +83,6 @@ void GeometryValidation(const std::filesystem::path& dir)
     OvWindowing::Settings::WindowSettings ws; ws.visible = false; ws.focused = false; ws.width = 64; ws.height = 64; ws.samples = 1;
     OvWindowing::Window window(device, ws); window.MakeCurrentContext();
     Context::Driver driver(Settings::DriverSettings{true});
-    ProbeRenderer renderer(driver);
     std::puts("Geometry: creating shader and mesh");
     using Loader = Resources::Loaders::ShaderLoader;
     const auto destroyShader = [](Resources::Shader* value) { Loader::Destroy(value); };
@@ -156,7 +109,6 @@ void GeometryValidation(const std::filesystem::path& dir)
     Entities::Camera camera; camera.SetClearColor({0.1f,0.2f,0.3f});
     baregl::Framebuffer framebuffer("Geometry commands validation");
     OvCore::Rendering::FramebufferUtil::SetupFramebuffer(framebuffer, 64, 64, true, true, false);
-    Data::FrameDescriptor frame{.renderWidth=64, .renderHeight=64, .camera=camera, .outputBuffer=framebuffer};
     realElements = glad_glDrawElements; glad_glDrawElements = Elements;
     realElementsInstanced = glad_glDrawElementsInstanced; glad_glDrawElementsInstanced = ElementsInstanced;
     realArrays = glad_glDrawArrays; glad_glDrawArrays = Arrays;
@@ -171,15 +123,13 @@ void GeometryValidation(const std::filesystem::path& dir)
     for (unsigned bits = 0; bits < 64; ++bits) for (unsigned branch = 0; branch < 4; ++branch)
     {
         if (branch == 0 && bits % 16 == 0) std::printf("Geometry: mask %u\n", bits);
-        renderer.BeginFrame(frame);
-        Entities::Drawable drawable;
-        drawable.mesh = branch < 2 ? static_cast<Resources::IMesh&>(indexed) : static_cast<Resources::IMesh&>(arrays);
-        drawable.material = material;
-        drawable.stateMask = Mask(bits);
-        drawable.primitiveMode = bits % 3 == 0 ? EPrimitiveMode::TRIANGLES : bits % 3 == 1 ? EPrimitiveMode::LINES : EPrimitiveMode::POINTS;
-        material.SetGPUInstances(branch % 2 ? 3 : 1);
-        material.SetProperty("tint", FVector4{float(bits + 1) / 65.0f, 0.8f, 0.2f, 0.5f});
-        renderer.DrawEntity(renderer.CreatePipelineState(), drawable);
+        framebuffer.Bind();driver.SetViewport(0,0,64,64);driver.Clear(true,true,true,{.1f,.2f,.3f,1});
+        const auto& mesh=branch<2?static_cast<const Resources::IMesh&>(indexed):static_cast<const Resources::IMesh&>(arrays);
+        const auto primitive=bits%3==0?EPrimitiveMode::TRIANGLES:bits%3==1?EPrimitiveMode::LINES:EPrimitiveMode::POINTS;
+        material.SetGPUInstances(branch%2?3:1);
+        material.SetProperty("tint",FVector4{float(bits+1)/65.0f,.8f,.2f,.5f});
+        auto snapshot=material.RecordSnapshot({}, {}, {}, {});snapshot.Execute();
+        driver.Draw(Core::MeshFeatureProcessor::BuildState(driver.CreatePipelineState(),Mask(bits),Data::RenderStage::Picking),mesh,primitive,material.GetGPUInstances());
         std::vector<unsigned char> pixels(64 * 64 * 4);
         glReadPixels(0, 0, 64, 64, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
         bool visible = false;
@@ -187,7 +137,7 @@ void GeometryValidation(const std::filesystem::path& dir)
         visibleFrames += visible;
         images.write(reinterpret_cast<const char*>(pixels.data()), static_cast<std::streamsize>(pixels.size()));
         Require(glGetError() == GL_NO_ERROR, "geometry GL error");
-        renderer.EndFrame(); TracyGpuCollect;
+        framebuffer.Unbind(); TracyGpuCollect;
     }
     glad_glDrawElements = realElements; glad_glDrawElementsInstanced = realElementsInstanced;
     glad_glDrawArrays = realArrays; glad_glDrawArraysInstanced = realArraysInstanced;

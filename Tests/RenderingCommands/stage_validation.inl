@@ -6,7 +6,6 @@
 #endif
 using Stage = OvRendering::Data::RenderStage;
 using SceneRequest = OvCore::Rendering::SceneRenderRequest;
-using Legacy = OvCore::Rendering::SceneRenderer;
 namespace
 {
 #ifdef FRONTEND_BINDING_VALIDATION
@@ -220,68 +219,49 @@ struct StageFixture
 #endif
     }
 };
-void CompareStageOracle(Frontend& frontend, Legacy& legacy, SceneRequest request, OvRendering::Data::PipelineState state,
-    OvTools::Jobs::JobSystem& jobs, OvWindowing::Window& window)
+void CompareStageModes(Frontend& frontend, SceneRequest request, OvRendering::Data::PipelineState state,
+    OvTools::Jobs::JobSystem& jobs, OvWindowing::Window& window,
+    std::initializer_list<std::pair<Stage,std::vector<uint64_t>>> order)
 {
-    auto parsed = legacy.ParseScene({request.scene});
-    auto filtered = legacy.FilterDrawables(parsed, {.camera=request.camera,
-        .overrideMaterial=request.overrideMaterial ? OvTools::Utils::OptRef<OvRendering::Data::Material>(*request.overrideMaterial) : std::nullopt,
-        .fallbackMaterial=request.fallbackMaterial ? OvTools::Utils::OptRef<OvRendering::Data::Material>(*request.fallbackMaterial) : std::nullopt,
-        .requiredVisibilityFlags=OvCore::Rendering::EVisibilityFlags::GEOMETRY,
-        .includeUI=request.includeUI, .includeTransparent=request.includeTransparent, .includeOpaque=request.includeOpaque});
     std::vector<std::pair<Stage,uint64_t>> expected;
-    auto append = [&](Stage stage, const auto& list) {
-        if (std::find(request.pipeline.stages.begin(), request.pipeline.stages.end(), stage)==request.pipeline.stages.end()) return;
-        for (const auto& [key, draw] : list)
-        {
-            size_t ordinal=0;
-            for (const auto& original : parsed.drawables)
-            {
-                if (&original.mesh.value()==&draw.mesh.value() &&
-                    &original.template GetDescriptor<Legacy::SceneDrawableDescriptor>().actor==&draw.template GetDescriptor<Legacy::SceneDrawableDescriptor>().actor) break;
-                ++ordinal;
-            }
-            expected.emplace_back(stage,ordinal);
-        }
-    };
-    for (auto stage : request.pipeline.stages)
-    {
-        if(stage==Stage::Opaque)append(stage,filtered.opaques);
-        if(stage==Stage::Transparent)append(stage,filtered.transparents);
-        if(stage==Stage::SceneUI)append(stage,filtered.ui);
-    }
+    for(const auto& [stage,indices]:order)for(auto index:indices)expected.emplace_back(stage,index);
     auto snapshot=frontend.ExtractScene(request);
     glfwMakeContextCurrent(nullptr);
     auto serial=frontend.Prepare(snapshot,state);
     auto parallel=frontend.Prepare(snapshot,state,&jobs);
-    Require(StageOrder(*serial)==expected && StageOrder(*parallel)==expected,"stage lists differ from unchanged legacy filter");
+    Require(StageOrder(*serial)==expected && StageOrder(*parallel)==expected,"stage order differs from explicit fixture expectation");
+    for(const auto& draw:serial->GetDraws())
+    {
+        const auto& mesh=serial->GetScene().GetMeshes()[draw.sourceIndex];
+        Require(mesh.actorId!=103 && mesh.actorId!=105,"inactive/far object entered stage output");
+    }
     window.MakeCurrentContext();
 }
 void StageSemantics(const std::filesystem::path& assets, OvRendering::Resources::Shader* shader,
     OvRendering::Context::Driver& driver, OvTools::Jobs::JobSystem& jobs, OvWindowing::Window& window)
 {
-    Frontend frontend; Legacy legacy(driver); StageFixture fixture(assets,shader,0);
+    Frontend frontend; StageFixture fixture(assets,shader,0);
     OvRendering::Entities::Camera camera; camera.SetPosition({0,0,3}); camera.SetRotation(FQuaternion(FVector3{0,180,0})); camera.CacheMatrices(96,64);
     const auto state=driver.CreatePipelineState();
     SceneRequest request{{*fixture.scene,camera,96,64}};
-    CompareStageOracle(frontend,legacy,request,state,jobs,window);
+    CompareStageModes(frontend,request,state,jobs,window,{{Stage::Opaque,{0,6,9,3}},{Stage::Transparent,{4,1,7,10}},{Stage::SceneUI,{5,2,8,11}}});
     auto first=frontend.ExtractScene(request);
     std::array<bool,3> participation{};
     for(const auto& mesh:first->GetMeshes())if(mesh.actorId==100)
         participation[mesh.stage==Stage::Opaque?0:mesh.stage==Stage::Transparent?1:2]=true;
     Require(std::all_of(participation.begin(),participation.end(),[](bool b){return b;}),"one object did not participate in all three stages");
-    request.overrideMaterial=&fixture.materials[1]; CompareStageOracle(frontend,legacy,request,state,jobs,window);
-    request.fallbackMaterial=&fixture.materials[2]; CompareStageOracle(frontend,legacy,request,state,jobs,window);
+    request.overrideMaterial=&fixture.materials[1]; CompareStageModes(frontend,request,state,jobs,window,{{Stage::Transparent,{3,4,5,0,1,2,6,7,8,9,10,11}}});
+    request.fallbackMaterial=&fixture.materials[2]; CompareStageModes(frontend,request,state,jobs,window,{{Stage::Transparent,{3,4,5,0,1,2,6,7,8,9,10,11}}});
     request.overrideMaterial=nullptr;
     fixture.scene->GetActors()[0]->GetComponent<CMaterialRenderer>()->RemoveMaterialAtIndex(0);
-    CompareStageOracle(frontend,legacy,request,state,jobs,window);
+    CompareStageModes(frontend,request,state,jobs,window,{{Stage::Opaque,{6,9,3}},{Stage::Transparent,{4,1,7,10}},{Stage::SceneUI,{5,0,2,8,11}}});
     OvCore::Resources::Material invalid;
     fixture.scene->GetActors()[1]->GetComponent<CMaterialRenderer>()->SetMaterialAtIndex(0,invalid);
-    CompareStageOracle(frontend,legacy,request,state,jobs,window);
+    CompareStageModes(frontend,request,state,jobs,window,{{Stage::Opaque,{6,9}},{Stage::Transparent,{4,1,7,10}},{Stage::SceneUI,{5,0,2,8,11}}});
     request.includeOpaque=false; request.includeTransparent=false; request.includeUI=false;
-    CompareStageOracle(frontend,legacy,request,state,jobs,window); // Fallback remains included in actual category.
+    CompareStageModes(frontend,request,state,jobs,window,{{Stage::SceneUI,{0,2,8,11}}}); // Fallback remains included in actual category.
     request.includeOpaque=true; request.includeTransparent=true; request.includeUI=true;
-    request.pipeline.stages={Stage::SceneUI,Stage::Opaque}; CompareStageOracle(frontend,legacy,request,state,jobs,window);
+    request.pipeline.stages={Stage::SceneUI,Stage::Opaque}; CompareStageModes(frontend,request,state,jobs,window,{{Stage::SceneUI,{5,0,2,8,11}},{Stage::Opaque,{6,9}}});
     for(auto stage : {Stage::Picking,static_cast<Stage>(999)})
     {
         request.pipeline.stages={stage}; bool rejected=false;
@@ -292,7 +272,7 @@ void StageSemantics(const std::filesystem::path& assets, OvRendering::Resources:
     try{frontend.ExtractScene(request);}catch(const std::invalid_argument&){duplicate=true;}
     Require(duplicate,"duplicate stage submitted geometry twice");
     Require(&shader->GetVariant("MISSING_A2_TECHNIQUE",{"MISSING_A2_VARIANT"})==&shader->GetVariant(),"missing technique fallback changed");
-    std::puts("PASS: unchanged filter oracle: three stages per object, global/equal-key order, override/fallback/invalid material, inclusion exception, pipeline subset/order, unsupported/duplicate stage rejection");
+    std::puts("PASS: serial/Worker stage contracts: three stages per object, global/equal-key order, override/fallback/invalid material, inclusion exception, pipeline subset/order, unsupported/duplicate stage rejection");
 }
 #ifdef FRONTEND_BINDING_VALIDATION
 #include "binding_validation.inl"
@@ -316,7 +296,7 @@ void StageValidation(const std::filesystem::path& dir, std::optional<unsigned> s
     poisonBuffer=poison.GetID();shortBuffer=shortRange.GetID();
     for(unsigned mode=selectedMode.value_or(0);mode<selectedMode.value_or(2)+1;++mode)
     {
-        std::vector<unsigned char> allPixels; std::ostringstream trace(std::ios::binary); Hooks hooks(trace); newPath=mode!=0;
+        std::vector<unsigned char> allPixels; std::ostringstream trace(std::ios::binary); Hooks hooks(trace); newPath=true;
         for(unsigned frame=0;frame<8;++frame)
         {
             auto fixture=std::make_unique<StageFixture>(assets,shader,frame);
@@ -324,19 +304,6 @@ void StageValidation(const std::filesystem::path& dir, std::optional<unsigned> s
             if(frame%2){camera.SetProjectionMode(OvRendering::Settings::EProjectionMode::ORTHOGRAPHIC);camera.SetSize(1.5f);}
             auto target=std::make_unique<baregl::Framebuffer>(); OvCore::Rendering::FramebufferUtil::SetupFramebuffer(*target,96,64,true,true,true);
             const auto output=target->RecordTarget();expectedTime=float(frame)*.125f;
-            if(mode==0)
-            {
-                Legacy legacy(driver);neutral.Bind(baregl::types::EBufferType::UNIFORM,1);
-#ifndef FRONTEND_IMMEDIATE_ORACLE
-                legacy.SetDrawRecordingEnabled(true);legacy.SetCommandRecordingJobs(nullptr);legacy.BeginCommandRecording();
-#endif
-                legacy.AddDescriptor<Legacy::SceneDescriptor>({.scene=*fixture->scene});
-                legacy.BeginFrame({.renderWidth=96,.renderHeight=64,.camera=camera,.outputBuffer=*target});legacy.DrawFrame();legacy.EndFrame();
-#ifndef FRONTEND_IMMEDIATE_ORACLE
-                auto commands=legacy.FinishCommandRecording();commands.Execute(driver);
-#endif
-            }
-            else
             {
                 auto frontend=std::make_unique<Frontend>(); SceneRequest request{{*fixture->scene,camera,96,64,7,9,expectedTime}};
                 auto snapshot=frontend->ExtractScene(request);auto state=driver.CreatePipelineState();

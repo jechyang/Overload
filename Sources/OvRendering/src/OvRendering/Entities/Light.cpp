@@ -72,17 +72,13 @@ namespace
 
 	OvRendering::Entities::Camera CreateCamera(
 		const OvRendering::Entities::Light& p_light,
-		const OvRendering::Data::FrameDescriptor& p_frameDescriptor
+		const OvMaths::FVector3& cameraPosition
 	)
 	{
-		OVASSERT(
-			!p_light.shadowFollowCamera || p_frameDescriptor.camera.has_value(),
-			"Cannot create a camera for the light, no camera found in the frame descriptor!"
-		);
 
 		const auto lightPosition =
 			p_light.shadowFollowCamera ?
-			p_frameDescriptor.camera->transform->GetWorldPosition() + OvMaths::FVector3::Up * p_light.shadowAreaSize :  // offsets the camera position be positioned on the top plane of the effect area
+			cameraPosition + OvMaths::FVector3::Up * p_light.shadowAreaSize :  // offsets the camera position be positioned on the top plane of the effect area
 			p_light.transform->GetWorldPosition();
 
 		OvRendering::Entities::Camera lightCamera;
@@ -98,11 +94,11 @@ namespace
 	}
 }
 
-void OvRendering::Entities::Light::PrepareForShadowRendering(const OvRendering::Data::FrameDescriptor& p_frameDescriptor)
+void OvRendering::Entities::Light::PrepareForShadowRendering(const OvMaths::FVector3& cameraPosition)
 {
 	OVASSERT(type == Settings::ELightType::DIRECTIONAL, "Cannot prepare shadow buffer for a non directional light! (not supported yet)");
 
-	shadowCamera = CreateCamera(*this, p_frameDescriptor);
+	shadowCamera = CreateCamera(*this, cameraPosition);
 
 	if (!shadowBuffer)
 	{

@@ -273,7 +273,7 @@ void RenderAndBenchmark(Jobs& jobs, bool trace)
     camera.SetPosition(bounds.position+FVector3{0,0,std::max(bounds.radius*2.8f,2.0f)}); camera.SetRotation(FQuaternion(FVector3{0,180,0}));
     camera.SetFar(1000); camera.SetClearColor({0.15f,0.2f,0.3f}); camera.CacheMatrices(320,240);
     baregl::Framebuffer fb("Parallel Skinning"); OvCore::Rendering::FramebufferUtil::SetupFramebuffer(fb,320,240,true,true,false);
-    OvCore::Rendering::SceneRenderer renderer(driver);
+    OvCore::Rendering::RenderFrontend frontend;
     Scene serial(assets,assets), parallel(assets,assets);
     for(auto* scene:{&serial,&parallel}) for(size_t i=0;i<32;++i)
     {
@@ -283,10 +283,10 @@ void RenderAndBenchmark(Jobs& jobs, bool trace)
     }
     auto render=[&](Scene& scene)
     {
-        renderer.AddDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>({.scene=scene,.fallbackMaterial=material});
-        OvRendering::Data::FrameDescriptor frame{.renderWidth=320,.renderHeight=240,.camera=camera,.outputBuffer=fb};
-        renderer.BeginFrame(frame); renderer.DrawFrame(); std::vector<unsigned char> pixels(320*240*4);
-        glReadPixels(0,0,320,240,GL_RGBA,GL_UNSIGNED_BYTE,pixels.data()); renderer.EndFrame(); TracyGpuCollect; return pixels;
+        OvCore::Rendering::SceneRenderRequest request{{scene,camera,320,240}};request.fallbackMaterial=&material;
+        auto prepared=frontend.Prepare(frontend.ExtractScene(request),driver.CreatePipelineState(),&jobs);
+        auto commands=frontend.Record(std::move(prepared),fb.RecordTarget(),&jobs);commands.Execute(driver);
+        std::vector<unsigned char> pixels(320*240*4);fb.RecordTarget().ReadRGBA8(pixels);TracyGpuCollect;return pixels;
     };
     std::vector<unsigned char> previous; size_t transitions=0;
     for(int frame=0;frame<24;++frame)

@@ -106,13 +106,13 @@ void OvEditor::Rendering::DebugShapeCollector::DrawLine(
 	p_pso.rasterizationMode = baregl::types::ERasterizationMode::LINE;
 	p_pso.lineWidthPow2 = Utils::Conversions::FloatToPow2(p_lineWidth);
 
-	OvRendering::Entities::Drawable drawable;
+	OvCore::Rendering::ToolDrawInput drawable;
 	drawable.material = *m_lineMaterial;
 	drawable.mesh = m_lineMesh.get();
 	drawable.stateMask = m_lineMaterial->GenerateStateMask();
 	drawable.primitiveMode = baregl::types::EPrimitiveMode::LINES;
 
-	m_collector.DrawEntity(p_pso, drawable);
+	m_collector.CollectMesh(p_pso, drawable);
 }
 
 void OvEditor::Rendering::DebugShapeCollector::DrawBox(

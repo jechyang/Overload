@@ -12,7 +12,6 @@
 #include <OvCore/ECS/Components/CPhysicalSphere.h>
 #include <OvCore/ECS/Components/CPointLight.h>
 #include <OvCore/ECS/Components/CSpotLight.h>
-#include <OvCore/Rendering/EngineDrawableDescriptor.h>
 
 #include <OvDebug/Assertion.h>
 #include <OvEditor/Rendering/EditorOverlayCollector.h>
@@ -131,7 +130,7 @@ public:
 				auto modelMatrix = CalculateUnscaledModelMatrix(actor);
 
 				m_collector
-					.DrawModelWithSingleMaterial(p_pso, model, m_cameraMaterial, modelMatrix);
+					.CollectModel(p_pso, model, m_cameraMaterial, modelMatrix);
 			}
 		}
 
@@ -193,7 +192,7 @@ public:
                 m_collector.SetReflection(binding);
 
 				m_collector
-					.DrawModelWithRetainedTextures(p_pso, model, m_reflectiveMaterial, modelMatrix, {reflectionProbe->GetCubemap()});
+					.CollectModelWithTextures(p_pso, model, m_reflectiveMaterial, modelMatrix, {reflectionProbe->GetCubemap()});
 			}
 		}
 
@@ -248,7 +247,7 @@ public:
 				m_lightMaterial.SetProperty("u_Diffuse", OvMaths::FVector4(lightColor.x, lightColor.y, lightColor.z, 0.75f));
 
 				m_collector
-					.DrawModelWithSingleMaterial(p_pso, model, m_lightMaterial, modelMatrix);
+					.CollectModel(p_pso, model, m_lightMaterial, modelMatrix);
 			}
 		}
 	}
@@ -734,7 +733,7 @@ struct OvEditor::Rendering::EditorOverlayCollector::Impl
 	gridMaterial.SetProperty("u_Color", request.gridColor);
 
 	tools
-		.DrawModelWithSingleMaterial(pso, *EDITOR_CONTEXT(editorResources)->GetModel("Plane"), gridMaterial, model);
+		.CollectModel(pso, *EDITOR_CONTEXT(editorResources)->GetModel("Plane"), gridMaterial, model);
 
 	constexpr float kLineWidth = 1.0f;
 

@@ -21,7 +21,7 @@
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
 #include <OvCore/Global/ServiceLocator.h>
 #include <OvCore/Rendering/FramebufferUtil.h>
-#include <OvCore/Rendering/SceneRenderer.h>
+#include <OvCore/Rendering/RenderFrontend.h>
 #include <OvCore/ResourceManagement/ModelManager.h>
 #include <OvCore/ResourceManagement/ShaderManager.h>
 #include <OvCore/SceneSystem/Scene.h>
@@ -275,7 +275,7 @@ void StateValidation(const std::filesystem::path& dir)
     std::printf("PASS: %zu snapshots, 32 playback/rate scenarios, shared resources and lifetimes\n", snapshots);
 }
 
-void ImageValidation(const std::filesystem::path& dir, bool trace, bool recordDraws = false, bool recordCommands = false, bool dynamicPasses = false, bool recoverHistory = false)
+void ImageValidation(const std::filesystem::path& dir, bool trace, bool workerPrepare = false, bool workerRecord = false, bool dynamicPasses = false, bool recoverHistory = false)
 {
     OvWindowing::Settings::DeviceSettings ds; ds.contextMajorVersion = 4; ds.contextMinorVersion = 5;
     OvWindowing::Context::Device device(ds);
@@ -309,14 +309,24 @@ void ImageValidation(const std::filesystem::path& dir, bool trace, bool recordDr
     OvCore::Resources::Material material; material.SetShader(shader);
     skin.owner.AddComponent<CMaterialRenderer>().FillWithMaterial(material);
     skin.owner.GetComponent<CModelRenderer>()->SetFrustumBehaviour(CModelRenderer::EFrustumBehaviour::DISABLED);
-    OvCore::Rendering::SceneRenderer renderer(driver);
-    renderer.SetDrawRecordingEnabled(recordDraws || recordCommands);
+    OvCore::Rendering::RenderFrontend frontend;
+    OvCore::Rendering::PostProcess::PostProcessPipeline effects;
+    OvCore::Resources::Material shadow;shadow.SetShader(shaders.GetResource(":Shaders/ShadowFallback.ovfx"));
     OvRendering::Entities::Camera camera;
     const auto bounds = mannequin->GetBoundingSphere();
     camera.SetPosition(bounds.position + FVector3{0, 0, std::max(bounds.radius * 2.8f, 2.0f)});
     camera.SetRotation(FQuaternion(FVector3{0, 180, 0})); camera.SetFar(1000); camera.SetClearColor({0.15f, 0.2f, 0.3f}); camera.CacheMatrices(320, 240);
     baregl::Framebuffer framebuffer("Skinning Validation"); OvCore::Rendering::FramebufferUtil::SetupFramebuffer(framebuffer, 320, 240, true, true, false);
-    OvRendering::Data::FrameDescriptor frame{.renderWidth=320, .renderHeight=240, .camera=camera, .outputBuffer=framebuffer};
+    const auto record = [&](bool fail=false) {
+        OvCore::Rendering::SceneRenderRequest main{{scene,camera,320,240}};main.fallbackMaterial=&material;
+        OvCore::Rendering::SceneFrameRequest request{main,framebuffer.RecordTarget(),shadow};
+        request.postProcess=&effects;request.postProcessTarget=&framebuffer;request.postProcessState=driver.CreatePipelineState();
+        auto frame=frontend.PrepareFrame(frontend.ExtractFrame(request),driver.CreatePipelineState(),workerPrepare?&jobs:nullptr);
+        auto commands=frontend.RecordFrame(std::move(frame),workerRecord?&jobs:nullptr);
+        if (!fail) return commands;
+        OvRendering::Data::RenderCommandList failed;failed.Append(std::move(commands));
+        failed.Append([](auto&){throw std::runtime_error("injected temporal failure");});failed.Seal();return failed;
+    };
     std::ofstream images(dir / "frames.bin", std::ios::binary);
     std::vector<unsigned char> previous; size_t changedFrames = 0, nonBackground = 0;
     for (int i = 0; i < 24; ++i)
@@ -325,27 +335,17 @@ void ImageValidation(const std::filesystem::path& dir, bool trace, bool recordDr
         const auto version = skin.GetPoseVersion();
         if(recoverHistory)
         {
-            auto recordDiscard=[&](bool fail) {
-                renderer.AddDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>({.scene=scene,.fallbackMaterial=material});
-                renderer.BeginCommandRecording();renderer.BeginFrame(frame);renderer.DrawFrame();
-                if(fail)renderer.SubmitRenderOperation([](auto&){throw std::runtime_error("injected temporal failure");});
-                renderer.EndFrame();return renderer.FinishCommandRecording();
-            };
-            auto discarded=recordDiscard(i%4==1);
+            auto discarded=record(i%4==1);
             if(i%4==0)discarded.Cancel();
             if(i%4==1){bool failed=false;try{discarded.Execute(driver);}catch(const std::runtime_error&){failed=true;}
                 Require(failed && discarded.GetExecutedCount()>0,"dynamic prefix failure was not injected");}
             if(i%4==2){auto abandoned=std::move(discarded);}
-            if(i%4==3){auto dependent=recordDiscard(false);discarded.Cancel();bool failed=false;
+            if(i%4==3){auto dependent=record(false);discarded.Cancel();bool failed=false;
                 try{dependent.Execute(driver);}catch(const std::logic_error&){failed=true;}
                 Require(failed && dependent.GetExecutedCount()==0,"dependent dynamic frame ran after cancelled history");}
         }
-        renderer.AddDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>({.scene=scene, .fallbackMaterial=material});
-        if (recordCommands) renderer.BeginCommandRecording();
-        renderer.BeginFrame(frame); renderer.DrawFrame();
-        if (recordCommands) { renderer.EndFrame(); auto commands=renderer.FinishCommandRecording(); commands.Execute(driver); framebuffer.Bind(); }
-        std::vector<unsigned char> pixels(320 * 240 * 4); glReadPixels(0, 0, 320, 240, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-        if (!recordCommands) renderer.EndFrame(); else framebuffer.Unbind();
+        auto commands=record();commands.Execute(driver);
+        std::vector<unsigned char> pixels(320 * 240 * 4);framebuffer.RecordTarget().ReadRGBA8(pixels);
         TracyGpuCollect;
         Require(version == skin.GetPoseVersion(), "render advanced pose");
         images.write(reinterpret_cast<const char*>(pixels.data()), static_cast<std::streamsize>(pixels.size()));

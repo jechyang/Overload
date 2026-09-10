@@ -16,12 +16,6 @@ std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> RenderFrontend::Ex
     return SceneRenderExtractor::ExtractScene(p_request, m_recorder.GetFallback2D(), m_recorder.GetFallbackCube(), &m_programs);
 }
 
-std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> RenderFrontend::Extract(const StaticOpaqueRequest& p_request) const
-{
-    RequireOwner();
-    return SceneRenderExtractor::Extract(p_request, m_recorder.GetFallback2D(), m_recorder.GetFallbackCube(), &m_programs);
-}
-
 std::shared_ptr<const OvRendering::Data::PreparedFrameData> RenderFrontend::Prepare(
     std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> p_scene,
     OvRendering::Data::PipelineState p_baseState, OvTools::Jobs::JobSystem* p_jobs, const std::atomic_bool* p_cancel) const
@@ -76,4 +70,22 @@ OvRendering::Data::RenderCommandList RenderFrontend::RecordFrame(std::unique_ptr
     }
     frame->m_commands.Seal();
     return std::move(frame->m_commands);
+}
+
+std::unique_ptr<SceneFrame> RenderFrontend::ComposeFrame(
+    std::vector<std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot>> views,
+    OvRendering::Data::RenderPlan plan) const
+{
+    RequireOwner();
+    plan.Validate(views);
+    for (const auto& pass : plan.passes)
+        if (pass.postProcessAfter)
+            throw std::invalid_argument("ComposeFrame: post-processing requires the SceneFrame extraction owner");
+    for (const auto& resource : plan.resources)
+        if (resource.origin == OvRendering::Data::ResourceOrigin::History)
+            throw std::invalid_argument("ComposeFrame: temporal resources require the SceneFrame extraction owner");
+    auto frame = std::unique_ptr<SceneFrame>(new SceneFrame);
+    frame->m_views = std::move(views);
+    frame->m_plan = std::move(plan);
+    return frame;
 }

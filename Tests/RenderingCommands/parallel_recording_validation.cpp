@@ -1,6 +1,8 @@
 #define COMMAND_LIST_VALIDATION_MAIN CommandListValidationMain
 #include "command_list_validation.cpp"
 #include <OvRendering/Data/RenderFrame.h>
+#include <OvCore/Rendering/ToolDrawCollector.h>
+#include "draw_trace.inl"
 #include <chrono>
 #include <thread>
 #include <mutex>
@@ -160,7 +162,7 @@ void ParallelDrawValidation(const std::filesystem::path& dir, bool connected)
     OvWindowing::Window window(device,ws); window.MakeCurrentContext();
     Context::Driver driver(Settings::DriverSettings{true});
     RecordingGraphValidation(driver);
-    OvTools::Jobs::JobSystem jobs(4);
+    OvTools::Jobs::JobSystem jobs(4),one(1);
     const auto file = dir/"parallel-recording.ovfx";
     { std::ofstream shader(file); shader << R"(#shader vertex
 #version 450 core
@@ -207,41 +209,35 @@ void main(){color=vec4(tint.rgb*transform[0][0]*texture(surface,vec2(0.5)).rgb*(
             std::optional<Data::RenderCommandList> commands; baregl::Framebuffer::Snapshot output;
             double prepare=0, encode=0;
             {
-                Core::CompositeRenderer renderer(driver); renderer.SetDrawRecordingEnabled(true);
-                if (mode) renderer.SetCommandRecordingJobs(&jobs);
-                renderer.SetParallelCommandRecordingEnabled(mode==2);
-                renderer.AddFeature<EngineFeature,Features::EFeatureExecutionPolicy::ALWAYS>();
+                OvCore::Rendering::ToolDrawCollector collector;
                 const auto destroy=[](Resources::Shader* p){Resources::Loaders::ShaderLoader::Destroy(p);};
                 std::unique_ptr<Resources::Shader,decltype(destroy)> shader(Resources::Loaders::ShaderLoader::Create(file.string()),destroy);
                 Require(shader!=nullptr,"parallel shader missing"); Mat material(shader.get());
                 std::array<Geometry::Vertex,3> vertices{};
                 vertices[0].position[0]=-.8f;vertices[0].position[1]=-.8f;vertices[1].position[0]=.8f;vertices[1].position[1]=-.8f;vertices[2].position[1]=.8f;
                 const std::array<uint32_t,3> indices{0,1,2}; Resources::Mesh mesh(vertices,indices);
-                Entities::Drawable drawable; drawable.mesh=mesh;drawable.material=material;drawable.stateMask=Mask(6);
-                drawable.AddDescriptor<OvCore::Rendering::EngineDrawableDescriptor>({FMatrix4::Identity,FMatrix4::Identity});
-                for (unsigned pass=0;pass<4;++pass) renderer.AddPass<CommandPass>("pass"+std::to_string(pass),pass,std::function<void(Data::PipelineState)>([&,pass](auto pso){
-                    for (unsigned i=0;i<192;++i)
-                    {
-                        if (i%3==0) material.SetProperty("tint",FVector4{float((i+pass+repeat)%11)/11,.5f,.25f,1},true);
-                        if (i%17==0) material.SetProperty("transform",FMatrix4::Scaling({.5f+float(i%5)*.1f,1,1}));
-                        renderer.DrawEntity(pso,drawable);
-                    }
-                }));
+                OvCore::Rendering::ToolDrawInput drawable;drawable.mesh=mesh;drawable.material=material;drawable.stateMask=Mask(6);
                 baregl::Framebuffer target; OvCore::Rendering::FramebufferUtil::SetupFramebuffer(target,64,32,true,true,false); output=target.RecordTarget();
-                Entities::Camera camera;camera.SetClearColor({0,0,0});Data::FrameDescriptor frame{.renderWidth=64,.renderHeight=32,.camera=camera,.outputBuffer=target};
+                Data::RenderView view;view.input.width=64;view.input.height=32;view.view=FMatrix4::Identity;view.projection=FMatrix4::Identity;
                 using Clock=std::chrono::steady_clock;
                 { CommandHooks hooks;
                     const auto record = [&] {
-                    const auto begin=Clock::now();renderer.BeginCommandRecording();renderer.BeginFrame(frame);renderer.DrawFrame();renderer.EndFrame();
-                    const auto prepared=Clock::now();commands.emplace(renderer.FinishCommandRecording());const auto done=Clock::now();
+                    const auto begin=Clock::now();collector.Begin(view,driver.CreatePipelineState(),output);collector.Clear(true,true,true,{0,0,0,1});
+                    for(unsigned pass=0;pass<4;++pass)for(unsigned i=0;i<192;++i)
+                    {
+                        if(i%3==0)material.SetProperty("tint",FVector4{float((i+pass+repeat)%11)/11,.5f,.25f,1},true);
+                        if(i%17==0)material.SetProperty("transform",FMatrix4::Scaling({.5f+float(i%5)*.1f,1,1}));
+                        collector.CollectMesh(driver.CreatePipelineState(),drawable);
+                    }
+                    const auto prepared=Clock::now();commands.emplace(collector.Finish());commands->Seal(mode==2?&jobs:mode==1?&one:nullptr);const auto done=Clock::now();
                     prepare=std::chrono::duration<double,std::micro>(prepared-begin).count();encode=std::chrono::duration<double,std::micro>(done-prepared).count();
                     };
-                    if(mode==0){ZoneScopedN("Stage4 Legacy Recording");record();}
+                    if(mode==0){ZoneScopedN("Serial recording");record();}
                     else if(mode==1){ZoneScopedN("Stage4 Serial Recording");record();}
                     else {ZoneScopedN("Stage4 Parallel Recording");record();}
                     Require(gpuCounts.draws==0&&gpuCounts.uploads==0&&gpuCounts.allocations==0&&gpuCounts.clears==0&&gpuCounts.targets==0,"parallel recording called GL");
                 }
-            } // Destroy every source renderer, material, shader asset, mesh and target before playback.
+            } // Destroy every source collector, material, shader asset, mesh and target before playback.
             std::ostringstream trace(std::ios::binary);{PacketDrawHooks hooks(trace);commands->Execute(driver);}
             auto image=ReadTarget(output); Require(drawCounts[0]==768,"parallel draw count differs");
             if(mode==0){reference=image;referenceTrace=trace.str();}

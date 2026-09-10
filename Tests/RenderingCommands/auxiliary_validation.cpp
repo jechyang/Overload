@@ -3,7 +3,6 @@
 #include "../Skinning/serial_validation.cpp"
 #undef main
 #include <OvCore/Rendering/RenderFrontend.h>
-#include <OvCore/Rendering/EngineBufferRenderFeature.h>
 #include <OvCore/ECS/Components/CPostProcessStack.h>
 #include <set>
 #ifdef A5_POSTPROCESS
@@ -123,7 +122,7 @@ void AuxiliaryValidation(const std::filesystem::path& dir, unsigned mode)
     camera.SetPosition(bounds.position+FVector3{0,0,std::max(bounds.radius*2.8f,2.0f)});camera.SetRotation(FQuaternion(FVector3{0,180,0}));
     camera.SetFar(1000);camera.SetClearColor({.15f,.2f,.3f});camera.CacheMatrices(96,64);
     baregl::Framebuffer target;FramebufferUtil::SetupFramebuffer(target,96,64,true,true,false);
-    SceneRenderer legacy(driver);legacy.SetDrawRecordingEnabled(mode!=4);RenderFrontend frontend;
+    RenderFrontend frontend;
     PostProcess::PostProcessPipeline postProcess;
     const auto extract = [&](const SceneRenderRequest& main, bool shadows=true, bool reflections=true) {
         SceneFrameRequest request{main,target.RecordTarget(),fallback,shadows,reflections};
@@ -163,14 +162,7 @@ void AuxiliaryValidation(const std::filesystem::path& dir, unsigned mode)
         if(i==7){probe.SetInfluencePolicy(CReflectionProbe::EInfluencePolicy::LOCAL);probe.SetInfluenceSize({5,5,5});probe.SetBoxProjection(true);}
         probe.SetBrightness(.8f+float(i)*.01f);
         neutral.Bind(baregl::types::EBufferType::UNIFORM,1);
-        if(mode==0||mode==4)
-        {
-            legacy.AddDescriptor<SceneRenderer::SceneDescriptor>({.scene=scene,.fallbackMaterial=material});
-            if(mode==0)legacy.BeginCommandRecording();
-            legacy.BeginFrame({96,64,camera,target});legacy.DrawFrame();legacy.EndFrame();
-            if(mode==0){auto commands=legacy.FinishCommandRecording();commands.Execute(driver);}
-        }
-        else {auto commands=record(i);commands.Execute(driver);}
+        {auto commands=record(i);commands.Execute(driver);}
         std::vector<unsigned char> pixels(96*64*4);target.RecordTarget().ReadRGBA8(pixels);
         bool nonBackground=false;for(size_t p=4;p<pixels.size();p+=4)nonBackground=nonBackground||std::memcmp(pixels.data(),pixels.data()+p,3)!=0;
         Require(nonBackground,"A4 main image is blank");

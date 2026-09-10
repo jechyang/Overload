@@ -1,6 +1,4 @@
 #include <OvCore/Rendering/ToolDrawCollector.h>
-#include <OvCore/Rendering/EngineDrawableDescriptor.h>
-#include <OvCore/Rendering/SkinningDrawableDescriptor.h>
 #include <OvRendering/Core/MeshFeatureProcessor.h>
 #include <OvRendering/Context/Driver.h>
 #include <OvRendering/Resources/Mesh.h>
@@ -30,18 +28,18 @@ void ToolDrawCollector::Clear(bool color,bool depth,bool stencil,const OvMaths::
         driver.SetViewport(0,0,view.width,view.height); driver.Clear(color,depth,stencil,value);
     });
 }
-void ToolDrawCollector::DrawModelWithSingleMaterial(Data::PipelineState state,Resources::Model& model,Data::Material& material,const OvMaths::FMatrix4& transform)
-{ DrawModelWithRetainedTextures(state,model,material,transform,{}); }
-void ToolDrawCollector::DrawModelWithRetainedTextures(Data::PipelineState state,Resources::Model& model,Data::Material& material,
+void ToolDrawCollector::CollectModel(Data::PipelineState state,Resources::Model& model,Data::Material& material,const OvMaths::FMatrix4& transform)
+{ CollectModelWithTextures(state,model,material,transform,{}); }
+void ToolDrawCollector::CollectModelWithTextures(Data::PipelineState state,Resources::Model& model,Data::Material& material,
     const OvMaths::FMatrix4& transform,std::vector<std::shared_ptr<baregl::Texture>> textures)
 {
     for(auto* mesh:model.GetMeshes())
     {
-        Entities::Drawable draw;draw.mesh=*mesh;draw.material=material;draw.stateMask=material.GenerateStateMask();
-        draw.AddDescriptor<EngineDrawableDescriptor>({transform,OvMaths::FMatrix4::Identity});DrawEntity(state,draw,{},textures);
+        ToolDrawInput draw;draw.mesh=*mesh;draw.material=material;draw.stateMask=material.GenerateStateMask();
+        draw.model=transform;CollectMesh(state,draw,{},textures);
     }
 }
-void ToolDrawCollector::DrawEntity(Data::PipelineState state,const Entities::Drawable& draw,
+void ToolDrawCollector::CollectMesh(Data::PipelineState state,const ToolDrawInput& draw,
     const Data::Material::PropertyOverrides& overrides,std::span<const std::shared_ptr<baregl::Texture>> textures)
 {
     if(!draw.mesh||!draw.material||!draw.material->IsValid()||draw.material->GetGPUInstances()<=0||
@@ -59,12 +57,9 @@ void ToolDrawCollector::DrawEntity(Data::PipelineState state,const Entities::Dra
     auto material=draw.material->PrepareSnapshot(draw.pass,features,m_resources.GetFallback2D(),m_resources.GetFallbackCube(),owners,m_previous,stable,once,true,properties);
     m_previous=material;m_signature=binding.signature;
     Data::EngineConstants engine{OvMaths::FMatrix4::Identity,OvMaths::FMatrix4::Transpose(m_view.view),OvMaths::FMatrix4::Transpose(m_view.projection),m_view.input.position,m_view.input.elapsedTime,OvMaths::FMatrix4::Identity};
-    if(draw.HasDescriptor<EngineDrawableDescriptor>())
-    {const auto& source=draw.GetDescriptor<EngineDrawableDescriptor>();engine.model=OvMaths::FMatrix4::Transpose(source.modelMatrix);engine.user=source.userMatrix;}
-    std::vector<OvMaths::FMatrix4> palette;
+    engine.model=OvMaths::FMatrix4::Transpose(draw.model);engine.user=draw.user;
     const bool skin=(features&&features->contains("SKINNING"))||draw.material->HasFeature("SKINNING");
-    if(skin&&draw.HasDescriptor<SkinningDrawableDescriptor>())
-    {const auto& source=draw.GetDescriptor<SkinningDrawableDescriptor>();if(source.matrices&&source.count)palette.assign(source.matrices,source.matrices+source.count);}
+    auto palette=skin?draw.palette:std::vector<OvMaths::FMatrix4>{};
     if(skin&&palette.empty())palette.push_back(OvMaths::FMatrix4::Transpose(OvMaths::FMatrix4::Identity));
     m_info.Add(mesh->GetVertexCount(),mesh->GetIndexCount(),draw.material->GetGPUInstances());
     state=Core::MeshFeatureProcessor::BuildState(state,draw.stateMask,Data::RenderStage::Picking);

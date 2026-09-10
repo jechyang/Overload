@@ -7,9 +7,8 @@
 
 namespace OvCore::Rendering
 {
-    // A1 is an exclusive static-opaque view request. No implicit fallback or split
-    // ownership: unsupported visible categories/features reject the whole request.
-    struct StaticOpaqueRequest
+    // Main-thread scene-read input; the snapshot owns all values after extraction.
+    struct SceneViewRequest
     {
         SceneSystem::Scene& scene;
         const OvRendering::Entities::Camera& camera;
@@ -19,7 +18,7 @@ namespace OvCore::Rendering
         std::optional<OvRendering::Data::Frustum> frustumOverride;
     };
 
-    struct SceneRenderRequest : StaticOpaqueRequest
+    struct SceneRenderRequest : SceneViewRequest
     {
         OvRendering::Data::RenderPipeline pipeline = ScenePipeline::MainViewMeshes();
         OvRendering::Data::Material* overrideMaterial = nullptr;
@@ -41,13 +40,6 @@ namespace OvCore::Rendering
             const std::shared_ptr<baregl::Texture>& p_white,
             const std::shared_ptr<baregl::Texture>& p_black,
             OvRendering::Core::MeshCommandRecorder::ProgramCache* programs = nullptr);
-        // Call in the main-thread stable scene-read interval. No alias to source
-        // scene, camera, transform, material or asset escapes this boundary.
-        static std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> Extract(
-            const StaticOpaqueRequest& p_request,
-            const std::shared_ptr<baregl::Texture>& p_white,
-            const std::shared_ptr<baregl::Texture>& p_black,
-            OvRendering::Core::MeshCommandRecorder::ProgramCache* programs = nullptr);
     private:
         friend class SceneFrameExtractor;
         struct MaterialCache
@@ -55,9 +47,9 @@ namespace OvCore::Rendering
             std::optional<OvRendering::Data::MaterialSignatureSet> signature;
             OvRendering::Data::Material::PreparedSnapshot snapshot;
         };
-        static OvRendering::Data::RenderViewInput CaptureView(const StaticOpaqueRequest& p_request);
+        static OvRendering::Data::RenderViewInput CaptureView(const SceneViewRequest& p_request);
         static std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> ExtractImpl(
-            const SceneRenderRequest& p_request, bool p_opaqueOnly,
+            const SceneRenderRequest& p_request,
             const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black, bool p_planned = false,
             std::span<const OvRendering::Data::ReflectionProbeInput> p_probes = {}, MaterialCache* p_cache = nullptr,
             const OvRendering::Data::RenderViewInput* p_lightView = nullptr,

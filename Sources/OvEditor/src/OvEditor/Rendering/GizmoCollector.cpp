@@ -76,7 +76,7 @@ void OvEditor::Rendering::GizmoCollector::DrawGizmo(
 		auto sphereModelMatrix = modelMatrix * OvMaths::FMatrix4::Scaling({ 0.1f, 0.1f, 0.1f });
 
 		m_collector
-		.DrawModelWithSingleMaterial(
+		.CollectModel(
 			pso,
 			*sphereModel,
 			m_gizmoBallMaterial,
@@ -92,7 +92,7 @@ void OvEditor::Rendering::GizmoCollector::DrawGizmo(
 		m_gizmoArrowMaterial.SetProperty("u_HighlightedAxis", axisIndex);
 
 		m_collector
-		.DrawModelWithSingleMaterial(
+		.CollectModel(
 			pso,
 			*arrowModel,
 			m_gizmoArrowMaterial,

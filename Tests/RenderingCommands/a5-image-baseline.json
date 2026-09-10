@@ -1,0 +1,675 @@
+{
+  "baseline": "935423e7cca76d18895ed3bc86ecd29a55374080",
+  "files": [
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-auxiliary-command-list/current/mode-4/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-auxiliary-command-list/current/mode-4/frames.bin",
+      "sha256": "b415132de19c3697175d17a6a5c3f63491637de73243fe2e41f76336161f0ef9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-auxiliary-command-list/current/mode-4/shadows.bin",
+      "sha256": "82807edc905ca18eb34aae0ad6b63590b35f6cb97b61c88aeb0f670c8b43c19e",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-auxiliary-command-list/current/mode-3/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-auxiliary-command-list/current/mode-3/frames.bin",
+      "sha256": "b415132de19c3697175d17a6a5c3f63491637de73243fe2e41f76336161f0ef9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-auxiliary-command-list/current/mode-3/shadows.bin",
+      "sha256": "82807edc905ca18eb34aae0ad6b63590b35f6cb97b61c88aeb0f670c8b43c19e",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-auxiliary-command-list/current/mode-2/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-auxiliary-command-list/current/mode-2/frames.bin",
+      "sha256": "b415132de19c3697175d17a6a5c3f63491637de73243fe2e41f76336161f0ef9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-auxiliary-command-list/current/mode-2/shadows.bin",
+      "sha256": "82807edc905ca18eb34aae0ad6b63590b35f6cb97b61c88aeb0f670c8b43c19e",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-auxiliary-command-list/current/mode-1/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-auxiliary-command-list/current/mode-1/frames.bin",
+      "sha256": "b415132de19c3697175d17a6a5c3f63491637de73243fe2e41f76336161f0ef9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-auxiliary-command-list/current/mode-1/shadows.bin",
+      "sha256": "82807edc905ca18eb34aae0ad6b63590b35f6cb97b61c88aeb0f670c8b43c19e",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-auxiliary-command-list/current/mode-0/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-auxiliary-command-list/current/mode-0/frames.bin",
+      "sha256": "b415132de19c3697175d17a6a5c3f63491637de73243fe2e41f76336161f0ef9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-auxiliary-command-list/current/mode-0/shadows.bin",
+      "sha256": "82807edc905ca18eb34aae0ad6b63590b35f6cb97b61c88aeb0f670c8b43c19e",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-postprocess-command-list/current/mode-4/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-postprocess-command-list/current/mode-4/frames.bin",
+      "sha256": "9b7c664847eaa1cfd1c5f2d093e3a4f221ff3abcd9024bcdcd5538d247394ae9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-postprocess-command-list/current/mode-4/shadows.bin",
+      "sha256": "b3c5b6b641b6aa29c7d7fbd3cb57318382718c013a869a95a4fecc2236dd0e19",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-postprocess-command-list/current/mode-3/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-postprocess-command-list/current/mode-3/frames.bin",
+      "sha256": "9b7c664847eaa1cfd1c5f2d093e3a4f221ff3abcd9024bcdcd5538d247394ae9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-postprocess-command-list/current/mode-3/shadows.bin",
+      "sha256": "b3c5b6b641b6aa29c7d7fbd3cb57318382718c013a869a95a4fecc2236dd0e19",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-postprocess-command-list/current/mode-2/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-postprocess-command-list/current/mode-2/frames.bin",
+      "sha256": "9b7c664847eaa1cfd1c5f2d093e3a4f221ff3abcd9024bcdcd5538d247394ae9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-postprocess-command-list/current/mode-2/shadows.bin",
+      "sha256": "b3c5b6b641b6aa29c7d7fbd3cb57318382718c013a869a95a4fecc2236dd0e19",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-postprocess-command-list/current/mode-1/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-postprocess-command-list/current/mode-1/frames.bin",
+      "sha256": "9b7c664847eaa1cfd1c5f2d093e3a4f221ff3abcd9024bcdcd5538d247394ae9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-postprocess-command-list/current/mode-1/shadows.bin",
+      "sha256": "b3c5b6b641b6aa29c7d7fbd3cb57318382718c013a869a95a4fecc2236dd0e19",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-postprocess-command-list/current/mode-0/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-postprocess-command-list/current/mode-0/frames.bin",
+      "sha256": "9b7c664847eaa1cfd1c5f2d093e3a4f221ff3abcd9024bcdcd5538d247394ae9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-postprocess-command-list/current/mode-0/shadows.bin",
+      "sha256": "b3c5b6b641b6aa29c7d7fbd3cb57318382718c013a869a95a4fecc2236dd0e19",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-2-staged-poison/frontend-2.draws",
+      "sha256": "977f7fc512343350cafa6d240821ba33131945e87a6f8d007e0df8267c8183e4",
+      "bytes": 204288
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-2-staged-poison/frontend-2.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-2-staged/frontend-2.draws",
+      "sha256": "977f7fc512343350cafa6d240821ba33131945e87a6f8d007e0df8267c8183e4",
+      "bytes": 204288
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-2-staged/frontend-2.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-2-none-poison/frontend-2.draws",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-2-none-poison/frontend-2.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-2-none/frontend-2.draws",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-2-none/frontend-2.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-1-staged-poison/frontend-1.draws",
+      "sha256": "977f7fc512343350cafa6d240821ba33131945e87a6f8d007e0df8267c8183e4",
+      "bytes": 204288
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-1-staged-poison/frontend-1.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-1-staged/frontend-1.draws",
+      "sha256": "977f7fc512343350cafa6d240821ba33131945e87a6f8d007e0df8267c8183e4",
+      "bytes": 204288
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-1-staged/frontend-1.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-1-none-poison/frontend-1.draws",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-1-none-poison/frontend-1.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-1-none/frontend-1.draws",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-1-none/frontend-1.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-0-staged/frontend-0.draws",
+      "sha256": "977f7fc512343350cafa6d240821ba33131945e87a6f8d007e0df8267c8183e4",
+      "bytes": 204288
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-0-staged/frontend-0.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-0-none/frontend-0.draws",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-bindings-frontend-command-list/current/cold-0-none/frontend-0.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list/current/command-lifetime-frames.bin",
+      "sha256": "db58e945654dfb45d406951af0044e4e5bed0f96aed9b7823151d413db30d603",
+      "bytes": 131072
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list/current/frame-packet-frames.bin",
+      "sha256": "f34cdfdadf1b0ab80f63b1a80afe8e72697c6bc248f2ef6e9c51069be78298aa",
+      "bytes": 393216
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list/current/frame-upload-trace.bin",
+      "sha256": "b595e939b02f76f3ec013b1dde1d34fab014f8415e9fa731b68701b4e9f25e9d",
+      "bytes": 6076
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list/current/packet-draw-trace.bin",
+      "sha256": "87923623e8ad4cc5c212f9d23837cfa56f5b3372fd5bfef9f741db0028b11506",
+      "bytes": 18720
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list/current/packet-frames.bin",
+      "sha256": "50727352e6ed3d05f0e46433a16bebf50dbfde48ac66f54fe028a9b88af6c523",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list/current/target-packet-frames.bin",
+      "sha256": "d97a9b65b771252e5287e6503058c78ab1450dfe6f2534441b6d97aa4c9220a6",
+      "bytes": 98688
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list/current/immediate/frames.bin",
+      "sha256": "59a6c200af24a1a2b2b1ec1d551b97b335cb2104c6a4fccb9b7d4503894f60f6",
+      "bytes": 7372800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list/current/dynamic-repeat/frames.bin",
+      "sha256": "94279fdfdb7f6d7e1f61bf3bae6dea960731a8ce7d86d62f8503ff112658dc01",
+      "bytes": 7372800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list/current/dynamic-recovered/frames.bin",
+      "sha256": "94279fdfdb7f6d7e1f61bf3bae6dea960731a8ce7d86d62f8503ff112658dc01",
+      "bytes": 7372800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list/current/dynamic-packet/frames.bin",
+      "sha256": "94279fdfdb7f6d7e1f61bf3bae6dea960731a8ce7d86d62f8503ff112658dc01",
+      "bytes": 7372800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list/current/dynamic-immediate/frames.bin",
+      "sha256": "94279fdfdb7f6d7e1f61bf3bae6dea960731a8ce7d86d62f8503ff112658dc01",
+      "bytes": 7372800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list/current/dynamic-delayed/frames.bin",
+      "sha256": "94279fdfdb7f6d7e1f61bf3bae6dea960731a8ce7d86d62f8503ff112658dc01",
+      "bytes": 7372800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list/current/delayed/frames.bin",
+      "sha256": "59a6c200af24a1a2b2b1ec1d551b97b335cb2104c6a4fccb9b7d4503894f60f6",
+      "bytes": 7372800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list-editor-ui-product-loop/current/editor-command-frames.bin",
+      "sha256": "6de429dc8858218f6193be3228179e00f99447697b595b7be3e535903775fc8d",
+      "bytes": 460800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list-editor-ui-product-loop/current/editor-game.rgba",
+      "sha256": "513db0ed45b209786a8213afe34c9cc2e4c15584bb68ff16d2c39ace7accced8",
+      "bytes": 300800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list-editor-ui-product-loop/current/editor-render-frame.bin",
+      "sha256": "a2fda445d8ff0746165afad9c510ab25f7c4c2ddf2591ff77aa63afc27c456f1",
+      "bytes": 17280000
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Debug-command-list-editor-ui-product-loop/current/editor-ui-frames.bin",
+      "sha256": "e72ee6342862438be4211329e246053a310d8b98cb2733a1edc2743feddaf139",
+      "bytes": 97920000
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-auxiliary-command-list/current/mode-4/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-auxiliary-command-list/current/mode-4/frames.bin",
+      "sha256": "b415132de19c3697175d17a6a5c3f63491637de73243fe2e41f76336161f0ef9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-auxiliary-command-list/current/mode-4/shadows.bin",
+      "sha256": "82807edc905ca18eb34aae0ad6b63590b35f6cb97b61c88aeb0f670c8b43c19e",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-auxiliary-command-list/current/mode-3/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-auxiliary-command-list/current/mode-3/frames.bin",
+      "sha256": "b415132de19c3697175d17a6a5c3f63491637de73243fe2e41f76336161f0ef9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-auxiliary-command-list/current/mode-3/shadows.bin",
+      "sha256": "82807edc905ca18eb34aae0ad6b63590b35f6cb97b61c88aeb0f670c8b43c19e",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-auxiliary-command-list/current/mode-2/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-auxiliary-command-list/current/mode-2/frames.bin",
+      "sha256": "b415132de19c3697175d17a6a5c3f63491637de73243fe2e41f76336161f0ef9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-auxiliary-command-list/current/mode-2/shadows.bin",
+      "sha256": "82807edc905ca18eb34aae0ad6b63590b35f6cb97b61c88aeb0f670c8b43c19e",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-auxiliary-command-list/current/mode-1/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-auxiliary-command-list/current/mode-1/frames.bin",
+      "sha256": "b415132de19c3697175d17a6a5c3f63491637de73243fe2e41f76336161f0ef9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-auxiliary-command-list/current/mode-1/shadows.bin",
+      "sha256": "82807edc905ca18eb34aae0ad6b63590b35f6cb97b61c88aeb0f670c8b43c19e",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-auxiliary-command-list/current/mode-0/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-auxiliary-command-list/current/mode-0/frames.bin",
+      "sha256": "b415132de19c3697175d17a6a5c3f63491637de73243fe2e41f76336161f0ef9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-auxiliary-command-list/current/mode-0/shadows.bin",
+      "sha256": "82807edc905ca18eb34aae0ad6b63590b35f6cb97b61c88aeb0f670c8b43c19e",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-postprocess-command-list/current/mode-4/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-postprocess-command-list/current/mode-4/frames.bin",
+      "sha256": "9b7c664847eaa1cfd1c5f2d093e3a4f221ff3abcd9024bcdcd5538d247394ae9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-postprocess-command-list/current/mode-4/shadows.bin",
+      "sha256": "b3c5b6b641b6aa29c7d7fbd3cb57318382718c013a869a95a4fecc2236dd0e19",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-postprocess-command-list/current/mode-3/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-postprocess-command-list/current/mode-3/frames.bin",
+      "sha256": "9b7c664847eaa1cfd1c5f2d093e3a4f221ff3abcd9024bcdcd5538d247394ae9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-postprocess-command-list/current/mode-3/shadows.bin",
+      "sha256": "b3c5b6b641b6aa29c7d7fbd3cb57318382718c013a869a95a4fecc2236dd0e19",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-postprocess-command-list/current/mode-2/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-postprocess-command-list/current/mode-2/frames.bin",
+      "sha256": "9b7c664847eaa1cfd1c5f2d093e3a4f221ff3abcd9024bcdcd5538d247394ae9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-postprocess-command-list/current/mode-2/shadows.bin",
+      "sha256": "b3c5b6b641b6aa29c7d7fbd3cb57318382718c013a869a95a4fecc2236dd0e19",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-postprocess-command-list/current/mode-1/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-postprocess-command-list/current/mode-1/frames.bin",
+      "sha256": "9b7c664847eaa1cfd1c5f2d093e3a4f221ff3abcd9024bcdcd5538d247394ae9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-postprocess-command-list/current/mode-1/shadows.bin",
+      "sha256": "b3c5b6b641b6aa29c7d7fbd3cb57318382718c013a869a95a4fecc2236dd0e19",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-postprocess-command-list/current/mode-0/cubes.bin",
+      "sha256": "c8800f136740c4c473d86f6d4423b8bff41f8815563b62e26138761158840a92",
+      "bytes": 458304
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-postprocess-command-list/current/mode-0/frames.bin",
+      "sha256": "9b7c664847eaa1cfd1c5f2d093e3a4f221ff3abcd9024bcdcd5538d247394ae9",
+      "bytes": 344064
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-postprocess-command-list/current/mode-0/shadows.bin",
+      "sha256": "b3c5b6b641b6aa29c7d7fbd3cb57318382718c013a869a95a4fecc2236dd0e19",
+      "bytes": 86016
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-2-staged-poison/frontend-2.draws",
+      "sha256": "977f7fc512343350cafa6d240821ba33131945e87a6f8d007e0df8267c8183e4",
+      "bytes": 204288
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-2-staged-poison/frontend-2.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-2-staged/frontend-2.draws",
+      "sha256": "977f7fc512343350cafa6d240821ba33131945e87a6f8d007e0df8267c8183e4",
+      "bytes": 204288
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-2-staged/frontend-2.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-2-none-poison/frontend-2.draws",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-2-none-poison/frontend-2.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-2-none/frontend-2.draws",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-2-none/frontend-2.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-1-staged-poison/frontend-1.draws",
+      "sha256": "977f7fc512343350cafa6d240821ba33131945e87a6f8d007e0df8267c8183e4",
+      "bytes": 204288
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-1-staged-poison/frontend-1.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-1-staged/frontend-1.draws",
+      "sha256": "977f7fc512343350cafa6d240821ba33131945e87a6f8d007e0df8267c8183e4",
+      "bytes": 204288
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-1-staged/frontend-1.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-1-none-poison/frontend-1.draws",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-1-none-poison/frontend-1.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-1-none/frontend-1.draws",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-1-none/frontend-1.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-0-staged/frontend-0.draws",
+      "sha256": "977f7fc512343350cafa6d240821ba33131945e87a6f8d007e0df8267c8183e4",
+      "bytes": 204288
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-0-staged/frontend-0.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-0-none/frontend-0.draws",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-bindings-frontend-command-list/current/cold-0-none/frontend-0.rgba",
+      "sha256": "8b4fbf7dabd69fdb191237f558664825e0b36ddda37a10a0daeb8ce40f801ce6",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list/current/command-lifetime-frames.bin",
+      "sha256": "db58e945654dfb45d406951af0044e4e5bed0f96aed9b7823151d413db30d603",
+      "bytes": 131072
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list/current/frame-packet-frames.bin",
+      "sha256": "f34cdfdadf1b0ab80f63b1a80afe8e72697c6bc248f2ef6e9c51069be78298aa",
+      "bytes": 393216
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list/current/frame-upload-trace.bin",
+      "sha256": "b595e939b02f76f3ec013b1dde1d34fab014f8415e9fa731b68701b4e9f25e9d",
+      "bytes": 6076
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list/current/packet-draw-trace.bin",
+      "sha256": "87923623e8ad4cc5c212f9d23837cfa56f5b3372fd5bfef9f741db0028b11506",
+      "bytes": 18720
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list/current/packet-frames.bin",
+      "sha256": "50727352e6ed3d05f0e46433a16bebf50dbfde48ac66f54fe028a9b88af6c523",
+      "bytes": 196608
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list/current/target-packet-frames.bin",
+      "sha256": "d97a9b65b771252e5287e6503058c78ab1450dfe6f2534441b6d97aa4c9220a6",
+      "bytes": 98688
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list/current/immediate/frames.bin",
+      "sha256": "59a6c200af24a1a2b2b1ec1d551b97b335cb2104c6a4fccb9b7d4503894f60f6",
+      "bytes": 7372800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list/current/dynamic-repeat/frames.bin",
+      "sha256": "94279fdfdb7f6d7e1f61bf3bae6dea960731a8ce7d86d62f8503ff112658dc01",
+      "bytes": 7372800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list/current/dynamic-recovered/frames.bin",
+      "sha256": "94279fdfdb7f6d7e1f61bf3bae6dea960731a8ce7d86d62f8503ff112658dc01",
+      "bytes": 7372800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list/current/dynamic-packet/frames.bin",
+      "sha256": "94279fdfdb7f6d7e1f61bf3bae6dea960731a8ce7d86d62f8503ff112658dc01",
+      "bytes": 7372800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list/current/dynamic-immediate/frames.bin",
+      "sha256": "94279fdfdb7f6d7e1f61bf3bae6dea960731a8ce7d86d62f8503ff112658dc01",
+      "bytes": 7372800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list/current/dynamic-delayed/frames.bin",
+      "sha256": "94279fdfdb7f6d7e1f61bf3bae6dea960731a8ce7d86d62f8503ff112658dc01",
+      "bytes": 7372800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list/current/delayed/frames.bin",
+      "sha256": "59a6c200af24a1a2b2b1ec1d551b97b335cb2104c6a4fccb9b7d4503894f60f6",
+      "bytes": 7372800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list-editor-ui-product-loop/current/editor-command-frames.bin",
+      "sha256": "6de429dc8858218f6193be3228179e00f99447697b595b7be3e535903775fc8d",
+      "bytes": 460800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list-editor-ui-product-loop/current/editor-game.rgba",
+      "sha256": "513db0ed45b209786a8213afe34c9cc2e4c15584bb68ff16d2c39ace7accced8",
+      "bytes": 300800
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list-editor-ui-product-loop/current/editor-render-frame.bin",
+      "sha256": "a2fda445d8ff0746165afad9c510ab25f7c4c2ddf2591ff77aa63afc27c456f1",
+      "bytes": 17280000
+    },
+    {
+      "path": "Build/JobsValidation/Skinning/Release-command-list-editor-ui-product-loop/current/editor-ui-frames.bin",
+      "sha256": "a569b7590b142f61739db89c017bbd79c556c14953e81fd3b5ffdca16d939934",
+      "bytes": 97920000
+    }
+  ]
+}

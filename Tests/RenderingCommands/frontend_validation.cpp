@@ -3,7 +3,6 @@
 #include "../Skinning/serial_validation.cpp"
 #undef main
 #include <OvCore/Rendering/RenderFrontend.h>
-#include <OvCore/Rendering/EngineBufferRenderFeature.h>
 #include <OvRendering/Data/RenderFrame.h>
 #include <condition_variable>
 #include <future>
@@ -341,7 +340,7 @@ void BindingContractValidation(const std::filesystem::path& assets, OvRendering:
             material.SetReceiveShadows(false); material.SetReceiveReflections(false);
             PopulateStatic(scene,model,material,0); OvRendering::Entities::Camera camera;
             bool rejected = false;
-            try { frontend.Extract({scene,camera,96,64}); } catch (const std::invalid_argument&) { rejected = true; }
+            try { frontend.ExtractScene({{scene,camera,96,64}}); } catch (const std::invalid_argument&) { rejected = true; }
             Require(rejected, "unsupported block was published by Extract");
         }
         OvRendering::Resources::Loaders::ShaderLoader::Destroy(shader);
@@ -419,7 +418,7 @@ void FrontendValidation(const std::filesystem::path& dir, std::optional<unsigned
     for (unsigned mode=selectedMode.value_or(0); mode<selectedMode.value_or(2)+1; ++mode)
     {
         std::ostringstream trace(std::ios::binary); Hooks hooks(trace);
-        newPath = mode != 0;
+        newPath = true;
         for (unsigned frame=0; frame<8; ++frame)
         {
             auto scene=std::make_unique<Scene>(assets,assets);
@@ -437,42 +436,12 @@ void FrontendValidation(const std::filesystem::path& dir, std::optional<unsigned
             OvCore::Rendering::FramebufferUtil::SetupFramebuffer(*target,96,64,true,true,true);
             const auto output=target->RecordTarget();
             expectedTime=float(frame)*.125f;
-            if (mode==0)
-            {
-                OvCore::Rendering::SceneRenderer renderer(driver);
-                // An explicit valid external input for the unchanged A0 renderer.
-                // It does not provide a no-reflection binding when the receiver is disabled.
-                neutral.Bind(baregl::types::EBufferType::UNIFORM, 1);
-
-#ifndef FRONTEND_IMMEDIATE_ORACLE
-                renderer.SetDrawRecordingEnabled(true);
-                renderer.SetCommandRecordingJobs(nullptr);
-                renderer.BeginCommandRecording();
-#endif
-                renderer.AddDescriptor<OvCore::Rendering::SceneRenderer::SceneDescriptor>({.scene=*scene});
-                renderer.BeginFrame({.renderWidth=96,.renderHeight=64,.camera=camera,.outputBuffer=*target});
-                renderer.DrawFrame(); renderer.EndFrame();
-
-#ifndef FRONTEND_IMMEDIATE_ORACLE
-                auto legacy=renderer.FinishCommandRecording(); legacy.Execute(driver);
-#endif
-            }
-            else
             {
                 auto frontend=std::make_unique<Frontend>();
                 if (frame==0)
                 {
-                    material->SetProperty("u_EmissiveIntensity",.7f,true);
                     bool rejected=false;
-                    try { frontend->Extract({*scene,camera,96,64}); } catch(const std::invalid_argument&) { rejected=true; }
-                    Require(rejected && std::get<float>(material->GetProperty("u_EmissiveIntensity")->value)==.7f,
-                        "unsupported singleUse was consumed or silently accepted");
-                    material->SetProperty("u_EmissiveIntensity",.7f,false);
-                    material->SetBlendable(true); rejected=false;
-                    try { frontend->Extract({*scene,camera,96,64}); } catch(const std::invalid_argument&) { rejected=true; }
-                    Require(rejected,"transparent input silently entered the static pipeline");
-                    material->SetBlendable(false);
-                    auto invalidView=frontend->Extract({*scene,camera,0,64});
+                    auto invalidView=frontend->ExtractScene({{*scene,camera,0,64}});
                     const auto baseState=driver.CreatePipelineState();
                     glfwMakeContextCurrent(nullptr); rejected=false;
                     try { frontend->Prepare(std::move(invalidView),baseState,mode==2?&jobs:nullptr); }
@@ -480,18 +449,18 @@ void FrontendValidation(const std::filesystem::path& dir, std::optional<unsigned
                     Require(rejected,"invalid view was published");
                     window.MakeCurrentContext();
                 }
-                auto snapshot=frontend->Extract({*scene,camera,96,64,7,9,expectedTime});
+                auto snapshot=frontend->ExtractScene({{*scene,camera,96,64,7,9,expectedTime}});
                 Require(snapshot->GetMeshes().size()==5,"active candidate ownership mismatch");
                 auto state=driver.CreatePipelineState();
                 std::array<std::shared_ptr<const SceneSnapshot>,3> failures;
-                if(mode==2 && frame==0)for(auto& failure:failures)failure=frontend->Extract({*scene,camera,96,64,7,9,expectedTime});
+                if(mode==2 && frame==0)for(auto& failure:failures)failure=frontend->ExtractScene({{*scene,camera,96,64,7,9,expectedTime}});
                 camera.SetPosition({500,500,500});
                 material->SetProperty("u_EmissiveIntensity",0.f); material->SetGPUInstances(7);
                 scene.reset(); material.reset(); model.reset();
                 glfwMakeContextCurrent(nullptr);
                 auto prepared=frontend->Prepare(snapshot,state,mode==2?&jobs:nullptr);
                 Require(prepared->GetDraws().size()==4,"frustum list mismatch");
-                Require((prepared->GetPreparationThread()==std::this_thread::get_id())==(mode==1),"Prepare execution owner mismatch");
+                Require((prepared->GetPreparationThread()==std::this_thread::get_id())==(mode!=2),"Prepare execution owner mismatch");
                 const auto meshes=prepared->GetScene().GetMeshes();
                 std::vector<uint64_t> ordered;
                 for(const auto& draw:prepared->GetDraws())ordered.push_back(meshes[draw.sourceIndex].actorId);
@@ -525,7 +494,7 @@ void FrontendValidation(const std::filesystem::path& dir, std::optional<unsigned
         Scene empty(assets,assets); Frontend frontend; OvRendering::Entities::Camera camera;
         baregl::Framebuffer target; OvCore::Rendering::FramebufferUtil::SetupFramebuffer(target,16,16,true,true,true);
         const auto output=target.RecordTarget(); const auto state=driver.CreatePipelineState();
-        auto snapshot=frontend.Extract({empty,camera,16,16});
+        auto snapshot=frontend.ExtractScene({{empty,camera,16,16}});
         glfwMakeContextCurrent(nullptr);
         auto prepared=frontend.Prepare(std::move(snapshot),state,&jobs);
         Require(prepared->GetDraws().empty(),"empty scene produced geometry");
@@ -536,13 +505,13 @@ void FrontendValidation(const std::filesystem::path& dir, std::optional<unsigned
     }
     std::puts("PASS: empty view");
     if (!selectedMode || *selectedMode != 0)
-        std::puts("PASS: unsupported singleUse/Transparent rejection, invalid view does not publish");
+        std::puts("PASS: invalid view does not publish");
     if (!selectedMode)
     {
-        Require(allPixels[0]==allPixels[1] && allPixels[1]==allPixels[2],"old/serial/Worker pixels differ");
+        Require(allPixels[0]==allPixels[1] && allPixels[1]==allPixels[2],"serial/repeat/Worker pixels differ");
         if (traceMode != TraceMode::Disabled)
-            Require(allTraces[0]==allTraces[1] && allTraces[1]==allTraces[2],"old/serial/Worker logical draw data differ");
-        std::puts("PASS: 8 frames x old/serial/Worker, exact pixels and enabled draw traces");
+            Require(allTraces[0]==allTraces[1] && allTraces[1]==allTraces[2],"serial/repeat/Worker logical draw data differ");
+        std::puts("PASS: 8 frames x serial/repeat/Worker, exact pixels and enabled draw traces");
     }
     else std::printf("PASS: cold mode %u completed 8 frames; cross-process comparison is performed by the runner\n", *selectedMode);
     if (!selectedMode || *selectedMode != 0)

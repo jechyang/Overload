@@ -75,7 +75,7 @@ void OvEditor::Rendering::PickingCollector::DrawPickableCameras(
 			auto modelMatrix = translation * rotation;
 
 			m_collector
-				.DrawModelWithSingleMaterial(p_pso, cameraModel, m_actorPickingFallbackMaterial, modelMatrix);
+				.CollectModel(p_pso, cameraModel, m_actorPickingFallbackMaterial, modelMatrix);
 		}
 	}
 }
@@ -101,7 +101,7 @@ void OvEditor::Rendering::PickingCollector::DrawPickableReflectionProbes(OvRende
 			auto modelMatrix = translation * rotation * scaling;
 
 			m_collector
-				.DrawModelWithSingleMaterial(p_pso, reflectionProbeModel, m_reflectionProbeMaterial, modelMatrix);
+				.CollectModel(p_pso, reflectionProbeModel, m_reflectionProbeMaterial, modelMatrix);
 		}
 	}
 }
@@ -128,7 +128,7 @@ void OvEditor::Rendering::PickingCollector::DrawPickableLights(
 				auto modelMatrix = OvMaths::FMatrix4::Translation(actor.transform.GetWorldPosition());
 
 				m_collector
-					.DrawModelWithSingleMaterial(p_pso, lightModel, m_lightMaterial, modelMatrix);
+					.CollectModel(p_pso, lightModel, m_lightMaterial, modelMatrix);
 			}
 		}
 	}
@@ -148,7 +148,7 @@ void OvEditor::Rendering::PickingCollector::DrawPickableGizmo(
 	auto arrowModel = EDITOR_CONTEXT(editorResources)->GetModel("Arrow_Picking");
 
 	m_collector
-		.DrawModelWithSingleMaterial(p_pso, *arrowModel, m_gizmoPickingMaterial, modelMatrix);
+		.CollectModel(p_pso, *arrowModel, m_gizmoPickingMaterial, modelMatrix);
 }
 
 OvRendering::Data::RenderCommandList OvEditor::Rendering::PickingCollector::Extract(

@@ -2,7 +2,6 @@
 #include <OvCore/ECS/Components/CLight.h>
 #include <OvCore/ECS/Components/CPostProcessStack.h>
 #include <OvCore/ECS/Components/CReflectionProbe.h>
-#include <OvRendering/Data/FrameDescriptor.h>
 #include <algorithm>
 #include <cstring>
 #include <limits>
@@ -33,7 +32,7 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
     const auto addView = [&](const SceneRenderRequest& input, std::optional<baregl::Framebuffer::Snapshot> target,
         std::string name, std::vector<Data::ResourceUse> reads, std::vector<Data::ResourceUse> writes,
         std::span<const Data::ReflectionProbeInput> probes = {}) -> Data::RenderPlanPass& {
-        auto scene = SceneRenderExtractor::ExtractImpl(input, false, white, black, true, probes, &materialCache, &lightingView, programs);
+        auto scene = SceneRenderExtractor::ExtractImpl(input, white, black, true, probes, &materialCache, &lightingView, programs);
         const auto index = frame->m_views.size();
         frame->m_views.push_back(std::move(scene));
         frame->m_plan.passes.push_back({std::move(name),index,input.viewId,input.pipeline.stages,std::move(target),std::move(reads),std::move(writes),{}});
@@ -49,7 +48,7 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
         if (!request.generateShadows) continue;
         // This is the owner resource-preparation boundary; no worker calls it.
         auto camera = main.camera;
-        light.PrepareForShadowRendering({main.width,main.height,camera,{}});
+        light.PrepareForShadowRendering(camera.GetPosition());
         const auto& shadowCamera = *light.shadowCamera;
         const auto target = light.shadowBuffer->RecordTarget();
         const auto [width,height] = target.GetSize();
@@ -151,7 +150,7 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
         {
             auto ui = main; ui.viewId = viewId(); ui.includeOpaque = ui.includeTransparent = false;
             ui.pipeline.stages = {Data::RenderStage::SceneUI}; ui.preserveOutput = true;
-            materialCache = {}; // Final blit changes the legacy material binding before UI.
+            materialCache = {}; // Final blit changes the material binding before UI.
             addView(ui,request.target,"SceneUI",mainReads,{},probes);
         }
     }
