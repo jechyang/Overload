@@ -27,8 +27,10 @@ namespace OvCore::Rendering
         bool includeOpaque = true, includeTransparent = true, includeUI = true;
         OvRendering::Data::ShadowReceiverBindings shadow;
         OvRendering::Data::ReflectionReceiverBindings reflection;
+        OvRendering::Data::Material* shadowFallback = nullptr;
     };
 
+    class SceneFrameExtractor;
     class SceneRenderExtractor final
     {
     public:
@@ -43,8 +45,17 @@ namespace OvCore::Rendering
             const std::shared_ptr<baregl::Texture>& p_white,
             const std::shared_ptr<baregl::Texture>& p_black);
     private:
+        friend class SceneFrameExtractor;
+        struct MaterialCache
+        {
+            std::optional<OvRendering::Data::MaterialSignatureSet> signature;
+            OvRendering::Data::Material::PreparedSnapshot snapshot;
+        };
+        static OvRendering::Data::RenderViewInput CaptureView(const StaticOpaqueRequest& p_request);
         static std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> ExtractImpl(
             const SceneRenderRequest& p_request, bool p_opaqueOnly,
-            const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black);
+            const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black, bool p_planned = false,
+            std::span<const OvRendering::Data::ReflectionProbeInput> p_probes = {}, MaterialCache* p_cache = nullptr,
+            const OvRendering::Data::RenderViewInput* p_lightView = nullptr);
     };
 }

@@ -273,3 +273,14 @@ A1 的 --frontend/--frontend-immediate 保留，准备探针随实际职责迁�
 每组仍为 10 个独立冷启动进程、80 帧；图像及有效绘制数据精确一致。新增 LightSSBO 和被顶点阶段实际引用的 SkinningSSBO 暂存后回读；无蒙皮变体用引用标志和活跃 bone attribute 交叉判定，避免把未使用的遗留绑定当作绘制输入。跨视图与强制完成顺序的附加回放单独对照，不进入冷启动 trace 计数。
 
 完整边界、结果和证据见根目录 RENDERING_ARCHITECTURE_A3_VALIDATION.md。
+
+## A4 辅助视图与资源计划
+
+使用 `--auxiliary`，分别运行 Debug/Release，可追加 `--vs`；该模式独立运行。先构建对应配置。
+
+每配置运行 5 个独立隐藏 GL 进程，覆盖旧命令、旧即时、新串行、两 Worker、单 Worker；每进程 14 帧。主画面、阴影深度、全部已发布 cubemap mip 必须逐字节一致，场景额外要求非空动态内容。覆盖透明反射、真实 ShadowFallback、两定向投影光、局部探针/盒投影和逐面捕获。
+
+RenderTaskCoordinator 的测试编译副本用有超时的闩锁证明跨 View 实际重叠、正反完成顺序及私有输出汇合；生产代码不接收测试回调。另验证错误 View/Stage/资源代际/尺寸/面、缺失生产者与无效历史、附件反馈、缺失 mipmap 输入、Prepare/Record 失败与取消、部分提交、部分 GPU 执行失败、历史后继拒绝与重建，以及源 Actor 销毁、目标/probe resize 后的拥有型回放。
+
+输出位于 `Build/JobsValidation/Skinning/<配置>-auxiliary-command-list/`。
+每模式 `frames.bin` 为 344064 字节、`shadows.bin` 为 86016 字节、`cubes.bin` 为 458304 字节。只有全部进程与严格比较通过才生成成功 `result.json`。实现边界及验收见根目录 `RENDERING_ARCHITECTURE_A4_VALIDATION.md`。

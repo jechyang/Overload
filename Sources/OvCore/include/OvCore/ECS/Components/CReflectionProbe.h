@@ -21,6 +21,7 @@ namespace OvCore::ECS { class Actor; }
 
 namespace OvCore::Rendering
 {
+	class SceneFrameExtractor;
 	class ReflectionRenderPass;
 	class ReflectionRenderFeature;
 }
@@ -203,6 +204,7 @@ namespace OvCore::ECS::Components
 		baregl::Buffer& _GetUniformBuffer() const;
 		bool _IsDoubleBuffered() const;
 
+		friend class OvCore::Rendering::SceneFrameExtractor;
 		friend class OvCore::Rendering::ReflectionRenderPass;
 		friend class OvCore::Rendering::ReflectionRenderFeature;
 

@@ -2,6 +2,7 @@
 #include <atomic>
 #include <thread>
 #include <OvCore/Rendering/SceneRenderExtractor.h>
+#include <OvCore/Rendering/SceneFrameExtractor.h>
 #include <OvRendering/Core/MeshCommandRecorder.h>
 #include <OvTools/Jobs/JobSystem.h>
 
@@ -13,6 +14,11 @@ namespace OvCore::Rendering
     {
     public:
         RenderFrontend() = default;
+        std::unique_ptr<SceneFrame> ExtractFrame(const SceneFrameRequest& request) const;
+        std::unique_ptr<SceneFrame> PrepareFrame(std::unique_ptr<SceneFrame> frame,
+            OvRendering::Data::PipelineState state, OvTools::Jobs::JobSystem* jobs = nullptr, const std::atomic_bool* cancel = nullptr) const;
+        OvRendering::Data::RenderCommandList RecordFrame(std::unique_ptr<SceneFrame> frame,
+            OvTools::Jobs::JobSystem* jobs = nullptr, const std::atomic_bool* cancel = nullptr) const;
         std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> ExtractScene(const SceneRenderRequest& p_request) const;
         std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> Extract(const StaticOpaqueRequest& p_request) const;
         std::shared_ptr<const OvRendering::Data::PreparedFrameData> Prepare(

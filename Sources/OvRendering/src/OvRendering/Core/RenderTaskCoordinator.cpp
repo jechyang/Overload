@@ -131,3 +131,54 @@ Data::RenderCommandList Core::RenderTaskCoordinator::Record(std::shared_ptr<cons
     }
     catch (...) { commands.FailRecording(); throw; }
 }
+
+namespace
+{
+    template<class Result, class Function>
+    std::vector<Result> RunViews(size_t count, OvTools::Jobs::JobSystem* jobs, const std::atomic_bool* cancel, Function function)
+    {
+        if (jobs && !jobs->IsMainThread()) throw std::logic_error("View coordinator must own the JobSystem");
+        struct Slot { std::optional<Result> value; std::exception_ptr error; };
+        std::vector<Slot> slots(count);
+        std::vector<OvTools::Jobs::JobHandle> handles; handles.reserve(count);
+        try
+        {
+            for (size_t i=0; i<count; ++i)
+            {
+                if (cancel && cancel->load(std::memory_order_acquire)) throw std::runtime_error("View tasks cancelled");
+                auto task = [&,i] {
+                    try { slots[i].value.emplace(function(i)); }
+                    catch (...) { slots[i].error = std::current_exception(); }
+                };
+                if (jobs) handles.push_back(jobs->Submit(std::move(task))); else task();
+            }
+        }
+        catch (...) { if (jobs) jobs->WaitAllPassive(handles); throw; }
+        if (jobs) jobs->WaitAllPassive(handles);
+        for (const auto& slot : slots)
+        {
+            if (slot.error) std::rethrow_exception(slot.error);
+            if (!slot.value) throw std::runtime_error("View task retired without output");
+        }
+        if (cancel && cancel->load(std::memory_order_acquire)) throw std::runtime_error("View tasks cancelled");
+        std::vector<Result> result; result.reserve(count);
+        for (auto& slot : slots) result.push_back(std::move(*slot.value));
+        return result;
+    }
+}
+std::vector<std::shared_ptr<const Data::PreparedFrameData>> Core::RenderTaskCoordinator::PrepareViews(
+    std::span<const std::shared_ptr<const Data::RenderSceneSnapshot>> scenes, Data::PipelineState baseState,
+    OvTools::Jobs::JobSystem* jobs, const std::atomic_bool* cancel)
+{
+    return RunViews<std::shared_ptr<const Data::PreparedFrameData>>(scenes.size(), jobs, cancel,
+        [&](size_t i) { return Prepare(scenes[i],baseState,nullptr,cancel); });
+}
+std::vector<Data::RenderCommandList> Core::RenderTaskCoordinator::RecordViews(
+    std::span<const std::shared_ptr<const Data::PreparedFrameData>> frames,
+    std::span<const std::optional<baregl::Framebuffer::Snapshot>> targets,
+    const MeshCommandRecorder& recorder, OvTools::Jobs::JobSystem* jobs, const std::atomic_bool* cancel)
+{
+    if (frames.size() != targets.size()) throw std::invalid_argument("View/target count mismatch");
+    return RunViews<Data::RenderCommandList>(frames.size(),jobs,cancel,
+        [&](size_t i) { return Record(frames[i],recorder,targets[i],nullptr,cancel); });
+}

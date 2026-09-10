@@ -44,6 +44,13 @@ namespace OvRendering::Data
         std::shared_ptr<baregl::Texture> map;
         ReflectionConstants constants;
     };
+    struct ReflectionProbeInput
+    {
+        ReflectionReceiverBindings receiver;
+        OvMaths::FVector3 position, halfExtents;
+        OvMaths::FMatrix4 inverseRotation;
+        bool local = false;
+    };
     struct SkinningBindings
     {
         bool enabled = false;

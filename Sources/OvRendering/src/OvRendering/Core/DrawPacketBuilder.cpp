@@ -16,7 +16,7 @@ Core::BindingRangeResult Core::DrawPacketBuilder::PrepareRange(const Data::Prepa
         binding.viewUpload = OvMaths::FMatrix4::Transpose(view.view);
         binding.projectionUpload = OvMaths::FMatrix4::Transpose(view.projection);
         binding.camera = view.input.position;
-        auto frustum = view.input.frustumOverride;
+        auto frustum = view.input.lightFrustumOverride ? view.input.lightFrustumOverride : view.input.frustumOverride;
         if (view.input.cullLights && !frustum)
         {
             frustum.emplace(); frustum->CalculateFrustum(view.projection * view.view);

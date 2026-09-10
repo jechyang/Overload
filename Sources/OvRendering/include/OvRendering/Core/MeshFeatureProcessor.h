@@ -15,6 +15,6 @@ namespace OvRendering::Core
         // No scene services, GL, shared output or source material writes.
         static MeshRangeResult PrepareRange(const Data::RenderSceneSnapshot& scene,
             const Data::RenderView& view, size_t begin, size_t end, const std::atomic_bool* cancel);
-        static Data::PipelineState BuildState(Data::PipelineState base, const Data::StateMask& material);
+        static Data::PipelineState BuildState(Data::PipelineState base, const Data::StateMask& material, Data::RenderStage stage = Data::RenderStage::Opaque);
     };
 }

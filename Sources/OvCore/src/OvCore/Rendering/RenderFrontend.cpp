@@ -37,3 +37,36 @@ OvRendering::Data::RenderCommandList RenderFrontend::Record(
     RequireOwner();
     return m_recorder.Record(std::move(p_frame), std::move(p_target), p_jobs, p_cancel);
 }
+
+std::unique_ptr<SceneFrame> RenderFrontend::ExtractFrame(const SceneFrameRequest& request) const
+{
+    RequireOwner();
+    return SceneFrameExtractor::Extract(request,m_recorder.GetFallback2D(),m_recorder.GetFallbackCube());
+}
+std::unique_ptr<SceneFrame> RenderFrontend::PrepareFrame(std::unique_ptr<SceneFrame> frame,
+    OvRendering::Data::PipelineState state, OvTools::Jobs::JobSystem* jobs, const std::atomic_bool* cancel) const
+{
+    RequireOwner();
+    if (!frame || !frame->m_prepared.empty()) throw std::invalid_argument("Frame missing or already prepared");
+    frame->m_plan.Validate(frame->m_views);
+    frame->m_prepared = OvRendering::Core::RenderTaskCoordinator::PrepareViews(frame->m_views,state,jobs,cancel);
+    return frame;
+}
+OvRendering::Data::RenderCommandList RenderFrontend::RecordFrame(std::unique_ptr<SceneFrame> frame,
+    OvTools::Jobs::JobSystem* jobs, const std::atomic_bool* cancel) const
+{
+    RequireOwner();
+    if (!frame || frame->m_prepared.size() != frame->m_views.size()) throw std::invalid_argument("Frame not prepared");
+    frame->m_plan.Validate(frame->m_views);
+    std::vector<std::optional<baregl::Framebuffer::Snapshot>> targets(frame->m_views.size());
+    for (const auto& pass : frame->m_plan.passes) targets[pass.view] = pass.target;
+    auto blocks = OvRendering::Core::RenderTaskCoordinator::RecordViews(frame->m_prepared,targets,m_recorder,jobs,cancel);
+    for (const auto& pass : frame->m_plan.passes)
+    {
+        frame->m_commands.Append(std::move(blocks[pass.view]));
+        if (pass.generateMipmaps)
+            frame->m_commands.Append([texture=pass.generateMipmaps](auto&) { texture->GenerateMipmaps(); });
+    }
+    frame->m_commands.Seal();
+    return std::move(frame->m_commands);
+}

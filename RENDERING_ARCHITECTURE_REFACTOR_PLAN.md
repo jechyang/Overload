@@ -1,6 +1,6 @@
 # Overload 多线程渲染架构重构计划
 
-日期：2026-09-10。状态：A0–A3 已完成；A3 显式功能绑定、蒙皮/灯光、singleUse 兼容及并行绑定/命令块的 Debug/Release 验收已闭合；A4–A6 未开始。
+日期：2026-09-10。状态：A0–A4 实现与验收已完成；A4 辅助视图、显式资源计划、跨视图并行 Prepare/Record 和历史失败恢复的 Debug/Release 验收已闭合；A5–A6 未开始。
 
 ## 1. 目标与范围
 
@@ -316,7 +316,7 @@ A0 记录现有实际优先级；A3 再固化冲突规则。语义上由引擎�
 
 ### A3：隔离功能数据，接通并行绑定与录制
 
-状态（2026-09-10）：已完成，见 [A3 实施与验证记录](RENDERING_ARCHITECTURE_A3_VALIDATION.md)。显式 Frame/View/Draw 数据、拥有型材质覆盖、灯光/蒙皮准备及私有命令块接入统一协调器。绑定发布前汇合、乱序回放、失败/取消/部分提交、源销毁与两视图隔离通过；Debug/Release 完整构建、120 进程/960 帧的 A3/A2/A1 矩阵及既有动态辅助路径/并行编码回归均通过。阴影/反射生产与资源计划留在 A4。实现与验收已完成；本地 Git 提交受 .git 写权限和提权入口 CET 启动错误阻断，补交入口见 A3 记录。
+状态（2026-09-10）：已完成，见 [A3 实施与验证记录](RENDERING_ARCHITECTURE_A3_VALIDATION.md)。显式 Frame/View/Draw 数据、拥有型材质覆盖、灯光/蒙皮准备及私有命令块接入统一协调器。绑定发布前汇合、乱序回放、失败/取消/部分提交、源销毁与两视图隔离通过；Debug/Release 完整构建、120 进程/960 帧的 A3/A2/A1 矩阵及既有动态辅助路径/并行编码回归均通过。阴影/反射生产与资源计划留在 A4。实现与验收已完成，并已提交为 `2678dcf`。
 
 交付：Frame/View/Draw 绑定数据、蒙皮准备、灯光准备、独立材质覆盖载荷。将 EngineBuffer、Lighting、Skinning 从隐式钩子迁移到明确准备入口；补齐阴影/反射接收参数的数据结构，生产端在 A4 接通。DrawPacketBuilder 和录制局部缓存脱离 CompositeRenderer 的全局钩子调度，ABaseRenderer 的材质绑定职责由显式输入接管。
 
@@ -329,6 +329,8 @@ A0 记录现有实际优先级；A3 再固化冲突规则。语义上由引擎�
 验收：共享材质的多个物体/视图互不污染；蒙皮在主画面及现有辅助路径行为一致；单次属性消费/失败语义、骨骼 identity、材质版本保持原契约。新路径没有逐 Draw 的源 Material 写入。并行绑定和命令块录制使用独占输出，乱序完成、失败分支和串行对照通过；Worker 无 GL 调用。
 
 ### A4：迁移辅助 View 与显式 RenderPlan
+
+状态（2026-09-10）：实现与验收已完成，见 [A4 实施与验证记录](RENDERING_ARCHITECTURE_A4_VALIDATION.md)。阴影/反射与主视图通过拥有型 SceneFrame、固定资源计划和独立 View 任务接入；资源/附件校验、实际 Worker 重叠、乱序汇合、失败/取消/部分提交及历史重建通过。Debug/Release 全量构建、70 进程/620 帧的 A4/A3/A2 图像矩阵与既有命令列表回归均通过；产品视口与后处理接入留在 A5，本地提交状态见 A4 记录。
 
 交付：ShadowCaster、ReflectionCapture View/Stage；阴影、反射的资源与历史计划；Pass 输入输出校验。主相机数据无需通过全局 `SetCamera()` 切走再恢复来维持新路径正确性。
 
@@ -435,4 +437,4 @@ A0 已单独完成。A1 本次实现的 **主相机静态不透明命令切片**
 - [阶段 2/3 完成记录](MULTITHREADING_STAGE23_COMPLETION.md)
 - [命令与产品回归入口](Tests/RenderingCommands/README.md)
 
-当前已完成 A0–A3：见 [语义基线](RENDERING_ARCHITECTURE_A0_BASELINE.md)、[A1 记录](RENDERING_ARCHITECTURE_A1_VALIDATION.md)、[A2 记录](RENDERING_ARCHITECTURE_A2_VALIDATION.md) 和 [A3 记录](RENDERING_ARCHITECTURE_A3_VALIDATION.md)。下一会话从 A4 的 ShadowCaster、ReflectionCapture 与显式 RenderPlan/资源校验继续；A4–A6 尚未开始。本会话在 A3 验证与提交收尾后结束，不进入 A4。后续每个增量补充结果与剩余工作，完成一项后独立 commit，并提示用户开启新会话。
+当前 A0–A3 已完成并提交；A4 实现与最终验收已完成，提交状态见 [A4 记录](RENDERING_ARCHITECTURE_A4_VALIDATION.md)。本会话只处理 A4，不进入 A5。完成 A4 验证与独立提交后，下一会话继续 A5 的编辑器覆盖层、Picking、后处理和视口接入。后续每个增量补充结果与剩余工作，完成一项后独立 commit，并提示用户开启新会话。

@@ -18,6 +18,7 @@ namespace OvRendering::Core { class ViewPreparer; class RenderTaskCoordinator; }
 namespace OvRendering::Data
 {
 
+    struct ViewMatrices { OvMaths::FMatrix4 view, projection; };
     // Values captured at the scene boundary, never a Camera/Transform alias.
     struct RenderViewInput
     {
@@ -28,8 +29,12 @@ namespace OvRendering::Data
         Settings::EProjectionMode projectionMode = Settings::EProjectionMode::PERSPECTIVE;
         bool cullGeometry = true, cullLights = true;
         std::optional<Frustum> frustumOverride;
+        std::optional<Frustum> lightFrustumOverride;
         bool clearColor = true, clearDepth = true, clearStencil = true;
         OvMaths::FVector4 clearValue;
+        // A producer may publish exact matrices (directional shadow camera cache).
+        // Copy values, never reconstruct an owned Transform and renormalize it.
+        std::optional<ViewMatrices> matrices;
     };
 
     struct RenderView
@@ -50,6 +55,7 @@ namespace OvRendering::Data
         RenderStage stage = RenderStage::Opaque;
         StateMask state;
         uint32_t instances = 1;
+        bool transparent = false;
         std::shared_ptr<const Resources::IMesh> geometry;
         Material::PreparedSnapshot material;
         SkinningBindings skinning;

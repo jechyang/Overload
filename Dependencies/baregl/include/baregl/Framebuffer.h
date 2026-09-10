@@ -125,6 +125,14 @@ namespace baregl
 			void ReadRGBA8(std::span<uint8_t> p_pixels) const;
 			uint32_t GetID() const; // Realizes the FBO on the GL owner (or through ResourceExecutor).
 			std::pair<uint16_t, uint16_t> GetSize() const;
+			struct TextureAttachmentInfo
+			{
+				Texture::Snapshot storage;
+				std::optional<uint32_t> layer;
+				bool writable;
+			};
+			// CPU-only attachment metadata for explicit resource validation.
+			std::vector<TextureAttachmentInfo> GetTextureAttachments() const;
 			// CPU-only selection for recorded passes; leaves the source FBO unchanged.
 			Snapshot WithDrawBuffer(std::optional<uint32_t> p_index) const;
 		private:

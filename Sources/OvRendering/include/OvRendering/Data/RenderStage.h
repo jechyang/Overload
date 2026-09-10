@@ -26,8 +26,8 @@ namespace OvRendering::Data
         case Opaque: return {stage, "", MaterialFrontToBack, DefaultEmptyFeatures, true, true, true};
         case Transparent: return {stage, "", BackToFront, DefaultEmptyFeatures, true, true, true};
         case SceneUI: return {stage, "", BackToFront, DefaultEmptyFeatures, true, true, false};
-        case ShadowCaster: return {stage, "SHADOW_PASS", Collection, ShadowMaterial, false, false, false};
-        case ReflectionCapture: return {stage, "REFLECTION_PASS", MaterialFrontToBack, DefaultEmptyFeatures, false, true, false};
+        case ShadowCaster: return {stage, "SHADOW_PASS", Collection, ShadowMaterial, true, false, false};
+        case ReflectionCapture: return {stage, "REFLECTION_PASS", MaterialFrontToBack, DefaultEmptyFeatures, true, false, false};
         case Picking: return {stage, "PICKING_PASS", Collection, PickingMaterial, false, false, false};
         }
         throw std::invalid_argument("Unknown render stage");

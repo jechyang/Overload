@@ -8,6 +8,7 @@
 #include <OvRendering/Core/ViewPreparer.h>
 #include <unordered_map>
 #include <cmath>
+#include <limits>
 #include <algorithm>
 #include <stdexcept>
 
@@ -32,47 +33,63 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
 
 std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor::ExtractImpl(
     const SceneRenderRequest& p_request, bool p_opaqueOnly,
-    const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black)
+    const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black, bool p_planned, std::span<const Data::ReflectionProbeInput> p_probes, MaterialCache* p_cache, const Data::RenderViewInput* p_lightView)
 {
     p_request.pipeline.Validate();
+    const bool shadow = p_request.pipeline.stages == std::vector{Data::RenderStage::ShadowCaster};
+    const bool capture = p_request.pipeline.stages == std::vector{Data::RenderStage::ReflectionCapture};
+    for (auto stage : p_request.pipeline.stages)
+        if ((stage == Data::RenderStage::ShadowCaster || stage == Data::RenderStage::ReflectionCapture) && !shadow && !capture)
+            throw std::invalid_argument("Auxiliary stages require an exclusive view");
     const auto& components = p_request.scene.GetFastAccessComponents();
     const auto anyActive = [](const auto& list) {
         return std::any_of(list.begin(), list.end(), [](const auto* c) { return c->owner.IsActive(); });
     };
-    if ((p_opaqueOnly && anyActive(components.lights)) || anyActive(components.reflectionProbes) || anyActive(components.postProcessStacks))
+    if ((p_opaqueOnly && anyActive(components.lights)) || (!p_planned && anyActive(components.reflectionProbes)) || anyActive(components.postProcessStacks))
         throw std::invalid_argument("Static scene view does not own lighting, reflection or post-processing");
     auto builder = std::unique_ptr<Data::RenderSceneSnapshot>(new Data::RenderSceneSnapshot);
     builder->m_pipeline = p_request.pipeline;
     auto& view = builder->m_view;
-    const auto& camera = p_request.camera;
-    view.id = p_request.viewId; view.sceneGeneration = p_request.sceneGeneration;
-    view.width = p_request.width; view.height = p_request.height; view.elapsedTime = p_request.elapsedTime;
-    view.position = camera.GetPosition();
-    view.forward = camera.transform->GetWorldForward(); view.up = camera.transform->GetWorldUp();
-    view.fov = camera.GetFov(); view.size = camera.GetSize();
-    view.nearPlane = camera.GetNear(); view.farPlane = camera.GetFar(); view.projectionMode = camera.GetProjectionMode();
-    view.cullLights = camera.HasFrustumLightCulling();
-    view.cullGeometry = camera.HasFrustumGeometryCulling(); view.frustumOverride = p_request.frustumOverride;
-    view.clearColor = camera.GetClearColorBuffer(); view.clearDepth = camera.GetClearDepthBuffer();
-    view.clearStencil = camera.GetClearStencilBuffer(); view.clearValue = {camera.GetClearColor(), 1.0f};
+    view = CaptureView(p_request);
+    if (shadow || capture) { view.clearColor = true; view.clearDepth = true; view.clearStencil = true; view.clearValue = {}; }
+    if (shadow)
+    {
+        view.cullGeometry = false; view.frustumOverride.reset();
+        if (p_planned) view.matrices = Data::ViewMatrices{p_request.camera.GetViewMatrix(),p_request.camera.GetProjectionMatrix()};
+    }
+    if (p_lightView)
+    {
+        view.cullLights = p_lightView->cullLights;
+        if (view.cullLights)
+        {
+            view.lightFrustumOverride = p_lightView->frustumOverride;
+            if (!view.lightFrustumOverride)
+            {
+                const auto lightView = OvRendering::Core::ViewPreparer::BuildView(*p_lightView);
+                view.lightFrustumOverride.emplace();
+                view.lightFrustumOverride->CalculateFrustum(lightView.projection * lightView.view);
+            }
+        }
+    }
     // Source material identities are used only within Extract, then replaced with
     // relative groups preserving the old address order. Never sort snapshot addresses.
     for (auto* component : components.lights)
     {
         if (!component->owner.IsActive()) continue;
         const auto& light = component->GetData();
-        if (light.castShadows && !p_request.shadow.map)
+        if (light.castShadows && !p_request.shadow.map && !p_planned && !shadow && !capture)
             throw std::invalid_argument("Shadow producer requires an explicit imported receiver map until A4");
         builder->m_lights.push_back({light.transform->GetWorldPosition(), light.CalculateEffectRange(), light.GenerateMatrix()});
     }
     std::vector<uintptr_t> identities;
     std::vector<Data::Material*> materialsToResolve;
     std::vector<std::optional<Data::FeatureSet>> featuresToResolve;
-    bool resolveSingleUse = false;
+    bool resolveSingleUse = p_cache != nullptr;
     std::vector<Data::Material::PropertyOverrides> overridesToResolve;
     std::vector<std::shared_ptr<baregl::Texture>> receiverTextures;
     if (p_request.shadow.map) receiverTextures.push_back(p_request.shadow.map);
     if (p_request.reflection.map) receiverTextures.push_back(p_request.reflection.map);
+    for (const auto& probe : p_probes) if (probe.receiver.map) receiverTextures.push_back(probe.receiver.map);
     uint64_t ordinal = 0;
     std::unordered_map<const baregl::ShaderProgram*, bool> validatedPrograms;
     for (const auto* renderer : components.modelRenderers)
@@ -80,7 +97,7 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
         const auto& owner = renderer->owner;
         if (!owner.IsActive() || !renderer->GetModel()) continue;
         const auto* materials = owner.GetComponent<ECS::Components::CMaterialRenderer>();
-        if (!materials || !Rendering::SatisfiesVisibility(materials->GetVisibilityFlags(), Rendering::EVisibilityFlags::GEOMETRY)) continue;
+        if (!materials || !Rendering::SatisfiesVisibility(materials->GetVisibilityFlags(), shadow ? Rendering::EVisibilityFlags::SHADOW : capture ? Rendering::EVisibilityFlags::REFLECTION : Rendering::EVisibilityFlags::GEOMETRY)) continue;
         const auto* skin = owner.GetComponent<ECS::Components::CSkinnedMeshRenderer>();
         const bool hasSkin = Rendering::SkinningUtils::IsSkinningActive(skin);
         if (p_opaqueOnly && hasSkin) throw std::invalid_argument("Static opaque adapter does not own skinning");
@@ -95,15 +112,24 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
             if (!material || !material->IsValid()) continue;
             if (p_opaqueOnly && (material->IsUserInterface() || material->IsBlendable()))
                 throw std::invalid_argument("Static scene view does not own Transparent or SceneUI");
-            const auto stage = material->IsUserInterface() ? Data::RenderStage::SceneUI :
+            const bool originalSkinning = material->SupportsFeature("SKINNING");
+            if (shadow)
+            {
+                if (!sourceMaterial || !sourceMaterial->IsValid() || !sourceMaterial->IsShadowCaster()) continue;
+                material = sourceMaterial->HasPass("SHADOW_PASS") ? sourceMaterial : p_request.shadowFallback;
+                if (!material || !material->IsValid()) throw std::invalid_argument("Missing shadow fallback material");
+            }
+            if (capture && (material->IsUserInterface() || !material->IsCapturedByReflectionProbes())) continue;
+            const auto category = material->IsUserInterface() ? Data::RenderStage::SceneUI :
                 material->IsBlendable() ? Data::RenderStage::Transparent : Data::RenderStage::Opaque;
-            if (material != p_request.fallbackMaterial &&
+            const auto stage = shadow ? Data::RenderStage::ShadowCaster : capture ? Data::RenderStage::ReflectionCapture : category;
+            if (!shadow && material != p_request.fallbackMaterial &&
                 ((stage == Data::RenderStage::SceneUI && !p_request.includeUI) ||
                  (stage == Data::RenderStage::Transparent && !p_request.includeTransparent) ||
                  (stage == Data::RenderStage::Opaque && !p_request.includeOpaque))) continue;
             if (std::find(p_request.pipeline.stages.begin(), p_request.pipeline.stages.end(), stage) == p_request.pipeline.stages.end()) continue;
             const auto description = Data::DescribeStage(stage);
-            if (!material->SupportsProjectionMode(view.projectionMode) || material->GetGPUInstances() <= 0) continue;
+            if ((!shadow && !material->SupportsProjectionMode(view.projectionMode)) || material->GetGPUInstances() <= 0) continue;
             if (typeid(*mesh) != typeid(OvRendering::Resources::Mesh))
                 throw std::invalid_argument("Scene requires standard retained geometry");
             if (p_opaqueOnly && (material->HasFeature("SKINNING") ||
@@ -117,8 +143,8 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
                     resolveSingleUse = true;
                 }
             std::optional<Data::FeatureSet> features;
-            const bool hasPalette = hasSkin && mesh->HasSkinningData();
-            if (hasPalette && material->SupportsFeature("SKINNING"))
+            const bool hasPalette = hasSkin && (shadow || mesh->HasSkinningData());
+            if (hasPalette && (!shadow || originalSkinning) && material->SupportsFeature("SKINNING"))
                 features = Rendering::SkinningUtils::BuildFeatureSet(&material->GetFeatures());
             const auto featureRef = features ? OvTools::Utils::OptRef<const Data::FeatureSet>(*features) : std::nullopt;
             auto& program = material->GetVariant(description.technique, featureRef).value();
@@ -126,6 +152,7 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
                 validatedPrograms.emplace(&program, OvRendering::Core::MeshCommandRecorder::ValidateProgram(program));
             Data::MeshInput item;
             item.stage = stage;
+            item.transparent = material->IsBlendable();
             item.skinning.enabled = validatedPrograms.at(&program) || (features && features->contains("SKINNING")) || material->HasFeature("SKINNING");
             if (item.skinning.enabled && hasPalette)
             {
@@ -133,12 +160,48 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
                 const auto& matrices = skin->GetBoneMatricesTransposed();
                 item.skinning.matrices.assign(matrices.begin(), matrices.end());
             }
-            if (description.reflectionReceiver && material->IsReflectionReceiver())
-                item.reflection = p_request.reflection.constants;
+            auto reflection = p_request.reflection;
             item.actorId = owner.GetGUID(); item.collectionIndex = collection;
             item.drawOrder = material->GetDrawOrder(); item.position = transform.GetWorldPosition();
             item.model = transform.GetWorldMatrix(); item.user = materials->GetUserMatrix();
+            if (description.reflectionReceiver && material->IsReflectionReceiver())
+            {
+                const Data::ReflectionProbeInput* bestLocal = nullptr;
+                const Data::ReflectionProbeInput* bestGlobal = nullptr;
+                float localDistance = std::numeric_limits<float>::max(), globalDistance = localDistance;
+                const auto bounds = mesh->GetBoundingSphere();
+                const auto center = item.model * OvMaths::FVector4(bounds.position, 1.0f);
+                const auto scale = std::max({
+                    OvMaths::FVector3::Length({item.model.data[0],item.model.data[1],item.model.data[2]}),
+                    OvMaths::FVector3::Length({item.model.data[4],item.model.data[5],item.model.data[6]}),
+                    OvMaths::FVector3::Length({item.model.data[8],item.model.data[9],item.model.data[10]})});
+                for (const auto& probe : p_probes)
+                {
+                    const auto distance = OvMaths::FVector3::Distance(item.position, probe.position);
+                    auto& best = probe.local ? bestLocal : bestGlobal;
+                    auto& bestDistance = probe.local ? localDistance : globalDistance;
+                    if ((!probe.local && bestLocal) || distance > bestDistance) continue;
+                    if (probe.local)
+                    {
+                        const auto local = probe.inverseRotation * (OvMaths::FVector3{center.x,center.y,center.z} - probe.position);
+                        const auto extent = probe.halfExtents;
+                        const auto closest = OvMaths::FVector3{std::max(-extent.x,std::min(extent.x,local.x)), std::max(-extent.y,std::min(extent.y,local.y)), std::max(-extent.z,std::min(extent.z,local.z))};
+                        const auto d = local - closest;
+                        const auto radius = bounds.radius * scale;
+                        if (d.x*d.x+d.y*d.y+d.z*d.z > radius*radius) continue;
+                    }
+                    best = &probe; bestDistance = distance;
+                }
+                if (const auto* probe = bestLocal ? bestLocal : bestGlobal) reflection = probe->receiver;
+                item.reflection = reflection.constants;
+            }
             item.state = material->GenerateStateMask(); item.instances = static_cast<uint32_t>(material->GetGPUInstances());
+            if (shadow)
+            {
+                item.state.blendable = false; item.state.depthTest = true;
+                item.state.colorWriting = false; item.state.depthWriting = true;
+                item.state.frontfaceCulling = false; item.state.backfaceCulling = false;
+            }
             using Behaviour = ECS::Components::CModelRenderer::EFrustumBehaviour;
             std::optional<Geometry::BoundingSphere> bounds;
             switch (renderer->GetFrustumBehaviour())
@@ -170,7 +233,7 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
                 overrides.emplace("_LightSpaceMatrix", p_request.shadow.lightSpace);
             }
             if (description.reflectionReceiver && material->IsReflectionReceiver() && material->HasProperty("_EnvironmentMap"))
-                overrides.emplace("_EnvironmentMap", p_request.reflection.map.get());
+                overrides.emplace("_EnvironmentMap", reflection.map.get());
             item.material = material->PrepareSnapshot(description.technique, featureRef, p_white, p_black, receiverTextures, {}, true, true, false, overrides);
             overridesToResolve.push_back(std::move(overrides));
             materialsToResolve.push_back(material);
@@ -188,8 +251,10 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
         // Compatibility only: source consumption is ordered on Main before workers.
         // Reuse the same culling and sorting rules as Prepare; no Material leaves Extract.
         const auto preparedView = OvRendering::Core::ViewPreparer::BuildView(view);
-        std::optional<Data::MaterialSignatureSet> previousSignature;
-        Data::Material::PreparedSnapshot previous;
+        MaterialCache localCache;
+        auto& cache = p_cache ? *p_cache : localCache;
+        auto& previousSignature = cache.signature;
+        auto& previous = cache.snapshot;
         for (const auto stage : builder->m_pipeline.stages)
         {
             std::vector<OvRendering::Core::VisibleStaticMesh> ordered;
@@ -222,4 +287,21 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
         }
     }
     return std::shared_ptr<const Data::RenderSceneSnapshot>(std::move(builder));
+}
+
+Data::RenderViewInput Rendering::SceneRenderExtractor::CaptureView(const StaticOpaqueRequest& p_request)
+{
+    Data::RenderViewInput view;
+    const auto& camera = p_request.camera;
+    view.id = p_request.viewId; view.sceneGeneration = p_request.sceneGeneration;
+    view.width = p_request.width; view.height = p_request.height; view.elapsedTime = p_request.elapsedTime;
+    view.position = camera.GetPosition();
+    view.forward = camera.transform->GetWorldForward(); view.up = camera.transform->GetWorldUp();
+    view.fov = camera.GetFov(); view.size = camera.GetSize();
+    view.nearPlane = camera.GetNear(); view.farPlane = camera.GetFar(); view.projectionMode = camera.GetProjectionMode();
+    view.cullLights = camera.HasFrustumLightCulling();
+    view.cullGeometry = camera.HasFrustumGeometryCulling(); view.frustumOverride = p_request.frustumOverride;
+    view.clearColor = camera.GetClearColorBuffer(); view.clearDepth = camera.GetClearDepthBuffer();
+    view.clearStencil = camera.GetClearStencilBuffer(); view.clearValue = {camera.GetClearColor(), 1.0f};
+    return view;
 }

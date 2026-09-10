@@ -282,7 +282,7 @@ void StageSemantics(const std::filesystem::path& assets, OvRendering::Resources:
     CompareStageOracle(frontend,legacy,request,state,jobs,window); // Fallback remains included in actual category.
     request.includeOpaque=true; request.includeTransparent=true; request.includeUI=true;
     request.pipeline.stages={Stage::SceneUI,Stage::Opaque}; CompareStageOracle(frontend,legacy,request,state,jobs,window);
-    for(auto stage : {Stage::ShadowCaster,Stage::ReflectionCapture,Stage::Picking,static_cast<Stage>(999)})
+    for(auto stage : {Stage::Picking,static_cast<Stage>(999)})
     {
         request.pipeline.stages={stage}; bool rejected=false;
         try{frontend.ExtractScene(request);}catch(const std::invalid_argument&){rejected=true;}

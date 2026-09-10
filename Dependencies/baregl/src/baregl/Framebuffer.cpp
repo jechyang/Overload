@@ -253,6 +253,18 @@ namespace baregl
 		return Snapshot(std::move(data));
 	}
 
+	std::vector<Framebuffer::Snapshot::TextureAttachmentInfo> Framebuffer::Snapshot::GetTextureAttachments() const
+	{
+		if (!m_data) throw std::logic_error("Empty framebuffer snapshot");
+		std::vector<TextureAttachmentInfo> result;
+		for (const auto& [key, attachment] : m_data->attachments)
+			if (const auto* texture = std::get_if<std::shared_ptr<Texture>>(&attachment))
+				result.push_back({(*texture)->RetainStorage(), m_data->layers.at(key),
+					key < GL_COLOR_ATTACHMENT0 || key >= GL_COLOR_ATTACHMENT0 + k_maxColorAttachmentCount ||
+					(m_data->drawBuffer && key == GL_COLOR_ATTACHMENT0 + *m_data->drawBuffer)});
+		return result;
+	}
+
 	void Framebuffer::Snapshot::Bind() const
 	{
 		return ResourceExecutor::Invoke([&]() -> void {

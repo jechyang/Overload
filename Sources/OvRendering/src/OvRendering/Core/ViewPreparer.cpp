@@ -26,6 +26,10 @@ Data::RenderView Core::ViewPreparer::BuildView(const Data::RenderViewInput& inpu
         break;
     default: throw std::invalid_argument("Unsupported view projection");
     }
+    if (input.matrices)
+    {
+        view.view = input.matrices->view; view.projection = input.matrices->projection;
+    }
     if (input.cullGeometry)
     {
         view.frustum = input.frustumOverride;
@@ -72,7 +76,7 @@ std::unique_ptr<Data::PreparedFrameData> Core::ViewPreparer::BuildDrawLists(
             if (cancel && cancel->load(std::memory_order_acquire)) throw std::runtime_error("View preparation cancelled");
             const auto index = candidate.sourceIndex;
             const auto& mesh = meshes[index];
-            const auto state = MeshFeatureProcessor::BuildState(baseState, mesh.state);
+            const auto state = MeshFeatureProcessor::BuildState(baseState, mesh.state, mesh.stage);
             result->m_draws.push_back({index, state, OvMaths::FMatrix4::Transpose(mesh.model), mesh.user, {}});
         }
     }
@@ -83,12 +87,16 @@ std::unique_ptr<Data::PreparedFrameData> Core::ViewPreparer::BuildDrawLists(
 void Core::ViewPreparer::SortStage(std::vector<VisibleStaticMesh>& list, std::span<const Data::MeshInput> meshes, Data::RenderStage stage)
 {
     const auto sorting = Data::DescribeStage(stage).sorting;
+    if (sorting == Data::DrawSorting::Collection) return;
     // Whole-list sort after deterministic range merge. Never sort each chunk.
     std::stable_sort(list.begin(), list.end(), [&](const auto& a, const auto& b) {
         const auto& x = meshes[a.sourceIndex]; const auto& y = meshes[b.sourceIndex];
+        if (stage == Data::RenderStage::ReflectionCapture && x.transparent != y.transparent) return !x.transparent;
+        const bool backToFront = sorting == Data::DrawSorting::BackToFront ||
+            (stage == Data::RenderStage::ReflectionCapture && x.transparent);
         if (x.drawOrder != y.drawOrder) return x.drawOrder < y.drawOrder;
-        if (sorting == Data::DrawSorting::MaterialFrontToBack && x.materialGroup != y.materialGroup)
+        if (!backToFront && sorting == Data::DrawSorting::MaterialFrontToBack && x.materialGroup != y.materialGroup)
         return x.materialGroup < y.materialGroup;
-        return sorting == Data::DrawSorting::BackToFront ? a.distance > b.distance : a.distance < b.distance;
+        return backToFront ? a.distance > b.distance : a.distance < b.distance;
     });
 }

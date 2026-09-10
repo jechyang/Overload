@@ -26,9 +26,11 @@ Core::MeshRangeResult Core::MeshFeatureProcessor::PrepareRange(const Data::Rende
     }
     return result;
 }
-Data::PipelineState Core::MeshFeatureProcessor::BuildState(Data::PipelineState state, const Data::StateMask& material)
+Data::PipelineState Core::MeshFeatureProcessor::BuildState(Data::PipelineState state, const Data::StateMask& material, Data::RenderStage stage)
 {
     // All three old SceneRenderPass implementations unconditionally set stencil.
+    if (stage == Data::RenderStage::Opaque || stage == Data::RenderStage::Transparent || stage == Data::RenderStage::SceneUI)
+    {
     state.stencilTest = true;
     state.stencilWriteMask = 0xFF;
     state.stencilFuncRef = 1;
@@ -36,6 +38,7 @@ Data::PipelineState Core::MeshFeatureProcessor::BuildState(Data::PipelineState s
     state.stencilOpFail = baregl::types::EOperation::REPLACE;
     state.depthOpFail = baregl::types::EOperation::REPLACE;
     state.bothOpFail = baregl::types::EOperation::REPLACE;
+    }
     state.depthWriting = material.depthWriting;
     state.colorWriting.mask = material.colorWriting ? 0xF : 0;
     state.blending = material.blendable;

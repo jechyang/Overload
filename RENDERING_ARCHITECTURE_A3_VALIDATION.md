@@ -69,4 +69,6 @@ StaticOpaqueRequest/Extract 继续服务 A1 限定入口并在消费前拒绝其
 
 ## 提交收尾
 
-实现与验收已完成，Git 提交尚未生成：当前沙箱无法创建 .git/index.lock；正式 require_escalated 入口因 Windows CET 启动错误退出（并非自动审批拒绝）。Build/a3-commit.mjs 保存本阶段精确文件清单、内容哈希与预期 HEAD 检查，可在具备仓库写权限的终端执行 node Build/a3-commit.mjs。脚本只暂存 A3 文件并创建本地提交，不推送。补齐提交后开启新会话推进 A4。
+实现与验收已完成，Git 提交尚未生成：当前沙箱无法创建 .git/index.lock；正式 require_escalated 入口因 Windows CET 启动错误退出（并非自动审批拒绝）。Build/a3-commit.mjs 保存本阶段精确文件清单、内容哈希与预期 HEAD 检查，可在具备仓库写权限的终端执行 node Build/a3-commit.mjs。脚本只暂存 A3 文件并创建本地提交，不推送。
+
+补充（2026-09-10）：A3 已提交为 `2678dcf`（feat(rendering): complete A3 explicit bindings and parallel recording）。上述内容保留当时的提交阻断记录；当前会话已在该提交基础上推进 A4。
