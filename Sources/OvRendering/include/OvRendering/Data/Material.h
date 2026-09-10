@@ -143,6 +143,7 @@ namespace OvRendering::Data
         // Worker encoding never reads Material, Shader assets, or live Texture assets.
         // Single-use values are consumed on successful preparation; a later allocation
         // failure aborts the entire recording, without publishing any partial commands.
+        using PropertyOverrides = std::unordered_map<std::string, MaterialPropertyType>;
         class SnapshotInput;
         using PreparedSnapshot = std::shared_ptr<const SnapshotInput>;
         PreparedSnapshot PrepareSnapshot(
@@ -151,7 +152,8 @@ namespace OvRendering::Data
             const std::shared_ptr<baregl::Texture>& p_emptyTexture2D,
             const std::shared_ptr<baregl::Texture>& p_emptyTextureCube,
             std::span<const std::shared_ptr<baregl::Texture>> p_textures,
-            const PreparedSnapshot& p_previous, bool p_uploadStable, bool p_uploadSingleUse);
+            const PreparedSnapshot& p_previous, bool p_uploadStable, bool p_uploadSingleUse,
+            bool p_consumeSingleUse = true, const PropertyOverrides& p_overrides = {});
         static std::shared_ptr<const Snapshot> EncodeSnapshot(const PreparedSnapshot& p_input);
 
 		// CPU recording consumes used single-use properties only after the entire

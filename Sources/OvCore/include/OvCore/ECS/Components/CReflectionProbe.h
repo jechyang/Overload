@@ -170,7 +170,7 @@ namespace OvCore::ECS::Components
 		std::shared_ptr<baregl::Texture> GetCubemap() const;
 
 		// CPU snapshot of the padding-sensitive reflection UBO.
-		using UniformData = std::array<std::byte, 124>;
+		using UniformData = std::array<std::byte, 128>;
 		UniformData CaptureUniformData() const;
 
 		/**

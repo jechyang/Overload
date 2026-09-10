@@ -758,6 +758,7 @@ public:
     {
         const std::string* name = nullptr;
         MaterialPropertyType value;
+        bool overridden = false;
         std::shared_ptr<baregl::Texture> texture;
         mutable std::once_flag encoded;
         mutable std::optional<UniformUploadCommand> command;
@@ -775,7 +776,7 @@ OvRendering::Data::Material::PreparedSnapshot OvRendering::Data::Material::Prepa
     const std::shared_ptr<baregl::Texture>& p_emptyTexture2D,
     const std::shared_ptr<baregl::Texture>& p_emptyTextureCube,
     std::span<const std::shared_ptr<baregl::Texture>> p_textures,
-    const PreparedSnapshot& p_previous, bool p_uploadStable, bool p_uploadSingleUse)
+    const PreparedSnapshot& p_previous, bool p_uploadStable, bool p_uploadSingleUse, bool p_consumeSingleUse, const PropertyOverrides& p_overrides)
 {
     ZoneScopedN("Prepare Draw Snapshot Input");
     if (!IsValid()) throw std::invalid_argument("Cannot prepare an invalid material");
@@ -783,7 +784,8 @@ OvRendering::Data::Material::PreparedSnapshot OvRendering::Data::Material::Prepa
     if ((!p_uploadStable || !p_uploadSingleUse) && (!p_previous || p_previous->program != program))
         throw std::invalid_argument("Prepared snapshot requires the same retained program");
     const auto version = m_shader->GetVersion();
-    if (!p_uploadStable && !p_uploadSingleUse && p_previous->version == version) return p_previous;
+    if (p_overrides.empty() && !p_uploadStable && !p_uploadSingleUse && p_previous->version == version &&
+        std::none_of(p_previous->properties.begin(), p_previous->properties.end(), [](const auto& property) { return property->overridden; })) return p_previous;
     auto result = std::make_shared<SnapshotInput>();
     result->program = std::move(program);
     result->version = version;
@@ -792,7 +794,12 @@ OvRendering::Data::Material::PreparedSnapshot OvRendering::Data::Material::Prepa
     consume.reserve(m_properties.size());
     for (auto& [name, property] : m_properties)
     {
-        const bool upload = property.singleUse ? p_uploadSingleUse : p_uploadStable;
+        const auto replacement = p_overrides.find(name);
+        const bool overridden = replacement != p_overrides.end();
+        const auto& value = overridden ? replacement->second : property.value;
+        const bool restoreOverride = !overridden && p_previous && std::any_of(p_previous->properties.begin(), p_previous->properties.end(),
+            [&](const auto& previous) { return *previous->name == name && previous->overridden; });
+        const bool upload = overridden || restoreOverride || (property.singleUse ? p_uploadSingleUse : p_uploadStable);
         std::shared_ptr<const SnapshotInput::Property> input;
         if (!upload)
         {
@@ -809,7 +816,8 @@ OvRendering::Data::Material::PreparedSnapshot OvRendering::Data::Material::Prepa
         {
             auto entry = std::make_shared<SnapshotInput::Property>();
             entry->name = &info->get().name;
-            entry->value = property.value;
+            entry->value = value;
+            entry->overridden = overridden;
             using enum baregl::types::EUniformType;
             // Reject bad types before consuming single-use properties. Conversion,
             // matrix transposition, and command buffer allocation happen in workers.
@@ -828,12 +836,12 @@ OvRendering::Data::Material::PreparedSnapshot OvRendering::Data::Material::Prepa
             case SAMPLER_CUBE:
             {
                 baregl::Texture* texture = nullptr;
-                if (const auto asset = std::get_if<Resources::Texture*>(&property.value); asset && *asset)
+                if (const auto asset = std::get_if<Resources::Texture*>(&value); asset && *asset)
                 {
                     entry->texture = (*asset)->RetainTexture();
                     texture = entry->texture.get();
                 }
-                else if (const auto raw = std::get_if<baregl::Texture*>(&property.value)) texture = *raw;
+                else if (const auto raw = std::get_if<baregl::Texture*>(&value)) texture = *raw;
                 if (!texture)
                 {
                     entry->texture = info->get().type == SAMPLER_2D ? p_emptyTexture2D : p_emptyTextureCube;
@@ -856,7 +864,7 @@ OvRendering::Data::Material::PreparedSnapshot OvRendering::Data::Material::Prepa
             }
             if (!valid) throw std::bad_variant_access();
             input = std::move(entry);
-            if (property.singleUse) consume.push_back(&property);
+            if (property.singleUse && !overridden) consume.push_back(&property);
         }
         if (input)
         {
@@ -865,7 +873,7 @@ OvRendering::Data::Material::PreparedSnapshot OvRendering::Data::Material::Prepa
     }
     if (result->properties.size() != result->program->GetUniforms().size())
         throw std::invalid_argument("Prepared snapshot is missing active shader properties");
-    for (auto* property : consume) property->value = property->defaultValue;
+    if (p_consumeSingleUse) for (auto* property : consume) property->value = property->defaultValue;
     return result;
 }
 

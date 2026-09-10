@@ -1,6 +1,6 @@
 # Overload 多线程渲染架构重构计划
 
-日期：2026-09-10。状态：A0、A1、A2 已完成；A2 静态 Opaque/Transparent/SceneUI 的统一列表、并行准备与 Debug/Release 验收已闭合；A3–A6 未开始。
+日期：2026-09-10。状态：A0–A3 已完成；A3 显式功能绑定、蒙皮/灯光、singleUse 兼容及并行绑定/命令块的 Debug/Release 验收已闭合；A4–A6 未开始。
 
 ## 1. 目标与范围
 
@@ -316,6 +316,8 @@ A0 记录现有实际优先级；A3 再固化冲突规则。语义上由引擎�
 
 ### A3：隔离功能数据，接通并行绑定与录制
 
+状态（2026-09-10）：已完成，见 [A3 实施与验证记录](RENDERING_ARCHITECTURE_A3_VALIDATION.md)。显式 Frame/View/Draw 数据、拥有型材质覆盖、灯光/蒙皮准备及私有命令块接入统一协调器。绑定发布前汇合、乱序回放、失败/取消/部分提交、源销毁与两视图隔离通过；Debug/Release 完整构建、120 进程/960 帧的 A3/A2/A1 矩阵及既有动态辅助路径/并行编码回归均通过。阴影/反射生产与资源计划留在 A4。实现与验收已完成；本地 Git 提交受 .git 写权限和提权入口 CET 启动错误阻断，补交入口见 A3 记录。
+
 交付：Frame/View/Draw 绑定数据、蒙皮准备、灯光准备、独立材质覆盖载荷。将 EngineBuffer、Lighting、Skinning 从隐式钩子迁移到明确准备入口；补齐阴影/反射接收参数的数据结构，生产端在 A4 接通。DrawPacketBuilder 和录制局部缓存脱离 CompositeRenderer 的全局钩子调度，ABaseRenderer 的材质绑定职责由显式输入接管。
 
 动画评估和 pose 发布仍在现有更新边界；本阶段只迁移渲染输入，不移动脚本可观察的动画逻辑。Record 只消费发布数据，缓存局限于显式录制上下文。
@@ -433,4 +435,4 @@ A0 已单独完成。A1 本次实现的 **主相机静态不透明命令切片**
 - [阶段 2/3 完成记录](MULTITHREADING_STAGE23_COMPLETION.md)
 - [命令与产品回归入口](Tests/RenderingCommands/README.md)
 
-当前已完成 A0、A1、A2：见 [语义基线](RENDERING_ARCHITECTURE_A0_BASELINE.md)、[A1 记录](RENDERING_ARCHITECTURE_A1_VALIDATION.md) 和 [A2 记录](RENDERING_ARCHITECTURE_A2_VALIDATION.md)。下一会话从 A3 的功能绑定、蒙皮/灯光及并行绑定/录制继续；A3–A6 尚未开始。本会话完成 A2 验证与独立提交后结束，不继续推进 A3。后续每个增量补充结果与剩余工作，完成一项后独立 commit，并提示用户开启新会话。
+当前已完成 A0–A3：见 [语义基线](RENDERING_ARCHITECTURE_A0_BASELINE.md)、[A1 记录](RENDERING_ARCHITECTURE_A1_VALIDATION.md)、[A2 记录](RENDERING_ARCHITECTURE_A2_VALIDATION.md) 和 [A3 记录](RENDERING_ARCHITECTURE_A3_VALIDATION.md)。下一会话从 A4 的 ShadowCaster、ReflectionCapture 与显式 RenderPlan/资源校验继续；A4–A6 尚未开始。本会话在 A3 验证与提交收尾后结束，不进入 A4。后续每个增量补充结果与剩余工作，完成一项后独立 commit，并提示用户开启新会话。

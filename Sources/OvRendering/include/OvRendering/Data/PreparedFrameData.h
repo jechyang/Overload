@@ -6,6 +6,7 @@
 #include <thread>
 #include <vector>
 #include <OvRendering/Data/Frustum.h>
+#include <OvRendering/Data/DrawBindings.h>
 #include <OvRendering/Data/RenderPipeline.h>
 #include <OvRendering/Data/Material.h>
 #include <OvRendering/Data/PipelineState.h>
@@ -25,7 +26,7 @@ namespace OvRendering::Data
         OvMaths::FVector3 position, forward, up;
         float fov = 60, size = 5, nearPlane = .1f, farPlane = 1000, elapsedTime = 0;
         Settings::EProjectionMode projectionMode = Settings::EProjectionMode::PERSPECTIVE;
-        bool cullGeometry = true;
+        bool cullGeometry = true, cullLights = true;
         std::optional<Frustum> frustumOverride;
         bool clearColor = true, clearDepth = true, clearStencil = true;
         OvMaths::FVector4 clearValue;
@@ -39,7 +40,7 @@ namespace OvRendering::Data
 
     };
 
-    struct StaticMeshInput
+    struct MeshInput
     {
         uint64_t actorId = 0, collectionIndex = 0, materialGroup = 0;
         int drawOrder = 0;
@@ -51,6 +52,8 @@ namespace OvRendering::Data
         uint32_t instances = 1;
         std::shared_ptr<const Resources::IMesh> geometry;
         Material::PreparedSnapshot material;
+        SkinningBindings skinning;
+        ReflectionConstants reflection;
     };
 
     // Only Extract can build this object. No mutable builder or container escapes.
@@ -60,20 +63,23 @@ namespace OvRendering::Data
     public:
         const RenderViewInput& GetView() const { return m_view; }
         const RenderPipeline& GetPipeline() const { return m_pipeline; }
-        std::span<const StaticMeshInput> GetMeshes() const { return m_meshes; }
+        std::span<const MeshInput> GetMeshes() const { return m_meshes; }
+        std::span<const LightInput> GetLights() const { return m_lights; }
         RenderSceneSnapshot(const RenderSceneSnapshot&) = delete;
     private:
         RenderSceneSnapshot() = default;
         RenderViewInput m_view;
         RenderPipeline m_pipeline;
-        std::vector<StaticMeshInput> m_meshes;
+        std::vector<MeshInput> m_meshes;
+        std::vector<LightInput> m_lights;
     };
 
-    struct PreparedStaticDraw
+    struct PreparedMeshDraw
     {
         size_t sourceIndex;
         PipelineState pipelineState;
         OvMaths::FMatrix4 modelUpload, userUpload;
+        std::shared_ptr<const Material::Snapshot> material;
     };
 
     struct PreparedStageList
@@ -90,17 +96,21 @@ namespace OvRendering::Data
         friend class Core::RenderTaskCoordinator;
     public:
         const RenderView& GetView() const { return m_view; }
+        const FrameBindings& GetFrameBindings() const { return m_frameBindings; }
+        const ViewBindings& GetViewBindings() const { return m_viewBindings; }
         std::span<const PreparedStageList> GetLists() const { return m_lists; }
         std::span<const std::thread::id> GetPreparationThreads() const { return m_preparationThreads; }
-        std::span<const PreparedStaticDraw> GetDraws() const { return m_draws; }
+        std::span<const PreparedMeshDraw> GetDraws() const { return m_draws; }
         const RenderSceneSnapshot& GetScene() const { return *m_scene; }
         std::thread::id GetPreparationThread() const { return m_preparationThread; }
         PreparedFrameData(const PreparedFrameData&) = delete;
     private:
         PreparedFrameData() = default;
         RenderView m_view;
+        FrameBindings m_frameBindings;
+        ViewBindings m_viewBindings;
         std::shared_ptr<const RenderSceneSnapshot> m_scene;
-        std::vector<PreparedStaticDraw> m_draws;
+        std::vector<PreparedMeshDraw> m_draws;
         std::vector<PreparedStageList> m_lists;
         std::vector<std::thread::id> m_preparationThreads;
         std::thread::id m_preparationThread;

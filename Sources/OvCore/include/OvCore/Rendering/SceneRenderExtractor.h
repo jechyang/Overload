@@ -19,19 +19,21 @@ namespace OvCore::Rendering
         std::optional<OvRendering::Data::Frustum> frustumOverride;
     };
 
-    struct StaticSceneRequest : StaticOpaqueRequest
+    struct SceneRenderRequest : StaticOpaqueRequest
     {
-        OvRendering::Data::RenderPipeline pipeline = ScenePipeline::StaticMeshes();
+        OvRendering::Data::RenderPipeline pipeline = ScenePipeline::MainViewMeshes();
         OvRendering::Data::Material* overrideMaterial = nullptr;
         OvRendering::Data::Material* fallbackMaterial = nullptr;
         bool includeOpaque = true, includeTransparent = true, includeUI = true;
+        OvRendering::Data::ShadowReceiverBindings shadow;
+        OvRendering::Data::ReflectionReceiverBindings reflection;
     };
 
     class SceneRenderExtractor final
     {
     public:
         static std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> ExtractScene(
-            const StaticSceneRequest& p_request,
+            const SceneRenderRequest& p_request,
             const std::shared_ptr<baregl::Texture>& p_white,
             const std::shared_ptr<baregl::Texture>& p_black);
         // Call in the main-thread stable scene-read interval. No alias to source
@@ -42,7 +44,7 @@ namespace OvCore::Rendering
             const std::shared_ptr<baregl::Texture>& p_black);
     private:
         static std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> ExtractImpl(
-            const StaticSceneRequest& p_request, bool p_opaqueOnly,
+            const SceneRenderRequest& p_request, bool p_opaqueOnly,
             const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black);
     };
 }

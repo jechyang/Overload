@@ -10,7 +10,7 @@ void RenderFrontend::RequireOwner() const
         throw std::logic_error("RenderFrontend requires its constructing thread");
 }
 
-std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> RenderFrontend::ExtractScene(const StaticSceneRequest& p_request) const
+std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> RenderFrontend::ExtractScene(const SceneRenderRequest& p_request) const
 {
     RequireOwner();
     return SceneRenderExtractor::ExtractScene(p_request, m_recorder.GetFallback2D(), m_recorder.GetFallbackCube());
@@ -32,8 +32,8 @@ std::shared_ptr<const OvRendering::Data::PreparedFrameData> RenderFrontend::Prep
 
 OvRendering::Data::RenderCommandList RenderFrontend::Record(
     std::shared_ptr<const OvRendering::Data::PreparedFrameData> p_frame,
-    std::optional<baregl::Framebuffer::Snapshot> p_target) const
+    std::optional<baregl::Framebuffer::Snapshot> p_target, OvTools::Jobs::JobSystem* p_jobs, const std::atomic_bool* p_cancel) const
 {
     RequireOwner();
-    return m_recorder.Record(std::move(p_frame), std::move(p_target));
+    return m_recorder.Record(std::move(p_frame), std::move(p_target), p_jobs, p_cancel);
 }

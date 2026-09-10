@@ -1,11 +1,18 @@
 // Included by the existing real-GL frontend harness in --stages mode.
 #include <OvRendering/Core/PipelineRunner.h>
 #include <OvRendering/Core/ViewPreparer.h>
+#ifdef FRONTEND_BINDING_VALIDATION
+#include <OvCore/ECS/Components/CPointLight.h>
+#endif
 using Stage = OvRendering::Data::RenderStage;
-using SceneRequest = OvCore::Rendering::StaticSceneRequest;
+using SceneRequest = OvCore::Rendering::SceneRenderRequest;
 using Legacy = OvCore::Rendering::SceneRenderer;
 namespace
 {
+#ifdef FRONTEND_BINDING_VALIDATION
+    int activeBindingPhase = 0;
+    thread_local bool bindingProbe = false;
+#endif
     enum class GateMode { Off, Forward, Reverse, Fail, Cancel, SubmitFail };
     struct RangeGate
     {
@@ -30,6 +37,9 @@ namespace
 }
 void StageRangeEntry(size_t begin)
 {
+#ifdef FRONTEND_BINDING_VALIDATION
+    if (activeBindingPhase != 0 && !bindingProbe) return;
+#endif
     Require(!glfwGetCurrentContext(), "candidate Prepare has a current GL context");
     std::unique_lock lock(rangeGate.mutex);
     if (rangeGate.mode == GateMode::Off) return;
@@ -41,6 +51,9 @@ void StageRangeEntry(size_t begin)
 }
 void StageRangeExit(size_t begin)
 {
+#ifdef FRONTEND_BINDING_VALIDATION
+    if (activeBindingPhase != 0 && !bindingProbe) return;
+#endif
     std::lock_guard lock(rangeGate.mutex);
     if (rangeGate.mode == GateMode::Off) return;
     const size_t slot = begin == 0 ? 0 : 1;
@@ -48,12 +61,18 @@ void StageRangeExit(size_t begin)
 }
 void StageRangeDraw(size_t begin)
 {
+#ifdef FRONTEND_BINDING_VALIDATION
+    if (activeBindingPhase != 0 && !bindingProbe) return;
+#endif
     std::lock_guard lock(rangeGate.mutex);
     if (rangeGate.mode == GateMode::Fail && begin == 0)
         throw std::runtime_error("A2 injected failure after private candidate output");
 }
 void StageBeforeSubmit(size_t slot)
 {
+#ifdef FRONTEND_BINDING_VALIDATION
+    if (activeBindingPhase != 0 && !bindingProbe) return;
+#endif
     std::unique_lock lock(rangeGate.mutex);
     if (rangeGate.mode == GateMode::SubmitFail && slot == 1)
     {
@@ -135,12 +154,24 @@ struct StageFixture
         scene = std::make_unique<Scene>(assets, assets);
         model = std::make_unique<Model>("A2 mixed stages");
         const std::array<uint32_t,3> indices{0,1,2};
+#ifdef FRONTEND_BINDING_VALIDATION
+        Populate(*model);
+#endif
         for (unsigned m=0; m<3; ++m)
         {
             const float x = float(m)*.12f, z = float(m)*.03f;
             const std::array<OvRendering::Geometry::Vertex,3> vertices{{
                 {{-.4f+x,-.4f,z},{0,0},{0,0,1}}, {{.4f+x,-.4f,z},{1,0},{0,0,1}}, {{x,.4f,z},{.5f,1},{0,0,1}}
             }};
+#ifdef FRONTEND_BINDING_VALIDATION
+            if (m != 2)
+            {
+                std::array<OvRendering::Geometry::SkinnedVertex,3> skinned;
+                for (size_t v=0;v<3;++v) { static_cast<OvRendering::Geometry::Vertex&>(skinned[v])=vertices[v]; skinned[v].boneIDs[0]=0;skinned[v].boneWeights[0]=1; }
+                model->m_meshes.push_back(new OvRendering::Resources::Mesh(skinned,indices,m));
+            }
+            else
+#endif
             model->m_meshes.push_back(new OvRendering::Resources::Mesh(vertices,indices,m));
         }
         for (unsigned m=0; m<6; ++m)
@@ -151,7 +182,12 @@ struct StageFixture
             material->SetDepthWriting(m%3 == 0); material->SetDepthTest(m%3 != 2);
             material->SetGPUInstances(frame%2 ? 2 : 1);
             material->SetDrawOrder(frame%3 == 1 ? int(m/3) : 0);
+#ifdef FRONTEND_BINDING_VALIDATION
+            material->SetProperty("u_EmissiveIntensity", .2f + float(frame)*.07f, true);
+            if(m%3==1)material->AddFeature("SKINNING"); // Identity when a component is absent.
+#else
             material->SetProperty("u_EmissiveIntensity", .7f);
+#endif
             material->SetProperty("u_EmissiveColor", FVector3{.2f+float(m)*.1f,.5f-float(m)*.04f,.3f});
             material->SetProperty("u_Albedo", FVector4{1,1,1,m%3 == 0 ? 1.f : .5f});
             if (frame == 6) material->AddFeature("MISSING_A2_VARIANT"); // Defined empty-feature fallback.
@@ -160,12 +196,28 @@ struct StageFixture
         {
             auto& actor = scene->CreateActor("mixed"+std::to_string(i)); actor.SetGUID(100+i);
             actor.AddComponent<CModelRenderer>().SetModel(model.get());
+#ifdef FRONTEND_BINDING_VALIDATION
+            if(i%2==0)
+            {
+                auto& skin=actor.AddComponent<Skin>(); skin.Pause();
+                skin.SetBoneLocalPosition(0,{float(frame)*.025f,float(i)*.012f,0});
+                Require(skin.HasSkinningData(), "A3 palette fixture missing");
+            }
+#endif
             auto& mr = actor.AddComponent<CMaterialRenderer>();
             for (uint8_t m=0; m<3; ++m) mr.SetMaterialAtIndex(m, materials[m+(i%2)*3]);
             actor.transform.SetLocalPosition({i == 5 ? 100.f : (float(i%3)-1)*.9f,0,-float(i%2)*.2f+float(frame)*.01f});
             if (i == 3) actor.SetActive(false);
             if (i == 4) actor.transform.SetLocalPosition(scene->GetActors()[0]->transform.GetWorldPosition());
         }
+#ifdef FRONTEND_BINDING_VALIDATION
+        auto& lightActor=scene->CreateActor("directional");
+        lightActor.transform.SetLocalRotation(FQuaternion(FVector3{20,30,0}));
+        auto& light=lightActor.AddComponent<CDirectionalLight>().GetData();
+        light.castShadows=false; light.intensity=.5f+float(frame)*.1f;
+        auto& farLight=scene->CreateActor("culled light");farLight.transform.SetLocalPosition({100000,0,0});
+        farLight.AddComponent<CPointLight>().GetData().castShadows=false;
+#endif
     }
 };
 void CompareStageOracle(Frontend& frontend, Legacy& legacy, SceneRequest request, OvRendering::Data::PipelineState state,
@@ -242,6 +294,9 @@ void StageSemantics(const std::filesystem::path& assets, OvRendering::Resources:
     Require(&shader->GetVariant("MISSING_A2_TECHNIQUE",{"MISSING_A2_VARIANT"})==&shader->GetVariant(),"missing technique fallback changed");
     std::puts("PASS: unchanged filter oracle: three stages per object, global/equal-key order, override/fallback/invalid material, inclusion exception, pipeline subset/order, unsupported/duplicate stage rejection");
 }
+#ifdef FRONTEND_BINDING_VALIDATION
+#include "binding_validation.inl"
+#endif
 void StageValidation(const std::filesystem::path& dir, std::optional<unsigned> selectedMode)
 {
     OvWindowing::Settings::DeviceSettings ds; ds.contextMajorVersion=4; ds.contextMinorVersion=5;
@@ -292,7 +347,13 @@ void StageValidation(const std::filesystem::path& dir, std::optional<unsigned> s
                 auto prepared=frontend->Prepare(snapshot,state,mode==2?&jobs:nullptr);
                 Require(prepared->GetLists().size()==3 && prepared->GetDraws().size()==12,"mixed stage draw count mismatch");
                 if(mode==2)Require(prepared->GetPreparationThreads().size()==2,"parallel range schedule not used");
-                auto commands=frontend->Record(prepared,output);
+#ifdef FRONTEND_BINDING_VALIDATION
+                Require(prepared->GetScene().GetLights().size()==2 && prepared->GetViewBindings().lights.size()==1,"light culling did not preserve the infinite directional light and remove the distant point light");
+#endif
+                auto commands=frontend->Record(prepared,output,mode==2?&jobs:nullptr);
+#ifdef FRONTEND_BINDING_VALIDATION
+                if(mode==2 && frame==0)BindingConcurrency(*frontend,jobs,snapshot,state,output,driver,window);
+#endif
                 if(mode==2 && frame==0)StageConcurrency(*frontend,jobs,std::move(failures),state);
                 snapshot.reset();prepared.reset();frontend.reset();window.MakeCurrentContext();target->Resize(48,32);target.reset();
                 if(bindingPolicy=="poison")PolluteBindings(frame);else{glBindBufferBase(GL_UNIFORM_BUFFER,0,0);glBindBufferBase(GL_UNIFORM_BUFFER,1,0);}
@@ -308,5 +369,8 @@ void StageValidation(const std::filesystem::path& dir, std::optional<unsigned> s
         std::ofstream traceFile(dir/("frontend-"+std::to_string(mode)+".draws"),std::ios::binary);traceFile<<finalTrace;
     }
     StageSemantics(assets,shader,driver,jobs,window);
+#ifdef FRONTEND_BINDING_VALIDATION
+    BindingIsolation(assets,shader,driver,jobs,window);
+#endif
     std::puts("PASS: A2 eight cold mixed-stage frames; 96 draws; perspective/orthographic, instances, missing variant; source/target/frontend lifetime; explicit UBO pollution recovery");
 }

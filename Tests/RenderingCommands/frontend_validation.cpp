@@ -15,8 +15,8 @@
 using Frontend = OvCore::Rendering::RenderFrontend;
 using SceneSnapshot = OvRendering::Data::RenderSceneSnapshot;
 using Prepared = OvRendering::Data::PreparedFrameData;
-static_assert(std::is_same_v<decltype(std::declval<const SceneSnapshot&>().GetMeshes()), std::span<const OvRendering::Data::StaticMeshInput>>);
-static_assert(std::is_same_v<decltype(std::declval<const Prepared&>().GetDraws()), std::span<const OvRendering::Data::PreparedStaticDraw>>);
+static_assert(std::is_same_v<decltype(std::declval<const SceneSnapshot&>().GetMeshes()), std::span<const OvRendering::Data::MeshInput>>);
+static_assert(std::is_same_v<decltype(std::declval<const Prepared&>().GetDraws()), std::span<const OvRendering::Data::PreparedMeshDraw>>);
 
 // The runner inserts only this call into a test copy of ViewPreparer.cpp.
 // No callback/extension is admitted to the production Worker API.
@@ -41,7 +41,14 @@ namespace
 #endif
     using EngineConstants = std::array<float, 68>;
     using ReflectionConstants = std::array<float, 32>;
-    struct DrawConstants { EngineConstants engine{}; ReflectionConstants reflection{}; };
+    struct DrawConstants
+    {
+        EngineConstants engine{}; ReflectionConstants reflection{};
+#ifdef FRONTEND_BINDING_VALIDATION
+        std::array<float,16> lights{};
+        std::array<float,48> bones{};
+#endif
+    };
     ReflectionConstants NeutralReflection()
     {
         ReflectionConstants result{};
@@ -129,6 +136,27 @@ namespace
             glCopyNamedBufferSubData(reflectionBuffer, traceBuffer, reflectionStart, readbackOffset + sizeof(constants.engine), sizeof(constants.reflection));
             constantReadbacks.push_back({static_cast<size_t>(traceOutput->tellp()), expectedTime, newPath});
         }
+#ifdef FRONTEND_BINDING_VALIDATION
+        Require(traceMode == TraceMode::Staged, "A3 requires staged SSBO observation");
+        const auto drawOffset = (constantReadbacks.size()-1) * sizeof(DrawConstants);
+        GLint lightsBuffer=0;glGetIntegeri_v(GL_SHADER_STORAGE_BUFFER_BINDING,0,&lightsBuffer);
+        Require(lightsBuffer!=0,"missing light storage");
+        GLint64 lightBytes=0;glGetNamedBufferParameteri64v(lightsBuffer,GL_BUFFER_SIZE,&lightBytes);
+        Require(lightBytes==64,"light buffer contains a culled light or lost the directional light");
+        glCopyNamedBufferSubData(lightsBuffer,traceBuffer,0,drawOffset+offsetof(DrawConstants,lights),sizeof(constants.lights));
+        const auto skinBlock=glGetProgramResourceIndex(program,GL_SHADER_STORAGE_BLOCK,"SkinningSSBO");
+        GLint skinReferenced=0;const GLenum referenced=GL_REFERENCED_BY_VERTEX_SHADER;
+        if(skinBlock!=GL_INVALID_INDEX)glGetProgramResourceiv(program,GL_SHADER_STORAGE_BLOCK,skinBlock,1,&referenced,1,nullptr,&skinReferenced);
+        Require((skinReferenced!=0)==(glGetAttribLocation(program,"geo_BoneIDs")>=0),"palette demand disagrees with active bone input");
+        if(skinReferenced)
+        {
+            GLint bonesBuffer=0;glGetIntegeri_v(GL_SHADER_STORAGE_BUFFER_BINDING,1,&bonesBuffer);
+            Require(bonesBuffer!=0,"missing bone storage");
+            GLint64 bytes=0;glGetNamedBufferParameteri64v(bonesBuffer,GL_BUFFER_SIZE,&bytes);
+            Require(bytes==64 || bytes==192,"unexpected palette storage size");
+            glCopyNamedBufferSubData(bonesBuffer,traceBuffer,0,drawOffset+offsetof(DrawConstants,bones),bytes);
+        }
+#endif
         constants.engine[51] = 0; // Old Feature samples wall time; unused by the default Standard variant.
         traceOutput->write(reinterpret_cast<const char*>(&constants), sizeof(constants));
         for (GLenum name : {GL_DEPTH_FUNC, GL_CULL_FACE_MODE, GL_STENCIL_REF, GL_STENCIL_VALUE_MASK,
@@ -178,6 +206,9 @@ namespace
                 constants = std::make_unique<baregl::Buffer>();
                 constants->Allocate(kDrawCount * sizeof(DrawConstants), baregl::types::EAccessSpecifier::STREAM_READ);
                 traceBuffer = constants->GetID();
+#ifdef FRONTEND_BINDING_VALIDATION
+                const std::vector<std::byte> zero(kDrawCount * sizeof(DrawConstants)); constants->Upload(zero.data());
+#endif
             }
             constantReadbacks.clear();
             traceOutput = &out;
@@ -260,7 +291,7 @@ void BindingContractValidation(const std::filesystem::path& assets, OvRendering:
     for (const auto& [features, program] : standard.GetVariants().at(""))
     {
         if (features.contains("SKINNING")) continue;
-        OvRendering::Core::StaticMeshCommandRecorder::ValidateProgram(*program);
+        OvRendering::Core::MeshCommandRecorder::ValidateProgram(*program);
         ++variants;
     }
     const auto program = standard.GetVariant().GetID();

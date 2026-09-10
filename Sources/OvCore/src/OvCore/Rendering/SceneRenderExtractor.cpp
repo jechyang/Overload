@@ -3,8 +3,11 @@
 #include <OvCore/ECS/Components/CModelRenderer.h>
 #include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
 #include <OvCore/Rendering/SkinningUtils.h>
-#include <OvRendering/Core/StaticMeshCommandRecorder.h>
-#include <unordered_set>
+#include <OvRendering/Core/MeshCommandRecorder.h>
+#include <OvCore/ECS/Components/CLight.h>
+#include <OvRendering/Core/ViewPreparer.h>
+#include <unordered_map>
+#include <cmath>
 #include <algorithm>
 #include <stdexcept>
 
@@ -15,20 +18,20 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     const StaticOpaqueRequest& p_request,
     const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black)
 {
-    StaticSceneRequest request{p_request};
+    SceneRenderRequest request{p_request};
     request.pipeline.stages = {Data::RenderStage::Opaque};
     return ExtractImpl(request, true, p_white, p_black);
 }
 
 std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor::ExtractScene(
-    const StaticSceneRequest& p_request,
+    const SceneRenderRequest& p_request,
     const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black)
 {
     return ExtractImpl(p_request, false, p_white, p_black);
 }
 
 std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor::ExtractImpl(
-    const StaticSceneRequest& p_request, bool p_opaqueOnly,
+    const SceneRenderRequest& p_request, bool p_opaqueOnly,
     const std::shared_ptr<baregl::Texture>& p_white, const std::shared_ptr<baregl::Texture>& p_black)
 {
     p_request.pipeline.Validate();
@@ -36,7 +39,7 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     const auto anyActive = [](const auto& list) {
         return std::any_of(list.begin(), list.end(), [](const auto* c) { return c->owner.IsActive(); });
     };
-    if (anyActive(components.lights) || anyActive(components.reflectionProbes) || anyActive(components.postProcessStacks))
+    if ((p_opaqueOnly && anyActive(components.lights)) || anyActive(components.reflectionProbes) || anyActive(components.postProcessStacks))
         throw std::invalid_argument("Static scene view does not own lighting, reflection or post-processing");
     auto builder = std::unique_ptr<Data::RenderSceneSnapshot>(new Data::RenderSceneSnapshot);
     builder->m_pipeline = p_request.pipeline;
@@ -48,22 +51,39 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     view.forward = camera.transform->GetWorldForward(); view.up = camera.transform->GetWorldUp();
     view.fov = camera.GetFov(); view.size = camera.GetSize();
     view.nearPlane = camera.GetNear(); view.farPlane = camera.GetFar(); view.projectionMode = camera.GetProjectionMode();
+    view.cullLights = camera.HasFrustumLightCulling();
     view.cullGeometry = camera.HasFrustumGeometryCulling(); view.frustumOverride = p_request.frustumOverride;
     view.clearColor = camera.GetClearColorBuffer(); view.clearDepth = camera.GetClearDepthBuffer();
     view.clearStencil = camera.GetClearStencilBuffer(); view.clearValue = {camera.GetClearColor(), 1.0f};
     // Source material identities are used only within Extract, then replaced with
     // relative groups preserving the old address order. Never sort snapshot addresses.
+    for (auto* component : components.lights)
+    {
+        if (!component->owner.IsActive()) continue;
+        const auto& light = component->GetData();
+        if (light.castShadows && !p_request.shadow.map)
+            throw std::invalid_argument("Shadow producer requires an explicit imported receiver map until A4");
+        builder->m_lights.push_back({light.transform->GetWorldPosition(), light.CalculateEffectRange(), light.GenerateMatrix()});
+    }
     std::vector<uintptr_t> identities;
+    std::vector<Data::Material*> materialsToResolve;
+    std::vector<std::optional<Data::FeatureSet>> featuresToResolve;
+    bool resolveSingleUse = false;
+    std::vector<Data::Material::PropertyOverrides> overridesToResolve;
+    std::vector<std::shared_ptr<baregl::Texture>> receiverTextures;
+    if (p_request.shadow.map) receiverTextures.push_back(p_request.shadow.map);
+    if (p_request.reflection.map) receiverTextures.push_back(p_request.reflection.map);
     uint64_t ordinal = 0;
-    std::unordered_set<const baregl::ShaderProgram*> validatedPrograms;
+    std::unordered_map<const baregl::ShaderProgram*, bool> validatedPrograms;
     for (const auto* renderer : components.modelRenderers)
     {
         const auto& owner = renderer->owner;
         if (!owner.IsActive() || !renderer->GetModel()) continue;
         const auto* materials = owner.GetComponent<ECS::Components::CMaterialRenderer>();
         if (!materials || !Rendering::SatisfiesVisibility(materials->GetVisibilityFlags(), Rendering::EVisibilityFlags::GEOMETRY)) continue;
-        if (Rendering::SkinningUtils::IsSkinningActive(owner.GetComponent<ECS::Components::CSkinnedMeshRenderer>()))
-            throw std::invalid_argument("Static scene view does not own skinning");
+        const auto* skin = owner.GetComponent<ECS::Components::CSkinnedMeshRenderer>();
+        const bool hasSkin = Rendering::SkinningUtils::IsSkinningActive(skin);
+        if (p_opaqueOnly && hasSkin) throw std::invalid_argument("Static opaque adapter does not own skinning");
         const auto& transform = owner.transform.GetFTransform();
         for (const auto* mesh : renderer->GetModel()->GetMeshes())
         {
@@ -84,19 +104,37 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
             if (std::find(p_request.pipeline.stages.begin(), p_request.pipeline.stages.end(), stage) == p_request.pipeline.stages.end()) continue;
             const auto description = Data::DescribeStage(stage);
             if (!material->SupportsProjectionMode(view.projectionMode) || material->GetGPUInstances() <= 0) continue;
-            if (typeid(*mesh) != typeid(OvRendering::Resources::Mesh) || material->HasFeature("SKINNING") ||
+            if (typeid(*mesh) != typeid(OvRendering::Resources::Mesh))
+                throw std::invalid_argument("Scene requires standard retained geometry");
+            if (p_opaqueOnly && (material->HasFeature("SKINNING") ||
                 (description.shadowReceiver && material->IsShadowReceiver()) ||
-                (description.reflectionReceiver && material->IsReflectionReceiver()))
-                throw std::invalid_argument("Static scene requires standard static geometry without shadow/reflection receivers");
-            // Do not consume singleUse out of the old filtered draw order. A3 owns
-            // that compatibility adapter; reject before PrepareSnapshot touches it.
+                (description.reflectionReceiver && material->IsReflectionReceiver())))
+                throw std::invalid_argument("Static opaque adapter does not own feature bindings");
             for (const auto& [name, property] : material->GetProperties())
-                if (property.singleUse) throw std::invalid_argument("Static scene does not yet own single-use material properties");
-            auto& program = material->GetVariant(description.technique).value();
-            if (validatedPrograms.insert(&program).second)
-                OvRendering::Core::StaticMeshCommandRecorder::ValidateProgram(program);
-            Data::StaticMeshInput item;
+                if (property.singleUse)
+                {
+                    if (p_opaqueOnly) throw std::invalid_argument("Static opaque adapter does not own single-use properties");
+                    resolveSingleUse = true;
+                }
+            std::optional<Data::FeatureSet> features;
+            const bool hasPalette = hasSkin && mesh->HasSkinningData();
+            if (hasPalette && material->SupportsFeature("SKINNING"))
+                features = Rendering::SkinningUtils::BuildFeatureSet(&material->GetFeatures());
+            const auto featureRef = features ? OvTools::Utils::OptRef<const Data::FeatureSet>(*features) : std::nullopt;
+            auto& program = material->GetVariant(description.technique, featureRef).value();
+            if (!validatedPrograms.contains(&program))
+                validatedPrograms.emplace(&program, OvRendering::Core::MeshCommandRecorder::ValidateProgram(program));
+            Data::MeshInput item;
             item.stage = stage;
+            item.skinning.enabled = validatedPrograms.at(&program) || (features && features->contains("SKINNING")) || material->HasFeature("SKINNING");
+            if (item.skinning.enabled && hasPalette)
+            {
+                item.skinning.poseVersion = skin->GetPoseVersion();
+                const auto& matrices = skin->GetBoneMatricesTransposed();
+                item.skinning.matrices.assign(matrices.begin(), matrices.end());
+            }
+            if (description.reflectionReceiver && material->IsReflectionReceiver())
+                item.reflection = p_request.reflection.constants;
             item.actorId = owner.GetGUID(); item.collectionIndex = collection;
             item.drawOrder = material->GetDrawOrder(); item.position = transform.GetWorldPosition();
             item.model = transform.GetWorldMatrix(); item.user = materials->GetUserMatrix();
@@ -117,11 +155,26 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
                 const auto scale = transform.GetWorldScale();
                 const float maximum = std::max(std::max(std::max(scale.x, scale.y), scale.z), 0.0f);
                 bounds->position = item.position + OvMaths::FQuaternion::RotatePoint(bounds->position, transform.GetWorldRotation()) * maximum;
+                if (hasPalette) bounds->radius *= skin->GetMeshBoundsScale();
                 bounds->radius *= maximum;
                 item.worldBounds = bounds;
             }
             item.geometry = mesh->RetainGeometry();
-            item.material = material->PrepareSnapshot(description.technique, std::nullopt, p_white, p_black, {}, {}, true, true);
+            // Capture without consumption; the ordered compatibility boundary below
+            // alone owns source singleUse consumption. Overrides are separate owned values.
+            Data::Material::PropertyOverrides overrides;
+            if (description.shadowReceiver && material->IsShadowReceiver() && p_request.shadow.map &&
+                material->HasProperty("_ShadowMap") && material->HasProperty("_LightSpaceMatrix"))
+            {
+                overrides.emplace("_ShadowMap", p_request.shadow.map.get());
+                overrides.emplace("_LightSpaceMatrix", p_request.shadow.lightSpace);
+            }
+            if (description.reflectionReceiver && material->IsReflectionReceiver() && material->HasProperty("_EnvironmentMap"))
+                overrides.emplace("_EnvironmentMap", p_request.reflection.map.get());
+            item.material = material->PrepareSnapshot(description.technique, featureRef, p_white, p_black, receiverTextures, {}, true, true, false, overrides);
+            overridesToResolve.push_back(std::move(overrides));
+            materialsToResolve.push_back(material);
+            featuresToResolve.push_back(std::move(features));
             identities.push_back(reinterpret_cast<uintptr_t>(material));
             builder->m_meshes.push_back(std::move(item));
         }
@@ -130,5 +183,43 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     std::sort(groups.begin(), groups.end()); groups.erase(std::unique(groups.begin(), groups.end()), groups.end());
     for (size_t i = 0; i < identities.size(); ++i)
         builder->m_meshes[i].materialGroup = std::lower_bound(groups.begin(), groups.end(), identities[i]) - groups.begin();
+    if (resolveSingleUse)
+    {
+        // Compatibility only: source consumption is ordered on Main before workers.
+        // Reuse the same culling and sorting rules as Prepare; no Material leaves Extract.
+        const auto preparedView = OvRendering::Core::ViewPreparer::BuildView(view);
+        std::optional<Data::MaterialSignatureSet> previousSignature;
+        Data::Material::PreparedSnapshot previous;
+        for (const auto stage : builder->m_pipeline.stages)
+        {
+            std::vector<OvRendering::Core::VisibleStaticMesh> ordered;
+            for (size_t i = 0; i < builder->m_meshes.size(); ++i)
+            {
+                const auto& mesh = builder->m_meshes[i];
+                if (mesh.stage != stage) continue;
+                if (preparedView.frustum && mesh.worldBounds)
+                {
+                    const auto& b = *mesh.worldBounds;
+                    if (!preparedView.frustum->SphereInFrustum(b.position.x, b.position.y, b.position.z, b.radius)) continue;
+                }
+                ordered.push_back({i, OvMaths::FVector3::Distance(mesh.position, view.position)});
+            }
+            OvRendering::Core::ViewPreparer::SortStage(ordered, builder->m_meshes, stage);
+            for (const auto& draw : ordered)
+            {
+                auto& mesh = builder->m_meshes[draw.sourceIndex];
+                auto* material = materialsToResolve[draw.sourceIndex];
+                const auto& features = featuresToResolve[draw.sourceIndex];
+                const auto featureRef = features ? OvTools::Utils::OptRef<const Data::FeatureSet>(*features) : std::nullopt;
+                const auto description = Data::DescribeStage(stage);
+                const auto binding = material->PrepareBinding(description.technique, featureRef, p_white.get(), p_black.get(), previousSignature);
+                const bool stable = !previousSignature || binding.signature.stablePropertySignature != previousSignature->stablePropertySignature;
+                const bool once = !overridesToResolve[draw.sourceIndex].empty() || !previousSignature || binding.signature.singleUsePropertySignature != previousSignature->singleUsePropertySignature;
+                mesh.material = material->PrepareSnapshot(description.technique, featureRef, p_white, p_black, receiverTextures, previous, stable, once, true, overridesToResolve[draw.sourceIndex]);
+                previous = mesh.material;
+                previousSignature = binding.signature;
+            }
+        }
+    }
     return std::shared_ptr<const Data::RenderSceneSnapshot>(std::move(builder));
 }

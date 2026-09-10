@@ -264,3 +264,12 @@ node Tests\Skinning\run-validation.mjs Release --stages --frontend-immediate
 stage_validation.inl 复用 frontend_validation.cpp 的真实 GL/资源和 trace 设施。包含三个 Stage 的同对象多网格、完整透明/等 key 排序、override/fallback/无效原材质与类别豁免、配置顺序/子集、未知或未迁移 Stage 拒绝。受控探针只插入 MeshFeatureProcessor/RenderTaskCoordinator 的测试源副本，证明两个 Worker 同时进入、前后顺序反转仍一致；注入已有私有输出后的分支失败、第二次提交失败和取消，验证先汇合再释放输入、不发布部分列表、单 Worker 与恢复。
 
 A1 的 --frontend/--frontend-immediate 保留，准备探针随实际职责迁至 MeshFeatureProcessor；串行/并行共用同一个协调器与范围函数。实现范围、构建及验收结果见根目录 RENDERING_ARCHITECTURE_A2_VALIDATION.md。
+
+
+## A3 显式功能绑定与并行命令块
+
+使用 --bindings（可追加 --frontend-immediate），分别运行 Debug/Release。该模式包含 A2 三 Stage、共享材质 singleUse、蒙皮/identity、灯光裁剪，并用两个独立范围分别验证绑定准备与录制任务。任务闩锁与失败注入只存在于编译副本；所有输入在发布前后均不借用场景对象。
+
+每组仍为 10 个独立冷启动进程、80 帧；图像及有效绘制数据精确一致。新增 LightSSBO 和被顶点阶段实际引用的 SkinningSSBO 暂存后回读；无蒙皮变体用引用标志和活跃 bone attribute 交叉判定，避免把未使用的遗留绑定当作绘制输入。跨视图与强制完成顺序的附加回放单独对照，不进入冷启动 trace 计数。
+
+完整边界、结果和证据见根目录 RENDERING_ARCHITECTURE_A3_VALIDATION.md。

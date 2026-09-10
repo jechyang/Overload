@@ -29,7 +29,8 @@ namespace
 		sizeof(OvMaths::FVector4) +	// Box Extents (vec3)
 		sizeof(float) +				// Brightness (float)
 		sizeof(int) +				// Box Projection (bool)
-		sizeof(int);				// Local (bool)
+		sizeof(int) +			// Local (bool)
+		sizeof(int);				// std140 block trailing padding
 
 	constexpr uint32_t kBackBufferIndex = 0; // Cubemap that is being rendered
 	constexpr uint32_t kCompleteBufferIndex = 1; // Cubemap that is used
@@ -449,6 +450,7 @@ OvCore::ECS::Components::CReflectionProbe::UniformData OvCore::ECS::Components::
 		std::byte padding1[3];
 		bool local;
 		std::byte padding2[3];
+		std::byte blockPadding[4];
 	} uboDataPage{
 		.position = probePosition,
 		.rotation = probeRotationMatrix,
