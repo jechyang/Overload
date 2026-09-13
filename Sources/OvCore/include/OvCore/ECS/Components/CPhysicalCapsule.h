@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include "OvCore/ECS/Components/AComponent.h"
 
 #include "OvCore/ECS/Components/CPhysicalObject.h"
@@ -17,7 +19,7 @@ namespace OvCore::ECS::Components
 	/**
 	* Represent a physical object with a capsule hape
 	*/
-	class CPhysicalCapsule : public CPhysicalObject
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CPhysicalCapsule", DisplayName = "Physical Capsule", Order = 4) CPhysicalCapsule : public CPhysicalObject
 	{
 	public:
 		/**

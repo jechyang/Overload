@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include <OvPhysics/Entities/PhysicalObject.h>
 
 #include "OvCore/ECS/Components/AComponent.h"
@@ -17,7 +19,7 @@ namespace OvCore::ECS::Components
 	/**
 	* Base class for any physical object
 	*/
-	class CPhysicalObject : public AComponent
+	class OV_TYPE(Component, Lookup = Existing, Alias = "class OvCore::ECS::Components::CPhysicalObject", DisplayName = "Physical Object", Order = 101) CPhysicalObject : public AComponent
 	{
 	public:
 		/**

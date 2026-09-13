@@ -1,0 +1,69 @@
+name: Reflection R0-R6
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'Tools/OvReflectGen/**'
+      - 'Tests/Reflection/**'
+      - 'Scripts/Windows/InstallReflectionToolchain.ps1'
+      - 'premake5.lua'
+      - 'Sources/**'
+      - 'Dependencies/**'
+      - '.github/workflows/reflection.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  reflection:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      OV_REFLECTION_SDK_VERSION: '10.0.22621.0'
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Select compatible MSVC 14.42 and Windows SDK
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsRoot = & $vswhere -latest -products '*' -property installationPath
+          $toolset = Get-ChildItem "$vsRoot\VC\Tools\MSVC" -Directory | Where-Object Name -Like '14.42.*' | Sort-Object Name -Descending | Select-Object -First 1
+          $sdkPresent = Test-Path "${env:ProgramFiles(x86)}\Windows Kits\10\Include\10.0.22621.0\um\Windows.h"
+          if (!$toolset -or !$sdkPresent) {
+            $setup = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+            $setupArgs = @('modify', '--installPath', ('"' + $vsRoot + '"'), '--add', 'Microsoft.VisualStudio.Component.VC.14.42.17.12.x86.x64', '--add', 'Microsoft.VisualStudio.Component.Windows11SDK.22621', '--quiet', '--norestart')
+            $process = Start-Process -FilePath $setup -ArgumentList $setupArgs -WindowStyle Hidden -PassThru -Wait
+            if ($process.ExitCode -notin @(0, 3010)) { throw "VS component installation failed: $($process.ExitCode)" }
+            $toolset = Get-ChildItem "$vsRoot\VC\Tools\MSVC" -Directory | Where-Object Name -Like '14.42.*' | Sort-Object Name -Descending | Select-Object -First 1
+          }
+          if (!$toolset) { throw 'MSVC 14.42 is missing.' }
+          "OV_REFLECTION_MSVC_ROOT=$($toolset.FullName)" >> $env:GITHUB_ENV
+      - name: Install pinned LLVM development archive
+        shell: pwsh
+        run: ./Scripts/Windows/InstallReflectionToolchain.ps1
+      - name: Build standalone generator
+        run: python Tools/OvReflectGen/reflection.py build
+      - name: Verify fresh output and all three configurations
+        run: python Tests/Reflection/Integration/verify_r0.py
+      - name: Verify annotated schema and semantic diagnostics
+        run: python Tests/Reflection/Integration/verify_r1.py
+      - name: Verify generated runtime in MSVC and Clang
+        run: python Tests/Reflection/Integration/verify_r2.py
+      - name: Verify incremental generation and full solution builds
+        run: python Tests/Reflection/Integration/verify_r3.py --full-solution
+      - name: Verify native component registry and compatible menu metadata
+        run: python Tests/Reflection/Integration/verify_r4.py
+      - name: Verify property XML, drawers and callback lifetime
+        run: python Tests/Reflection/Integration/verify_r5.py
+      - name: Verify C ABI and generated C# in CoreCLR
+        run: python Tests/Reflection/Integration/verify_r6.py
+      - name: Upload analysis evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reflection-r0-r6-evidence
+          path: Build/Tests/Reflection/

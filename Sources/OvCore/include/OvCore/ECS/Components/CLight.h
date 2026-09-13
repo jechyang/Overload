@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include <OvRendering/Entities/Light.h>
 
 #include "OvCore/ECS/Components/AComponent.h"
@@ -17,7 +19,7 @@ namespace OvCore::ECS::Components
 	/**
 	* Base class for any light
 	*/
-	class CLight : public AComponent
+	class OV_TYPE(Component, Lookup = Existing, Alias = "class OvCore::ECS::Components::CLight", DisplayName = "Light", Order = 100) CLight : public AComponent
 	{
 	public:
 		/**

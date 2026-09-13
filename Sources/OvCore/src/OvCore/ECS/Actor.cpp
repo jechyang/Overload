@@ -9,33 +9,10 @@
 #include <tinyxml2.h>
 
 #include <OvCore/ECS/Actor.h>
-#include <OvCore/ECS/Components/CAmbientBoxLight.h>
-#include <OvCore/ECS/Components/CAmbientSphereLight.h>
-#include <OvCore/ECS/Components/CAudioListener.h>
-#include <OvCore/ECS/Components/CAudioSource.h>
-#include <OvCore/ECS/Components/CCamera.h>
-#include <OvCore/ECS/Components/CDirectionalLight.h>
-#include <OvCore/ECS/Components/CMaterialRenderer.h>
-#include <OvCore/ECS/Components/CModelRenderer.h>
-#include <OvCore/ECS/Components/CPhysicalBox.h>
-#include <OvCore/ECS/Components/CPhysicalCapsule.h>
-#include <OvCore/ECS/Components/CPhysicalSphere.h>
-#include <OvCore/ECS/Components/CPointLight.h>
-#include <OvCore/ECS/Components/CPostProcessStack.h>
-#include <OvCore/ECS/Components/CReflectionProbe.h>
-#include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
-#include <OvCore/ECS/Components/CSpotLight.h>
+#include <OvCore/ECS/ComponentRegistry.h>
 
 #include <iostream>
-
-namespace
-{
-	template<typename T>
-	bool IsType(const std::string_view p_typeName)
-	{
-		return p_typeName == OvCore::ECS::Components::ComponentTraits<T>::Name;
-	}
-}
+#include <stdexcept>
 
 OvTools::Eventing::Event<OvCore::ECS::Actor&> OvCore::ECS::Actor::DestroyedEvent;
 OvTools::Eventing::Event<OvCore::ECS::Actor&> OvCore::ECS::Actor::CreatedEvent;
@@ -50,6 +27,7 @@ OvCore::ECS::Actor::Actor(int64_t p_actorID, const std::string & p_name, const s
 	m_playing(p_playing),
 	transform(AddComponent<Components::CTransform>())
 {
+	GetComponentRegistry();
 	CreatedEvent.Invoke(*this);
 }
 
@@ -64,6 +42,7 @@ OvCore::ECS::Actor::~Actor()
 			OnDestroy();
 	}
 
+	for (auto& component : m_components) component->m_inspectorCallbacks.Invalidate();
 	DestroyedEvent.Invoke(*this);
 
 	std::vector<Actor*> toDetach = m_children;
@@ -386,10 +365,13 @@ void OvCore::ECS::Actor::OnTriggerExit(Components::CPhysicalObject& p_otherObjec
 
 bool OvCore::ECS::Actor::RemoveComponent(OvCore::ECS::Components::AComponent& p_component)
 {
+	if (dynamic_cast<Components::CTransform*>(&p_component))
+		return false;
 	for (auto it = m_components.begin(); it != m_components.end(); ++it)
 	{
 		if (it->get() == &p_component)
 		{
+			p_component.m_inspectorCallbacks.Invalidate();
 			ComponentRemovedEvent.Invoke(p_component);
 			m_components.erase(it);
 			return true;
@@ -536,6 +518,14 @@ void OvCore::ECS::Actor::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XM
 		component->OnSerialize(p_doc, data);
 	}
 
+	for (const auto& xml : m_unknownComponents)
+	{
+		tinyxml2::XMLDocument preserved;
+		if (preserved.Parse(xml.c_str()) != tinyxml2::XML_SUCCESS || !preserved.RootElement())
+			throw std::runtime_error("Cannot restore preserved component XML");
+		componentsNode->InsertEndChild(preserved.RootElement()->DeepClone(&p_doc));
+	}
+
 	tinyxml2::XMLNode* behavioursNode = p_doc.NewElement("behaviours");
 	actorNode->InsertEndChild(behavioursNode);
 
@@ -576,6 +566,7 @@ void OvCore::ECS::Actor::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::
 	SetPrefabNodeGUID(prefabNodeGUID);
 	OvCore::Helpers::Serializer::DeserializeInt64(p_doc, p_actorsRoot, "parent", m_parentID);
 
+	m_unknownComponents.clear();
 	{
 		tinyxml2::XMLNode* componentsRoot = p_actorsRoot->FirstChildElement("components");
 		if (componentsRoot)
@@ -584,32 +575,22 @@ void OvCore::ECS::Actor::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::
 
 			while (currentComponent)
 			{
-				const std::string componentType = currentComponent->FirstChildElement("type")->GetText();
-				OvCore::ECS::Components::AComponent* component = nullptr;
-
-				using namespace OvCore::ECS::Components;
-
-				if (IsType<CTransform>(componentType)) component = &transform;
-				else if (IsType<CPhysicalBox>(componentType)) component = &AddComponent<CPhysicalBox>();
-				else if (IsType<CPhysicalSphere>(componentType)) component = &AddComponent<CPhysicalSphere>();
-				else if (IsType<CPhysicalCapsule>(componentType)) component = &AddComponent<CPhysicalCapsule>();
-				else if (IsType<CModelRenderer>(componentType)) component = &AddComponent<CModelRenderer>();
-				else if (IsType<CCamera>(componentType)) component = &AddComponent<CCamera>();
-				else if (IsType<CMaterialRenderer>(componentType)) component = &AddComponent<CMaterialRenderer>();
-				else if (IsType<CAudioSource>(componentType)) component = &AddComponent<CAudioSource>();
-				else if (IsType<CAudioListener>(componentType)) component = &AddComponent<CAudioListener>();
-				else if (IsType<CPointLight>(componentType)) component = &AddComponent<CPointLight>();
-				else if (IsType<CDirectionalLight>(componentType)) component = &AddComponent<CDirectionalLight>();
-				else if (IsType<CSpotLight>(componentType)) component = &AddComponent<CSpotLight>();
-				else if (IsType<CAmbientBoxLight>(componentType)) component = &AddComponent<CAmbientBoxLight>();
-				else if (IsType<CAmbientSphereLight>(componentType)) component = &AddComponent<CAmbientSphereLight>();
-				else if (IsType<CPostProcessStack>(componentType)) component = &AddComponent<CPostProcessStack>();
-				else if (IsType<CReflectionProbe>(componentType)) component = &AddComponent<CReflectionProbe>();
-				else if (IsType<CSkinnedMeshRenderer>(componentType)) component = &AddComponent<CSkinnedMeshRenderer>();
-
+				const auto* typeNode = currentComponent->FirstChildElement("type");
+				const char* identity = typeNode ? typeNode->GetText() : nullptr;
+				const auto* descriptor = identity ? GetComponentRegistry().Find(identity) : nullptr;
+				auto* data = currentComponent->FirstChildElement("data");
+				auto* component = descriptor && data ? descriptor->DeserializeComponent(*this) : nullptr;
 				if (component)
 				{
-					component->OnDeserialize(p_doc, currentComponent->FirstChildElement("data"));
+					component->OnDeserialize(p_doc, data);
+				}
+				else
+				{
+					// Keep the complete node (including unknown attributes/children),
+					// independent of the caller's document lifetime.
+					tinyxml2::XMLPrinter printer;
+					currentComponent->Accept(&printer);
+					m_unknownComponents.emplace_back(printer.CStr());
 				}
 
 				currentComponent = currentComponent->NextSiblingElement("component");

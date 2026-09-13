@@ -15,6 +15,10 @@ OvMaths::FTransform::FTransform(FVector3 p_localPosition, FQuaternion p_localRot
 
 OvMaths::FTransform::~FTransform()
 {
+	// A parent can outlive this value (including temporary bridge consumers).
+	// Unsubscribe without sending a changed notification from a dying object.
+	if (m_parent) m_parent->m_notifier.RemoveNotificationHandler(m_notificationHandlerID);
+	m_parent = nullptr;
 	m_notifier.NotifyChildren(Internal::TransformNotifier::ENotification::TRANSFORM_DESTROYED);
 }
 
@@ -56,6 +60,8 @@ void OvMaths::FTransform::NotificationHandler(Internal::TransformNotifier::ENoti
 
 void OvMaths::FTransform::SetParent(FTransform& p_parent)
 {
+	if (m_parent == &p_parent) return;
+	if (m_parent) m_parent->m_notifier.RemoveNotificationHandler(m_notificationHandlerID);
 	m_parent = &p_parent;
 
 	m_notificationHandlerID = m_parent->m_notifier.AddNotificationHandler(std::bind(&FTransform::NotificationHandler, this, std::placeholders::_1));

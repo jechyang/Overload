@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include <OvRendering/Entities/Light.h>
 
 #include "OvCore/ECS/Components/CLight.h"
@@ -17,7 +19,7 @@ namespace OvCore::ECS::Components
 	/**
 	* A light that is localized and has attenuation
 	*/
-	class CPointLight : public CLight
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CPointLight", DisplayName = "Point Light", Order = 5) CPointLight : public CLight
 	{
 	public:
 		/**

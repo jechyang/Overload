@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include <OvAudio/Entities/AudioSource.h>
 #include <OvTools/Eventing/Event.h>
 
@@ -18,7 +20,7 @@ namespace OvCore::ECS::Components
 	/**
 	* Represents an audio source. Its position in the world is important if the spatial sound settings is on
 	*/
-	class CAudioSource : public AComponent
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CAudioSource", DisplayName = "Audio Source", Order = 12) CAudioSource : public AComponent
 	{
 	public:
 		/**

@@ -13,6 +13,7 @@ end
 local version = readVersion()
 
 workspace "Overload"
+	includedirs { "%{wks.location}/Sources/OvReflection/include" }
 	configurations { "Debug", "Release", "Publish" }
 	platforms { "x64" }
 	startproject "OvEditor"
@@ -70,6 +71,7 @@ group "Overload SDK"
 	include "Sources/OvCore"
 	include "Sources/OvDebug"
 	include "Sources/OvMaths"
+	include "Sources/OvReflection"
 	include "Sources/OvPhysics"
 	include "Sources/OvRendering"
 	include "Sources/OvTools"
@@ -83,3 +85,9 @@ group "Overload Apps"
 group ""
 
 include "Resources"
+
+-- Reflection generation is an explicit predecessor of generated-code consumers.
+include "Tools/OvReflectGen/premake-build.lua"
+
+-- Export the same baked configurations used by the VS2022 writer.
+include "Tools/OvReflectGen/premake-export.lua"

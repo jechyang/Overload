@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ReflectionConfiguration Condition="'$(ReflectionConfiguration)' == ''">Debug</ReflectionConfiguration>
+    <GeneratedRoot>$(MSBuildThisFileDirectory)../../Build/Generated/Reflection/x86_64-pc-windows-msvc/$(ReflectionConfiguration)</GeneratedRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Sources/OvReflection/Managed/ScriptBridge.cs" Link="ScriptBridge.cs" />
+    <Compile Include="$(GeneratedRoot)/OvCore/Script.generated.cs" Link="OvCore.generated.cs" />
+    <Compile Include="$(GeneratedRoot)/OvMaths/Script.generated.cs" Link="OvMaths.generated.cs" />
+  </ItemGroup>
+  <Target Name="CheckNativeGeneration" BeforeTargets="CoreCompile">
+    <Error Condition="!Exists('$(GeneratedRoot)/generation-state.json')" Text="Build the matching native configuration first to generate and validate its reflection artifacts." />
+  </Target>
+</Project>

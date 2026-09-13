@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include "OvCore/ECS/Components/AComponent.h"
 
 #include "OvCore/ECS/Components/CPhysicalObject.h"
@@ -17,7 +19,7 @@ namespace OvCore::ECS::Components
 	/**
 	* Represent a physical object with a box shape
 	*/
-	class CPhysicalBox : public CPhysicalObject
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CPhysicalBox", DisplayName = "Physical Box", Order = 2) CPhysicalBox : public CPhysicalObject
 	{
 	public:
 		/**
@@ -45,6 +47,7 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns the size of the box shape
 		*/
+		OV_PROPERTY(Setter = SetSize, Name = "size", Serialize, Inspect, Script, Thread = Main, DisplayName = "Size", Step = 0.1, Min = 0, Max = 100000, Missing = Default, Default = "0,0,0")
 		OvMaths::FVector3 GetSize() const;
 
 		/**

@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include "OvRendering/Entities/Camera.h"
 #include "AComponent.h"
 
@@ -16,7 +18,7 @@ namespace OvCore::ECS::Components
 	/**
 	* Represents a camera entity. Its position will determine its view matrix
 	*/
-	class CCamera : public AComponent
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CCamera", DisplayName = "Camera", Order = 1) CCamera : public AComponent
 	{
 	public:
 		/**

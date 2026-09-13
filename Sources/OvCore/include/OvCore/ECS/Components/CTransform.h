@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include "OvCore/ECS/Components/AComponent.h"
 
 #include <OvMaths/FTransform.h>
@@ -21,7 +23,7 @@ namespace OvCore::ECS::Components
 	/**
 	* Represents the 3D transformations applied to an actor
 	*/
-	class CTransform : public AComponent
+	class OV_TYPE(Component, Lookup = Existing, Alias = "class OvCore::ECS::Components::CTransform", DisplayName = "Transform", Order = -1, DeserializeHook = "TransformTRS") CTransform : public AComponent
 	{
 	public:
 		/**
@@ -100,6 +102,7 @@ namespace OvCore::ECS::Components
 		* Translate in the local space
 		* @param p_translation
 		*/
+		OV_METHOD(Script, Thread = Main)
 		void TranslateLocal(const struct OvMaths::FVector3& p_translation);
 
 		/**
@@ -117,16 +120,19 @@ namespace OvCore::ECS::Components
 		/**
 		* Return the position in local space
 		*/
+		OV_PROPERTY(Setter = SetLocalPosition, Name = "position", Serialize, Inspect, Script, Return = Copy, DisplayName = "Position", Order = 0, Step = 0.05, Missing = Default, Default = "0,0,0")
 		const OvMaths::FVector3& GetLocalPosition() const;
 
 		/**
 		* Return the rotation in local space
 		*/
+		OV_PROPERTY(Setter = SetLocalRotation, Name = "rotation", Serialize, Inspect, Script, Return = Copy, DisplayName = "Rotation", Order = 1, Step = 0.05, Missing = Default, Default = "0,0,0,1", Drawer = "EulerAngles")
 		const OvMaths::FQuaternion& GetLocalRotation() const;
 
 		/**
 		* Return the scale in local space
 		*/
+		OV_PROPERTY(Setter = SetLocalScale, Name = "scale", Serialize, Inspect, Script, Return = Copy, DisplayName = "Scale", Order = 2, Step = 0.05, Missing = Default, Default = "0,0,0", Min = 0.0001)
 		const OvMaths::FVector3& GetLocalScale() const;
 
 		/**

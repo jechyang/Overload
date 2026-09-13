@@ -18,3 +18,9 @@ Makefile
 # ImGui
 imgui.ini
 
+
+# Baked reflection configuration sidecars emitted by Premake
+/Tools/OvReflectGen/Projects/
+
+# Reflection validation Python bytecode cache
+/Tests/Reflection/**/__pycache__/

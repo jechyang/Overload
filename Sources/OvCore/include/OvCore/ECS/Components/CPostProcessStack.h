@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include "AComponent.h"
 
 #include <OvCore/Rendering/PostProcess/PostProcessStack.h>
@@ -21,7 +23,7 @@ namespace OvCore::ECS::Components
 	/**
 	* A component that handle a post process stack
 	*/
-	class CPostProcessStack : public AComponent
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CPostProcessStack", DisplayName = "Post Process Stack", Order = 14) CPostProcessStack : public AComponent
 	{
 	public:
 		/**

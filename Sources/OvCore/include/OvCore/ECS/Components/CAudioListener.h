@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include "AComponent.h"
 
 #include <OvTools/Eventing/Event.h>
@@ -20,7 +22,7 @@ namespace OvCore::ECS::Components
 	* Represents an audio listener. The distance between audio sources and audio listener will affect the sound
 	* attenuation of spatialized sounds
 	*/
-	class CAudioListener : public AComponent
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CAudioListener", DisplayName = "Audio Listener", Order = 13) CAudioListener : public AComponent
 	{
 	public:
 		/**

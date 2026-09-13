@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -29,7 +31,7 @@ namespace OvCore::ECS::Components
 	/**
 	* Component responsible for skeletal animation playback and skinning data generation.
 	*/
-	class CSkinnedMeshRenderer : public AComponent
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CSkinnedMeshRenderer", DisplayName = "Skinned Mesh Renderer", Order = 11) CSkinnedMeshRenderer : public AComponent
 	{
 	public:
 		/**

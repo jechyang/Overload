@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "modules": [
+    {
+      "name": "OvMaths",
+      "headers": [
+        "OvMaths/FVector3.h"
+      ],
+      "types": [
+        "OvMaths::FVector3"
+      ]
+    },
+    {
+      "name": "OvCore",
+      "headers": [
+        "OvCore/ECS/Components/CAmbientBoxLight.h",
+        "OvCore/ECS/Components/CAmbientSphereLight.h",
+        "OvCore/ECS/Components/CAudioListener.h",
+        "OvCore/ECS/Components/CAudioSource.h",
+        "OvCore/ECS/Components/CCamera.h",
+        "OvCore/ECS/Components/CDirectionalLight.h",
+        "OvCore/ECS/Components/CLight.h",
+        "OvCore/ECS/Components/CMaterialRenderer.h",
+        "OvCore/ECS/Components/CModelRenderer.h",
+        "OvCore/ECS/Components/CPhysicalBox.h",
+        "OvCore/ECS/Components/CPhysicalCapsule.h",
+        "OvCore/ECS/Components/CPhysicalObject.h",
+        "OvCore/ECS/Components/CPhysicalSphere.h",
+        "OvCore/ECS/Components/CPointLight.h",
+        "OvCore/ECS/Components/CPostProcessStack.h",
+        "OvCore/ECS/Components/CReflectionProbe.h",
+        "OvCore/ECS/Components/CSkinnedMeshRenderer.h",
+        "OvCore/ECS/Components/CSpotLight.h",
+        "OvCore/ECS/Components/CTransform.h"
+      ],
+      "types": [
+        "OvCore::ECS::Components::CPhysicalBox",
+        "OvCore::ECS::Components::CTransform"
+      ]
+    }
+  ]
+}

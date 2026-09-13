@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include "OvCore/ECS/Components/CLight.h"
 
 namespace OvCore::ECS { class Actor; }
@@ -15,7 +17,7 @@ namespace OvCore::ECS::Components
 	/**
 	* A simple light that has no attenuation and that has a direction
 	*/
-	class CDirectionalLight : public CLight
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CDirectionalLight", DisplayName = "Directional Light", Order = 6) CDirectionalLight : public CLight
 	{
 	public:
 		/**

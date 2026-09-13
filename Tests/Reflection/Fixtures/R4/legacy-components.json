@@ -1,0 +1,116 @@
+[
+  {
+    "name": "CModelRenderer",
+    "display": "Model Renderer",
+    "order": 0,
+    "legacy": "class OvCore::ECS::Components::CModelRenderer"
+  },
+  {
+    "name": "CCamera",
+    "display": "Camera",
+    "order": 1,
+    "legacy": "class OvCore::ECS::Components::CCamera"
+  },
+  {
+    "name": "CPhysicalBox",
+    "display": "Physical Box",
+    "order": 2,
+    "legacy": "class OvCore::ECS::Components::CPhysicalBox"
+  },
+  {
+    "name": "CPhysicalSphere",
+    "display": "Physical Sphere",
+    "order": 3,
+    "legacy": "class OvCore::ECS::Components::CPhysicalSphere"
+  },
+  {
+    "name": "CPhysicalCapsule",
+    "display": "Physical Capsule",
+    "order": 4,
+    "legacy": "class OvCore::ECS::Components::CPhysicalCapsule"
+  },
+  {
+    "name": "CPointLight",
+    "display": "Point Light",
+    "order": 5,
+    "legacy": "class OvCore::ECS::Components::CPointLight"
+  },
+  {
+    "name": "CDirectionalLight",
+    "display": "Directional Light",
+    "order": 6,
+    "legacy": "class OvCore::ECS::Components::CDirectionalLight"
+  },
+  {
+    "name": "CSpotLight",
+    "display": "Spot Light",
+    "order": 7,
+    "legacy": "class OvCore::ECS::Components::CSpotLight"
+  },
+  {
+    "name": "CAmbientBoxLight",
+    "display": "Ambient Box Light",
+    "order": 8,
+    "legacy": "class OvCore::ECS::Components::CAmbientBoxLight"
+  },
+  {
+    "name": "CAmbientSphereLight",
+    "display": "Ambient Sphere Light",
+    "order": 9,
+    "legacy": "class OvCore::ECS::Components::CAmbientSphereLight"
+  },
+  {
+    "name": "CMaterialRenderer",
+    "display": "Material Renderer",
+    "order": 10,
+    "legacy": "class OvCore::ECS::Components::CMaterialRenderer"
+  },
+  {
+    "name": "CSkinnedMeshRenderer",
+    "display": "Skinned Mesh Renderer",
+    "order": 11,
+    "legacy": "class OvCore::ECS::Components::CSkinnedMeshRenderer"
+  },
+  {
+    "name": "CAudioSource",
+    "display": "Audio Source",
+    "order": 12,
+    "legacy": "class OvCore::ECS::Components::CAudioSource"
+  },
+  {
+    "name": "CAudioListener",
+    "display": "Audio Listener",
+    "order": 13,
+    "legacy": "class OvCore::ECS::Components::CAudioListener"
+  },
+  {
+    "name": "CPostProcessStack",
+    "display": "Post Process Stack",
+    "order": 14,
+    "legacy": "class OvCore::ECS::Components::CPostProcessStack"
+  },
+  {
+    "name": "CReflectionProbe",
+    "display": "Reflection Probe",
+    "order": 15,
+    "legacy": "class OvCore::ECS::Components::CReflectionProbe"
+  },
+  {
+    "name": "CTransform",
+    "display": "Transform",
+    "order": -1,
+    "legacy": "class OvCore::ECS::Components::CTransform"
+  },
+  {
+    "name": "CLight",
+    "display": "Light",
+    "order": 100,
+    "legacy": "class OvCore::ECS::Components::CLight"
+  },
+  {
+    "name": "CPhysicalObject",
+    "display": "Physical Object",
+    "order": 101,
+    "legacy": "class OvCore::ECS::Components::CPhysicalObject"
+  }
+]

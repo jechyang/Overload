@@ -5,6 +5,7 @@
 */
 
 #pragma once
+#include <OvTools/Utils/CallbackScope.h>
 
 #include "OvCore/API/IInspectorItem.h"
 
@@ -125,6 +126,10 @@ namespace OvCore::ECS::Components
 
 	public:
 		ECS::Actor& owner;
+        std::weak_ptr<const bool> InspectorTicket() const { return m_inspectorCallbacks.Ticket(); }
+    private:
+        friend class ECS::Actor;
+        OvTools::Utils::CallbackScope m_inspectorCallbacks;
 	};
 
 	template<typename T>

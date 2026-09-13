@@ -5,6 +5,7 @@
 */
 
 #pragma once
+#include <OvTools/Utils/CallbackScope.h>
 
 #include <OvRendering/Resources/Loaders/TextureLoader.h>
 
@@ -21,6 +22,13 @@ namespace OvEditor::Panels
 	class Inspector : public OvUI::Panels::PanelWindow
 	{
 	public:
+        // Omitted callbacks use EditorActions; hosts/tests may provide their event loop.
+        struct Callbacks
+        {
+            std::function<void(std::function<void()>)> defer;
+            std::function<void(OvCore::ECS::Actor&)> selected;
+            std::function<void(OvCore::ECS::Actor&)> unselected;
+        };
 		/**
 		* Constructor
 		* @param p_title
@@ -31,7 +39,8 @@ namespace OvEditor::Panels
 		(
 			const std::string& p_title,
 			bool p_opened,
-			const OvUI::Settings::PanelWindowSettings& p_windowSettings
+			const OvUI::Settings::PanelWindowSettings& p_windowSettings,
+            Callbacks callbacks = {}
 		);
 
 		/**
@@ -62,6 +71,8 @@ namespace OvEditor::Panels
 
 	private:
 		void _Populate();
+        void _QueueRefresh();
+        void _InvalidateView();
 		void _PopulateActorInfo();
 		void _PopulateActorComponents();
 		void _PopulateActorBehaviours();
@@ -73,6 +84,10 @@ namespace OvEditor::Panels
 		OvTools::Utils::OptRef<OvCore::ECS::Actor> m_targetActor = std::nullopt;
 		OvUI::Widgets::Layout::Group* m_content;
 
+        Callbacks m_callbacks;
+        OvTools::Utils::CallbackScope m_focusCallbacks;
+        OvTools::Utils::CallbackScope m_viewCallbacks;
+        bool m_refreshPending = false;
 		uint64_t m_componentAddedListener	= 0;
 		uint64_t m_componentRemovedListener = 0;
 		uint64_t m_behaviourAddedListener	= 0;

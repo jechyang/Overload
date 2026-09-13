@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include <OvRendering/Geometry/Vertex.h>
 #include <OvRendering/Resources/Model.h>
 
@@ -18,7 +20,7 @@ namespace OvCore::ECS::Components
 	/**
 	* A ModelRenderer is necessary in combination with a MaterialRenderer to render a model in the world
 	*/
-	class CModelRenderer : public AComponent
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CModelRenderer", DisplayName = "Model Renderer", Order = 0) CModelRenderer : public AComponent
 	{
 	public:
 		/**

@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include "OvCore/ECS/Components/CLight.h"
 
 namespace OvCore::ECS { class Actor; }
@@ -15,7 +17,7 @@ namespace OvCore::ECS::Components
 	/**
 	* A light that is localized, has attenuation and has a direction
 	*/
-	class CSpotLight : public CLight
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CSpotLight", DisplayName = "Spot Light", Order = 7) CSpotLight : public CLight
 	{
 	public:
 		/**

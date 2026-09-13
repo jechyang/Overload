@@ -5,6 +5,8 @@
 */
 
 #include <OvCore/ECS/Components/CTransform.h>
+#include <OvCore/Reflection.generated.h>
+#include <OvCore/Helpers/ReflectionDrawer.h>
 
 OvCore::ECS::Components::CTransform::CTransform(ECS::Actor& p_owner, OvMaths::FVector3 p_localPosition, OvMaths::FQuaternion p_localRotation, OvMaths::FVector3 p_localScale) :
 AComponent(p_owner)
@@ -157,36 +159,17 @@ OvMaths::FVector3 OvCore::ECS::Components::CTransform::GetLocalRight() const
 	return m_transform.GetLocalRight();
 }
 
-void OvCore::ECS::Components::CTransform::OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node)
+void OvCore::ECS::Components::CTransform::OnSerialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
 {
-	OvCore::Helpers::Serializer::SerializeVec3(p_doc, p_node, "position", GetLocalPosition());
-	OvCore::Helpers::Serializer::SerializeQuat(p_doc, p_node, "rotation", GetLocalRotation());
-	OvCore::Helpers::Serializer::SerializeVec3(p_doc, p_node, "scale", GetLocalScale());
+    Helpers::ReflectionProperties::Serialize(ECS::GetComponentRegistry().Reflection().Main(), OvReflection::ObjectRef::From(*this), OvReflection::TypeOf<CTransform>(), doc, *node).Require();
 }
 
-void OvCore::ECS::Components::CTransform::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
+void OvCore::ECS::Components::CTransform::OnDeserialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
 {
-	m_transform.GenerateMatricesLocal
-	(
-		OvCore::Helpers::Serializer::DeserializeVec3(p_doc, p_node, "position"),
-		OvCore::Helpers::Serializer::DeserializeQuat(p_doc, p_node, "rotation"),
-		OvCore::Helpers::Serializer::DeserializeVec3(p_doc, p_node, "scale")
-	);
+    Helpers::ReflectionProperties::Deserialize(ECS::GetComponentRegistry().Reflection().Main(), OvReflection::ObjectRef::From(*this), OvReflection::TypeOf<CTransform>(), *node, Helpers::ReflectionProperties::ComponentHooks()).Require();
 }
 
-void OvCore::ECS::Components::CTransform::OnInspector(OvUI::Internal::WidgetContainer& p_root)
+void OvCore::ECS::Components::CTransform::OnInspector(OvUI::Internal::WidgetContainer& root)
 {
-	auto getRotation = [this]
-	{ 
-		return OvMaths::FQuaternion::EulerAngles(GetLocalRotation());
-	};
-
-	auto setRotation = [this](OvMaths::FVector3 result)
-	{
-		SetLocalRotation(OvMaths::FQuaternion(result));
-	};
-
-	OvCore::Helpers::GUIDrawer::DrawVec3(p_root, "Position", std::bind(&CTransform::GetLocalPosition, this), std::bind(&CTransform::SetLocalPosition, this, std::placeholders::_1), 0.05f);
-	OvCore::Helpers::GUIDrawer::DrawVec3(p_root, "Rotation", getRotation, setRotation, 0.05f);
-	OvCore::Helpers::GUIDrawer::DrawVec3(p_root, "Scale", std::bind(&CTransform::GetLocalScale, this), std::bind(&CTransform::SetLocalScale, this, std::placeholders::_1), 0.05f, 0.0001f);
+    Helpers::ReflectionProperties::DrawComponent(root, *this).Require();
 }

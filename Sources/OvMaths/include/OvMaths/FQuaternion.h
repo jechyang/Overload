@@ -57,6 +57,7 @@ namespace OvMaths
 		* @param p_other
 		*/
 		FQuaternion(const FQuaternion& p_other);
+		FQuaternion& operator=(const FQuaternion&) = default;
 
 		/**
 		* Construct from rotation matrix

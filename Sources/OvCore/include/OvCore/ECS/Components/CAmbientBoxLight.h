@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include "OvCore/ECS/Components/CLight.h"
 
 namespace OvCore::ECS { class Actor; }
@@ -15,7 +17,7 @@ namespace OvCore::ECS::Components
 	/**
 	* Represents an ambient light with a box shape
 	*/
-	class CAmbientBoxLight : public CLight
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CAmbientBoxLight", DisplayName = "Ambient Box Light", Order = 8) CAmbientBoxLight : public CLight
 	{
 	public:
 		/**

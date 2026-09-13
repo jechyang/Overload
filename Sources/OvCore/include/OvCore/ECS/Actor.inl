@@ -45,8 +45,9 @@ namespace OvCore::ECS
 		for (auto it = m_components.begin(); it != m_components.end(); ++it)
 		{
 			result = std::dynamic_pointer_cast<T>(*it);
-			if (result)
+			if (result && !dynamic_cast<Components::CTransform*>(result.get()))
 			{
+				result->m_inspectorCallbacks.Invalidate();
 				ComponentRemovedEvent.Invoke(*result.get());
 				m_components.erase(it);
 				return true;

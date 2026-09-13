@@ -1,0 +1,47 @@
+cmake_minimum_required(VERSION 3.24)
+project(OvReflectGen VERSION 0.4.0 LANGUAGES C CXX)
+
+# Host tool only. Never add LLVM dependencies to an engine project.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/toolchain.lock.json" OV_TOOLCHAIN_LOCK)
+string(JSON OV_LLVM_VERSION GET "${OV_TOOLCHAIN_LOCK}" llvm_version)
+find_package(LLVM ${OV_LLVM_VERSION} EXACT REQUIRED CONFIG)
+find_package(Clang REQUIRED CONFIG HINTS "${LLVM_INSTALL_PREFIX}/lib/cmake/clang")
+
+# LLVM's official 18.1.8 Windows archive embeds its builder's VS2019 DIA path.
+# Relocate that imported edge only; use the real selected VS SDK, never a stub.
+if(WIN32 AND TARGET LLVMDebugInfoPDB)
+    get_target_property(OV_PDB_LIBRARIES LLVMDebugInfoPDB INTERFACE_LINK_LIBRARIES)
+    set(OV_PDB_RELOCATED "")
+    foreach(OV_LIBRARY IN LISTS OV_PDB_LIBRARIES)
+        if(OV_LIBRARY MATCHES "[/\\\\]diaguids[.]lib$")
+            if(NOT EXISTS "${OV_DIA_LIBRARY}")
+                message(FATAL_ERROR "Set OV_DIA_LIBRARY to the selected VS DIA SDK/lib/amd64/diaguids.lib")
+            endif()
+            list(APPEND OV_PDB_RELOCATED "${OV_DIA_LIBRARY}")
+        else()
+            list(APPEND OV_PDB_RELOCATED "${OV_LIBRARY}")
+        endif()
+    endforeach()
+    set_property(TARGET LLVMDebugInfoPDB PROPERTY INTERFACE_LINK_LIBRARIES "${OV_PDB_RELOCATED}")
+endif()
+
+add_executable(OvReflectGen Main.cpp Frontend/HeaderAnalysis.cpp Frontend/SchemaExtraction.cpp
+    Schema/Model.cpp Emitters/AnalysisReport.cpp Emitters/Schema.cpp)
+target_compile_features(OvReflectGen PRIVATE cxx_std_20)
+target_include_directories(OvReflectGen SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS} ${CLANG_INCLUDE_DIRS})
+target_include_directories(OvReflectGen PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+separate_arguments(OV_LLVM_DEFINITIONS NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_options(OvReflectGen PRIVATE ${OV_LLVM_DEFINITIONS})
+target_link_libraries(OvReflectGen PRIVATE clangTooling clangFrontend clangAST clangBasic LLVMSupport)
+if(MSVC)
+    target_compile_options(OvReflectGen PRIVATE /EHsc /bigobj)
+    # Official Windows LLVM libraries use the release dynamic CRT.
+    set_property(TARGET OvReflectGen PROPERTY MSVC_RUNTIME_LIBRARY MultiThreadedDLL)
+endif()
+if(NOT LLVM_ENABLE_RTTI)
+    if(MSVC)
+        target_compile_options(OvReflectGen PRIVATE /GR-)
+    else()
+        target_compile_options(OvReflectGen PRIVATE -fno-rtti)
+    endif()
+endif()

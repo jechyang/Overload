@@ -426,6 +426,7 @@ namespace OvCore::ECS
 
 		/* Actors components */
 		std::vector<std::shared_ptr<Components::AComponent>> m_components;
+		std::vector<std::string> m_unknownComponents; // Lossless unknown component payloads
 		std::unordered_map<std::string, Components::Behaviour> m_behaviours;
 		std::vector<std::string> m_behavioursOrder;
 

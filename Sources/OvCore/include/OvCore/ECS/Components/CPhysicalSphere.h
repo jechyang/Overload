@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include "OvCore/ECS/Components/AComponent.h"
 
 #include "OvCore/ECS/Components/CPhysicalObject.h"
@@ -17,7 +19,7 @@ namespace OvCore::ECS::Components
 	/**
 	* Represent a physical object with a sphere shape
 	*/
-	class CPhysicalSphere : public CPhysicalObject
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CPhysicalSphere", DisplayName = "Physical Sphere", Order = 3) CPhysicalSphere : public CPhysicalObject
 	{
 	public:
 		/**

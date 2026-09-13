@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include <array>
 
 #include <OvCore/ECS/Components/AComponent.h>
@@ -23,7 +25,7 @@ namespace OvCore::ECS::Components
 	/**
 	* A component that handle a material list, necessary for model rendering
 	*/
-	class CMaterialRenderer : public AComponent
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CMaterialRenderer", DisplayName = "Material Renderer", Order = 10) CMaterialRenderer : public AComponent
 	{
 	public:
 		using MaterialList = std::array<OvCore::Resources::Material*, kMaxMaterialCount>;

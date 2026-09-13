@@ -6,13 +6,15 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 
 namespace OvMaths
 {
 	/**
 	* Mathematic representation of a 3D vector of floats
 	*/
-	struct FVector3
+	struct OV_TYPE() FVector3
 	{
 		static const FVector3 One;
 		static const FVector3 Zero;
@@ -20,9 +22,9 @@ namespace OvMaths
 		static const FVector3 Right;
 		static const FVector3 Up;
 
-		float x;
-		float y;
-		float z;
+		OV_FIELD() float x;
+		OV_FIELD() float y;
+		OV_FIELD() float z;
 
 		/**
 		* Default constructor

@@ -6,6 +6,8 @@
 
 #pragma once
 
+#include <OvReflection/Annotations.h>
+
 #include <OvRendering/Data/RenderCommandList.h>
 #include <array>
 #include <cstddef>
@@ -29,7 +31,7 @@ namespace OvCore::ECS::Components
 	/**
 	* Component that captures the surrounding environment into a cubemap texture.
 	*/
-	class CReflectionProbe : public AComponent
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CReflectionProbe", DisplayName = "Reflection Probe", Order = 15) CReflectionProbe : public AComponent
 	{
 	public:
 		enum class ERefreshMode : uint32_t
