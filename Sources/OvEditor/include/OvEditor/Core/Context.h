@@ -22,6 +22,7 @@
 #include <OvCore/ResourceManagement/TextureManager.h>
 #include <OvCore/SceneSystem/SceneManager.h>
 #include <OvCore/Scripting/ScriptEngine.h>
+#include <OvCore/Scripting/CSharp/RuntimeHost.h>
 #include <OvEditor/Core/EditorResources.h>
 #include <OvPhysics/Core/PhysicsEngine.h>
 #include <OvTools/Filesystem/IniFile.h>
@@ -85,6 +86,7 @@ namespace OvEditor::Core
 		* Declared before every other service so that it outlives them
 		* (members are destroyed in reverse declaration order)
 		*/
+		OvReflection::MainThread scriptingMain;
 		std::unique_ptr<OvTools::Jobs::JobSystem> jobSystem;
 
 		std::unique_ptr<OvWindowing::Context::Device> device;
@@ -115,5 +117,7 @@ namespace OvEditor::Core
 		OvTools::Filesystem::IniFile projectSettings;
 
 		CopyBuffer copyBuffer;
+		// Declared last: also detaches before scene/services during constructor unwinding.
+		std::unique_ptr<OvCore::Scripting::CSharp::RuntimeHost> csharpHost;
 	};
 }

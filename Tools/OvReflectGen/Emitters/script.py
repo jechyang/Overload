@@ -110,12 +110,12 @@ def emit(schema, directory, types):
               "enums":[{"name":n,"underlying":all_types[n]["underlying_type"],"values":[[e["name"],e["value"]] for e in all_types[n]["enumerators"]]} for n in sorted(used_enums)],
               "operations":[{"name":o["name"],"owner":o["owner"]["id"],"id":o["member"]["id"],"mode":o["mode"],"args":o["args"],"result":o["result"],"policies":{k:v for k,v in o["member"]["metadata"].items() if k in ("Return","Ownership","Nullable","Overload","Thread")}} for o in operations]}
     signature=hashlib.sha256(json.dumps(contract,sort_keys=True,separators=(",",":")).encode()).hexdigest()
-    header=['// Generated. Do not edit.','#pragma once','#include <OvReflection/ScriptABI.h>', '#pragma pack(push, 8)', '#ifdef __cplusplus','extern "C" {','#endif',f'typedef struct OvScript{module}Table {{', '    void (OV_SCRIPT_CALL *release_string)(OvScriptOwnedString*);']
+    header=['// Generated. Do not edit.','#pragma once','#include <OvReflection/ScriptABI.h>', f'#define OV_SCRIPT_{module.upper()}_SIGNATURE "{signature}"', '#pragma pack(push, 8)', '#ifdef __cplusplus','extern "C" {','#endif',f'typedef struct OvScript{module}Table {{', '    void (OV_SCRIPT_CALL *release_string)(OvScriptOwnedString*);']
     native=['// Generated. Included by Reflection.generated.cpp.','#include "Script.generated.h"','#include <OvReflection/ScriptBridge.h>','#include <cstring>',f'namespace OvScript{module}Detail {{','using namespace OvReflection;','using namespace OvReflection::Script;']
     cs=['// Generated. Do not edit.','#nullable enable','using System;','using System.Runtime.InteropServices;','using Overload.Script;',f'namespace Overload.Generated.{module}', '{']
     for n,t in sorted(used_enums.items()):
         cs += [f'public enum {cs_enum(t)} : {abi(t)[1]} {{']+[f'    @{e["name"]} = {e["value"]}{"UL" if abi(t)[1]=="ulong" else "L" if abi(t)[1]=="long" else ""},' for e in all_types[n]["enumerators"]]+['}']
-    cs += ['public sealed unsafe class Api {',f'    public const string Signature = "{signature}";', '    private readonly ulong context;','    [StructLayout(LayoutKind.Sequential, Pack = 8)]','    private struct Table {','        public delegate* unmanaged[Cdecl]<NativeString*, void> release_string;']
+    cs += ['public sealed unsafe class Api {',f'    public const string Signature = "{signature}";', f'    public const uint TableSize = {(len(operations)+1)*8};', '    private readonly ulong context;','    [StructLayout(LayoutKind.Sequential, Pack = 8)]','    private struct Table {','        public delegate* unmanaged[Cdecl]<NativeString*, void> release_string;']
     bodies=[]
     for o in operations:
         name=o["name"]; m=o["member"]; owner="::"+o["owner"]["cpp_name"]; result=o["result"]; args=o["args"]; batch=o["mode"]=="batch"; returns=result["category"]!="void"; meta=m["metadata"]

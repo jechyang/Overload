@@ -21,6 +21,7 @@
 #include <OvCore/ResourceManagement/SoundManager.h>
 #include <OvCore/SceneSystem/SceneManager.h>
 #include <OvCore/Scripting/ScriptEngine.h>
+#include <OvCore/Scripting/CSharp/RuntimeHost.h>
 
 #include <OvAudio/Core/AudioEngine.h>
 
@@ -56,6 +57,7 @@ namespace OvGame::Core
 		* Declared before every other service so that it outlives them
 		* (members are destroyed in reverse declaration order)
 		*/
+		OvReflection::MainThread scriptingMain;
 		std::unique_ptr<OvTools::Jobs::JobSystem> jobSystem;
 
 		std::unique_ptr<OvWindowing::Context::Device> device;
@@ -81,5 +83,7 @@ namespace OvGame::Core
 		OvCore::ResourceManagement::SoundManager soundManager;
 		
 		OvTools::Filesystem::IniFile projectSettings;
+		// Declared last: also detaches before scene/services during constructor unwinding.
+		std::unique_ptr<OvCore::Scripting::CSharp::RuntimeHost> csharpHost;
 	};
 }

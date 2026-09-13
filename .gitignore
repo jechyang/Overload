@@ -24,3 +24,7 @@ imgui.ini
 
 # Reflection validation Python bytecode cache
 /Tests/Reflection/**/__pycache__/
+
+# Standalone resident managed host builds
+/Sources/OvManaged/**/bin/
+/Sources/OvManaged/**/obj/

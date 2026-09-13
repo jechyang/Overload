@@ -3,7 +3,8 @@
 日期：2026-09-13。仓库：H:/overload/Overload。
 基线：c59edf3（R0–R6 原生反射与 C# 绑定实现）。
 状态：S0 已按 [S0 验收记录](CS_SCRIPTING_S0_VALIDATION.md) 冻结协议并完成
-实际编译运行 smoke；S1–S7 未实施。当前 Windows 的标准 `dotnet build`
+实际编译运行 smoke；S1 已按 [S1 验收记录](CS_SCRIPTING_S1_VALIDATION.md) 完成
+原生宿主、常驻引导与真实组件 smoke，S2–S7 未实施。当前 Windows 的标准 `dotnet build`
 仍有记录在案的 CET 系统更新阻塞，不能视为通过。R6 或 S0 完成均不代表
 后续运行时接入完成。
 
@@ -96,6 +97,9 @@ Owner、Transform、GetComponent<T> 第一版只覆盖已支持类型。Actor �
 建议提交：docs(scripting): freeze S0 C# hosting and project contracts
 
 ### S1：原生进程启动 CoreCLR 与常驻引导
+
+状态：已完成实现与本地原生验收；默认/RenderThread 真实组件 smoke、失败矩阵及
+标准构建仍存在的 CET 失败详见 `CS_SCRIPTING_S1_VALIDATION.md`。不代表 S2–S7 完成。
 
 任务：实现显式路径解析的 nethost/hostfxr 宿主、Host ABI 握手、Main 线程回调及日志；启动常驻 ManagedHost，将 R6 入口表和上下文提供给托管代码。接入 Editor/Game 的可选宿主初始化，等 ServiceLocator 和必要服务就绪后才创建项目会话。
 

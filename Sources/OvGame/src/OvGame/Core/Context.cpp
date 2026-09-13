@@ -193,6 +193,26 @@ OvGame::Core::Context::Context() :
 	ServiceLocator::Provide<OvAudio::Core::AudioEngine>(*audioEngine);
 	ServiceLocator::Provide<OvCore::Scripting::ScriptEngine>(*scriptEngine);
 
+	// Optional S1 bootstrap, after all required services are published.
+	if (projectSettings.GetOrDefault<bool>("csharp_enabled", false))
+	{
+		try
+		{
+			auto host = std::make_unique<OvCore::Scripting::CSharp::RuntimeHost>(scriptingMain);
+			const auto paths = OvCore::Scripting::CSharp::HostPaths::Resolve(
+				OvCore::Scripting::CSharp::RuntimeHost::ExecutableDirectory(),
+				projectSettings.GetOrDefault<std::string>("csharp_runtime_root", "Runtime/dotnet"),
+				projectSettings.GetOrDefault<std::string>("csharp_managed_root", "Managed"));
+			host->Start(paths);
+			host->OpenSession(projectAssetsPath.parent_path());
+			csharpHost = std::move(host);
+		}
+		catch (const std::exception& error)
+		{
+			OVLOG_ERROR(std::string("[CSharp] optional initialization failed: ") + error.what());
+		}
+	}
+
 	framebuffer = std::make_unique<baregl::Framebuffer>("Main");
 
 	OvCore::Rendering::FramebufferUtil::SetupFramebuffer(
@@ -205,6 +225,9 @@ OvGame::Core::Context::Context() :
 
 OvGame::Core::Context::~Context()
 {
+	// Stop/detach managed calls and invalidate R6 context before native scene storage.
+	csharpHost.reset();
+	sceneManager.UnloadCurrentScene();
 	modelManager.UnloadResources();
 	textureManager.UnloadResources();
 	shaderManager.UnloadResources();
