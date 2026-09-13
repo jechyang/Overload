@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "signature_sha256": "1f7e282e2f1353962d004dfe3f9b88a52fe17311d6b4d51491d8622a529a1b10",
+  "name": "Overload CSharp Host ABI",
+  "abi_version": 1,
+  "target": {
+    "os": "windows",
+    "architecture": "x86_64",
+    "calling_convention": "cdecl",
+    "endianness": "little",
+    "pack": 8,
+    "pointer_bits": 64
+  },
+  "bootstrap": {
+    "assembly": "Overload.ManagedHost",
+    "type": "Overload.ManagedHost.Bootstrap, Overload.ManagedHost",
+    "method": "GetHostApi",
+    "native_callable": "UnmanagedCallersOnly",
+    "handshake": [
+      "requested_version",
+      "requested_size",
+      "expected_signature_32_bytes",
+      "out_api"
+    ]
+  },
+  "status_codes": {
+    "Success": 0,
+    "AbiMismatch": 1,
+    "InvalidArgument": 2,
+    "WrongThread": 3,
+    "SessionNotFound": 4,
+    "SessionClosing": 5,
+    "SessionFaulted": 6,
+    "TypeNotFound": 7,
+    "DuplicateIdentity": 8,
+    "InstanceNotFound": 9,
+    "InstanceFaulted": 10,
+    "InvalidLifecycle": 11,
+    "FieldNotFound": 12,
+    "FieldTypeMismatch": 13,
+    "UnsupportedField": 14,
+    "ManagedException": 15,
+    "BufferOwnership": 16,
+    "NativeAbiMismatch": 17,
+    "Busy": 18
+  },
+  "lifecycle_codes": {
+    "Awake": 1,
+    "Start": 2,
+    "Enable": 3,
+    "Disable": 4,
+    "Update": 5,
+    "FixedUpdate": 6,
+    "LateUpdate": 7,
+    "CollisionEnter": 8,
+    "CollisionStay": 9,
+    "CollisionExit": 10,
+    "TriggerEnter": 11,
+    "TriggerStay": 12,
+    "TriggerExit": 13,
+    "Destroy": 14,
+    "ReloadRestore": 15
+  },
+  "field_tags": {
+    "Bool": 1,
+    "Int8": 2,
+    "UInt8": 3,
+    "Int16": 4,
+    "UInt16": 5,
+    "Int32": 6,
+    "UInt32": 7,
+    "Int64": 8,
+    "UInt64": 9,
+    "Float32": 10,
+    "Float64": 11,
+    "String": 12,
+    "EnumInt64": 13,
+    "EnumUInt64": 14,
+    "Vector3": 15,
+    "Quaternion": 16,
+    "ActorRef": 17,
+    "AssetRef": 18
+  },
+  "table_entries": [
+    "release_owned_utf8",
+    "release_field_value",
+    "take_last_error",
+    "create_session",
+    "close_session",
+    "bind_native_api",
+    "get_type_count",
+    "get_type_info",
+    "get_type_alias",
+    "release_type_info",
+    "get_field_info",
+    "get_field_alias",
+    "release_field_info",
+    "create_instance",
+    "destroy_instance",
+    "dispatch_lifecycle",
+    "read_field",
+    "write_field"
+  ],
+  "identity": {
+    "default_key": [
+      "backend",
+      "assembly_logical_name",
+      "canonical_type_name"
+    ],
+    "backend_values": [
+      "lua",
+      "csharp"
+    ],
+    "explicit_stable_id": true,
+    "old_identity_aliases": true,
+    "assembly_qualified_name_is_persistent": false,
+    "lua_legacy_path_is_readable": true
+  },
+  "ownership": {
+    "input_views": "borrowed_for_call",
+    "output_utf8": "managed_owned_until_release_owned_utf8",
+    "output_field_value": "managed_owned_until_release_field_value",
+    "type_info": "managed_owned_until_release_type_info",
+    "field_info": "managed_owned_until_release_field_info",
+    "zero_length_utf8": "null_pointer_allowed",
+    "nonzero_length_utf8": "non_null_pointer_required"
+  },
+  "threading": {
+    "all_entries": "captured_main_thread",
+    "calls": "synchronous",
+    "callbacks_retain_no_caller_buffer": true
+  }
+}

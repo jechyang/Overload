@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeFrameworkVersion>10.0.12</RuntimeFrameworkVersion>
+    <RollForward>Disable</RollForward>
+    <PlatformTarget>x64</PlatformTarget>
+    <UseAppHost>false</UseAppHost>
+    <SelfContained>false</SelfContained>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode>true</RestoreLockedMode>
+    <NuGetLockFilePath>$(MSBuildThisFileDirectory)packages.lock.json</NuGetLockFilePath>
+  </PropertyGroup>
+</Project>

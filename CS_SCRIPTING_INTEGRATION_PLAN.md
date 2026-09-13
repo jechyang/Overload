@@ -2,7 +2,10 @@
 
 日期：2026-09-13。仓库：H:/overload/Overload。
 基线：c59edf3（R0–R6 原生反射与 C# 绑定实现）。
-状态：本文件仅为接入计划，S0–S7 均未实施。R6 完成不代表本计划完成。
+状态：S0 已按 [S0 验收记录](CS_SCRIPTING_S0_VALIDATION.md) 冻结协议并完成
+实际编译运行 smoke；S1–S7 未实施。当前 Windows 的标准 `dotnet build`
+仍有记录在案的 CET 系统更新阻塞，不能视为通过。R6 或 S0 完成均不代表
+后续运行时接入完成。
 
 ## 1. 目标、范围与交付层次
 
@@ -77,6 +80,9 @@ Owner、Transform、GetComponent<T> 第一版只覆盖已支持类型。Actor �
 ## 4. 分阶段执行与验收
 
 ### S0：冻结宿主协议与可复现工具链
+
+状态：已完成 S0 交付并单独验收；固定值、实测证据、失败项和恢复步骤见
+`CS_SCRIPTING_S0_VALIDATION.md`。本状态不授权或暗示 S1 已开始。
 
 任务：
 
