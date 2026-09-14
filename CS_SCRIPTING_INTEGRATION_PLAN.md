@@ -5,9 +5,10 @@
 状态：S0 已按 [S0 验收记录](CS_SCRIPTING_S0_VALIDATION.md) 冻结协议并完成
 实际编译运行 smoke；S1 已按 [S1 验收记录](CS_SCRIPTING_S1_VALIDATION.md) 完成
 原生宿主、常驻引导与真实组件 smoke；S2 已按 [S2 验收记录](CS_SCRIPTING_S2_VALIDATION.md)
-完成后端门面、类型身份与缺失记录保留，S3–S7 未实施。当前 Windows 的标准 `dotnet build`
-仍有记录在案的 CET 系统更新阻塞，不能视为通过。R6 或 S0 完成均不代表
-后续运行时接入完成。
+完成后端门面、类型身份与缺失记录保留；S3 已按 [S3 验收记录](CS_SCRIPTING_S3_VALIDATION.md)
+完成托管实例、受控 API、生命周期和真实 Editor/Game 默认/RenderThread 运行验收。
+S4–S7 未实施。当前 Windows 的标准 `dotnet build` 仍因 CET 失败；显式兼容入口的
+完整 MSBuild 重建与新程序集真实宿主运行通过，二者分别记录，不能混称标准构建通过。
 
 ## 1. 目标、范围与交付层次
 
@@ -110,7 +111,8 @@ Owner、Transform、GetComponent<T> 第一版只覆盖已支持类型。Actor �
 ### S2：统一脚本入口与项目类型身份
 
 状态：已完成 S2 实现与真实本地验收，详见 `CS_SCRIPTING_S2_VALIDATION.md`。
-CSharp 的 TypeReady 仅表示类型挂载；实例构造、Owner 和游戏生命周期仍属于 S3。
+CSharp 的 TypeReady 仅表示类型挂载；S2 当时尚未实现的实例构造、Owner 和游戏生命周期
+现已在 S3 完成，编辑态仍只挂载类型。
 标准 dotnet build 的 CET 外部阻塞仍未解除。
 
 任务：
@@ -125,6 +127,13 @@ CSharp 的 TypeReady 仅表示类型挂载；实例构造、Owner 和游戏生�
 建议提交：refactor(scripting): complete S2 backend dispatch and script identities
 
 ### S3：C# Behaviour 生命周期与最小引擎 API
+
+状态：已完成本轮实现与独立本地验收，详见 `CS_SCRIPTING_S3_VALIDATION.md`。
+固定源码收据 `Build/Tests/Scripting/s3-MX7SMl/verification.json` 为 success=true；
+覆盖真实宿主、Editor Play/Pause/单步/Stop、Game 循环、Lua 共存和两种渲染模式。
+Awake 前已完成 C# 字段初始化器及 Owner 注入；存档字段恢复仍属 S4，未冒充完成。
+首版 Actor 存储沿用原生返回引用接口立即创建，初始化排队且不进入当前分派快照；
+销毁、Behaviour 修改和场景替换在主线程安全点处理。未实施 S4–S7。
 
 任务：实现托管实例注册、Owner/Transform/GetComponent 受控门面，将现有生命周期与碰撞/触发入口接到 C#；碰撞对象先以可校验句柄和最小只读身份提供。建立实例状态与主线程安全点，处理自删、删其他行为、增添行为及换场景。旧组件句柄在场景切换、删除、会话关闭后拒绝访问。
 

@@ -8,6 +8,8 @@
 
 #include <unordered_map>
 #include <memory>
+#include <functional>
+#include <unordered_set>
 
 #include <OvTools/Eventing/Event.h>
 #include <OvTools/Utils/GUID.h>
@@ -17,6 +19,7 @@
 #include "OvCore/ECS/Components/Behaviour.h"
 #include "OvCore/API/ISerializable.h"
 
+namespace OvCore::SceneSystem { class Scene; }
 namespace OvCore::ECS
 {
 	/**
@@ -26,6 +29,8 @@ namespace OvCore::ECS
 	class Actor : public API::ISerializable
 	{
 	public:
+		SceneSystem::Scene* GetScene() const { return m_scene; }
+		bool CanRunScripts() const;
 		/**
 		* Constructor of the actor. It will automatically add a transform component
 		* @param p_actorID
@@ -382,6 +387,11 @@ namespace OvCore::ECS
 		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_actorsRoot) override;
 
 	private:
+		friend class SceneSystem::Scene;
+		SceneSystem::Scene* m_scene = nullptr;
+		bool m_destroying = false;
+		std::unordered_set<std::string> m_pendingBehaviours;
+		void Dispatch(const std::function<void(Components::AComponent&)>& action, bool gameplay = false);
 		/**
 		 * @brief Deleted copy constructor
 		 * @param p_actor

@@ -9,6 +9,8 @@ namespace OvCore::Scripting::CSharp
 {
     struct HostPaths
     {
+        static std::filesystem::path FromUtf8(const std::string& value)
+        { return std::filesystem::path(std::u8string(value.begin(), value.end())); }
         std::filesystem::path dotnetRoot, nethost, runtimeConfig, assembly;
         // Relative settings resolve against an explicit installation directory, never cwd/PATH.
         static HostPaths Resolve(const std::filesystem::path& base,

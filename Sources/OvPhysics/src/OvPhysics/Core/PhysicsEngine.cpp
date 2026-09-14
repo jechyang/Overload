@@ -15,6 +15,7 @@
 #include <OvPhysics/Core/PhysicsEngine.h>
 #include <OvPhysics/Entities/PhysicalObject.h>
 #include <OvPhysics/Tools/Conversion.h>
+#include <OvTools/Utils/DispatchScope.h>
 
 using namespace OvPhysics::Tools;
 using namespace OvPhysics::Entities;
@@ -56,6 +57,7 @@ void OvPhysics::Core::PhysicsEngine::PostUpdate()
 
 bool OvPhysics::Core::PhysicsEngine::Update(float p_deltaTime)
 {
+	OvTools::Utils::DispatchScope callbackBarrier;
 	PreUpdate();
 
 	if (m_world->stepSimulation(p_deltaTime, 10))

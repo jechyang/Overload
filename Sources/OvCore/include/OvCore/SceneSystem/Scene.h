@@ -76,6 +76,9 @@ namespace OvCore::SceneSystem
         // Retaining the token does not keep this Scene or its actors alive.
         using LifetimeToken = std::shared_ptr<const uint8_t>;
         LifetimeToken GetLifetimeToken() const { return m_lifetimeToken; }
+        void StopDispatch() { m_dispatchStopped = true; }
+        bool DispatchStopped() const { return m_dispatchStopped; }
+        void ResumeDispatch() { m_dispatchStopped = false; }
 
 		/**
 		* Add a default camera to the scene
@@ -266,6 +269,8 @@ namespace OvCore::SceneSystem
 		LifetimeToken m_lifetimeToken = std::make_shared<const uint8_t>(0);
 		int64_t m_availableID = 1;
 		bool m_isPlaying = false;
+        bool m_dispatchStopped = false;
+        bool m_destroying = false;
 		bool m_batchActorCreation = false;
 		std::vector<ECS::Actor*> m_actors;
 		std::vector<std::reference_wrapper<ECS::Actor>> m_batchCreatedActors;

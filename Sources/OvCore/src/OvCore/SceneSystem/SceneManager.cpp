@@ -5,6 +5,7 @@
 */
 
 #include <tinyxml2.h>
+#include <OvCore/Scripting/DispatchScope.h>
 
 #include <OvCore/SceneSystem/SceneManager.h>
 #include <OvCore/ECS/Components/CDirectionalLight.h>
@@ -31,26 +32,36 @@ OvCore::SceneSystem::SceneManager::~SceneManager()
 
 void OvCore::SceneSystem::SceneManager::Update()
 {
+    if (Scripting::DispatchScope::Active()) return;
+    Scripting::DispatchScope::Flush();
+    if (m_currentScene) m_currentScene->CollectGarbages();
 	if (m_delayedLoadCall)
 	{
-		m_delayedLoadCall();
-		m_delayedLoadCall = 0;
+		auto load = std::move(m_delayedLoadCall);
+        m_delayedLoadCall = {};
+        load();
 	}
 }
 
 void OvCore::SceneSystem::SceneManager::LoadAndPlayDelayed(const std::string& p_path, bool p_absolute)
 {
+    if (m_currentScene) m_currentScene->StopDispatch();
 	m_delayedLoadCall = [this, p_path, p_absolute]
 	{
 		std::string previousSourcePath = GetCurrentSceneSourcePath();
-		LoadScene(p_path, p_absolute);
-		StoreCurrentSceneSourcePath(previousSourcePath);
-		GetCurrentScene()->Play();
+		if (LoadScene(p_path, p_absolute)) {
+            StoreCurrentSceneSourcePath(previousSourcePath);
+            GetCurrentScene()->Play();
+		} else if (m_currentScene) m_currentScene->ResumeDispatch();
 	};
 }
 
 void OvCore::SceneSystem::SceneManager::LoadEmptyScene()
 {
+    if (Scripting::DispatchScope::Active()) {
+        if (m_currentScene) m_currentScene->StopDispatch();
+        m_delayedLoadCall = [this] { LoadEmptyScene(); }; return;
+    }
 	UnloadCurrentScene();
 	m_currentScene.reset(new Scene(m_sceneRootFolder, m_engineAssetsFolder));
 	SceneLoadEvent.Invoke();
@@ -58,6 +69,10 @@ void OvCore::SceneSystem::SceneManager::LoadEmptyScene()
 
 void OvCore::SceneSystem::SceneManager::LoadDefaultScene()
 {
+    if (Scripting::DispatchScope::Active()) {
+        if (m_currentScene) m_currentScene->StopDispatch();
+        m_delayedLoadCall = [this] { LoadDefaultScene(); }; return;
+    }
 	UnloadCurrentScene();
 	m_currentScene.reset(new Scene(m_sceneRootFolder, m_engineAssetsFolder));
 	m_currentScene->AddDefaultCamera();
@@ -70,6 +85,7 @@ void OvCore::SceneSystem::SceneManager::LoadDefaultScene()
 
 bool OvCore::SceneSystem::SceneManager::LoadScene(const std::string& p_path, bool p_absolute)
 {
+    if (Scripting::DispatchScope::Active()) { LoadAndPlayDelayed(p_path, p_absolute); return true; }
 	std::filesystem::path path = 
 		p_absolute ?
 		std::filesystem::current_path() :
@@ -95,6 +111,12 @@ bool OvCore::SceneSystem::SceneManager::LoadScene(const std::string& p_path, boo
 
 bool OvCore::SceneSystem::SceneManager::LoadSceneFromMemory(tinyxml2::XMLDocument& p_doc)
 {
+    if (Scripting::DispatchScope::Active()) {
+        auto copy = std::make_shared<tinyxml2::XMLDocument>(); p_doc.DeepCopy(copy.get());
+        if (m_currentScene) m_currentScene->StopDispatch();
+        m_delayedLoadCall = [this, copy] { LoadSceneFromMemory(*copy); };
+        return true;
+    }
 	if (!p_doc.Error())
 	{
 		tinyxml2::XMLNode* root = p_doc.FirstChild();
@@ -116,6 +138,10 @@ bool OvCore::SceneSystem::SceneManager::LoadSceneFromMemory(tinyxml2::XMLDocumen
 
 void OvCore::SceneSystem::SceneManager::UnloadCurrentScene()
 {
+    if (Scripting::DispatchScope::Active()) {
+        if (m_currentScene) m_currentScene->StopDispatch();
+        m_delayedLoadCall = [this] { UnloadCurrentScene(); }; return;
+    }
 	if (m_currentScene)
 	{
 		m_currentScene.reset();

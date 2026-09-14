@@ -1,8 +1,8 @@
 # C# Host ABI 1 and project contract
 
 This contract was frozen in S0. S1 implements the resident host; S2 implements
-project type discovery and backend-independent attachments. Runtime Behaviour
-construction/Owner/lifecycle and managed fields remain S3/S4 work.
+project type discovery and backend-independent attachments. S3 implements runtime
+instances, Owner and lifecycle dispatch. Managed fields remain S4 work.
 The normative machine-readable files are `host-abi.json` and
 `Sources/OvCore/include/OvCore/Scripting/CSharp/HostABI.h`. Host ABI 1 is versioned
 separately from R6 Script ABI 1; equality in one handshake never implies equality
@@ -135,6 +135,53 @@ for the same still-known handle; a stale/unknown generation returns
 `SessionNotFound`. `hostfxr_close` releases a host handle and is not CLR unload.
 
 ## Instance lifecycle and dispatch
+
+### S3 implementation
+
+The native facade retains the successful project session and its type tokens until
+project clear/close. Loading and edit-time attachment still run no user constructor.
+The first native Awake creates the managed object through `create_instance`, checks
+the native context/Owner GUID, injects Owner, then dispatches Awake. C# field
+initializers have run; persisted managed field restoration is **not implemented**
+until S4. Existing opaque XML data is retained. No property getter is queried for
+defaults. Async lifecycle methods are rejected during type discovery.
+
+Host ABI 1 and R6 signatures/layouts are unchanged. The S3 owner object ID is an
+R6-published mandatory `CTransform` lifetime anchor, not an Actor address or GUID.
+The resident `ConfigureGameplay` transport is documented in `BOOTSTRAP_SERVICES.md`.
+It resolves that exact type under R6 `Guard` before obtaining the native owner.
+Transform and Box properties use the existing generated R6 wrapper. Managed
+facades additionally check Main, construction restrictions and session closure on
+every access, including cached component facades. Collision/trigger payloads use
+the other Actor's validated anchor and expose only its read-only GUID.
+
+Native `TypeReady` remains the metadata state; Behaviour reports `InstanceReady`
+after successful construction, or `Faulted` after constructor/callback failure.
+Every instance lookup validates ID plus session generation. Awake/Start are once
+only, Enable/Disable are transitions, gameplay requires Started+Enabled, and
+Destroy is attempted once even for faulted instances. Destroy exceptions are logged
+and reference cleanup continues. Normal C# fields/Inspector, reload migration,
+shadow copies and proven ALC collection are not part of S3.
+
+Actor dispatch uses snapshots of component references and Behaviour keys plus
+weak epochs. Behaviour order is now attachment/display order. No container iterator
+survives a callback. Structural operations are deferred by the common Main callback
+barrier; pending removal skips remaining callbacks. Actor storage is collected at
+scene phase/manager safe points. Native creation may allocate the returned Actor
+immediately (the existing C++ API returns a reference), but gameplay initialization
+is queued and snapshots keep it out of the in-progress phase. C# AddBehaviour is
+queued; new scripts Awake/Enable/Start before their first subsequent update.
+Physics holds the barrier across the whole Bullet update, so queued actor/behaviour
+and active-state changes cannot reenter the simulation. A requested scene load
+stops the old scene immediately and replaces storage at `SceneManager::Update`.
+Memory loads copy their document before deferral. Failed file loads resume the old
+scene. Destruction/scene-stop allows validated reads, but rejects structural
+mutations through the dying Owner. Reentrant raw Host ABI calls return Busy;
+native project clear queues at the callback safe point.
+
+Editor/Game use these same production Scene/Actor paths. Editor pause/step/stop are
+the existing EditorActions modes; there is no second managed loop. See
+`CS_SCRIPTING_S3_VALIDATION.md` for exact runtime coverage and limitations.
 
 Creating an instance validates the session/type, allocates the managed object,
 injects its session-scoped Owner facade, and returns `Prepared`. User constructors

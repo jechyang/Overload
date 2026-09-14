@@ -206,13 +206,13 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 			auto host = std::make_unique<OvCore::Scripting::CSharp::RuntimeHost>(scriptingMain);
 			const auto paths = OvCore::Scripting::CSharp::HostPaths::Resolve(
 				OvCore::Scripting::CSharp::RuntimeHost::ExecutableDirectory(),
-				projectSettings.GetOrDefault<std::string>("csharp_runtime_root", "Runtime/dotnet"),
-				projectSettings.GetOrDefault<std::string>("csharp_managed_root", "Managed"));
+				OvCore::Scripting::CSharp::HostPaths::FromUtf8(projectSettings.GetOrDefault<std::string>("csharp_runtime_root", "Runtime/dotnet")),
+				OvCore::Scripting::CSharp::HostPaths::FromUtf8(projectSettings.GetOrDefault<std::string>("csharp_managed_root", "Managed")));
 			host->Start(paths);
 			host->OpenSession(projectAssetsPath.parent_path());
 			const auto assembly = projectSettings.GetOrDefault<std::string>("csharp_project_assembly", "");
 			if (!assembly.empty()) scriptEngine->LoadCSharpProject(*host, projectAssetsPath.parent_path(),
-				projectAssetsPath.parent_path() / std::filesystem::path(assembly),
+				projectAssetsPath.parent_path() / OvCore::Scripting::CSharp::HostPaths::FromUtf8(assembly),
 				projectSettings.GetOrDefault<std::string>("csharp_assembly_name", "GameScripts"));
 			csharpHost = std::move(host);
 		}

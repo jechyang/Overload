@@ -8,8 +8,10 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const args = process.argv.slice(2);
 const s2 = args.includes('--s2');
+const s3 = args.includes('--s3');
 const compat = args.includes('--compat-build');
-const stage = s2 ? 'S2' : 'S1';
+const stage = s3 ? 'S3' : s2 ? 'S2' : 'S1';
+const baseline = s3 ? 'c3ae12d' : s2 ? 'a1c3a1a' : '80ef9de';
 const python = args[args.indexOf('--python') + 1];
 if (!args.includes('--python') || !path.isAbsolute(python)) throw new Error('Supply --python <absolute Python 3 executable>');
 const output = fs.mkdtempSync(path.join(root, 'Build/Tests/Scripting/' + stage.toLowerCase() + '-'));
@@ -31,6 +33,12 @@ function filesBelow(directory) {
   });
 }
 const sourceFiles = [
+  ...(s3 ? [...filesBelow(path.join(root, 'Examples/CSharpGameplay')),
+    ...['Sources/OvCore/src/OvCore/SceneSystem/Scene.cpp', 'Sources/OvCore/src/OvCore/SceneSystem/SceneManager.cpp',
+    'Sources/OvCore/include/OvCore/SceneSystem/Scene.h', 'Sources/OvCore/include/OvCore/ECS/Actor.inl',
+    'Sources/OvTools/include/OvTools/Utils/DispatchScope.h', 'Sources/OvPhysics/src/OvPhysics/Core/PhysicsEngine.cpp',
+    'Sources/OvTools/src/OvTools/Utils/SystemCalls.cpp',
+    'Sources/OvEditor/src/OvEditor/Core/Editor.cpp', 'Sources/OvGame/src/OvGame/Core/Game.cpp'].map(p => path.join(root, p))] : []),
   ...['Sources/OvCore/include/OvCore/Scripting','Sources/OvCore/src/OvCore/Scripting',
     'Sources/OvManaged/Overload.ManagedHost','Sources/OvManaged/Overload.ScriptCore','Tests/Scripting','Tools/OvCSharp'].flatMap(p => filesBelow(path.join(root, p))),
   ...['Scripts/Windows/BuildCSharp.mjs', 'Sources/OvCore/include/OvCore/ECS/Actor.h','Sources/OvCore/src/OvCore/ECS/Actor.cpp',
@@ -44,17 +52,17 @@ const receipt = () => Object.fromEntries(sourceFiles.map(p => [path.relative(roo
 const before = receipt();
 const nativeSnapshot = () => Object.fromEntries(filesBelow(path.join(root, 'Bin-Int/Debug')).filter(p => p.endsWith('.obj'))
   .map(p => [path.relative(root, p), { hash: hash(p), mtime_ms: fs.statSync(p).mtimeMs }]));
-function run(name, exe, argv, expect = 0, timeout = 300000) {
+function run(name, exe, argv, expect = 0, timeout = 300000, cwd = root) {
   console.log(name);
-  const result = spawnSync(exe, argv, { cwd: root, env, encoding: 'utf8', windowsHide: true, timeout, maxBuffer: 64 * 1024 * 1024 });
+  const result = spawnSync(exe, argv, { cwd, env, encoding: 'utf8', windowsHide: true, timeout, maxBuffer: 64 * 1024 * 1024 });
   const text = (result.stdout || '') + (result.stderr || '') + (result.error ? String(result.error) : '');
   fs.writeFileSync(path.join(output, name + '.log'), text);
-  checks.push({ name, argv: [exe, ...argv], exit_code: result.status, signal: result.signal, error: result.error?.message });
+  checks.push({ name, cwd, argv: [exe, ...argv], exit_code: result.status, signal: result.signal, error: result.error?.message });
   if (expect !== null && result.status !== expect) throw new Error(`${name}: exit ${result.status}, expected ${expect}; see log`);
   return { text, status: result.status };
 }
 try {
-  run('baseline', 'git', ['-c', 'safe.directory=H:/overload/Overload', 'merge-base', '--is-ancestor', s2 ? 'a1c3a1a' : '80ef9de', 'HEAD']);
+  run('baseline', 'git', ['-c', 'safe.directory=H:/overload/Overload', 'merge-base', '--is-ancestor', baseline, 'HEAD']);
   run('export', python, [path.join(root, 'Tools/OvReflectGen/reflection.py'), 'export', '--output', path.join(output, 'Export')]);
   const tc = read(path.join(output, 'Export/toolchain.json'));
   const compiler = path.join(tc.msvc_root, 'bin/Hostx64/x64');
@@ -104,7 +112,8 @@ try {
     if (hash(dll) !== firstHash) throw new Error('Non-deterministic MSBuild rebuild');
   } else {
   fs.writeFileSync(path.join(output, 'core.rsp'), [...coreOptions, '/out:' + JSON.stringify(core),
-    JSON.stringify(path.join(root, 'Sources/OvManaged/Overload.ScriptCore/Behaviour.cs'))].join('\n'));
+    ...fs.readdirSync(path.join(root, 'Sources/OvManaged/Overload.ScriptCore')).filter(p => p.endsWith('.cs'))
+      .map(p => JSON.stringify(path.join(root, 'Sources/OvManaged/Overload.ScriptCore', p)))].join('\n'));
   run('scriptcore-compile', dotnet, [csc, '@' + path.join(output, 'core.rsp')]);
   options.push('/reference:' + JSON.stringify(core));
   // Compile the production assembly separately, without acceptance-only entries.
@@ -156,6 +165,7 @@ try {
       const coreProject = path.join(root, 'Sources/OvManaged/Overload.ScriptCore/Overload.ScriptCore.csproj');
       const projectFile = path.join(directory, name + '.csproj');
       fs.writeFileSync(projectFile, '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework><PlatformTarget>x64</PlatformTarget><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup><ItemGroup><Compile Include="' + xml(source) + '"/><ProjectReference Include="' + xml(coreProject) + '"/>' +
+        (name === 'S3' ? '<Compile Include="' + xml(path.join(root, 'Examples/CSharpGameplay/MoveAndResize.cs')) + '"/>' : '') +
         (dependency ? '<ProjectReference Include="../' + dependency + '/' + dependency + '.csproj"/>' : '') + '</ItemGroup></Project>');
       fs.copyFileSync(path.join(managedProject, 'NuGet.Config'), path.join(directory, 'NuGet.Config'));
       // All references here are projects, with no package dependencies.
@@ -214,13 +224,34 @@ try {
     run('null-link', path.join(compiler, 'link.exe'), ['/nologo','/OPT:REF','/OPT:ICF','/OUT:' + nullExe, ...nullObjects, ...libraries,
       ...['opengl32','dbghelp','ws2_32','winmm','imm32','version','user32','gdi32','shell32','ole32','oleaut32','advapi32','comdlg32','uuid'].map(s => s + '.lib')]);
     run('s2-null', nullExe, [dotnetRoot, production, project, 'null'], 0, 120000);
+    if (s3) {
+      compatBuild('compat-example-rebuild', path.join(root, 'Examples/CSharpGameplay/GameScripts.csproj'), path.join(output, 'example'));
+      buildFixture('S3', path.join(root, 'Tests/Scripting/Fixtures/S3/Types.cs'), '');
+      fs.copyFileSync(path.join(root, 'Tests/Scripting/Fixtures/S3/legacy.lua'), path.join(project, 's3.lua'));
+      const object = path.join(output, 's3.obj'), executable = path.join(output, 's3.exe');
+      run('s3-compile', path.join(compiler, 'cl.exe'), ['/nologo','/std:c++20','/EHsc','/MDd','/W4','/WX','/c',
+        '/I' + gen, '/I' + path.join(root, 'Dependencies/glfw/include'), '/I' + path.join(root, 'Dependencies/bullet3/src'),
+        ...nativeOptions, path.join(root, 'Tests/Scripting/Integration/native_s3_validation.cpp'), '/Fo' + object]);
+      run('s3-link', path.join(compiler, 'link.exe'), ['/nologo','/OPT:REF','/OPT:ICF','/OUT:' + executable, object, ...libraries,
+        ...['opengl32','dbghelp','ws2_32','winmm','imm32','version','user32','gdi32','shell32','ole32','oleaut32','advapi32','comdlg32','uuid'].map(s => s + '.lib')]);
+      for (const mode of ['default', 'render-thread']) {
+        env.OV_S3_TRACE = path.join(output, 's3-' + mode + '-events.txt');
+        env.OV_S3_SCENE = path.join(output, 's3-next.ovscene');
+        run('s3-' + mode, executable, [dotnetRoot, production, project, mode], 0, 120000);
+      }
+      env.OV_S3_TRACE = path.join(output, 's3-closed-facades-events.txt');
+      run('s3-closed-facades', executable, [dotnetRoot, managed, project, 'closed-facades'], 0, 120000);
+      const { verifyApps } = await import('./verify_s3_apps.mjs');
+      verifyApps({ root, output, run, env, compiler, nativeOptions, libraries, gen, dotnetRoot, production, project });
+    }
   }
   const objectsBefore = nativeSnapshot();
   run('native-no-change-build', msbuild, buildArgs, 0, 900000);
   if (JSON.stringify(objectsBefore) !== JSON.stringify(nativeSnapshot())) throw new Error('Unchanged native build recompiled objects');
   if (JSON.stringify(before) !== JSON.stringify(receipt())) throw new Error('Sources changed during acceptance; rerun fixed sources');
   fs.writeFileSync(path.join(output, 'verification.json'), JSON.stringify({ stage, success: true, timestamp_utc: new Date().toISOString(),
-    os: os.release(), baseline: s2 ? 'a1c3a1a' : '80ef9de', runtime_launcher: exe, standard_dotnet_build_passed: standard.status === 0, compatibility_msbuild_passed: compat ? true : null,
+    os: os.release(), baseline, runtime_launcher: exe, standard_dotnet_build_passed: standard.status === 0, compatibility_msbuild_passed: compat ? true : null,
+    s3_artifacts: s3 ? Object.fromEntries(['s3.exe', 'project 空格/S3.dll', 'example/GameScripts.dll', 'apps/OvEditor-s3.exe', 'apps/OvGame-s3.exe'].map(p => [p, hash(path.join(output, p))])) : undefined,
     external_blockers: blockers, checks, source_receipt: before,
     generated_receipt: Object.fromEntries(['OvCore/Script.generated.h','OvCore/Script.generated.cs','OvCore/script-abi.json'].map(p => [p, hash(path.join(gen, p))])),
     artifacts: { native_exe_sha256: hash(exe), managed_sha256: hash(dll), production_managed_sha256: hash(path.join(production, 'Overload.ManagedHost.dll')) } }, null, 2));

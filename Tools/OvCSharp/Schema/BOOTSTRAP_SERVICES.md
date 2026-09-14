@@ -1,4 +1,4 @@
-# Resident bootstrap services (S1, with S2 type discovery)
+# Resident bootstrap services (S1–S3)
 
 `BootstrapABI.h` describes the bootstrap transport, separate from the frozen Host
 ABI 1 and R6 ABI 1. It does not change either signature. All three use Windows x64,
@@ -40,6 +40,47 @@ project copy is loaded. The native entry and Context registry belong to the same
 linked image and OvReflection instance.
 
 ## Paths and application configuration
+
+### S3 gameplay adapter
+
+After Configure, native resolves resident `Bootstrap.ConfigureGameplay` and calls
+it with version 1, pointer-size 8 and a fixed `GameplayFn`. A second configuration
+is rejected. Detach clears this callback along with the existing services. Failure
+during attachment detaches before releasing the native context.
+
+The callback is cdecl, noexcept and synchronous:
+`uint32(contextId, ownerAnchor, operation, argument, borrowedUtf8, uint64* output)`.
+Return values are R6 status codes, not Host status codes. All branches execute
+inside R6 Guard, which checks Context, captured Main and the anchor's weak epoch
+and exact CTransform type. No native address crosses the boundary. The compulsory
+Transform cannot be removed independently of its Actor. Its epoch expires after
+managed Destroy and before native Actor/component destruction notifications.
+
+| Operation | Meaning / result |
+|---|---|
+| 1 | validated Actor GUID |
+| 2 | validated Transform handle |
+| 3 | publish existing Box using its own component epoch, or zero |
+| 4 | Actor self-active state |
+| 5 | queue self-active transition, argument 0/1 |
+| 6 | mark Actor for destruction; skip further gameplay |
+| 7 / 8 | add/remove Behaviour; UTF-8 logical assembly + newline + metadata type |
+| 9 | find living Actor by name in Owner's current scene; anchor or zero |
+| 10 | create Actor in Owner's current scene; gameplay starts at safe point |
+| 11 | request existing SceneManager delayed file load and stop old dispatch |
+
+Operations 9–11 verify that the resolved Owner belongs to the current scene.
+Component publication additionally verifies the facade's native context. The
+resident managed adapter converts values between ScriptCore math types and the
+unchanged generated R6 types. Cached facades check session closure and Main before
+calling native, and all native API access is rejected during user construction.
+Destroying/stopped Owners reject structural mutations, with validated reads still
+available for cleanup. No background task scheduler or user-code sandbox is added.
+
+This separate resident transport leaves the 32-byte S1 bootstrap structure, frozen
+184-byte Host ABI and generated R6 table unchanged. S1_ACCEPTANCE also contains
+test-only HoldFacade/ProbeFacade exports to test cached wrappers after session
+closure; they are absent from the production build.
 
 Editor project settings and Game.ini accept these optional keys:
 

@@ -1,4 +1,5 @@
 #include <OvCore/Scripting/CSharp/RuntimeHost.h>
+#include <OvCore/Scripting/CSharp/GameplayBridge.h>
 #include <OvDebug/Logger.h>
 #include "OvCore/Script.generated.h"
 #define WIN32_LEAN_AND_MEAN
@@ -179,7 +180,11 @@ namespace OvCore::Scripting::CSharp
             OvCsBootstrapServices services{1, sizeof(services), m_context->Id(), &IsMain, &Log};
             Check(configure(&services), "Configure");
             m_attached = true;
+            auto gameplay = reinterpret_cast<ConfigureGameplayFn>(Entry(bootstrapType, L"ConfigureGameplay"));
+            Check(gameplay(1, sizeof(GameplayFn), &Gameplay), "ConfigureGameplay");
         } catch (...) {
+            if (m_attached && m_detach) m_detach();
+            m_attached = false;
             activeMain = nullptr; m_context.reset(); m_api = {}; m_detach = nullptr; m_loadAssembly = nullptr;
             throw;
         }
@@ -207,7 +212,7 @@ namespace OvCore::Scripting::CSharp
             }
         }
         const std::string message = std::string(operation) + " session=" + std::to_string(session.id) +
-            " actor=0 script=<bootstrap> status=" + std::to_string(status) + " " + error;
+            " status=" + std::to_string(status) + " " + error;
         OVLOG_ERROR("[CSharp] " + message);
         throw std::runtime_error(message);
     }

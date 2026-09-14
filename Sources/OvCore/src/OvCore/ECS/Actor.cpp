@@ -5,6 +5,8 @@
 */
 
 #include <algorithm>
+#include <OvCore/Scripting/DispatchScope.h>
+#include <OvCore/SceneSystem/Scene.h>
 
 #include <tinyxml2.h>
 #include <OvCore/Global/ServiceLocator.h>
@@ -34,6 +36,7 @@ OvCore::ECS::Actor::Actor(int64_t p_actorID, const std::string & p_name, const s
 
 OvCore::ECS::Actor::~Actor()
 {
+	m_destroying = true;
 	if (!m_sleeping)
 	{
 		if (IsActive())
@@ -43,6 +46,8 @@ OvCore::ECS::Actor::~Actor()
 			OnDestroy();
 	}
 
+	// Destroy every prepared C# instance before native epochs expire, including faults.
+	for (auto& [key, behaviour] : m_behaviours) if (behaviour.Identity().backend == "csharp") behaviour.OnDestroy();
 	for (auto& component : m_components) component->m_inspectorCallbacks.Invalidate();
 	DestroyedEvent.Invoke(*this);
 
@@ -82,6 +87,12 @@ void OvCore::ECS::Actor::SetTag(const std::string & p_tag)
 
 void OvCore::ECS::Actor::SetActive(bool p_active)
 {
+    if (m_destroying) return;
+    if (Scripting::DispatchScope::Active()) {
+        auto ticket = transform.InspectorTicket();
+        Scripting::DispatchScope::Defer([this, ticket, p_active] { if (!ticket.expired() && IsAlive()) SetActive(p_active); });
+        return;
+    }
 	if (p_active != m_active)
 	{
 		RecursiveWasActiveUpdate();
@@ -269,99 +280,104 @@ void OvCore::ECS::Actor::SetSleeping(bool p_sleeping)
 	m_sleeping = p_sleeping;
 }
 
+bool OvCore::ECS::Actor::CanRunScripts() const
+{ return !m_destroying && !m_destroyed && (!m_scene || !m_scene->DispatchStopped()); }
+
+void OvCore::ECS::Actor::Dispatch(const std::function<void(Components::AComponent&)>& action, bool gameplay)
+{
+    if (gameplay && (!CanRunScripts() || !IsActive())) return;
+    // No live container iterator survives user code. Epoch checks reject removed components.
+    const auto components = m_components;
+    std::vector<std::pair<std::string, std::weak_ptr<const bool>>> keys;
+    for (const auto& key : m_behavioursOrder)
+        if (auto it = m_behaviours.find(key); it != m_behaviours.end()) keys.emplace_back(key, it->second.InspectorTicket());
+    for (const auto& component : components) {
+        if (gameplay && (!CanRunScripts() || !IsActive())) break;
+        if (std::find(m_components.begin(), m_components.end(), component) == m_components.end()) continue;
+        { Scripting::DispatchScope scope; action(*component); }
+        Scripting::DispatchScope::Flush();
+    }
+    for (const auto& [key, ticket] : keys) {
+        if (!m_destroying && (!CanRunScripts() || (gameplay && !IsActive()))) break;
+        const auto it = m_behaviours.find(key);
+        if (ticket.expired() || it == m_behaviours.end() || m_pendingBehaviours.contains(key)) continue;
+        { Scripting::DispatchScope scope; action(it->second); }
+        Scripting::DispatchScope::Flush();
+    }
+}
+
 void OvCore::ECS::Actor::OnAwake()
 {
-	m_awaked = true;
-	std::for_each(m_components.begin(), m_components.end(), [](auto element) { element->OnAwake(); });
-	std::for_each(m_behaviours.begin(), m_behaviours.end(), [](auto & element) { element.second.OnAwake(); });
+    if (m_awaked) return;
+    m_awaked = true;
+    Dispatch([&](auto& component) { component.OnAwake(); }, true);
 }
 
 void OvCore::ECS::Actor::OnStart()
 {
-	m_started = true;
-	std::for_each(m_components.begin(), m_components.end(), [](auto element) { element->OnStart(); });
-	std::for_each(m_behaviours.begin(), m_behaviours.end(), [](auto & element) { element.second.OnStart(); });
+    if (m_started) return;
+    m_started = true;
+    Dispatch([&](auto& component) { component.OnStart(); }, true);
 }
 
 void OvCore::ECS::Actor::OnEnable()
 {
-	std::for_each(m_components.begin(), m_components.end(), [](auto element) { element->OnEnable(); });
-	std::for_each(m_behaviours.begin(), m_behaviours.end(), [](auto & element) { element.second.OnEnable(); });
+    Dispatch([&](auto& component) { component.OnEnable(); }, true);
 }
 
 void OvCore::ECS::Actor::OnDisable()
 {
-	std::for_each(m_components.begin(), m_components.end(), [](auto element) { element->OnDisable(); });
-	std::for_each(m_behaviours.begin(), m_behaviours.end(), [](auto & element) { element.second.OnDisable(); });
+    Dispatch([&](auto& component) { component.OnDisable(); }, false);
 }
 
 void OvCore::ECS::Actor::OnDestroy()
 {
-	std::for_each(m_components.begin(), m_components.end(), [](auto element) { element->OnDestroy(); });
-	std::for_each(m_behaviours.begin(), m_behaviours.end(), [](auto & element) { element.second.OnDestroy(); });
+    Dispatch([&](auto& component) { component.OnDestroy(); }, false);
 }
 
 void OvCore::ECS::Actor::OnUpdate(float p_deltaTime)
 {
-	if (IsActive())
-	{
-		std::for_each(m_components.begin(), m_components.end(), [&](auto element) { element->OnUpdate(p_deltaTime); });
-		std::for_each(m_behaviours.begin(), m_behaviours.end(), [&](auto & element) { element.second.OnUpdate(p_deltaTime); });
-	}
+    Dispatch([&](auto& component) { component.OnUpdate(p_deltaTime); }, true);
 }
 
 void OvCore::ECS::Actor::OnFixedUpdate(float p_deltaTime)
 {
-	if (IsActive())
-	{
-		std::for_each(m_components.begin(), m_components.end(), [&](auto element) { element->OnFixedUpdate(p_deltaTime); });
-		std::for_each(m_behaviours.begin(), m_behaviours.end(), [&](auto & element) { element.second.OnFixedUpdate(p_deltaTime); });
-	}
+    Dispatch([&](auto& component) { component.OnFixedUpdate(p_deltaTime); }, true);
 }
 
 void OvCore::ECS::Actor::OnLateUpdate(float p_deltaTime)
 {
-	if (IsActive())
-	{
-		std::for_each(m_components.begin(), m_components.end(), [&](auto element) { element->OnLateUpdate(p_deltaTime); });
-		std::for_each(m_behaviours.begin(), m_behaviours.end(), [&](auto & element) { element.second.OnLateUpdate(p_deltaTime); });
-	}
+    Dispatch([&](auto& component) { component.OnLateUpdate(p_deltaTime); }, true);
 }
 
 void OvCore::ECS::Actor::OnCollisionEnter(Components::CPhysicalObject& p_otherObject)
 {
-	std::for_each(m_components.begin(), m_components.end(), [&](auto element) { element->OnCollisionEnter(p_otherObject); });
-	std::for_each(m_behaviours.begin(), m_behaviours.end(), [&](auto & element) { element.second.OnCollisionEnter(p_otherObject); });
+    Dispatch([&](auto& component) { component.OnCollisionEnter(p_otherObject); }, true);
 }
 
 void OvCore::ECS::Actor::OnCollisionStay(Components::CPhysicalObject& p_otherObject)
 {
-	std::for_each(m_components.begin(), m_components.end(), [&](auto element) { element->OnCollisionStay(p_otherObject); });
-	std::for_each(m_behaviours.begin(), m_behaviours.end(), [&](auto & element) { element.second.OnCollisionStay(p_otherObject); });
+    Dispatch([&](auto& component) { component.OnCollisionStay(p_otherObject); }, true);
 }
 
 void OvCore::ECS::Actor::OnCollisionExit(Components::CPhysicalObject& p_otherObject)
 {
-	std::for_each(m_components.begin(), m_components.end(), [&](auto element) { element->OnCollisionExit(p_otherObject); });
-	std::for_each(m_behaviours.begin(), m_behaviours.end(), [&](auto & element) { element.second.OnCollisionExit(p_otherObject); });
+    Dispatch([&](auto& component) { component.OnCollisionExit(p_otherObject); }, true);
 }
 
 void OvCore::ECS::Actor::OnTriggerEnter(Components::CPhysicalObject& p_otherObject)
 {
-	std::for_each(m_components.begin(), m_components.end(), [&](auto element) { element->OnTriggerEnter(p_otherObject); });
-	std::for_each(m_behaviours.begin(), m_behaviours.end(), [&](auto & element) { element.second.OnTriggerEnter(p_otherObject); });
+    Dispatch([&](auto& component) { component.OnTriggerEnter(p_otherObject); }, true);
 }
 
 void OvCore::ECS::Actor::OnTriggerStay(Components::CPhysicalObject& p_otherObject)
 {
-	std::for_each(m_components.begin(), m_components.end(), [&](auto element) { element->OnTriggerStay(p_otherObject); });
-	std::for_each(m_behaviours.begin(), m_behaviours.end(), [&](auto & element) { element.second.OnTriggerStay(p_otherObject); });
+    Dispatch([&](auto& component) { component.OnTriggerStay(p_otherObject); }, true);
 }
 
 void OvCore::ECS::Actor::OnTriggerExit(Components::CPhysicalObject& p_otherObject)
 {
-	std::for_each(m_components.begin(), m_components.end(), [&](auto element) { element->OnTriggerExit(p_otherObject); });
-	std::for_each(m_behaviours.begin(), m_behaviours.end(), [&](auto & element) { element.second.OnTriggerExit(p_otherObject); });
+    Dispatch([&](auto& component) { component.OnTriggerExit(p_otherObject); }, true);
 }
 
 bool OvCore::ECS::Actor::RemoveComponent(OvCore::ECS::Components::AComponent& p_component)
@@ -410,12 +426,20 @@ OvCore::ECS::Components::Behaviour& OvCore::ECS::Actor::AddBehaviourRecord(const
 	newInstance.Register();
 	m_behavioursOrder.push_back(key);
 	BehaviourAddedEvent.Invoke(newInstance);
-	if (m_playing && !m_sleeping && IsActive())
-	{
-		newInstance.OnAwake();
-		newInstance.OnEnable();
-		newInstance.OnStart();
-	}
+    if (m_playing && !m_sleeping && IsActive()) {
+        auto ticket = transform.InspectorTicket();
+        auto begin = [this, ticket, canonical] {
+            if (ticket.expired() || !CanRunScripts() || !IsActive()) return;
+            for (auto event : {&Components::Behaviour::OnAwake, &Components::Behaviour::OnEnable, &Components::Behaviour::OnStart}) {
+                auto* current = GetBehaviour(canonical);
+                if (!current || m_pendingBehaviours.contains(current->Identity().Key()) || !CanRunScripts() || !IsActive()) break;
+                { Scripting::DispatchScope scope; (current->*event)(); }
+                Scripting::DispatchScope::Flush();
+            }
+        };
+        // Also defer outside callbacks: AddBehaviour returns a reference that must remain live.
+        Scripting::DispatchScope::Defer(std::move(begin));
+    }
 	return newInstance;
 }
 
@@ -447,11 +471,24 @@ bool OvCore::ECS::Actor::RemoveBehaviour(const std::string & p_name)
 
 bool OvCore::ECS::Actor::RemoveBehaviour(const Scripting::ScriptIdentity& identity)
 {
+    if (m_destroying) return false;
+    if (Scripting::DispatchScope::Active()) {
+        auto* target = GetBehaviour(identity); if (!target) return false;
+        const auto key = target->Identity().Key();
+        if (m_pendingBehaviours.insert(key).second) {
+            auto ticket = transform.InspectorTicket();
+            Scripting::DispatchScope::Defer([this, ticket, identity, key] {
+                if (!ticket.expired()) { m_pendingBehaviours.erase(key); RemoveBehaviour(identity); }
+            });
+        }
+        return true;
+    }
 	const auto exact = m_behaviours.find(identity.Key());
 	Components::Behaviour* found = exact != m_behaviours.end() ? &exact->second : GetBehaviour(identity);
 	if (found)
 	{
 		const std::string nameCopy = found->Identity().Key();
+		{ Scripting::DispatchScope scope; found->OnDestroy(); }
 		BehaviourRemovedEvent.Invoke(*found);
 		m_behaviours.erase(nameCopy);
 		auto it = std::find(m_behavioursOrder.begin(), m_behavioursOrder.end(), nameCopy);

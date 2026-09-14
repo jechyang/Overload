@@ -84,6 +84,12 @@ int wmain(int argc, wchar_t** argv)
             try { host.Entry(L"Overload.ManagedHost.Bootstrap, Overload.ManagedHost", L"Smoke"); }
             catch (const std::exception&) { absent = true; }
             Require(absent, "production DLL has no acceptance-only Smoke export");
+            for (const auto* name : {L"HoldFacade", L"ProbeFacade"}) {
+                absent = false;
+                try { host.Entry(L"Overload.ManagedHost.Bootstrap, Overload.ManagedHost", name); }
+                catch (const std::exception&) { absent = true; }
+                Require(absent, "production DLL has no acceptance-only facade probe");
+            }
             host.Shutdown();
             Require(true, "production DLL native startup and R6 binding");
             return 0;

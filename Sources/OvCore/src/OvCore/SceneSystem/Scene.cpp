@@ -5,6 +5,7 @@
 */
 
 #include <algorithm>
+#include <OvCore/Scripting/DispatchScope.h>
 #include <optional>
 #include <string>
 
@@ -65,12 +66,10 @@ OvCore::SceneSystem::Scene::Scene(
 
 OvCore::SceneSystem::Scene::~Scene()
 {
-	std::for_each(m_actors.begin(), m_actors.end(), [](OvCore::ECS::Actor* element)
-	{ 
-		delete element;
-	});
-
-	m_actors.clear();
+    m_dispatchStopped = true;
+    m_destroying = true;
+    // Remove storage entries before destructors can request more scene work.
+    while (!m_actors.empty()) { auto* actor = m_actors.back(); m_actors.pop_back(); delete actor; }
 }
 
 void OvCore::SceneSystem::Scene::AddDefaultCamera()
@@ -146,14 +145,15 @@ void OvCore::SceneSystem::Scene::AddDefaultAtmosphere()
 
 void OvCore::SceneSystem::Scene::Play()
 {
-	m_isPlaying = true;
-
-	/* Wake up actors to allow them to react to OnEnable, OnDisable and OnDestroy, */
-	std::for_each(m_actors.begin(), m_actors.end(), [](ECS::Actor * p_element) { p_element->SetSleeping(false); });
-
-	std::for_each(m_actors.begin(), m_actors.end(), [](ECS::Actor * p_element) { if (p_element->IsActive()) p_element->OnAwake(); });
-	std::for_each(m_actors.begin(), m_actors.end(), [](ECS::Actor * p_element) { if (p_element->IsActive()) p_element->OnEnable(); });
-	std::for_each(m_actors.begin(), m_actors.end(), [](ECS::Actor * p_element) { if (p_element->IsActive()) p_element->OnStart(); });
+    if (m_isPlaying) return;
+    m_isPlaying = true; m_dispatchStopped = false;
+    ActorUpdateSnapshot snapshot(m_actors);
+    for (auto* actor : snapshot.actors) if (actor) actor->SetSleeping(false);
+    for (auto phase : {&ECS::Actor::OnAwake, &ECS::Actor::OnEnable, &ECS::Actor::OnStart}) {
+        for (auto* actor : snapshot.actors) if (!m_dispatchStopped && actor && actor->IsAlive() && actor->IsActive()) (actor->*phase)();
+        Scripting::DispatchScope::Flush();
+    }
+    CollectGarbages();
 }
 
 bool OvCore::SceneSystem::Scene::IsPlaying() const
@@ -163,16 +163,22 @@ bool OvCore::SceneSystem::Scene::IsPlaying() const
 
 void OvCore::SceneSystem::Scene::Update(float p_deltaTime)
 {
+    Scripting::DispatchScope::Flush();
+    if (m_dispatchStopped) return;
 	ZoneScoped;
 	ActorUpdateSnapshot snapshot(m_actors);
 	for (auto* actor : snapshot.actors)
 	{
-		if (actor) actor->OnUpdate(p_deltaTime);
+		if (!m_dispatchStopped && actor && actor->IsAlive()) actor->OnUpdate(p_deltaTime);
 	}
+    Scripting::DispatchScope::Flush();
+    CollectGarbages();
 }
 
 void OvCore::SceneSystem::Scene::Update(float p_deltaTime, OvTools::Jobs::JobSystem& p_jobs, SkinningUpdateStats* p_stats)
 {
+    Scripting::DispatchScope::Flush();
+    if (m_dispatchStopped) return;
 	ZoneScopedN("Scene Update with Skinning Jobs");
 	if (p_stats) *p_stats = {};
 	if (!p_jobs.IsMainThread())
@@ -209,7 +215,8 @@ void OvCore::SceneSystem::Scene::Update(float p_deltaTime, OvTools::Jobs::JobSys
 	std::vector<CSkinnedMeshRenderer*> batch;
 	for (size_t i = 0; i < actors.size();)
 	{
-		if (!actors[i]) { ++i; continue; }
+		if (m_dispatchStopped) break;
+        if (!actors[i] || !actors[i]->IsAlive()) { ++i; continue; }
 		batch.clear();
 		size_t end = i;
 		while (end < actors.size())
@@ -236,20 +243,30 @@ void OvCore::SceneSystem::Scene::Update(float p_deltaTime, OvTools::Jobs::JobSys
 			i = end;
 		}
 	}
+    Scripting::DispatchScope::Flush();
+    CollectGarbages();
 }
 
 void OvCore::SceneSystem::Scene::FixedUpdate(float p_deltaTime)
 {
+    Scripting::DispatchScope::Flush();
+    if (m_dispatchStopped) return;
 	ZoneScoped;
-	auto actors = m_actors;
-	std::for_each(actors.begin(), actors.end(), std::bind(std::mem_fn(&ECS::Actor::OnFixedUpdate), std::placeholders::_1, p_deltaTime));
+    ActorUpdateSnapshot snapshot(m_actors);
+    for (auto* actor : snapshot.actors) if (!m_dispatchStopped && actor && actor->IsAlive()) actor->OnFixedUpdate(p_deltaTime);
+    Scripting::DispatchScope::Flush();
+    CollectGarbages();
 }
 
 void OvCore::SceneSystem::Scene::LateUpdate(float p_deltaTime)
 {
+    Scripting::DispatchScope::Flush();
+    if (m_dispatchStopped) return;
 	ZoneScoped;
-	auto actors = m_actors;
-	std::for_each(actors.begin(), actors.end(), std::bind(std::mem_fn(&ECS::Actor::OnLateUpdate), std::placeholders::_1, p_deltaTime));
+    ActorUpdateSnapshot snapshot(m_actors);
+    for (auto* actor : snapshot.actors) if (!m_dispatchStopped && actor && actor->IsAlive()) actor->OnLateUpdate(p_deltaTime);
+    Scripting::DispatchScope::Flush();
+    CollectGarbages();
 }
 
 OvCore::ECS::Actor& OvCore::SceneSystem::Scene::CreateActor()
@@ -259,24 +276,24 @@ OvCore::ECS::Actor& OvCore::SceneSystem::Scene::CreateActor()
 
 OvCore::ECS::Actor& OvCore::SceneSystem::Scene::CreateActor(const std::string& p_name, const std::string& p_tag)
 {
+    if (m_destroying) throw std::logic_error("Cannot create actors in a destroying scene");
 	m_actors.push_back(new OvCore::ECS::Actor(m_availableID++, p_name, p_tag, m_isPlaying));
 	ECS::Actor& instance = *m_actors.back();
+    instance.m_scene = this;
 	instance.ComponentAddedEvent	+= std::bind(&Scene::OnComponentAdded, this, std::placeholders::_1);
 	instance.ComponentRemovedEvent	+= std::bind(&Scene::OnComponentRemoved, this, std::placeholders::_1);
 	if (m_batchActorCreation)
 	{
 		m_batchCreatedActors.push_back(std::ref(instance));
 	}
-	else if (m_isPlaying)
-	{
-		instance.SetSleeping(false);
-		if (instance.IsActive())
-		{
-			instance.OnAwake();
-			instance.OnEnable();
-			instance.OnStart();
-		}
-	}
+    else if (m_isPlaying) {
+        auto ticket = instance.transform.InspectorTicket();
+        Scripting::DispatchScope::Defer([this, ticket, &instance] {
+            if (ticket.expired() || m_dispatchStopped || !instance.IsAlive()) return;
+            instance.SetSleeping(false);
+            if (instance.IsActive()) { instance.OnAwake(); instance.OnEnable(); instance.OnStart(); }
+        });
+    }
 	return instance;
 }
 
@@ -407,6 +424,10 @@ OvCore::ECS::Actor* OvCore::SceneSystem::Scene::InstantiatePrefabInternal(
 
 bool OvCore::SceneSystem::Scene::DestroyActor(ECS::Actor& p_target)
 {
+    if (Scripting::DispatchScope::Active()) {
+        if (p_target.GetScene() != this) return false;
+        p_target.MarkAsDestroy(); return true;
+    }
 	auto found = std::find_if(m_actors.begin(), m_actors.end(), [&p_target](OvCore::ECS::Actor* element)
 	{
 		return element == &p_target;
@@ -414,8 +435,9 @@ bool OvCore::SceneSystem::Scene::DestroyActor(ECS::Actor& p_target)
 
 	if (found != m_actors.end())
 	{
-		delete *found;
+        auto* actor = *found;
 		m_actors.erase(found);
+        delete actor;
 		return true;
 	}
 	else
@@ -426,15 +448,11 @@ bool OvCore::SceneSystem::Scene::DestroyActor(ECS::Actor& p_target)
 
 void OvCore::SceneSystem::Scene::CollectGarbages()
 {
-	m_actors.erase(std::remove_if(m_actors.begin(), m_actors.end(), [this](ECS::Actor* element)
-	{ 
-		bool isGarbage = !element->IsAlive();
-		if (isGarbage)
-		{
-			delete element;
-		}
-		return isGarbage;
-	}), m_actors.end());
+    if (Scripting::DispatchScope::Active()) return;
+    for (size_t i = 0; i < m_actors.size();) {
+        if (m_actors[i]->IsAlive()) { ++i; continue; }
+        auto* actor = m_actors[i]; m_actors.erase(m_actors.begin() + i); delete actor;
+    }
 }
 
 OvCore::ECS::Actor* OvCore::SceneSystem::Scene::FindActorByName(const std::string& p_name) const

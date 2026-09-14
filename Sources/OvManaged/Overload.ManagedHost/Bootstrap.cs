@@ -26,7 +26,16 @@ public static unsafe partial class Bootstrap
         internal nuint Entry;
         internal ProjectContext? Project;
         internal readonly List<ProjectType> Types = new();
-        internal void Close() { Core = null; Entry = 0; Types.Clear(); Project?.Unload(); Project = null; }
+        internal readonly Dictionary<ulong, Instance> Instances = new();
+        internal bool Closed;
+        internal bool Closing;
+        internal string LogicalName = "";
+        internal void Close() {
+            Closing = true;
+            foreach (Instance instance in Instances.Values) Destroy(instance);
+            Instances.Clear(); Closed = true;
+            Core = null; Entry = 0; Types.Clear(); Project?.Unload(); Project = null;
+        }
     }
     private sealed class Failure(Status status, string message) : Exception(message)
     { internal readonly Status Status = status; }
@@ -128,6 +137,7 @@ public static unsafe partial class Bootstrap
         foreach (Session session in Sessions.Values) session.Close();
         Sessions.Clear();
         services = default;
+        gameplay = null;
         errors?.Clear();
     });
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -194,9 +204,9 @@ public static unsafe partial class Bootstrap
         Require(count != null, Status.InvalidArgument, "Null count"); *count = 0;
         *count = checked((uint)Lookup(s).Types.Count);
     });
-    // Runtime instances/lifecycle (S3) and fields (S4) remain explicitly unavailable.
+    // Managed field operations are reserved for S4.
     private static uint Missing(SessionHandle s, Status status) => Guard(s, () => {
-        Lookup(s); throw new Failure(status, "Runtime instance/lifecycle and field operations require S3/S4");
+        Lookup(s); throw new Failure(status, "Managed field operations require S4");
     });
     private static uint NoOwned(void* p) => Guard(default, () => {
         Require(p != null, Status.InvalidArgument, "Null owned result");
@@ -222,11 +232,15 @@ public static unsafe partial class Bootstrap
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint FieldAlias(SessionHandle s, ulong type, ulong field, uint index, Utf8* p) => Missing(s, Status.FieldNotFound);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint CreateInstance(SessionHandle s, void* info, InstanceHandle* p) => Missing(s, Status.TypeNotFound);
+    public static uint CreateInstance(SessionHandle s, void* info, InstanceHandle* p) => Guard(s, () => Create(s, (InstanceInfo*)info, p));
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint DestroyInstance(SessionHandle s, InstanceHandle instance) => Missing(s, Status.InstanceNotFound);
+    public static uint DestroyInstance(SessionHandle s, InstanceHandle instance) => Guard(s, () => {
+        Session session = Lookup(s);
+        Instance value = FindInstance(s, instance);
+        try { Destroy(value); } finally { session.Instances.Remove(instance.Id); }
+    });
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint Dispatch(SessionHandle s, void* call) => Missing(s, Status.InvalidLifecycle);
+    public static uint Dispatch(SessionHandle s, void* call) => Guard(s, () => Invoke(s, (LifecycleCall*)call));
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint ReadField(SessionHandle s, InstanceHandle instance, ulong field, void* p) => Missing(s, Status.FieldNotFound);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]

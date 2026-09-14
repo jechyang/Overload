@@ -53,7 +53,7 @@ public static unsafe partial class Bootstrap
     private static Session LoadProject(string file, string logical)
     {
         IdentityText(logical);
-        Session result = new();
+        Session result = new() { LogicalName = logical };
         if (file.Length == 0) return result; // S1 bootstrap remains supported.
         Require(Path.IsPathFullyQualified(file) && File.Exists(file), Status.InvalidArgument, "Missing absolute project assembly: " + file);
         result.Project = new ProjectContext(file);
@@ -66,6 +66,10 @@ public static unsafe partial class Bootstrap
                     Log($"Skipped Behaviour {type.FullName}: requires public concrete closed type and public parameterless constructor");
                     continue;
                 }
+                foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
+                    Require(!method.Name.StartsWith("On", StringComparison.Ordinal) ||
+                        !method.IsDefined(typeof(System.Runtime.CompilerServices.AsyncStateMachineAttribute), false),
+                        Status.InvalidArgument, "async lifecycle is unsupported: " + type.FullName + "." + method.Name);
                 string name = type.FullName!;
                 IdentityText(name);
                 string id = type.GetCustomAttribute<Overload.ScriptIdAttribute>()?.Id ?? "";

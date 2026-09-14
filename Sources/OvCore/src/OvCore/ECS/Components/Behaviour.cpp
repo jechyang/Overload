@@ -74,6 +74,10 @@ void OvCore::ECS::Components::Behaviour::RefreshIdentity()
 
 OvCore::Scripting::ScriptStatus OvCore::ECS::Components::Behaviour::Status() const
 {
+    if (m_identity.backend == "csharp" && m_script) {
+        if (m_script->IsFaulted()) return Scripting::ScriptStatus::Faulted;
+        if (m_script->IsValid()) return Scripting::ScriptStatus::InstanceReady;
+    }
 	if (m_identity.backend == "lua" && (!m_script || !m_script->IsValid())) {
 		const auto status = OVSERVICE(Scripting::ScriptEngine).Status(m_identity);
 		return status == Scripting::ScriptStatus::MissingBackend ? status : Scripting::ScriptStatus::MissingType;
@@ -373,7 +377,9 @@ void OvCore::ECS::Components::Behaviour::OnInspector(OvUI::Internal::WidgetConta
 	using namespace OvCore::Helpers;
 	if (m_identity.backend != "lua") {
 		const auto status = Status();
-		const char* message = status == Scripting::ScriptStatus::TypeReady ? "C# type resolved; runtime execution unavailable" :
+		const char* message = status == Scripting::ScriptStatus::InstanceReady ? "C# runtime instance ready" :
+            status == Scripting::ScriptStatus::Faulted ? "C# instance faulted; see console" :
+            status == Scripting::ScriptStatus::TypeReady ? "C# type ready; instance starts with Play" :
 			status == Scripting::ScriptStatus::MissingBackend ? "Missing script backend; record preserved" : "Missing script type; record preserved";
 		p_root.CreateWidget<OvUI::Widgets::Texts::TextColored>(message, OVUI_STYLE(TextDisabled));
 		return;

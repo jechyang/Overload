@@ -3,6 +3,8 @@
 #include <unordered_map>
 #include <OvCore/Scripting/Common/Script.h>
 #include <OvCore/Scripting/Common/ScriptIdentity.h>
+#include <OvCore/Scripting/CSharp/HostABI.h>
+#include <OvReflection/ScriptBridge.h>
 #if defined(LUA_SCRIPTING)
 #include <OvCore/Scripting/Lua/LuaScript.h>
 #include <OvCore/Scripting/Lua/LuaScriptEngine.h>
@@ -14,7 +16,7 @@
 namespace OvCore::Scripting::CSharp { class RuntimeHost; }
 namespace OvCore::Scripting
 {
-    enum class ScriptStatus { MissingBackend, MissingType, TypeReady, InstanceReady };
+    enum class ScriptStatus { MissingBackend, MissingType, TypeReady, InstanceReady, Faulted };
     class ScriptEngine
     {
     public:
@@ -28,10 +30,11 @@ namespace OvCore::Scripting
         void RemoveBehaviour(ECS::Components::Behaviour& target);
         void Reload();
         bool IsOk() const;
-        // Metadata-only S2 loading. No user constructors, fields or lifecycle execute.
+        // Loading is metadata-only; instances are constructed at the first Awake.
         bool LoadCSharpProject(CSharp::RuntimeHost& host, const std::filesystem::path& root,
             const std::filesystem::path& assembly, const std::string& logical);
         void ClearCSharpProject();
+        OvReflection::Script::Context& GameplayContext(uint64_t context);
         ScriptIdentity ResolveIdentity(const ScriptIdentity& identity) const;
         ScriptStatus Status(const ScriptIdentity& identity) const;
         const std::string& LastError() const { return m_error; }
@@ -57,5 +60,10 @@ namespace OvCore::Scripting
         std::string m_error;
         bool m_csharp = false;
         bool CanDispatch(ECS::Components::Behaviour& target) const;
+        void DispatchCSharp(ECS::Components::Behaviour& target, uint32_t event, float dt = 0,
+            ECS::Components::CPhysicalObject* other = nullptr);
+        CSharp::RuntimeHost* m_host = nullptr;
+        OvCsSessionHandle m_session{};
+        std::unordered_map<std::string, uint64_t> m_tokens;
     };
 }
