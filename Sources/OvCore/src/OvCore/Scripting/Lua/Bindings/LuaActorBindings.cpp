@@ -79,7 +79,7 @@ void BindLuaActor(sol::state& p_luaState)
 			OvCore::ECS::Components::Behaviour* behaviour = nullptr;
 			for (auto& [key, b] : p_this.GetBehaviours())
 			{
-				if (std::filesystem::path(b.name).stem().string() == p_name)
+				if (b.Identity().backend == "lua" && std::filesystem::path(b.name).stem().string() == p_name)
 				{
 					behaviour = &b;
 					break;
@@ -97,9 +97,9 @@ void BindLuaActor(sol::state& p_luaState)
 				behaviour = p_this.GetBehaviour(p_name + ".lua");
 			}
 
-			if (behaviour)
+			if (behaviour && behaviour->Identity().backend == "lua")
 			{
-				if (auto script = behaviour->GetScript())
+				if (auto script = behaviour->GetScript(); script && script->IsValid())
 				{
 					return *static_cast<OvCore::Scripting::LuaScript&>(script.value()).GetContext().table;
 				}
@@ -145,7 +145,7 @@ void BindLuaActor(sol::state& p_luaState)
 		"RemoveReflectionProbe", &Actor::RemoveComponent<CReflectionProbe>,
 
 		/* Behaviour management */
-		"AddBehaviour", &Actor::AddBehaviour,
+		"AddBehaviour", sol::resolve<Behaviour&(const std::string&)>(&Actor::AddBehaviour),
 		"RemoveBehaviour", sol::overload(
 			sol::resolve<bool(Behaviour&)>(&Actor::RemoveBehaviour),
 			sol::resolve<bool(const std::string&)>(&Actor::RemoveBehaviour)

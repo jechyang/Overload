@@ -4,7 +4,8 @@
 基线：c59edf3（R0–R6 原生反射与 C# 绑定实现）。
 状态：S0 已按 [S0 验收记录](CS_SCRIPTING_S0_VALIDATION.md) 冻结协议并完成
 实际编译运行 smoke；S1 已按 [S1 验收记录](CS_SCRIPTING_S1_VALIDATION.md) 完成
-原生宿主、常驻引导与真实组件 smoke，S2–S7 未实施。当前 Windows 的标准 `dotnet build`
+原生宿主、常驻引导与真实组件 smoke；S2 已按 [S2 验收记录](CS_SCRIPTING_S2_VALIDATION.md)
+完成后端门面、类型身份与缺失记录保留，S3–S7 未实施。当前 Windows 的标准 `dotnet build`
 仍有记录在案的 CET 系统更新阻塞，不能视为通过。R6 或 S0 完成均不代表
 后续运行时接入完成。
 
@@ -107,6 +108,10 @@ Owner、Transform、GetComponent<T> 第一版只覆盖已支持类型。Actor �
 建议提交：feat(scripting): complete S1 CoreCLR host and managed bootstrap
 
 ### S2：统一脚本入口与项目类型身份
+
+状态：已完成 S2 实现与真实本地验收，详见 `CS_SCRIPTING_S2_VALIDATION.md`。
+CSharp 的 TypeReady 仅表示类型挂载；实例构造、Owner 和游戏生命周期仍属于 S3。
+标准 dotnet build 的 CET 外部阻塞仍未解除。
 
 任务：
 

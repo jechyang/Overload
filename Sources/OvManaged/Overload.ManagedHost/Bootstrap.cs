@@ -9,11 +9,25 @@ using CoreApi = Overload.Generated.OvCore.Api;
 
 namespace Overload.ManagedHost;
 
-// Resident/default ALC only. S1 deliberately has no user assembly loader or Behaviour.
-public static unsafe class Bootstrap
+// Resident/default ALC. Project metadata is owned only by its session.
+public static unsafe partial class Bootstrap
 {
+    static Bootstrap()
+    {
+        // The resident contract has one explicit deployment location. Never accept
+        // a project-local ScriptCore copy with a different type identity.
+        System.Runtime.Loader.AssemblyLoadContext.Default.LoadFromAssemblyPath(
+            Path.Combine(Path.GetDirectoryName(typeof(Bootstrap).Assembly.Location)!, "Overload.ScriptCore.dll"));
+    }
     internal const string Signature = "1f7e282e2f1353962d004dfe3f9b88a52fe17311d6b4d51491d8622a529a1b10";
-    private sealed class Session { internal CoreApi? Core; internal nuint Entry; }
+    private sealed class Session
+    {
+        internal CoreApi? Core;
+        internal nuint Entry;
+        internal ProjectContext? Project;
+        internal readonly List<ProjectType> Types = new();
+        internal void Close() { Core = null; Entry = 0; Types.Clear(); Project?.Unload(); Project = null; }
+    }
     private sealed class Failure(Status status, string message) : Exception(message)
     { internal readonly Status Status = status; }
     private static readonly UTF8Encoding Encoding = new(false, true);
@@ -110,7 +124,8 @@ public static unsafe class Bootstrap
     }, false);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint Detach() => Guard(default, () => {
-        Require(Buffers.Count == 0, Status.BufferOwnership, "Release owned Host ABI results before detach");
+        Require(Buffers.Count == 0 && TypeResults.Count == 0, Status.BufferOwnership, "Release owned Host ABI results before detach");
+        foreach (Session session in Sessions.Values) session.Close();
         Sessions.Clear();
         services = default;
         errors?.Clear();
@@ -118,12 +133,12 @@ public static unsafe class Bootstrap
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint CreateSession(SessionInfo* info, SessionHandle* output) => Guard(default, () => {
         if (output != null) *output = default;
-        Require(info != null && output != null && info->Size == sizeof(SessionInfo) && info->Flags == 0 && info->Generation == 0, Status.InvalidArgument, "S1 session requires size=64, flags=0, host-assigned generation=0");
+        Require(info != null && output != null && info->Size == sizeof(SessionInfo) && info->Flags == 0 && info->Generation == 0, Status.InvalidArgument, "Session requires size=64, flags=0, host-assigned generation=0");
         string root = Decode(info->ProjectRoot), assembly = Decode(info->AssemblyPath), logical = Decode(info->LogicalName);
         Require(Path.IsPathFullyQualified(root) && Directory.Exists(root) && logical.Length != 0, Status.InvalidArgument, "Session requires an existing absolute project root and logical name");
-        Require(assembly.Length == 0, Status.InvalidArgument, "User assembly loading is S2; S1 accepts empty bootstrap sessions only");
+        Session session = LoadProject(assembly, logical);
         ulong id = checked(nextId + 1);
-        Sessions.Add(id, new Session());
+        Sessions.Add(id, session);
         nextId = id;
         *output = new SessionHandle(id, id);
         Log($"session {id} ready; logical={logical}; context={services.Context}; Main={mainThread}");
@@ -131,7 +146,10 @@ public static unsafe class Bootstrap
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint CloseSession(SessionHandle session) => Guard(session, () => {
         Require(session.Id > attachmentStart && session.Id <= nextId && session.Id == session.Generation, Status.SessionNotFound, "Unknown session generation");
-        if (Sessions.Remove(session.Id)) Log($"session {session.Id} closed; native bindings released");
+        if (Sessions.Remove(session.Id, out Session? value)) {
+            value.Close();
+            Log($"session {session.Id} closed; native bindings and project metadata released");
+        }
     });
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint Bind(SessionHandle handle, Utf8 module, uint version, uint size, byte* signature, nuint entry) => Guard(handle, () => {
@@ -173,11 +191,12 @@ public static unsafe class Bootstrap
     }
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint TypeCount(SessionHandle s, uint* count) => Guard(s, () => {
-        Lookup(s); Require(count != null, Status.InvalidArgument, "Null count"); *count = 0;
+        Require(count != null, Status.InvalidArgument, "Null count"); *count = 0;
+        *count = checked((uint)Lookup(s).Types.Count);
     });
-    // Frozen ABI slots remain callable and fail explicitly. S2-S7 are not implemented here.
+    // Runtime instances/lifecycle (S3) and fields (S4) remain explicitly unavailable.
     private static uint Missing(SessionHandle s, Status status) => Guard(s, () => {
-        Lookup(s); throw new Failure(status, "Operation is unavailable in S1 (empty bootstrap session)");
+        Lookup(s); throw new Failure(status, "Runtime instance/lifecycle and field operations require S3/S4");
     });
     private static uint NoOwned(void* p) => Guard(default, () => {
         Require(p != null, Status.InvalidArgument, "Null owned result");
@@ -186,13 +205,18 @@ public static unsafe class Bootstrap
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint ReleaseValue(void* p) => NoOwned(p);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint ReleaseType(void* p) => NoOwned(p);
+    public static uint ReleaseType(void* p) => Guard(default, () => ReleaseTypeResult((TypeResult*)p), false);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint ReleaseField(void* p) => NoOwned(p);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint TypeInfo(SessionHandle s, uint index, void* p) => Missing(s, Status.TypeNotFound);
+    public static uint TypeInfo(SessionHandle s, uint index, void* p) => Guard(s, () => GetTypeResult(s, index, (TypeResult*)p));
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint TypeAlias(SessionHandle s, ulong token, uint index, Utf8* p) => Missing(s, Status.TypeNotFound);
+    public static uint TypeAlias(SessionHandle s, ulong token, uint index, Utf8* p) => Guard(s, () => {
+        Require(p != null, Status.InvalidArgument, "Null alias output"); *p = default;
+        ProjectType type = Lookup(s).Types.Find(t => t.Token == token) ?? throw new Failure(Status.TypeNotFound, "Unknown type token");
+        Require(index < type.Aliases.Count, Status.InvalidArgument, "Alias index out of range");
+        *p = Allocate(type.Aliases[(int)index]);
+    });
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint FieldInfo(SessionHandle s, ulong type, uint index, void* p) => Missing(s, Status.FieldNotFound);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]

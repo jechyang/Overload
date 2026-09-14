@@ -7,10 +7,12 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const args = process.argv.slice(2);
+const s2 = args.includes('--s2');
+const stage = s2 ? 'S2' : 'S1';
 const python = args[args.indexOf('--python') + 1];
 if (!args.includes('--python') || !path.isAbsolute(python)) throw new Error('Supply --python <absolute Python 3 executable>');
-const output = fs.mkdtempSync(path.join(root, 'Build/Tests/Scripting/s1-'));
-console.log('S1 evidence: ' + output);
+const output = fs.mkdtempSync(path.join(root, 'Build/Tests/Scripting/' + stage.toLowerCase() + '-'));
+console.log(stage + ' evidence: ' + output);
 const read = p => JSON.parse(fs.readFileSync(p, 'utf8'));
 const lock = read(path.join(root, 'Tools/OvCSharp/toolchain.lock.json'));
 const dotnetRoot = path.join(root, 'Build/Toolchains/dotnet-' + lock.sdk_version);
@@ -27,9 +29,12 @@ function filesBelow(directory) {
   });
 }
 const sourceFiles = [
-  ...['Sources/OvCore/include/OvCore/Scripting/CSharp','Sources/OvCore/src/OvCore/Scripting/CSharp',
-    'Sources/OvManaged/Overload.ManagedHost','Tests/Scripting','Tools/OvCSharp'].flatMap(p => filesBelow(path.join(root, p))),
-  ...['Sources/OvEditor/include/OvEditor/Core/Context.h','Sources/OvEditor/src/OvEditor/Core/Context.cpp',
+  ...['Sources/OvCore/include/OvCore/Scripting','Sources/OvCore/src/OvCore/Scripting',
+    'Sources/OvManaged/Overload.ManagedHost','Sources/OvManaged/Overload.ScriptCore','Tests/Scripting','Tools/OvCSharp'].flatMap(p => filesBelow(path.join(root, p))),
+  ...['Sources/OvCore/include/OvCore/ECS/Actor.h','Sources/OvCore/src/OvCore/ECS/Actor.cpp',
+    'Sources/OvCore/include/OvCore/ECS/Components/Behaviour.h','Sources/OvCore/src/OvCore/ECS/Components/Behaviour.cpp',
+    'Sources/OvEditor/src/OvEditor/Panels/Inspector.cpp',
+    'Sources/OvEditor/include/OvEditor/Core/Context.h','Sources/OvEditor/src/OvEditor/Core/Context.cpp',
     'Sources/OvGame/include/OvGame/Core/Context.h','Sources/OvGame/src/OvGame/Core/Context.cpp',
     'Sources/OvReflection/Managed/ScriptBridge.cs','Tools/OvReflectGen/Emitters/script.py', 'global.json'].map(p => path.join(root, p))
 ].sort();
@@ -47,7 +52,7 @@ function run(name, exe, argv, expect = 0, timeout = 300000) {
   return { text, status: result.status };
 }
 try {
-  run('baseline', 'git', ['-c', 'safe.directory=H:/overload/Overload', 'merge-base', '--is-ancestor', '80ef9de', 'HEAD']);
+  run('baseline', 'git', ['-c', 'safe.directory=H:/overload/Overload', 'merge-base', '--is-ancestor', s2 ? 'a1c3a1a' : '80ef9de', 'HEAD']);
   run('export', python, [path.join(root, 'Tools/OvReflectGen/reflection.py'), 'export', '--output', path.join(output, 'Export')]);
   const tc = read(path.join(output, 'Export/toolchain.json'));
   const compiler = path.join(tc.msvc_root, 'bin/Hostx64/x64');
@@ -64,8 +69,7 @@ try {
   const gen = path.join(root, 'Build/Generated/Reflection/x86_64-pc-windows-msvc/Debug');
   const managedProject = path.join(root, 'Sources/OvManaged/Overload.ManagedHost');
   const managed = path.join(output, 'managed 空格'); fs.mkdirSync(managed);
-  const properties = ['-p:BaseIntermediateOutputPath=' + path.join(output, 'obj').replaceAll('\\','/') + '/',
-    '-p:OutputPath=' + managed.replaceAll('\\','/') + '/', '-p:ReflectionConfiguration=Debug'];
+  const properties = ['-p:OutputPath=' + managed.replaceAll('\\','/') + '/', '-p:ReflectionConfiguration=Debug'];
   run('managed-restore', dotnet, ['restore', path.join(managedProject, 'Overload.ManagedHost.csproj'), '--locked-mode',
     '--configfile', path.join(managedProject, 'NuGet.Config'), ...properties]);
   const standard = run('dotnet-build', dotnet, ['build', path.join(managedProject, 'Overload.ManagedHost.csproj'), '--no-restore', '-c', 'Debug', ...properties], null);
@@ -82,10 +86,17 @@ try {
     '/deterministic+','/platform:x64','/target:library','/optimize+', '/out:' + JSON.stringify(dll),
     ...fs.readdirSync(refs).filter(f => f.endsWith('.dll')).map(f => '/reference:' + JSON.stringify(path.join(refs, f))), ...sources.map(s => JSON.stringify(s))];
   const csc = path.join(dotnetRoot, 'sdk', lock.sdk_version, 'Roslyn/bincore/csc.dll');
+  const core = path.join(managed, 'Overload.ScriptCore.dll');
+  const coreOptions = options.filter(o => !o.startsWith('/out:') && !sources.some(s => JSON.stringify(s) === o));
+  fs.writeFileSync(path.join(output, 'core.rsp'), [...coreOptions, '/out:' + JSON.stringify(core),
+    JSON.stringify(path.join(root, 'Sources/OvManaged/Overload.ScriptCore/Behaviour.cs'))].join('\n'));
+  run('scriptcore-compile', dotnet, [csc, '@' + path.join(output, 'core.rsp')]);
+  options.push('/reference:' + JSON.stringify(core));
   // Compile the production assembly separately, without acceptance-only entries.
   fs.writeFileSync(rsp, options.join('\n'));
   run('managed-production-compile', dotnet, [csc, '@' + rsp]);
   const production = path.join(output, 'production'); fs.mkdirSync(production);
+  fs.copyFileSync(core, path.join(production, 'Overload.ScriptCore.dll'));
   fs.copyFileSync(dll, path.join(production, 'Overload.ManagedHost.dll'));
   fs.copyFileSync(path.join(managedProject, 'Overload.ManagedHost.runtimeconfig.json'), path.join(production, 'Overload.ManagedHost.runtimeconfig.json'));
   fs.writeFileSync(rsp, [...options, '/define:S1_ACCEPTANCE'].join('\n'));
@@ -117,12 +128,61 @@ try {
     const result = run('smoke-' + mode, exe, [dotnetRoot, managed, root, mode], 0, 120000);
     if (!result.text.includes('same resident CLR reattaches')) throw new Error('Incomplete native smoke');
   }
+  if (s2) {
+    const project = path.join(output, 'project 空格'); fs.mkdirSync(project);
+    fs.copyFileSync(path.join(root, 'Tests/Scripting/Fixtures/S2/legacy.lua'), path.join(project, 'legacy.lua'));
+    fs.copyFileSync(path.join(root, 'Tests/Scripting/Fixtures/S2/legacy.lua'), path.join(project, 'First.Same'));
+    const moved = path.join(project, 'moved'); fs.mkdirSync(moved);
+    fs.copyFileSync(path.join(root, 'Tests/Scripting/Fixtures/S2/Types.cs'), path.join(moved, 'UnrelatedFilename.cs'));
+    // Real compilations of a moved source and renamed class, all from the pinned SDK.
+    for (const [variant, define] of [['original',''], ['moved',''], ['renamed','RENAMED'],
+      ['duplicate-id','DUPLICATE_ID'], ['duplicate-alias','DUPLICATE_ALIAS'], ['alias-primary','ALIAS_PRIMARY'], ['empty-id','EMPTY_ID']]) {
+      const source = variant === 'moved' ? path.join(moved, 'UnrelatedFilename.cs') : path.join(root, 'Tests/Scripting/Fixtures/S2/Types.cs');
+      const projectOptions = [...coreOptions, '/reference:' + JSON.stringify(core), '/out:' + JSON.stringify(path.join(project, variant + '.dll')),
+        ...(define ? ['/define:' + define] : []), JSON.stringify(source)];
+      const response = path.join(output, variant + '.rsp'); fs.writeFileSync(response, projectOptions.join('\n'));
+      run('project-compile-' + variant, dotnet, [csc, '@' + response]);
+    }
+    // A project-local copy cannot replace the default-context shared ScriptCore.
+    fs.copyFileSync(core, path.join(project, 'Overload.ScriptCore.dll'));
+    for (const [name, source] of [['Dependency','Dependency.cs'], ['Dependent','Dependent.cs']]) {
+      const response = path.join(output, name + '.rsp');
+      fs.writeFileSync(response, [...coreOptions, '/reference:' + JSON.stringify(core),
+        ...(name === 'Dependent' ? ['/reference:' + JSON.stringify(path.join(project, 'Dependency.dll'))] : []),
+        '/out:' + JSON.stringify(path.join(project, name + '.dll')),
+        JSON.stringify(path.join(root, 'Tests/Scripting/Fixtures/S2', source))].join('\n'));
+      run('project-compile-' + name, dotnet, [csc, '@' + response]);
+    }
+    fs.writeFileSync(path.join(project, 'corrupt.dll'), 'invalid managed assembly');
+    const s2obj = path.join(output, 's2.obj'), s2exe = path.join(output, 's2.exe');
+    run('s2-compile', path.join(compiler, 'cl.exe'), ['/nologo','/std:c++20','/EHsc','/MDd','/W4','/WX','/c',
+      '/I' + gen, '/I' + path.join(root, 'Dependencies/glfw/include'), '/I' + path.join(root, 'Dependencies/bullet3/src'),
+      ...nativeOptions, path.join(root, 'Tests/Scripting/Integration/native_s2_validation.cpp'), '/Fo' + s2obj]);
+    run('s2-link', path.join(compiler, 'link.exe'), ['/nologo','/OPT:REF','/OPT:ICF','/OUT:' + s2exe, s2obj, ...libraries,
+      ...['opengl32','dbghelp','ws2_32','winmm','imm32','version','user32','gdi32','shell32','ole32','oleaut32','advapi32','comdlg32','uuid'].map(s => s + '.lib')]);
+    for (const mode of ['default', 'render-thread']) run('s2-' + mode, s2exe, [dotnetRoot, production, project, mode], 0, 120000);
+    // The facade has a backend-independent pimpl layout. Link its real Null
+    // implementation in place of the Lua object, with the same Actor/Behaviour library.
+    const nullOptions = nativeOptions.filter(o => !o.startsWith('/DLUA_SCRIPTING'));
+    const nullObjects = [];
+    for (const [name, source] of [['null-facade', 'Sources/OvCore/src/OvCore/Scripting/ScriptEngine.cpp'],
+      ['null-test', 'Tests/Scripting/Integration/native_s2_null_validation.cpp']]) {
+      const object = path.join(output, name + '.obj'); nullObjects.push(object);
+      run(name + '-compile', path.join(compiler, 'cl.exe'), ['/nologo','/std:c++20','/EHsc','/MDd','/W4','/WX','/wd4100','/wd4201','/c',
+        '/I' + gen, '/I' + path.join(root, 'Dependencies/glfw/include'), '/I' + path.join(root, 'Dependencies/bullet3/src'),
+        ...nullOptions, '/ULUA_SCRIPTING', path.join(root, source), '/Fo' + object]);
+    }
+    const nullExe = path.join(output, 's2-null.exe');
+    run('null-link', path.join(compiler, 'link.exe'), ['/nologo','/OPT:REF','/OPT:ICF','/OUT:' + nullExe, ...nullObjects, ...libraries,
+      ...['opengl32','dbghelp','ws2_32','winmm','imm32','version','user32','gdi32','shell32','ole32','oleaut32','advapi32','comdlg32','uuid'].map(s => s + '.lib')]);
+    run('s2-null', nullExe, [dotnetRoot, production, project, 'null'], 0, 120000);
+  }
   const objectsBefore = nativeSnapshot();
   run('native-no-change-build', msbuild, buildArgs, 0, 900000);
   if (JSON.stringify(objectsBefore) !== JSON.stringify(nativeSnapshot())) throw new Error('Unchanged native build recompiled objects');
   if (JSON.stringify(before) !== JSON.stringify(receipt())) throw new Error('Sources changed during acceptance; rerun fixed sources');
-  fs.writeFileSync(path.join(output, 'verification.json'), JSON.stringify({ stage: 'S1', success: true, timestamp_utc: new Date().toISOString(),
-    os: os.release(), baseline: '80ef9de', runtime_launcher: exe, standard_dotnet_build_passed: standard.status === 0,
+  fs.writeFileSync(path.join(output, 'verification.json'), JSON.stringify({ stage, success: true, timestamp_utc: new Date().toISOString(),
+    os: os.release(), baseline: s2 ? 'a1c3a1a' : '80ef9de', runtime_launcher: exe, standard_dotnet_build_passed: standard.status === 0,
     external_blockers: blockers, checks, source_receipt: before,
     generated_receipt: Object.fromEntries(['OvCore/Script.generated.h','OvCore/Script.generated.cs','OvCore/script-abi.json'].map(p => [p, hash(path.join(gen, p))])),
     artifacts: { native_exe_sha256: hash(exe), managed_sha256: hash(dll), production_managed_sha256: hash(path.join(production, 'Overload.ManagedHost.dll')) } }, null, 2));

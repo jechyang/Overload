@@ -12,6 +12,7 @@
 
 #include <OvCore/Scripting/Common/EScriptingLanguage.h>
 #include <OvCore/Scripting/Common/ScriptPropertyValue.h>
+#include <OvCore/Scripting/Common/Script.h>
 
 namespace OvCore::Scripting
 {
@@ -21,7 +22,7 @@ namespace OvCore::Scripting
 	* to interact with the engine's components and handle various lifecycle events.
 	*/
 	template<EScriptingLanguage Language, class Context>
-	class TScript
+	class TScript : public Script
 	{
 	public:
 		/**
@@ -38,7 +39,7 @@ namespace OvCore::Scripting
 		* Checks if the script context is valid.
 		* @return True if the context is valid, false otherwise.
 		*/
-		bool IsValid() const;
+		bool IsValid() const override;
 
 		/**
 		* Return the context of the script
@@ -49,18 +50,18 @@ namespace OvCore::Scripting
 		/**
 		* Returns all primitive properties and their default values as defined by the script.
 		*/
-		std::map<std::string, ScriptPropertyValue> GetDefaultProperties() const;
+		std::map<std::string, ScriptPropertyValue> GetDefaultProperties() const override;
 
 		/**
 		* Returns the live value of a named property from the script's runtime state.
 		* Returns std::nullopt if the property does not exist or cannot be read.
 		*/
-		std::optional<ScriptPropertyValue> GetProperty(const std::string& p_key) const;
+		std::optional<ScriptPropertyValue> GetProperty(const std::string& p_key) const override;
 
 		/**
 		* Sets the value of a named property in the script's runtime state.
 		*/
-		void SetProperty(const std::string& p_key, const ScriptPropertyValue& p_value);
+		void SetProperty(const std::string& p_key, const ScriptPropertyValue& p_value) override;
 
 	protected:
 		Context m_context;

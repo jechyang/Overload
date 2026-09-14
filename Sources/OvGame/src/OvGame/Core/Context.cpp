@@ -205,6 +205,10 @@ OvGame::Core::Context::Context() :
 				projectSettings.GetOrDefault<std::string>("csharp_managed_root", "Managed"));
 			host->Start(paths);
 			host->OpenSession(projectAssetsPath.parent_path());
+			const auto assembly = projectSettings.GetOrDefault<std::string>("csharp_project_assembly", "");
+			if (!assembly.empty()) scriptEngine->LoadCSharpProject(*host, projectAssetsPath.parent_path(),
+				projectAssetsPath.parent_path() / std::filesystem::path(assembly),
+				projectSettings.GetOrDefault<std::string>("csharp_assembly_name", "GameScripts"));
 			csharpHost = std::move(host);
 		}
 		catch (const std::exception& error)
@@ -226,6 +230,7 @@ OvGame::Core::Context::Context() :
 OvGame::Core::Context::~Context()
 {
 	// Stop/detach managed calls and invalidate R6 context before native scene storage.
+	scriptEngine->ClearCSharpProject();
 	csharpHost.reset();
 	sceneManager.UnloadCurrentScene();
 	modelManager.UnloadResources();

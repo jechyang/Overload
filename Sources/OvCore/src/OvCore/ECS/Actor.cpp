@@ -7,6 +7,7 @@
 #include <algorithm>
 
 #include <tinyxml2.h>
+#include <OvCore/Global/ServiceLocator.h>
 
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/ECS/ComponentRegistry.h>
@@ -388,9 +389,26 @@ std::vector<std::shared_ptr<OvCore::ECS::Components::AComponent>>& OvCore::ECS::
 
 OvCore::ECS::Components::Behaviour & OvCore::ECS::Actor::AddBehaviour(const std::string & p_name)
 {
-	m_behaviours.try_emplace(p_name, *this, p_name);
-	m_behavioursOrder.push_back(p_name);
-	Components::Behaviour& newInstance = m_behaviours.at(p_name);
+	return AddBehaviour(Scripting::ScriptIdentity::Lua(p_name));
+}
+
+OvCore::ECS::Components::Behaviour& OvCore::ECS::Actor::AddBehaviour(const Scripting::ScriptIdentity& identity)
+{ return AddBehaviourRecord(identity, nullptr, nullptr); }
+
+OvCore::ECS::Components::Behaviour& OvCore::ECS::Actor::AddBehaviourRecord(const Scripting::ScriptIdentity& identity,
+	tinyxml2::XMLDocument* doc, tinyxml2::XMLElement* record)
+{
+	if (auto* existing = GetBehaviour(identity)) return *existing;
+	const auto canonical = OVSERVICE(Scripting::ScriptEngine).ResolveIdentity(identity);
+	const auto key = canonical.Key();
+	auto [it, inserted] = m_behaviours.try_emplace(key, *this, canonical);
+	if (!inserted) return it->second;
+	Components::Behaviour& newInstance = it->second;
+	// Persisted fields precede backend creation/Owner injection; registration never
+	// occurs inside Behaviour's constructor and gameplay begins only after it returns.
+	if (doc && record) newInstance.DeserializeRecord(*doc, record);
+	newInstance.Register();
+	m_behavioursOrder.push_back(key);
 	BehaviourAddedEvent.Invoke(newInstance);
 	if (m_playing && !m_sleeping && IsActive())
 	{
@@ -415,19 +433,27 @@ bool OvCore::ECS::Actor::RemoveBehaviour(Components::Behaviour& p_behaviour)
 	}
 
 	if (found)
-		return RemoveBehaviour(p_behaviour.name);
+		return RemoveBehaviour(p_behaviour.Identity());
 	else
 		return false;
 }
 
 bool OvCore::ECS::Actor::RemoveBehaviour(const std::string & p_name)
 {
-	Components::Behaviour* found = GetBehaviour(p_name);
+	// Legacy callers may pass a map/order key when deleting editor selections.
+	if (auto it = m_behaviours.find(p_name); it != m_behaviours.end()) return RemoveBehaviour(it->second.Identity());
+	return RemoveBehaviour(Scripting::ScriptIdentity::Lua(p_name));
+}
+
+bool OvCore::ECS::Actor::RemoveBehaviour(const Scripting::ScriptIdentity& identity)
+{
+	const auto exact = m_behaviours.find(identity.Key());
+	Components::Behaviour* found = exact != m_behaviours.end() ? &exact->second : GetBehaviour(identity);
 	if (found)
 	{
-		const std::string nameCopy = p_name;
+		const std::string nameCopy = found->Identity().Key();
 		BehaviourRemovedEvent.Invoke(*found);
-		m_behaviours.erase(p_name);
+		m_behaviours.erase(nameCopy);
 		auto it = std::find(m_behavioursOrder.begin(), m_behavioursOrder.end(), nameCopy);
 		if (it != m_behavioursOrder.end())
 			m_behavioursOrder.erase(it);
@@ -441,21 +467,33 @@ bool OvCore::ECS::Actor::RemoveBehaviour(const std::string & p_name)
 
 bool OvCore::ECS::Actor::RenameBehaviour(const std::string& p_previousName, const std::string& p_newName)
 {
-	auto orderIt = std::find(m_behavioursOrder.begin(), m_behavioursOrder.end(), p_previousName);
+	const auto previous = Scripting::ScriptIdentity::Lua(p_previousName).Key();
+	const auto nextIdentity = Scripting::ScriptIdentity::Lua(p_newName);
+	const auto next = nextIdentity.Key();
+	if (previous == next) return GetBehaviour(previous) != nullptr;
+	if (GetBehaviour(next)) return false;
+	auto orderIt = std::find(m_behavioursOrder.begin(), m_behavioursOrder.end(), previous);
 	if (orderIt == m_behavioursOrder.end())
 		return false;
 
-	Components::Behaviour* found = GetBehaviour(p_previousName);
-	if (!found)
+	Components::Behaviour* found = GetBehaviour(previous);
+	if (!found || found->Identity().backend != "lua")
 		return false;
 
+	tinyxml2::XMLDocument snapshot;
+	auto* root = snapshot.NewElement("behaviours"); snapshot.InsertEndChild(root);
+	found->SerializeRecord(snapshot, root);
+	auto* record = root->FirstChildElement("behaviour");
+	record->FirstChildElement("type")->SetText(nextIdentity.type.c_str());
 	BehaviourRemovedEvent.Invoke(*found);
-	m_behaviours.erase(p_previousName);
+	m_behaviours.erase(previous);
 
-	*orderIt = p_newName;
+	*orderIt = next;
 
-	m_behaviours.try_emplace(p_newName, *this, p_newName);
-	Components::Behaviour& newInstance = m_behaviours.at(p_newName);
+	m_behaviours.try_emplace(next, *this, nextIdentity);
+	Components::Behaviour& newInstance = m_behaviours.at(next);
+	newInstance.DeserializeRecord(snapshot, record);
+	newInstance.Register();
 	BehaviourAddedEvent.Invoke(newInstance);
 	if (m_playing && !m_sleeping && IsActive())
 	{
@@ -468,10 +506,20 @@ bool OvCore::ECS::Actor::RenameBehaviour(const std::string& p_previousName, cons
 
 OvCore::ECS::Components::Behaviour* OvCore::ECS::Actor::GetBehaviour(const std::string& p_name)
 {
-	if (auto result = m_behaviours.find(p_name); result != m_behaviours.end())
-		return &result->second;
-	else
-		return nullptr;
+	if (auto it = m_behaviours.find(p_name); it != m_behaviours.end()) return &it->second;
+	return GetBehaviour(Scripting::ScriptIdentity::Lua(p_name));
+}
+
+OvCore::ECS::Components::Behaviour* OvCore::ECS::Actor::GetBehaviour(const Scripting::ScriptIdentity& identity)
+{
+	const auto key = OVSERVICE(Scripting::ScriptEngine).ResolveIdentity(identity).Key();
+	Components::Behaviour* result = nullptr;
+	for (auto& [stored, behaviour] : m_behaviours) {
+		if (behaviour.CurrentIdentity().Key() != key) continue;
+		if (result) throw std::runtime_error("Ambiguous Actor script identities: " + identity.type);
+		result = &behaviour;
+	}
+	return result;
 }
 
 std::unordered_map<std::string, OvCore::ECS::Components::Behaviour>& OvCore::ECS::Actor::GetBehaviours()
@@ -535,19 +583,11 @@ void OvCore::ECS::Actor::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XM
 		if (it == m_behaviours.end()) continue;
 		auto& behaviour = it->second;
 
-		/* Current behaviour root */
-		tinyxml2::XMLNode* behaviourNode = p_doc.NewElement("behaviour");
-		behavioursNode->InsertEndChild(behaviourNode);
-
-		/* Behaviour type */
-		OvCore::Helpers::Serializer::SerializeString(p_doc, behaviourNode, "type", name);
-
-		/* Data node (Will be passed to the behaviour) */
-		tinyxml2::XMLElement* data = p_doc.NewElement("data");
-		behaviourNode->InsertEndChild(data);
-
-		/* Data serialization of the behaviour */
-		behaviour.OnSerialize(p_doc, data);
+		behaviour.SerializeRecord(p_doc, behavioursNode);
+	}
+	for (const auto& xml : m_unknownBehaviours) {
+		tinyxml2::XMLDocument raw;
+		if (raw.Parse(xml.c_str()) == tinyxml2::XML_SUCCESS) behavioursNode->InsertEndChild(raw.RootElement()->DeepClone(&p_doc));
 	}
 }
 
@@ -607,10 +647,15 @@ void OvCore::ECS::Actor::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::
 
 			while (currentBehaviour)
 			{
-				std::string behaviourType = currentBehaviour->FirstChildElement("type")->GetText();
-
-				auto& behaviour = AddBehaviour(behaviourType);
-				behaviour.OnDeserialize(p_doc, currentBehaviour->FirstChildElement("data"));
+				const auto* type = currentBehaviour->FirstChildElement("type");
+				const auto* node = currentBehaviour->FirstChildElement("script_identity");
+				const auto attr = [node](const char* key) { const char* value = node ? node->Attribute(key) : nullptr; return std::string(value ? value : ""); };
+				Scripting::ScriptIdentity identity = node ? Scripting::ScriptIdentity{attr("backend"), attr("assembly"), attr("type"), attr("id")} :
+					Scripting::ScriptIdentity::Lua(type && type->GetText() ? type->GetText() : "");
+				if (identity.backend.empty() || (identity.type.empty() && identity.id.empty()) || GetBehaviour(identity)) {
+					// Malformed and duplicate records remain opaque rather than overwriting fields.
+					tinyxml2::XMLPrinter printer; currentBehaviour->Accept(&printer); m_unknownBehaviours.emplace_back(printer.CStr());
+				} else AddBehaviourRecord(identity, &p_doc, currentBehaviour);
 
 				currentBehaviour = currentBehaviour->NextSiblingElement("behaviour");
 			}

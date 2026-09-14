@@ -16,6 +16,7 @@
 #include <OvCore/Scripting/ScriptEngine.h>
 
 namespace OvCore::ECS { class Actor; }
+namespace tinyxml2 { class XMLElement; }
 
 namespace OvCore::ECS::Components
 {
@@ -31,6 +32,14 @@ namespace OvCore::ECS::Components
 		* @param p_owner
 		*/
 		Behaviour(ECS::Actor& p_owner, const std::string& p_name);
+		Behaviour(ECS::Actor& p_owner, const Scripting::ScriptIdentity& identity);
+		void Register();
+		const Scripting::ScriptIdentity& Identity() const { return m_identity; }
+		Scripting::ScriptIdentity CurrentIdentity() const;
+		void RefreshIdentity();
+		Scripting::ScriptStatus Status() const;
+		void DeserializeRecord(tinyxml2::XMLDocument& doc, tinyxml2::XMLElement* record);
+		void SerializeRecord(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* parent);
 
 		/**
 		* Destructor
@@ -168,6 +177,12 @@ namespace OvCore::ECS::Components
 		const std::string name;
 
 	private:
+		void ApplyStoredProperties();
+		Scripting::ScriptIdentity m_identity;
+		Scripting::ScriptIdentity m_resolvedIdentity;
+		bool m_registered = false;
+		std::string m_rawRecord, m_rawData;
+		std::set<std::string> m_loadedProperties;
 		std::unique_ptr<Scripting::Script> m_script;
 		std::map<std::string, Scripting::ScriptPropertyValue> m_scriptDefaults;
 		std::map<std::string, Scripting::ScriptPropertyValue> m_scriptProperties;

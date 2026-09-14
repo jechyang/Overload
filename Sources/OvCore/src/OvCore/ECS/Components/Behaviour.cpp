@@ -5,6 +5,7 @@
 */
 
 #include <format>
+#include <charconv>
 #include <limits>
 #include <utility>
 
@@ -38,14 +39,46 @@
 #include <OvUI/Styling/Style.h>
 
 OvCore::ECS::Components::Behaviour::Behaviour(ECS::Actor& p_owner, const std::string& p_name) :
-	name(p_name), AComponent(p_owner)
+	Behaviour(p_owner, Scripting::ScriptIdentity::Lua(p_name))
 {
+}
+
+OvCore::ECS::Components::Behaviour::Behaviour(ECS::Actor& p_owner, const Scripting::ScriptIdentity& identity) :
+	AComponent(p_owner), name(identity.type), m_identity(identity), m_resolvedIdentity(identity)
+{
+}
+
+void OvCore::ECS::Components::Behaviour::Register()
+{
+	if (m_registered) return;
+	m_registered = true;
 	OVSERVICE(Scripting::ScriptEngine).AddBehaviour(*this);
 }
 
 OvCore::ECS::Components::Behaviour::~Behaviour()
 {
-	OVSERVICE(Scripting::ScriptEngine).RemoveBehaviour(*this);
+	if (m_registered) OVSERVICE(Scripting::ScriptEngine).RemoveBehaviour(*this);
+}
+
+OvCore::Scripting::ScriptIdentity OvCore::ECS::Components::Behaviour::CurrentIdentity() const
+{ return OVSERVICE(Scripting::ScriptEngine).ResolveIdentity(m_resolvedIdentity); }
+
+void OvCore::ECS::Components::Behaviour::RefreshIdentity()
+{
+	m_resolvedIdentity = CurrentIdentity();
+	if (Status() != Scripting::ScriptStatus::TypeReady) return;
+	tinyxml2::XMLDocument doc; auto* root = doc.NewElement("behaviours"); doc.InsertEndChild(root);
+	SerializeRecord(doc, root);
+	tinyxml2::XMLPrinter printer; root->FirstChild()->Accept(&printer); m_rawRecord = printer.CStr();
+}
+
+OvCore::Scripting::ScriptStatus OvCore::ECS::Components::Behaviour::Status() const
+{
+	if (m_identity.backend == "lua" && (!m_script || !m_script->IsValid())) {
+		const auto status = OVSERVICE(Scripting::ScriptEngine).Status(m_identity);
+		return status == Scripting::ScriptStatus::MissingBackend ? status : Scripting::ScriptStatus::MissingType;
+	}
+	return OVSERVICE(Scripting::ScriptEngine).Status(m_resolvedIdentity);
 }
 
 std::string OvCore::ECS::Components::Behaviour::GetName()
@@ -88,6 +121,7 @@ void OvCore::ECS::Components::Behaviour::SetScript(std::unique_ptr<Scripting::Sc
 	// Push user overrides back into the live script.
 	for (const auto& [key, val] : m_scriptProperties)
 		m_script->SetProperty(key, val);
+	ApplyStoredProperties();
 }
 
 OvTools::Utils::OptRef<OvCore::Scripting::Script> OvCore::ECS::Components::Behaviour::GetScript()
@@ -102,7 +136,13 @@ OvTools::Utils::OptRef<OvCore::Scripting::Script> OvCore::ECS::Components::Behav
 
 void OvCore::ECS::Components::Behaviour::RemoveScript()
 {
+	// Snapshot editable overrides before losing the backend; unknown XML remains opaque.
+	tinyxml2::XMLDocument doc;
+	auto* data = doc.NewElement("data"); doc.InsertEndChild(data);
+	OnSerialize(doc, data);
+	tinyxml2::XMLPrinter printer; data->Accept(&printer); m_rawData = printer.CStr();
 	m_script.reset();
+	m_scriptDefaults.clear(); m_scriptProperties.clear(); m_unlockedProperties.clear(); m_loadedProperties.clear();
 }
 
 void OvCore::ECS::Components::Behaviour::OnAwake()
@@ -177,11 +217,24 @@ void OvCore::ECS::Components::Behaviour::OnTriggerExit(Components::CPhysicalObje
 
 void OvCore::ECS::Components::Behaviour::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
 {
-	if (m_unlockedProperties.empty()) return;
-	if (!m_script->IsValid()) return;
-
-	tinyxml2::XMLNode* propsNode = p_doc.NewElement("script_properties");
-	p_node->InsertEndChild(propsNode);
+	if (!p_node) return;
+	tinyxml2::XMLDocument raw;
+	if (!m_rawData.empty() && raw.Parse(m_rawData.c_str()) == tinyxml2::XML_SUCCESS) {
+		const auto* source = raw.RootElement();
+		if (auto* dest = p_node->ToElement()) for (auto* a = source->FirstAttribute(); a; a = a->Next()) dest->SetAttribute(a->Name(), a->Value());
+		for (auto* child = source->FirstChild(); child; child = child->NextSibling()) p_node->InsertEndChild(child->DeepClone(&p_doc));
+	}
+	auto* propsNode = p_node->FirstChildElement("script_properties");
+	if (!propsNode && !m_unlockedProperties.empty()) {
+		propsNode = p_doc.NewElement("script_properties"); p_node->InsertEndChild(propsNode);
+	}
+	if (!propsNode) return;
+	// Only fields actually decoded (or edited) belong to this version. Preserve all others.
+	for (auto* elem = propsNode->FirstChildElement(); elem;) {
+		auto* next = elem->NextSiblingElement();
+		if (m_loadedProperties.contains(elem->Name()) || m_unlockedProperties.contains(elem->Name())) propsNode->DeleteChild(elem);
+		elem = next;
+	}
 
 	for (const auto& [fieldKey, fieldValue] : m_scriptProperties)
 	{
@@ -208,7 +261,19 @@ void OvCore::ECS::Components::Behaviour::OnSerialize(tinyxml2::XMLDocument & p_d
 
 void OvCore::ECS::Components::Behaviour::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
 {
-	const tinyxml2::XMLElement* propsNode = p_node->FirstChildElement("script_properties");
+	(void)p_doc;
+	m_rawData.clear(); m_loadedProperties.clear();
+	m_unlockedProperties.clear(); m_scriptProperties = m_scriptDefaults;
+	if (m_script && m_script->IsValid()) for (const auto& [key, value] : m_scriptProperties) m_script->SetProperty(key, value);
+	if (p_node) { tinyxml2::XMLPrinter printer; p_node->Accept(&printer); m_rawData = printer.CStr(); }
+	ApplyStoredProperties();
+}
+
+void OvCore::ECS::Components::Behaviour::ApplyStoredProperties()
+{
+	tinyxml2::XMLDocument raw;
+	if (m_rawData.empty() || raw.Parse(m_rawData.c_str()) != tinyxml2::XML_SUCCESS) return;
+	const tinyxml2::XMLElement* propsNode = raw.RootElement()->FirstChildElement("script_properties");
 	if (!propsNode) return;
 
 	for (const tinyxml2::XMLElement* elem = propsNode->FirstChildElement(); elem; elem = elem->NextSiblingElement())
@@ -226,13 +291,13 @@ void OvCore::ECS::Components::Behaviour::OnDeserialize(tinyxml2::XMLDocument & p
 		if (typeStr == "bool" && std::holds_alternative<bool>(val))
 		{
 			bool v = false;
-			elem->QueryBoolText(&v);
+			if (elem->QueryBoolText(&v) != tinyxml2::XML_SUCCESS) continue;
 			val = v;
 		}
 		else if (typeStr == "number" && std::holds_alternative<double>(val))
 		{
 			double v = 0.0;
-			elem->QueryDoubleText(&v);
+			if (elem->QueryDoubleText(&v) != tinyxml2::XML_SUCCESS) continue;
 			val = v;
 		}
 		else if (typeStr == "string" && std::holds_alternative<std::string>(val))
@@ -249,23 +314,70 @@ void OvCore::ECS::Components::Behaviour::OnDeserialize(tinyxml2::XMLDocument & p
 		else if (typeStr == "actor" && std::holds_alternative<OvCore::Scripting::ActorRef>(val))
 		{
 			uint64_t guid = 0;
-			if (const char* text = elem->GetText())
-				guid = std::stoull(text);
+			const std::string_view text = elem->GetText() ? elem->GetText() : "";
+			const auto parsed = std::from_chars(text.data(), text.data() + text.size(), guid);
+			if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size()) continue;
 			val = OvCore::Scripting::ActorRef{guid};
 		}
 		else
 			continue;
 
 		m_unlockedProperties.insert(name);
+		m_loadedProperties.insert(name);
 
 		if (m_script)
 			m_script->SetProperty(name, val);
 	}
 }
 
+void OvCore::ECS::Components::Behaviour::DeserializeRecord(tinyxml2::XMLDocument& doc, tinyxml2::XMLElement* record)
+{
+	tinyxml2::XMLPrinter printer; record->Accept(&printer); m_rawRecord = printer.CStr();
+	OnDeserialize(doc, record->FirstChildElement("data"));
+}
+
+void OvCore::ECS::Components::Behaviour::SerializeRecord(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* parent)
+{
+	tinyxml2::XMLDocument original;
+	tinyxml2::XMLElement* record = nullptr;
+	if (!m_rawRecord.empty() && original.Parse(m_rawRecord.c_str()) == tinyxml2::XML_SUCCESS)
+		record = original.RootElement()->DeepClone(&doc)->ToElement();
+	else record = doc.NewElement("behaviour");
+	parent->InsertEndChild(record);
+	// Missing records preserve their complete identity, attributes and data. Resolve
+	// aliases only with a validated catalogue; never persist session-local tokens.
+	const auto status = Status();
+	if (m_rawRecord.empty() || status == Scripting::ScriptStatus::TypeReady || status == Scripting::ScriptStatus::InstanceReady) {
+		const auto identity = CurrentIdentity();
+		auto* type = record->FirstChildElement("type");
+		if (!type) { type = doc.NewElement("type"); record->InsertEndChild(type); }
+		type->SetText(identity.type.c_str());
+		if (identity.backend != "lua") {
+			auto* node = record->FirstChildElement("script_identity");
+			if (!node) { node = doc.NewElement("script_identity"); record->InsertEndChild(node); }
+			node->SetAttribute("backend", identity.backend.c_str());
+			node->SetAttribute("assembly", identity.assembly.c_str());
+			node->SetAttribute("type", identity.type.c_str());
+			node->SetAttribute("id", identity.id.c_str());
+		}
+	}
+	if (!m_rawData.empty() || !m_scriptProperties.empty() || m_rawRecord.empty()) {
+		auto* data = record->FirstChildElement("data");
+		if (!data) { data = doc.NewElement("data"); record->InsertEndChild(data); }
+		data->DeleteChildren(); OnSerialize(doc, data);
+	}
+}
+
 void OvCore::ECS::Components::Behaviour::OnInspector(OvUI::Internal::WidgetContainer & p_root)
 {
 	using namespace OvCore::Helpers;
+	if (m_identity.backend != "lua") {
+		const auto status = Status();
+		const char* message = status == Scripting::ScriptStatus::TypeReady ? "C# type resolved; runtime execution unavailable" :
+			status == Scripting::ScriptStatus::MissingBackend ? "Missing script backend; record preserved" : "Missing script type; record preserved";
+		p_root.CreateWidget<OvUI::Widgets::Texts::TextColored>(message, OVUI_STYLE(TextDisabled));
+		return;
+	}
 
 	if (!m_script)
 	{

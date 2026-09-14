@@ -1,7 +1,8 @@
 # C# Host ABI 1 and project contract
 
-This is the S0 contract for the future resident `Overload.ManagedHost`. It does not
-start CoreCLR, load a user assembly, create a Behaviour, or change Lua dispatch.
+This contract was frozen in S0. S1 implements the resident host; S2 implements
+project type discovery and backend-independent attachments. Runtime Behaviour
+construction/Owner/lifecycle and managed fields remain S3/S4 work.
 The normative machine-readable files are `host-abi.json` and
 `Sources/OvCore/include/OvCore/Scripting/CSharp/HostABI.h`. Host ABI 1 is versioned
 separately from R6 Script ABI 1; equality in one handshake never implies equality
@@ -76,6 +77,48 @@ opaque and round-trip unchanged; no token, instance ID, address, or generation i
 persisted.
 
 ## Project sessions and ownership
+
+### S2 implemented subset
+
+`create_session` accepts an absolute existing project assembly path (an empty path
+still creates the S1 bootstrap session). Discovery considers only public, concrete,
+closed `Overload.Behaviour` subclasses with a public parameterless constructor.
+Invalid candidates are diagnosed and skipped. No user constructor or property
+getter executes. A load or identity conflict publishes no session. Native builds a
+candidate catalogue before replacing the prior catalogue, and rejects aliases
+that would merge two already attached records on an Actor.
+
+`Overload.ScriptCore.dll` is a resident shared contract. `[ScriptId("id")]` chooses
+an explicit primary ID. `[ScriptAlias("old-id")]` and
+`[ScriptAlias("Old.LogicalAssembly", "Old.Namespace.Type")]` define migration keys.
+Attribute strings must be nonempty, valid UTF-8/XML text; comparisons are ordinal.
+The discovered tuple is an automatic alias of an explicit ID. Duplicate aliases,
+including self-duplicates and collisions with another primary key, fail the load.
+
+Host ABI layouts/signature remain unchanged. `get_type_info` returns size 72,
+flags 0, a nonzero token, stable_id (empty for a default tuple), the logical name,
+metadata type name, alias count and field_count 0. Alias UTF-8 payloads encode
+`I<byte-length>:<explicit-id>` or
+`T<byte-length>:<logical-name><byte-length>:<metadata-type-name>`; lengths are UTF-8
+bytes, not UTF-16 characters. These payloads are backend-local, length-delimited
+keys, not source paths or assembly-qualified names. Type results are released with
+`release_type_info`; alias results use `release_owned_utf8`.
+
+S2 native attachments retain only persistent identities after closing the discovery
+session; no expired tokens or managed Type objects are cached in native state.
+The shared Script interface adapts Lua/Null and a CSharp type attachment.
+`TypeReady` explicitly differs from `InstanceReady`: CSharp objects are not yet
+constructed or scheduled. Owner injection, Prepared instances and runtime session
+ownership are introduced together in S3. S2 releases its collectible discovery ALC
+but makes no claim of proven collection, shadow-copy or hot reload (S6).
+
+Scene XML keeps the legacy Lua `<type>relative/path.lua</type>` and adds
+`<script_identity backend="csharp" assembly="GameScripts" type="Game.Player" id="..."/>`
+for other backends. The complete Behaviour node and its data subtree are retained
+for missing backends/types, including unknown attributes, comments and fields.
+Malformed/duplicate records remain opaque. Resolved aliases serialize the current
+primary; session/type/instance numbers are never written. XML tree content is
+preserved; whitespace/quote style is not a byte-for-byte XML file guarantee.
 
 A project session owns its collectible user `AssemblyLoadContext`, type and field
 metadata, user object strong references, error state, and its monotonically assigned

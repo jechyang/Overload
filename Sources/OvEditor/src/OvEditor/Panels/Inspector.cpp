@@ -336,7 +336,8 @@ void OvEditor::Panels::Inspector::_DrawComponent(AComponent& p_component, int p_
 
 void OvEditor::Panels::Inspector::_DrawBehaviour(Behaviour& p_behaviour, int p_index, int p_total)
 {
-	auto& header = m_content->CreateWidget<Layout::GroupCollapsable>(std::filesystem::path(p_behaviour.name).replace_extension().string());
+	auto& header = m_content->CreateWidget<Layout::GroupCollapsable>(p_behaviour.Identity().backend == "lua" ?
+		std::filesystem::path(p_behaviour.name).replace_extension().string() : p_behaviour.CurrentIdentity().type);
 	header.closable = true;
 	header.CloseEvent += [&p_behaviour, ticket = m_viewCallbacks.Ticket()] {
         if (ticket.expired()) return;
@@ -350,7 +351,7 @@ void OvEditor::Panels::Inspector::_DrawBehaviour(Behaviour& p_behaviour, int p_i
 	auto move = [this, &p_behaviour, ticket = m_viewCallbacks.Ticket()](bool up) {
         if (ticket.expired()) return;
 		auto& order = p_behaviour.owner.GetBehavioursOrder();
-		auto it = std::find(order.begin(), order.end(), p_behaviour.name);
+		auto it = std::find(order.begin(), order.end(), p_behaviour.Identity().Key());
         if (it == order.end()) return;
 		if (up) {
 			if (it != order.begin())

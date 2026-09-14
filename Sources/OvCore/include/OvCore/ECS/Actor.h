@@ -337,6 +337,9 @@ namespace OvCore::ECS
 		* Remove a behaviour by refering to the given instance
 		* @param p_behaviour
 		*/
+		Components::Behaviour& AddBehaviour(const Scripting::ScriptIdentity& identity);
+		Components::Behaviour* GetBehaviour(const Scripting::ScriptIdentity& identity);
+		bool RemoveBehaviour(const Scripting::ScriptIdentity& identity);
 		bool RemoveBehaviour(Components::Behaviour& p_behaviour);
 
 		/**
@@ -428,6 +431,9 @@ namespace OvCore::ECS
 		std::vector<std::shared_ptr<Components::AComponent>> m_components;
 		std::vector<std::string> m_unknownComponents; // Lossless unknown component payloads
 		std::unordered_map<std::string, Components::Behaviour> m_behaviours;
+		Components::Behaviour& AddBehaviourRecord(const Scripting::ScriptIdentity& identity,
+			tinyxml2::XMLDocument* doc, tinyxml2::XMLElement* record);
+		std::vector<std::string> m_unknownBehaviours;
 		std::vector<std::string> m_behavioursOrder;
 
 	public:

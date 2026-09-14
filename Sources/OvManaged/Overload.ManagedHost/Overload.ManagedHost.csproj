@@ -17,6 +17,7 @@
     <GeneratedRoot>$(MSBuildThisFileDirectory)../../../Build/Generated/Reflection/x86_64-pc-windows-msvc/$(ReflectionConfiguration)</GeneratedRoot>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../Overload.ScriptCore/Overload.ScriptCore.csproj" />
     <Compile Include="../../OvReflection/Managed/ScriptBridge.cs" Link="ScriptBridge.cs" />
     <Compile Include="$(GeneratedRoot)/OvCore/Script.generated.cs" Link="OvCore.generated.cs" />
     <None Update="Overload.ManagedHost.runtimeconfig.json" CopyToOutputDirectory="Always" />

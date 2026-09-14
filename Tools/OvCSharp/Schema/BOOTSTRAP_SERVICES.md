@@ -1,4 +1,4 @@
-# S1 resident bootstrap services
+# Resident bootstrap services (S1, with S2 type discovery)
 
 `BootstrapABI.h` describes the bootstrap transport, separate from the frozen Host
 ABI 1 and R6 ABI 1. It does not change either signature. All three use Windows x64,
@@ -22,12 +22,14 @@ copied. Native callbacks remain valid until Detach succeeds. The process support
 one active native host and one CLR; detach/reattach on the same Main is supported.
 Closing a hostfxr handle never unloads CLR or the resident managed assembly.
 
-S1 sessions have an existing absolute project root, a nonempty logical name, flags
+S1 bootstrap sessions have an existing absolute project root, a nonempty logical name, flags
 zero, project_generation zero (host assigns a monotonic ID and generation), and an
 empty assembly_path. They intentionally contain zero user types. A nonempty user
 assembly path is rejected instead of pretending to load it. Frozen S2–S7 table
 slots are callable but return explicit unavailable/type/field/instance statuses.
 There is no Behaviour, user ALC, lifecycle, field persistence or reload in S1.
+S2 additionally accepts a nonempty absolute project assembly path and implements
+type/alias discovery; see `HOST_ABI.md` for the implemented subset and alias encoding.
 
 `bind_native_api` supports the resident OvCore R6 wrapper in S1. It first compares
 the supplied module/version/size/signature to that wrapper's generated constants,
@@ -45,12 +47,20 @@ Editor project settings and Game.ini accept these optional keys:
 csharp_enabled=true
 csharp_runtime_root=Runtime/dotnet
 csharp_managed_root=Managed
+csharp_project_assembly=GameScripts/bin/Debug/net10.0/GameScripts.dll
+csharp_assembly_name=GameScripts
 ```
 
-The default is disabled. Relative paths resolve against the actual application
+The default is disabled. The optional project assembly is resolved relative to the
+project root (parent of Assets), and the logical name is explicit, never inferred
+from the DLL or source filename. An absent assembly retains scene records and
+reports a load error. These settings provide S2 programmatic/configured discovery;
+they do not implement S5 build/type-picker workflows.
+
+Runtime/managed relative paths resolve against the actual application
 executable directory, never the working directory or PATH. Absolute paths are also
 accepted. Managed root must contain `Overload.ManagedHost.dll` and its checked-in
-runtimeconfig. Runtime root must contain the locked 10.0.12 runtime, hostfxr and
+runtimeconfig and the matching resident `Overload.ScriptCore.dll`. Runtime root must contain the locked 10.0.12 runtime, hostfxr and
 `packs/Microsoft.NETCore.App.Host.win-x64/10.0.12/runtimes/win-x64/native/nethost.dll`.
 This is the S1 private toolchain layout; standalone runtime packaging is S7.
 

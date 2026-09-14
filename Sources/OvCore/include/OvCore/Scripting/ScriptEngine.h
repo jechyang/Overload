@@ -1,11 +1,8 @@
-/**
-* @project: Overload
-* @author: Overload Tech.
-* @licence: MIT
-*/
-
 #pragma once
-
+#include <memory>
+#include <unordered_map>
+#include <OvCore/Scripting/Common/Script.h>
+#include <OvCore/Scripting/Common/ScriptIdentity.h>
 #if defined(LUA_SCRIPTING)
 #include <OvCore/Scripting/Lua/LuaScript.h>
 #include <OvCore/Scripting/Lua/LuaScriptEngine.h>
@@ -14,13 +11,51 @@
 #include <OvCore/Scripting/Null/NullScriptEngine.h>
 #endif
 
+namespace OvCore::Scripting::CSharp { class RuntimeHost; }
 namespace OvCore::Scripting
 {
-#if defined(LUA_SCRIPTING)
-	using Script = LuaScript;
-	using ScriptEngine = LuaScriptEngine;
-#else
-	using Script = NullScript;
-	using ScriptEngine = NullScriptEngine;
-#endif
+    enum class ScriptStatus { MissingBackend, MissingType, TypeReady, InstanceReady };
+    class ScriptEngine
+    {
+    public:
+        ScriptEngine(const std::filesystem::path& assets, const std::filesystem::path& engine);
+        ~ScriptEngine();
+        bool CreateProjectFiles(const std::filesystem::path& folder, bool force = false);
+        std::unordered_set<std::string> GetValidExtensions();
+        std::string GetDefaultScriptContent(const std::string& name);
+        std::string GetDefaultExtension();
+        void AddBehaviour(ECS::Components::Behaviour& target);
+        void RemoveBehaviour(ECS::Components::Behaviour& target);
+        void Reload();
+        bool IsOk() const;
+        // Metadata-only S2 loading. No user constructors, fields or lifecycle execute.
+        bool LoadCSharpProject(CSharp::RuntimeHost& host, const std::filesystem::path& root,
+            const std::filesystem::path& assembly, const std::string& logical);
+        void ClearCSharpProject();
+        ScriptIdentity ResolveIdentity(const ScriptIdentity& identity) const;
+        ScriptStatus Status(const ScriptIdentity& identity) const;
+        const std::string& LastError() const { return m_error; }
+        void OnAwake(ECS::Components::Behaviour& target);
+        void OnStart(ECS::Components::Behaviour& target);
+        void OnEnable(ECS::Components::Behaviour& target);
+        void OnDisable(ECS::Components::Behaviour& target);
+        void OnDestroy(ECS::Components::Behaviour& target);
+        void OnUpdate(ECS::Components::Behaviour& target, float dt);
+        void OnFixedUpdate(ECS::Components::Behaviour& target, float dt);
+        void OnLateUpdate(ECS::Components::Behaviour& target, float dt);
+        void OnCollisionEnter(ECS::Components::Behaviour& target, ECS::Components::CPhysicalObject& other);
+        void OnCollisionStay(ECS::Components::Behaviour& target, ECS::Components::CPhysicalObject& other);
+        void OnCollisionExit(ECS::Components::Behaviour& target, ECS::Components::CPhysicalObject& other);
+        void OnTriggerEnter(ECS::Components::Behaviour& target, ECS::Components::CPhysicalObject& other);
+        void OnTriggerStay(ECS::Components::Behaviour& target, ECS::Components::CPhysicalObject& other);
+        void OnTriggerExit(ECS::Components::Behaviour& target, ECS::Components::CPhysicalObject& other);
+    private:
+        struct Legacy;
+        std::unique_ptr<Legacy> m_legacy;
+        std::unordered_set<ECS::Components::Behaviour*> m_behaviours;
+        std::unordered_map<std::string, ScriptIdentity> m_types;
+        std::string m_error;
+        bool m_csharp = false;
+        bool CanDispatch(ECS::Components::Behaviour& target) const;
+    };
 }
