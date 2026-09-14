@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const args = process.argv.slice(2);
 const s2 = args.includes('--s2');
+const compat = args.includes('--compat-build');
 const stage = s2 ? 'S2' : 'S1';
 const python = args[args.indexOf('--python') + 1];
 if (!args.includes('--python') || !path.isAbsolute(python)) throw new Error('Supply --python <absolute Python 3 executable>');
@@ -20,6 +21,7 @@ const dotnet = path.join(dotnetRoot, 'dotnet.exe');
 const env = { ...process.env, GIT_CONFIG_GLOBAL: 'NUL', DOTNET_ROOT: dotnetRoot, DOTNET_MULTILEVEL_LOOKUP: '0',
   DOTNET_CLI_HOME: path.join(output, 'cli'), NUGET_PACKAGES: path.join(output, 'packages'),
   DOTNET_CLI_TELEMETRY_OPTOUT: '1', DOTNET_NOLOGO: '1', PYTHONDONTWRITEBYTECODE: '1' };
+for (const key of Object.keys(env)) if (/^(CscToolExe|CscToolPath|CscEnvironment|RoslynTargetsPath|RoslynCompilerType|SkipCompilerExecution|UseSharedCompilation|UseHostCompilerIfAvailable|MSBuildSDKsPath|CompilerToolPath)$/i.test(key)) delete env[key];
 const checks = [], blockers = [];
 const hash = p => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 function filesBelow(directory) {
@@ -31,7 +33,7 @@ function filesBelow(directory) {
 const sourceFiles = [
   ...['Sources/OvCore/include/OvCore/Scripting','Sources/OvCore/src/OvCore/Scripting',
     'Sources/OvManaged/Overload.ManagedHost','Sources/OvManaged/Overload.ScriptCore','Tests/Scripting','Tools/OvCSharp'].flatMap(p => filesBelow(path.join(root, p))),
-  ...['Sources/OvCore/include/OvCore/ECS/Actor.h','Sources/OvCore/src/OvCore/ECS/Actor.cpp',
+  ...['Scripts/Windows/BuildCSharp.mjs', 'Sources/OvCore/include/OvCore/ECS/Actor.h','Sources/OvCore/src/OvCore/ECS/Actor.cpp',
     'Sources/OvCore/include/OvCore/ECS/Components/Behaviour.h','Sources/OvCore/src/OvCore/ECS/Components/Behaviour.cpp',
     'Sources/OvEditor/src/OvEditor/Panels/Inspector.cpp',
     'Sources/OvEditor/include/OvEditor/Core/Context.h','Sources/OvEditor/src/OvEditor/Core/Context.cpp',
@@ -72,7 +74,7 @@ try {
   const properties = ['-p:OutputPath=' + managed.replaceAll('\\','/') + '/', '-p:ReflectionConfiguration=Debug'];
   run('managed-restore', dotnet, ['restore', path.join(managedProject, 'Overload.ManagedHost.csproj'), '--locked-mode',
     '--configfile', path.join(managedProject, 'NuGet.Config'), ...properties]);
-  const standard = run('dotnet-build', dotnet, ['build', path.join(managedProject, 'Overload.ManagedHost.csproj'), '--no-restore', '-c', 'Debug', ...properties], null);
+  const standard = run('dotnet-build', dotnet, ['build', path.join(managedProject, 'Overload.ManagedHost.csproj'), '--no-restore', '-t:Rebuild', '-c', 'Debug', ...properties], null);
   if (standard.status !== 0) {
     if (!standard.text.includes("Your Windows doesn't fully support CET")) throw new Error('Standard build failed for an unexpected reason');
     blockers.push({ check: 'dotnet-build', exit_code: standard.status, reason: 'OS CET prerequisite; standard build FAILED. SDK csc.dll fallback is separate evidence.' });
@@ -88,6 +90,19 @@ try {
   const csc = path.join(dotnetRoot, 'sdk', lock.sdk_version, 'Roslyn/bincore/csc.dll');
   const core = path.join(managed, 'Overload.ScriptCore.dll');
   const coreOptions = options.filter(o => !o.startsWith('/out:') && !sources.some(s => JSON.stringify(s) === o));
+  const production = path.join(output, 'production'); fs.mkdirSync(production);
+  function compatBuild(name, projectFile, destination, define = '', artifacts = path.join(output, name + '-artifacts')) {
+    run(name, process.execPath, [path.join(root, 'Scripts/Windows/BuildCSharp.mjs'), '--compat', projectFile,
+      '--rebuild', '--artifacts-path', artifacts, '--output', destination, ...(define ? ['--define', define] : [])]);
+  }
+  if (compat) {
+    const projectFile = path.join(managedProject, 'Overload.ManagedHost.csproj');
+    compatBuild('compat-production-rebuild', projectFile, production);
+    compatBuild('compat-acceptance-rebuild', projectFile, managed, 'S1_ACCEPTANCE');
+    const firstHash = hash(dll);
+    compatBuild('compat-acceptance-determinism', projectFile, managed, 'S1_ACCEPTANCE', path.join(output, 'compat-acceptance-rebuild-artifacts'));
+    if (hash(dll) !== firstHash) throw new Error('Non-deterministic MSBuild rebuild');
+  } else {
   fs.writeFileSync(path.join(output, 'core.rsp'), [...coreOptions, '/out:' + JSON.stringify(core),
     JSON.stringify(path.join(root, 'Sources/OvManaged/Overload.ScriptCore/Behaviour.cs'))].join('\n'));
   run('scriptcore-compile', dotnet, [csc, '@' + path.join(output, 'core.rsp')]);
@@ -95,7 +110,6 @@ try {
   // Compile the production assembly separately, without acceptance-only entries.
   fs.writeFileSync(rsp, options.join('\n'));
   run('managed-production-compile', dotnet, [csc, '@' + rsp]);
-  const production = path.join(output, 'production'); fs.mkdirSync(production);
   fs.copyFileSync(core, path.join(production, 'Overload.ScriptCore.dll'));
   fs.copyFileSync(dll, path.join(production, 'Overload.ManagedHost.dll'));
   fs.copyFileSync(path.join(managedProject, 'Overload.ManagedHost.runtimeconfig.json'), path.join(production, 'Overload.ManagedHost.runtimeconfig.json'));
@@ -105,6 +119,7 @@ try {
   run('managed-determinism', dotnet, [csc, '@' + rsp]);
   if (hash(dll) !== firstHash) throw new Error('Non-deterministic managed build');
   fs.copyFileSync(path.join(managedProject, 'Overload.ManagedHost.runtimeconfig.json'), path.join(managed, 'Overload.ManagedHost.runtimeconfig.json'));
+  }
   const entry = read(path.join(output, 'Export/x86_64-pc-windows-msvc/Debug/OvCore/compile_commands.json'))[0];
   const nativeOptions = entry.arguments.filter(a => a.startsWith('/I') || a.startsWith('/D') || a.startsWith('/U')).filter(a => a !== '/DOV_REFLECTION_ANALYSIS=1');
   const obj = path.join(output, 'native-host.obj'), exe = path.join(output, 'native-host.exe');
@@ -134,24 +149,47 @@ try {
     fs.copyFileSync(path.join(root, 'Tests/Scripting/Fixtures/S2/legacy.lua'), path.join(project, 'First.Same'));
     const moved = path.join(project, 'moved'); fs.mkdirSync(moved);
     fs.copyFileSync(path.join(root, 'Tests/Scripting/Fixtures/S2/Types.cs'), path.join(moved, 'UnrelatedFilename.cs'));
+    // Generated test projects keep MSBuild reference resolution and artifact management active.
+    function buildFixture(name, source, define, dependency = '') {
+      const directory = path.join(output, 'fixture-projects', name); fs.mkdirSync(directory, { recursive: true });
+      const xml = value => value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;');
+      const coreProject = path.join(root, 'Sources/OvManaged/Overload.ScriptCore/Overload.ScriptCore.csproj');
+      const projectFile = path.join(directory, name + '.csproj');
+      fs.writeFileSync(projectFile, '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net10.0</TargetFramework><PlatformTarget>x64</PlatformTarget><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup><ItemGroup><Compile Include="' + xml(source) + '"/><ProjectReference Include="' + xml(coreProject) + '"/>' +
+        (dependency ? '<ProjectReference Include="../' + dependency + '/' + dependency + '.csproj"/>' : '') + '</ItemGroup></Project>');
+      fs.copyFileSync(path.join(managedProject, 'NuGet.Config'), path.join(directory, 'NuGet.Config'));
+      // All references here are projects, with no package dependencies.
+      const dependencies = { 'Overload.ScriptCore': { type: 'Project' } };
+      if (dependency) dependencies[dependency] = { type: 'Project', dependencies: { 'Overload.ScriptCore': '[1.0.0, )' } };
+      fs.writeFileSync(path.join(directory, 'packages.lock.json'), JSON.stringify({ version: 1, dependencies: { 'net10.0': dependencies } }));
+      compatBuild('compat-project-' + name, projectFile, project, define);
+    }
     // Real compilations of a moved source and renamed class, all from the pinned SDK.
     for (const [variant, define] of [['original',''], ['moved',''], ['renamed','RENAMED'],
       ['duplicate-id','DUPLICATE_ID'], ['duplicate-alias','DUPLICATE_ALIAS'], ['alias-primary','ALIAS_PRIMARY'], ['empty-id','EMPTY_ID']]) {
       const source = variant === 'moved' ? path.join(moved, 'UnrelatedFilename.cs') : path.join(root, 'Tests/Scripting/Fixtures/S2/Types.cs');
+      if (compat) {
+        buildFixture(variant, source, define);
+      } else {
       const projectOptions = [...coreOptions, '/reference:' + JSON.stringify(core), '/out:' + JSON.stringify(path.join(project, variant + '.dll')),
         ...(define ? ['/define:' + define] : []), JSON.stringify(source)];
       const response = path.join(output, variant + '.rsp'); fs.writeFileSync(response, projectOptions.join('\n'));
       run('project-compile-' + variant, dotnet, [csc, '@' + response]);
+      }
     }
     // A project-local copy cannot replace the default-context shared ScriptCore.
     fs.copyFileSync(core, path.join(project, 'Overload.ScriptCore.dll'));
     for (const [name, source] of [['Dependency','Dependency.cs'], ['Dependent','Dependent.cs']]) {
+      if (compat) {
+        buildFixture(name, path.join(root, 'Tests/Scripting/Fixtures/S2', source), '', name === 'Dependent' ? 'Dependency' : '');
+      } else {
       const response = path.join(output, name + '.rsp');
       fs.writeFileSync(response, [...coreOptions, '/reference:' + JSON.stringify(core),
         ...(name === 'Dependent' ? ['/reference:' + JSON.stringify(path.join(project, 'Dependency.dll'))] : []),
         '/out:' + JSON.stringify(path.join(project, name + '.dll')),
         JSON.stringify(path.join(root, 'Tests/Scripting/Fixtures/S2', source))].join('\n'));
       run('project-compile-' + name, dotnet, [csc, '@' + response]);
+      }
     }
     fs.writeFileSync(path.join(project, 'corrupt.dll'), 'invalid managed assembly');
     const s2obj = path.join(output, 's2.obj'), s2exe = path.join(output, 's2.exe');
@@ -182,11 +220,11 @@ try {
   if (JSON.stringify(objectsBefore) !== JSON.stringify(nativeSnapshot())) throw new Error('Unchanged native build recompiled objects');
   if (JSON.stringify(before) !== JSON.stringify(receipt())) throw new Error('Sources changed during acceptance; rerun fixed sources');
   fs.writeFileSync(path.join(output, 'verification.json'), JSON.stringify({ stage, success: true, timestamp_utc: new Date().toISOString(),
-    os: os.release(), baseline: s2 ? 'a1c3a1a' : '80ef9de', runtime_launcher: exe, standard_dotnet_build_passed: standard.status === 0,
+    os: os.release(), baseline: s2 ? 'a1c3a1a' : '80ef9de', runtime_launcher: exe, standard_dotnet_build_passed: standard.status === 0, compatibility_msbuild_passed: compat ? true : null,
     external_blockers: blockers, checks, source_receipt: before,
     generated_receipt: Object.fromEntries(['OvCore/Script.generated.h','OvCore/Script.generated.cs','OvCore/script-abi.json'].map(p => [p, hash(path.join(gen, p))])),
     artifacts: { native_exe_sha256: hash(exe), managed_sha256: hash(dll), production_managed_sha256: hash(path.join(production, 'Overload.ManagedHost.dll')) } }, null, 2));
-  console.log('S1 native acceptance completed: ' + output);
+  console.log(stage + ' native acceptance completed: ' + output);
 } catch (error) {
   fs.writeFileSync(path.join(output, 'failure.json'), JSON.stringify({ error: String(error), checks, blockers }, null, 2));
   console.error(String(error)); process.exitCode = 1;
