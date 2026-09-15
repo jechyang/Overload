@@ -9,12 +9,18 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.
 const args = process.argv.slice(2);
 const s2 = args.includes('--s2');
 const s3 = args.includes('--s3');
+const s4 = args.includes('--s4');
 const compat = args.includes('--compat-build');
-const stage = s3 ? 'S3' : s2 ? 'S2' : 'S1';
-const baseline = s3 ? 'c3ae12d' : s2 ? 'a1c3a1a' : '80ef9de';
+const stage = s4 ? 'S4' : s3 ? 'S3' : s2 ? 'S2' : 'S1';
+const baseline = s4 ? 'ef3ea8f' : s3 ? 'c3ae12d' : s2 ? 'a1c3a1a' : '80ef9de';
 const python = args[args.indexOf('--python') + 1];
 if (!args.includes('--python') || !path.isAbsolute(python)) throw new Error('Supply --python <absolute Python 3 executable>');
-const output = fs.mkdtempSync(path.join(root, 'Build/Tests/Scripting/' + stage.toLowerCase() + '-'));
+const evidenceRoot = process.env.OV_SCRIPTING_EVIDENCE_ROOT || path.join(root, 'Build/Tests/Scripting');
+if(!path.isAbsolute(evidenceRoot)) throw Error('OV_SCRIPTING_EVIDENCE_ROOT must be absolute');
+fs.mkdirSync(evidenceRoot,{recursive:true});
+const physicalOutput = fs.mkdtempSync(path.join(evidenceRoot, stage.toLowerCase() + '-'));
+const output = path.join(root,'Build/Tests/Scripting',path.basename(physicalOutput));
+if(path.resolve(output)!==path.resolve(physicalOutput)) fs.symlinkSync(physicalOutput,output,'junction');
 console.log(stage + ' evidence: ' + output);
 const read = p => JSON.parse(fs.readFileSync(p, 'utf8'));
 const lock = read(path.join(root, 'Tools/OvCSharp/toolchain.lock.json'));
@@ -33,6 +39,8 @@ function filesBelow(directory) {
   });
 }
 const sourceFiles = [
+  ...(s4 ? ['Sources/OvCore/src/OvCore/ECS/Components/BehaviourFields.cpp',
+    'Sources/OvCore/src/OvCore/SceneSystem/PrefabOperations.cpp','Sources/OvEditor/src/OvEditor/Core/EditorActions.cpp'].map(p => path.join(root,p)) : []),
   ...(s3 ? [...filesBelow(path.join(root, 'Examples/CSharpGameplay')),
     ...['Sources/OvCore/src/OvCore/SceneSystem/Scene.cpp', 'Sources/OvCore/src/OvCore/SceneSystem/SceneManager.cpp',
     'Sources/OvCore/include/OvCore/SceneSystem/Scene.h', 'Sources/OvCore/include/OvCore/ECS/Actor.inl',
@@ -243,6 +251,12 @@ try {
       run('s3-closed-facades', executable, [dotnetRoot, managed, project, 'closed-facades'], 0, 120000);
       const { verifyApps } = await import('./verify_s3_apps.mjs');
       verifyApps({ root, output, run, env, compiler, nativeOptions, libraries, gen, dotnetRoot, production, project });
+      if(s4) {
+        for(const [name,define] of [['S4',''],['S4Renamed','RENAMED'],['S4Duplicate','DUPLICATE_FIELD']])
+          buildFixture(name,path.join(root,'Tests/Scripting/Fixtures/S4/Types.cs'),define);
+        const { verifyFields } = await import('./verify_s4_cases.mjs');
+        verifyFields({ root, output, run, env, compiler, nativeOptions, libraries, gen, dotnetRoot, production, project });
+      }
     }
   }
   const objectsBefore = nativeSnapshot();
@@ -252,6 +266,7 @@ try {
   fs.writeFileSync(path.join(output, 'verification.json'), JSON.stringify({ stage, success: true, timestamp_utc: new Date().toISOString(),
     os: os.release(), baseline, runtime_launcher: exe, standard_dotnet_build_passed: standard.status === 0, compatibility_msbuild_passed: compat ? true : null,
     s3_artifacts: s3 ? Object.fromEntries(['s3.exe', 'project 空格/S3.dll', 'example/GameScripts.dll', 'apps/OvEditor-s3.exe', 'apps/OvGame-s3.exe'].map(p => [p, hash(path.join(output, p))])) : undefined,
+    s4_artifacts: s4 ? Object.fromEntries(['s4.exe','project 空格/S4.dll','project 空格/S4Renamed.dll','apps-s4/OvEditor-s4.exe','apps-s4/OvGame-s4.exe'].map(p=>[p,hash(path.join(output,p))])) : undefined,
     external_blockers: blockers, checks, source_receipt: before,
     generated_receipt: Object.fromEntries(['OvCore/Script.generated.h','OvCore/Script.generated.cs','OvCore/script-abi.json'].map(p => [p, hash(path.join(gen, p))])),
     artifacts: { native_exe_sha256: hash(exe), managed_sha256: hash(dll), production_managed_sha256: hash(path.join(production, 'Overload.ManagedHost.dll')) } }, null, 2));

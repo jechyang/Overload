@@ -40,6 +40,13 @@ namespace OvCore::ECS::Components
 		Scripting::ScriptStatus Status() const;
 		void DeserializeRecord(tinyxml2::XMLDocument& doc, tinyxml2::XMLElement* record);
 		void SerializeRecord(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* parent);
+		bool PrepareManagedFields();
+		void RestoreManagedFields();
+		bool EditManagedField(const std::string& id, const Scripting::ManagedFieldValue& value);
+		bool SetManagedFieldOverride(const std::string& id, bool enabled);
+		bool HasManagedFieldOverride(const std::string& id) const { return m_managedOverrides.contains(id); }
+		std::optional<Scripting::ManagedFieldValue> ManagedDefault(const std::string& id) const;
+		void RemapManagedActorReferences(const std::unordered_map<uint64_t,uint64_t>& mapping);
 
 		/**
 		* Destructor
@@ -177,6 +184,11 @@ namespace OvCore::ECS::Components
 		const std::string name;
 
 	private:
+		void SerializeManagedFields(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node);
+		void InspectManagedFields(OvUI::Internal::WidgetContainer& root);
+		std::map<std::string,Scripting::ManagedFieldValue> m_managedDefaults, m_managedOverrides;
+		std::set<std::string> m_managedLoaded;
+		std::shared_ptr<const bool> m_managedUi = std::make_shared<const bool>(true);
 		void ApplyStoredProperties();
 		Scripting::ScriptIdentity m_identity;
 		Scripting::ScriptIdentity m_resolvedIdentity;

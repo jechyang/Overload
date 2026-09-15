@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 #include <OvCore/Scripting/Common/ScriptPropertyValue.h>
+#include <OvCore/Scripting/Common/ManagedField.h>
 
 namespace OvCore::Scripting
 {
@@ -16,5 +17,8 @@ namespace OvCore::Scripting
         virtual std::map<std::string, ScriptPropertyValue> GetDefaultProperties() const = 0;
         virtual std::optional<ScriptPropertyValue> GetProperty(const std::string& key) const = 0;
         virtual void SetProperty(const std::string& key, const ScriptPropertyValue& value) = 0;
+        virtual const std::vector<ManagedField>& ManagedFields() const { static const std::vector<ManagedField> empty; return empty; }
+        virtual std::optional<ManagedFieldValue> ReadManagedField(uint64_t) const { return {}; }
+        virtual bool WriteManagedField(uint64_t, const ManagedFieldValue&) { return false; }
     };
 }

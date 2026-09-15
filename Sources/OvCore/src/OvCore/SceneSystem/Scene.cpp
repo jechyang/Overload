@@ -149,6 +149,9 @@ void OvCore::SceneSystem::Scene::Play()
     m_isPlaying = true; m_dispatchStopped = false;
     ActorUpdateSnapshot snapshot(m_actors);
     for (auto* actor : snapshot.actors) if (actor) actor->SetSleeping(false);
+    // Prepare every attachment after identity/hierarchy restoration, before any Awake.
+    for (auto* actor : snapshot.actors) if(actor && actor->IsAlive())
+        for(auto& [key,behaviour]:actor->GetBehaviours()) behaviour.PrepareManagedFields();
     for (auto phase : {&ECS::Actor::OnAwake, &ECS::Actor::OnEnable, &ECS::Actor::OnStart}) {
         for (auto* actor : snapshot.actors) if (!m_dispatchStopped && actor && actor->IsAlive() && actor->IsActive()) (actor->*phase)();
         Scripting::DispatchScope::Flush();
@@ -159,6 +162,19 @@ void OvCore::SceneSystem::Scene::Play()
 bool OvCore::SceneSystem::Scene::IsPlaying() const
 {
 	return m_isPlaying;
+}
+
+bool OvCore::SceneSystem::Scene::ResolveScriptAsset(uint32_t kind,const std::string& path) const
+{
+    using Parser=OvTools::Utils::PathParser; using Type=Parser::EFileType;
+    if(path.empty() || kind>9 || path.find(':')!=std::string::npos || path.find('\0')!=std::string::npos) return false;
+    const std::filesystem::path relative(std::u8string(reinterpret_cast<const char8_t*>(path.data()),path.size()));
+    if(relative.is_absolute()) return false;
+    for(const auto& part:relative) if(part=="..") return false;
+    static const Type kinds[]={Type::UNKNOWN,Type::MODEL,Type::TEXTURE,Type::SHADER,Type::MATERIAL,Type::SOUND,Type::SCENE,Type::SCRIPT,Type::FONT,Type::PREFAB};
+    if(kind && Parser::GetFileType(path)!=kinds[kind]) return false;
+    std::error_code error;
+    return std::filesystem::is_regular_file(m_projectAssetsPath/relative,error);
 }
 
 void OvCore::SceneSystem::Scene::Update(float p_deltaTime)
@@ -324,34 +340,17 @@ void OvCore::SceneSystem::Scene::EndBatchActorCreation(bool p_startCreatedActors
 
 	if (p_startCreatedActors && m_isPlaying)
 	{
-		for (auto actor : actors)
-		{
-			actor.get().SetSleeping(false);
-		}
-
-		for (auto actor : actors)
-		{
-			if (actor.get().IsActive())
-			{
-				actor.get().OnAwake();
-			}
-		}
-
-		for (auto actor : actors)
-		{
-			if (actor.get().IsActive())
-			{
-				actor.get().OnEnable();
-			}
-		}
-
-		for (auto actor : actors)
-		{
-			if (actor.get().IsActive())
-			{
-				actor.get().OnStart();
-			}
-		}
+        std::vector<ECS::Actor*> batch;
+        for(auto actor:actors) batch.push_back(&actor.get());
+        ActorUpdateSnapshot snapshot(batch);
+        for(auto* actor:snapshot.actors) if(actor && actor->IsAlive()) {
+            actor->SetSleeping(false);
+            for(auto& [key,behaviour]:actor->GetBehaviours()) behaviour.PrepareManagedFields();
+        }
+        for(auto phase:{&ECS::Actor::OnAwake,&ECS::Actor::OnEnable,&ECS::Actor::OnStart}) {
+            for(auto* actor:snapshot.actors) if(!m_dispatchStopped && actor && actor->IsAlive() && actor->IsActive()) (actor->*phase)();
+            Scripting::DispatchScope::Flush();
+        }
 	}
 }
 

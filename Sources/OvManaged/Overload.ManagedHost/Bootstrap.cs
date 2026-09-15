@@ -133,7 +133,7 @@ public static unsafe partial class Bootstrap
     }, false);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint Detach() => Guard(default, () => {
-        Require(Buffers.Count == 0 && TypeResults.Count == 0, Status.BufferOwnership, "Release owned Host ABI results before detach");
+        Require(Buffers.Count == 0 && TypeResults.Count == 0 && FieldResults.Count == 0 && FieldValues.Count == 0, Status.BufferOwnership, "Release owned Host ABI results before detach");
         foreach (Session session in Sessions.Values) session.Close();
         Sessions.Clear();
         services = default;
@@ -204,20 +204,12 @@ public static unsafe partial class Bootstrap
         Require(count != null, Status.InvalidArgument, "Null count"); *count = 0;
         *count = checked((uint)Lookup(s).Types.Count);
     });
-    // Managed field operations are reserved for S4.
-    private static uint Missing(SessionHandle s, Status status) => Guard(s, () => {
-        Lookup(s); throw new Failure(status, "Managed field operations require S4");
-    });
-    private static uint NoOwned(void* p) => Guard(default, () => {
-        Require(p != null, Status.InvalidArgument, "Null owned result");
-        throw new Failure(Status.BufferOwnership, "S1 has not issued a value/type/field result");
-    }, false);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint ReleaseValue(void* p) => NoOwned(p);
+    public static uint ReleaseValue(void* p) => Guard(default, () => ReleaseFieldValue((FieldValue*)p), false);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint ReleaseType(void* p) => Guard(default, () => ReleaseTypeResult((TypeResult*)p), false);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint ReleaseField(void* p) => NoOwned(p);
+    public static uint ReleaseField(void* p) => Guard(default, () => ReleaseFieldResult((FieldResult*)p), false);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint TypeInfo(SessionHandle s, uint index, void* p) => Guard(s, () => GetTypeResult(s, index, (TypeResult*)p));
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -228,9 +220,13 @@ public static unsafe partial class Bootstrap
         *p = Allocate(type.Aliases[(int)index]);
     });
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint FieldInfo(SessionHandle s, ulong type, uint index, void* p) => Missing(s, Status.FieldNotFound);
+    public static uint FieldInfo(SessionHandle s, ulong type, uint index, void* p) => Guard(s, () => GetFieldResult(s,type,index,(FieldResult*)p));
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint FieldAlias(SessionHandle s, ulong type, ulong field, uint index, Utf8* p) => Missing(s, Status.FieldNotFound);
+    public static uint FieldAlias(SessionHandle s, ulong type, ulong field, uint index, Utf8* p) => Guard(s, () => {
+        Require(p != null, Status.InvalidArgument, "Null alias output"); *p = default;
+        var f = FindField(FindType(s,type),field); Require(index < f.Aliases.Count, Status.InvalidArgument, "Field alias index out of range");
+        *p = Allocate(f.Aliases[(int)index]);
+    });
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint CreateInstance(SessionHandle s, void* info, InstanceHandle* p) => Guard(s, () => Create(s, (InstanceInfo*)info, p));
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -242,9 +238,9 @@ public static unsafe partial class Bootstrap
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint Dispatch(SessionHandle s, void* call) => Guard(s, () => Invoke(s, (LifecycleCall*)call));
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint ReadField(SessionHandle s, InstanceHandle instance, ulong field, void* p) => Missing(s, Status.FieldNotFound);
+    public static uint ReadField(SessionHandle s, InstanceHandle instance, ulong field, void* p) => Guard(s, () => ReadFieldValue(s,instance,field,(FieldValue*)p));
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint WriteField(SessionHandle s, InstanceHandle instance, ulong field, void* p) => Missing(s, Status.FieldNotFound);
+    public static uint WriteField(SessionHandle s, InstanceHandle instance, ulong field, void* p) => Guard(s, () => WriteFieldValue(s,instance,field,(FieldValue*)p));
 
 #if S1_ACCEPTANCE
     // Compiled only into the acceptance artifact, never the production ManagedHost.

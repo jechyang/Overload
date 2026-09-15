@@ -17,7 +17,7 @@ namespace OvCore::Scripting::CSharp
             // Resolve checks context, captured Main, weak epoch and exact native type.
             auto& actor = state.Get<ECS::Components::CTransform>(owner)->owner;
             DispatchScope callbackScope;
-            if (operation >= 5 && operation != 9) Require(actor.CanRunScripts(), OV_SCRIPT_INVALID_HANDLE);
+            if (operation >= 5 && operation <= 11 && operation != 9) Require(actor.CanRunScripts(), OV_SCRIPT_INVALID_HANDLE);
             auto& scripts = OVSERVICE(ScriptEngine);
             const auto value = Decode({text.data, text.length});
             const auto ticket = actor.transform.InspectorTicket();
@@ -48,6 +48,16 @@ namespace OvCore::Scripting::CSharp
                 auto* found = operation == 9 ? scene->FindActorByName(value) : &scene->CreateActor(value);
                 if (found && found->IsAlive()) *output = publish(found->transform);
                 break;
+            }
+            case 12: {
+                auto* scene=actor.GetScene(); Require(scene!=nullptr,OV_SCRIPT_INVALID_HANDLE);
+                auto* found=scene->FindActorByGUID(argument);
+                if(found && found->IsAlive()) *output=publish(found->transform);
+                break;
+            }
+            case 13: {
+                auto* scene=actor.GetScene(); Require(scene!=nullptr,OV_SCRIPT_INVALID_HANDLE);
+                Require(argument<=9); *output=scene->ResolveScriptAsset(static_cast<uint32_t>(argument),value); break;
             }
             default: Require(false);
             }

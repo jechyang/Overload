@@ -18,7 +18,7 @@ public static unsafe partial class Bootstrap
         internal Utf8 Id, Assembly, Type;
         internal uint AliasCount, FieldCount;
     }
-    private sealed record ProjectType(ulong Token, string Id, string Assembly, string Name, List<string> Aliases, Type Type);
+    private sealed record ProjectType(ulong Token, string Id, string Assembly, string Name, List<string> Aliases, Type Type, List<ProjectField> Fields);
     private static ulong nextType;
     // Separate ownership receipt prevents releasing copied, forged or mixed type structs.
     private static readonly Dictionary<nuint, TypeResult> TypeResults = new();
@@ -86,7 +86,7 @@ public static unsafe partial class Bootstrap
                         $"Duplicate ScriptId/alias {key}: {keys.GetValueOrDefault(key)} and {name}");
                     keys.Add(key, name);
                 }
-                result.Types.Add(new ProjectType(checked(++nextType), id, logical, name, aliases, type));
+                result.Types.Add(new ProjectType(checked(++nextType), id, logical, name, aliases, type, DiscoverFields(type)));
             }
             return result;
         } catch { result.Close(); throw; }
@@ -98,7 +98,7 @@ public static unsafe partial class Bootstrap
         Session value = Lookup(session);
         Require(index < value.Types.Count, Status.TypeNotFound, "Type index out of range");
         ProjectType type = value.Types[(int)index];
-        TypeResult info = new() { Size = (uint)sizeof(TypeResult), Token = type.Token, AliasCount = (uint)type.Aliases.Count };
+        TypeResult info = new() { Size = (uint)sizeof(TypeResult), Token = type.Token, AliasCount = (uint)type.Aliases.Count, FieldCount = (uint)type.Fields.Count };
         try {
             info.Id = Allocate(type.Id); info.Assembly = Allocate(type.Assembly); info.Type = Allocate(type.Name);
             TypeResults.Add((nuint)info.Type.Data, info);

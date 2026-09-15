@@ -119,6 +119,7 @@ namespace OvCore::SceneSystem
 		* Returns true if the scene is playing
 		*/
 		bool IsPlaying() const;
+		bool ResolveScriptAsset(uint32_t kind, const std::string& path) const;
 
 		/**
 		* Update every actors

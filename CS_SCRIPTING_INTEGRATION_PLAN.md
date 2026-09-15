@@ -7,7 +7,9 @@
 原生宿主、常驻引导与真实组件 smoke；S2 已按 [S2 验收记录](CS_SCRIPTING_S2_VALIDATION.md)
 完成后端门面、类型身份与缺失记录保留；S3 已按 [S3 验收记录](CS_SCRIPTING_S3_VALIDATION.md)
 完成托管实例、受控 API、生命周期和真实 Editor/Game 默认/RenderThread 运行验收。
-S4–S7 未实施。当前 Windows 的标准 `dotnet build` 仍因 CET 失败；显式兼容入口的
+S4 已实现托管字段、Inspector、场景/Prefab 存档与引用恢复，详见
+[S4 验收记录](CS_SCRIPTING_S4_VALIDATION.md)，固定源码完整复验通过。S5–S7 未实施。
+当前 Windows 的标准 `dotnet build` 仍因 CET 失败；显式兼容入口的
 完整 MSBuild 重建与新程序集真实宿主运行通过，二者分别记录，不能混称标准构建通过。
 
 ## 1. 目标、范围与交付层次
@@ -112,7 +114,7 @@ Owner、Transform、GetComponent<T> 第一版只覆盖已支持类型。Actor �
 
 状态：已完成 S2 实现与真实本地验收，详见 `CS_SCRIPTING_S2_VALIDATION.md`。
 CSharp 的 TypeReady 仅表示类型挂载；S2 当时尚未实现的实例构造、Owner 和游戏生命周期
-现已在 S3 完成，编辑态仍只挂载类型。
+现已在 S3 完成；S4 中类型挂载仍不构造，首次 Inspector/Play 准备实际挂载实例。
 标准 dotnet build 的 CET 外部阻塞仍未解除。
 
 任务：
@@ -131,9 +133,9 @@ CSharp 的 TypeReady 仅表示类型挂载；S2 当时尚未实现的实例构�
 状态：已完成本轮实现与独立本地验收，详见 `CS_SCRIPTING_S3_VALIDATION.md`。
 固定源码收据 `Build/Tests/Scripting/s3-MX7SMl/verification.json` 为 success=true；
 覆盖真实宿主、Editor Play/Pause/单步/Stop、Game 循环、Lua 共存和两种渲染模式。
-Awake 前已完成 C# 字段初始化器及 Owner 注入；存档字段恢复仍属 S4，未冒充完成。
+S3 验收时 Awake 前完成 C# 字段初始化器及 Owner 注入；存档字段恢复由 S4 单独验收。
 首版 Actor 存储沿用原生返回引用接口立即创建，初始化排队且不进入当前分派快照；
-销毁、Behaviour 修改和场景替换在主线程安全点处理。未实施 S4–S7。
+销毁、Behaviour 修改和场景替换在主线程安全点处理。S3 收据不包含 S4–S7。
 
 任务：实现托管实例注册、Owner/Transform/GetComponent 受控门面，将现有生命周期与碰撞/触发入口接到 C#；碰撞对象先以可校验句柄和最小只读身份提供。建立实例状态与主线程安全点，处理自删、删其他行为、增添行为及换场景。旧组件句柄在场景切换、删除、会话关闭后拒绝访问。
 
@@ -143,6 +145,14 @@ Awake 前已完成 C# 字段初始化器及 Owner 注入；存档字段恢复仍
 建议提交：feat(scripting): complete S3 C# behaviour lifecycle integration
 
 ### S4：托管字段、Inspector 与场景/Prefab 存档
+
+状态：已完成实现与固定源码完整验收，详见 `CS_SCRIPTING_S4_VALIDATION.md`。
+收据 `Build/Tests/Scripting/s4-f618Hg/verification.json` 为 success=true，覆盖
+字段边界/演变/未知数据、缺程序集、Prefab 引用重映射、Inspector、Awake 前恢复、
+真实 Editor Play/Stop 与 Game、默认/RenderThread，并保留完整 S1–S3/Lua 回归。
+标准构建 CET 失败、显式兼容完整 MSBuild 成功分别记录。
+复用 Host ABI/R6、S2 原始 XML 与 S3 安全点；
+Inspector 使用精确字段文本、覆盖开关和引用身份/解析状态，不包含 S5 类型/构建 UI。
 
 任务：
 

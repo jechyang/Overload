@@ -2,7 +2,8 @@
 
 This contract was frozen in S0. S1 implements the resident host; S2 implements
 project type discovery and backend-independent attachments. S3 implements runtime
-instances, Owner and lifecycle dispatch. Managed fields remain S4 work.
+instances, Owner and lifecycle dispatch. S4 implements field metadata, typed reads/writes,
+Inspector overrides and scene/Prefab persistence. S5–S7 remain out of scope.
 The normative machine-readable files are `host-abi.json` and
 `Sources/OvCore/include/OvCore/Scripting/CSharp/HostABI.h`. Host ABI 1 is versioned
 separately from R6 Script ABI 1; equality in one handshake never implies equality
@@ -97,7 +98,7 @@ including self-duplicates and collisions with another primary key, fail the load
 
 Host ABI layouts/signature remain unchanged. `get_type_info` returns size 72,
 flags 0, a nonzero token, stable_id (empty for a default tuple), the logical name,
-metadata type name, alias count and field_count 0. Alias UTF-8 payloads encode
+metadata type name, alias count and field_count (zero in S2, supported field count in S4). Alias UTF-8 payloads encode
 `I<byte-length>:<explicit-id>` or
 `T<byte-length>:<logical-name><byte-length>:<metadata-type-name>`; lengths are UTF-8
 bytes, not UTF-16 characters. These payloads are backend-local, length-delimited
@@ -136,15 +137,18 @@ for the same still-known handle; a stale/unknown generation returns
 
 ## Instance lifecycle and dispatch
 
-### S3 implementation
+### S3 implementation and S4 preparation
 
-The native facade retains the successful project session and its type tokens until
-project clear/close. Loading and edit-time attachment still run no user constructor.
-The first native Awake creates the managed object through `create_instance`, checks
-the native context/Owner GUID, injects Owner, then dispatches Awake. C# field
-initializers have run; persisted managed field restoration is **not implemented**
-until S4. Existing opaque XML data is retained. No property getter is queried for
-defaults. Async lifecycle methods are rejected during type discovery.
+The native facade retains the successful project session and its type/field tokens until
+project clear/close. Loading and attachment run no user constructor. S4 prepares the
+attached object when first inspecting it or before Play: `create_instance` checks
+Context/Owner GUID, runs the constructor with native access forbidden and injects
+Owner. The same instance supplies field defaults and later receives Awake; no
+temporary default-probing object is created. A Prepared edit object has no gameplay
+callbacks (including Destroy if it never reached Awake). Scene Play prepares all
+attachments before any Awake. Runtime Prefab batches restore GUID mappings and
+prepare every attachment before the batch's Awake/Enable/Start phases.
+No property getter is queried. Async lifecycle methods are rejected during discovery.
 
 Host ABI 1 and R6 signatures/layouts are unchanged. The S3 owner object ID is an
 R6-published mandatory `CTransform` lifetime anchor, not an Actor address or GUID.
@@ -159,9 +163,9 @@ Native `TypeReady` remains the metadata state; Behaviour reports `InstanceReady`
 after successful construction, or `Faulted` after constructor/callback failure.
 Every instance lookup validates ID plus session generation. Awake/Start are once
 only, Enable/Disable are transitions, gameplay requires Started+Enabled, and
-Destroy is attempted once even for faulted instances. Destroy exceptions are logged
-and reference cleanup continues. Normal C# fields/Inspector, reload migration,
-shadow copies and proven ALC collection are not part of S3.
+Destroy is attempted once for awakened instances, including faulted instances.
+Destroy exceptions are logged and reference cleanup continues. Reload migration,
+shadow copies and proven ALC collection remain S6 work.
 
 Actor dispatch uses snapshots of component references and Behaviour keys plus
 weak epochs. Behaviour order is now attachment/display order. No container iterator
@@ -193,7 +197,8 @@ The runtime states are:
 
 `Prepared -> Awakened -> Started/Enabled/Disabled -> Enabled/Disabled -> Destroying -> Destroyed`
 
-`Awake` occurs once. `Enable`/`Disable` follow Actor active transitions and may occur
+`Awake` occurs once. Prepared objects released without Awake do not receive user
+Destroy; their references are still released. `Enable`/`Disable` follow Actor active transitions and may occur
 around `Start`; `Start` occurs once before the first update. Update, fixed update,
 late update, collision, and trigger events require Started+Enabled. `Destroy` is
 attempted at most once from every non-destroyed state. A user callback exception
@@ -241,6 +246,70 @@ and aliases are stable strings, separate from managed names and session-local to
 Unknown or unsupported serialized fields remain opaque for later round-trip rather
 than being discarded. Editor defaults and explicit overrides stay distinct; runtime
 field changes are not written back automatically.
+
+### S4 metadata and value rules
+
+Only load-time discovery enumerates reflection metadata. Each project session owns
+the cached `FieldInfo` objects and tokens. Field access uses those cached fields;
+it never enumerates or invokes properties. Base-class private fields are included
+only with `[SerializeField]`. Static, literal, readonly and `[NonSerialized]` fields
+are excluded. Unsupported selected types produce `UnsupportedField` diagnostics.
+`[FieldId("id")]` overrides the default managed field name; the managed name becomes
+an automatic alias. `[FormerlySerializedAs("old")]` adds migration aliases. All
+primary IDs and aliases must be unique per Behaviour hierarchy; conflicts fail the
+candidate project load without replacing the previous project.
+
+`get_field_info` returns size 80, flags/reserved 0, token, tag, auxiliary, ID, name,
+display name and alias count. `get_field_alias` returns the alias string verbatim.
+Enum auxiliary is the underlying integer **tag** (2–9), preserving width/sign;
+enum writes check the exact underlying range. AssetRef value auxiliary is AssetKind
+(0 any, 1 model, 2 texture, 3 shader, 4 material, 5 sound, 6 scene, 7 script,
+8 font, 9 Prefab); its field metadata auxiliary is 0. Other auxiliary values are 0.
+Values use the unchanged 48-byte tagged scalar+UTF-8 structure, flags 0. All integer
+tags use their actual fixed-width union members and never pass through double.
+Strings are strict UTF-8, including embedded NUL. Null strings return UnsupportedField.
+ActorRef stores only a uint64 scene GUID (0 none); AssetRef stores kind and normalized
+project-relative path. Missing references retain their identity. Paths reject absolute
+paths, drive prefixes and parent traversal. Asset resolution checks kind and file
+existence and does not instantiate/load arbitrary resource objects.
+
+Every read result, even a scalar or empty string, owns a unique allocation receipt
+in its `text` member (length may be zero). It must be released through
+`release_field_value`, not `release_owned_utf8`. Field metadata must be released
+through `release_field_info`. Composite release validates all members before freeing,
+zeroes the structure, and rejects forged/modified/copied repeated releases. Calls
+check Main, session generation, instance identity and field membership in its type.
+
+### S4 XML and Inspector
+
+The existing complete Behaviour/raw-data preservation remains authoritative. C# adds
+`<managed_fields><field id="speed" tag="10" auxiliary="0">7</field></managed_fields>`
+under `<data>`. IDs are attribute values, not XML element names. Integers and enums
+are decimal text, floats use roundtrip-width formatting, Vector3/Quaternion use
+comma-separated float components. String/AssetRef text is hex-encoded UTF-8 with
+`encoding="utf8-hex"`, allowing XML roundtrip of NUL and XML control characters.
+Only explicit edit overrides are written. Constructor defaults are captured once
+from the attached Prepared instance and kept separately. Reset removes the override
+and restores that captured default. Invalid/incompatible/unknown and duplicate
+ambiguous records are retained. Successful alias restoration writes the current ID
+and preserves extension attributes/children; no guessed numeric/type conversions.
+
+Inspector controls edit through the same typed Host field writes as runtime tests.
+Text inputs parse exact integer widths, math components and enum underlying values;
+ActorRef uses its GUID and shows resolved/missing identity; AssetRef exposes path/kind.
+Invalid input is diagnosed without changing the live field or saved override. UI
+callbacks check both an attachment/Inspector token and a widget-owned token. They
+expire on refresh, widget disposal, deserialization, backend removal and Behaviour destruction.
+
+Scene/Prefab objects and their GUID map exist before field preparation. Prefab
+cloning rewrites only internal tagged ActorRef GUIDs, including opaque records while
+the assembly is missing; external GUIDs are retained. `ActorRef.Resolve(owner)`
+performs guarded scene lookup on use, so Awake can resolve a later-created sibling
+and deleted targets resolve missing without caching stale native pointers. Play
+uses the prepared values and never copies runtime field mutations into edit overrides.
+Editor Stop rebuilds the existing scene snapshot; next inspection/Play prepares a
+fresh attached instance and restores the saved edit overrides. This is Play/Stop
+persistence, not S6 hot reload or arbitrary object graph migration.
 
 ## Toolchain and execution boundary
 

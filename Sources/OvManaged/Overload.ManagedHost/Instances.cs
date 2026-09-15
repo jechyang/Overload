@@ -11,10 +11,11 @@ public static unsafe partial class Bootstrap
     private struct InstanceInfo { internal uint Size, Flags; internal ulong Type, Context, Owner, Guid; }
     [StructLayout(LayoutKind.Sequential, Pack = 8)]
     private struct LifecycleCall { internal uint Size, Event; internal InstanceHandle Instance; internal float Delta; internal uint Flags; internal ulong Other; }
-    private sealed class Instance(Behaviour value, ulong guid)
+    private sealed class Instance(Behaviour value, ulong guid, ProjectType type)
     {
         internal readonly Behaviour Value = value;
         internal readonly ulong Guid = guid;
+        internal readonly ProjectType Type = type;
         internal bool Awake, Started, Enabled, Faulted, Destroyed;
     }
     private static ulong nextInstance;
@@ -40,7 +41,7 @@ public static unsafe partial class Bootstrap
         }
         public ulong Query(ulong owner, uint operation, ulong argument = 0, string text = "") {
             Check();
-            Require(!session.Closing || operation <= 4, Status.SessionClosing, "Session closing rejects structural mutations");
+            Require(!session.Closing || operation <= 4 || operation is 12 or 13, Status.SessionClosing, "Session closing rejects structural mutations");
             // Behaviour names are metadata names; native receives the explicit logical assembly too.
             if (operation is 7 or 8) text = LogicalName + "\n" + text;
             byte[] bytes = Encoding.GetBytes(text);
@@ -81,13 +82,13 @@ public static unsafe partial class Bootstrap
         finally { constructing = false; }
         value.owner = new Actor(access, info->Owner);
         ulong id = checked(++nextInstance);
-        session.Instances.Add(id, new Instance(value, info->Guid));
+        session.Instances.Add(id, new Instance(value, info->Guid, type));
         *output = new InstanceHandle { Id = id, Generation = s.Generation };
     }
     private static void Destroy(Instance instance) {
         if (instance.Destroyed) return;
         instance.Destroyed = true; instance.Enabled = false;
-        try { instance.Value.OnDestroy(); }
+        try { if (instance.Awake) instance.Value.OnDestroy(); }
         catch (Exception ex) { Log($"Destroy script={instance.Value.GetType().FullName} actor={instance.Guid}: {ex}"); }
         finally { instance.Value.owner = null; }
     }

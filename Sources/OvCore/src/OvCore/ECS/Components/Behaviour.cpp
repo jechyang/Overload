@@ -69,7 +69,7 @@ void OvCore::ECS::Components::Behaviour::RefreshIdentity()
 	if (Status() != Scripting::ScriptStatus::TypeReady) return;
 	tinyxml2::XMLDocument doc; auto* root = doc.NewElement("behaviours"); doc.InsertEndChild(root);
 	SerializeRecord(doc, root);
-	tinyxml2::XMLPrinter printer; root->FirstChild()->Accept(&printer); m_rawRecord = printer.CStr();
+	tinyxml2::XMLPrinter printer(nullptr,true); root->FirstChild()->Accept(&printer); m_rawRecord = printer.CStr();
 }
 
 OvCore::Scripting::ScriptStatus OvCore::ECS::Components::Behaviour::Status() const
@@ -97,6 +97,7 @@ std::string OvCore::ECS::Components::Behaviour::GetTypeName()
 
 void OvCore::ECS::Components::Behaviour::SetScript(std::unique_ptr<Scripting::Script> &&p_scriptContext)
 {
+	m_managedUi = std::make_shared<const bool>(true);
 	m_script = std::move(p_scriptContext);
 
 	if (!m_script || !m_script->IsValid())
@@ -144,8 +145,10 @@ void OvCore::ECS::Components::Behaviour::RemoveScript()
 	tinyxml2::XMLDocument doc;
 	auto* data = doc.NewElement("data"); doc.InsertEndChild(data);
 	OnSerialize(doc, data);
-	tinyxml2::XMLPrinter printer; data->Accept(&printer); m_rawData = printer.CStr();
+	tinyxml2::XMLPrinter printer(nullptr,true); data->Accept(&printer); m_rawData = printer.CStr();
 	m_script.reset();
+	m_managedUi = std::make_shared<const bool>(true);
+	m_managedDefaults.clear(); m_managedOverrides.clear(); m_managedLoaded.clear();
 	m_scriptDefaults.clear(); m_scriptProperties.clear(); m_unlockedProperties.clear(); m_loadedProperties.clear();
 }
 
@@ -228,6 +231,7 @@ void OvCore::ECS::Components::Behaviour::OnSerialize(tinyxml2::XMLDocument & p_d
 		if (auto* dest = p_node->ToElement()) for (auto* a = source->FirstAttribute(); a; a = a->Next()) dest->SetAttribute(a->Name(), a->Value());
 		for (auto* child = source->FirstChild(); child; child = child->NextSibling()) p_node->InsertEndChild(child->DeepClone(&p_doc));
 	}
+	if(m_identity.backend == "csharp") { SerializeManagedFields(p_doc,p_node); return; }
 	auto* propsNode = p_node->FirstChildElement("script_properties");
 	if (!propsNode && !m_unlockedProperties.empty()) {
 		propsNode = p_doc.NewElement("script_properties"); p_node->InsertEndChild(propsNode);
@@ -269,7 +273,12 @@ void OvCore::ECS::Components::Behaviour::OnDeserialize(tinyxml2::XMLDocument & p
 	m_rawData.clear(); m_loadedProperties.clear();
 	m_unlockedProperties.clear(); m_scriptProperties = m_scriptDefaults;
 	if (m_script && m_script->IsValid()) for (const auto& [key, value] : m_scriptProperties) m_script->SetProperty(key, value);
-	if (p_node) { tinyxml2::XMLPrinter printer; p_node->Accept(&printer); m_rawData = printer.CStr(); }
+	if (p_node) { tinyxml2::XMLPrinter printer(nullptr,true); p_node->Accept(&printer); m_rawData = printer.CStr(); }
+	if(m_identity.backend == "csharp") {
+		m_managedUi=std::make_shared<const bool>(true); m_managedOverrides.clear(); m_managedLoaded.clear();
+		if(m_script && m_script->IsValid()) RestoreManagedFields();
+		return;
+	}
 	ApplyStoredProperties();
 }
 
@@ -336,7 +345,7 @@ void OvCore::ECS::Components::Behaviour::ApplyStoredProperties()
 
 void OvCore::ECS::Components::Behaviour::DeserializeRecord(tinyxml2::XMLDocument& doc, tinyxml2::XMLElement* record)
 {
-	tinyxml2::XMLPrinter printer; record->Accept(&printer); m_rawRecord = printer.CStr();
+	tinyxml2::XMLPrinter printer(nullptr,true); record->Accept(&printer); m_rawRecord = printer.CStr();
 	OnDeserialize(doc, record->FirstChildElement("data"));
 }
 
@@ -375,6 +384,7 @@ void OvCore::ECS::Components::Behaviour::SerializeRecord(tinyxml2::XMLDocument& 
 void OvCore::ECS::Components::Behaviour::OnInspector(OvUI::Internal::WidgetContainer & p_root)
 {
 	using namespace OvCore::Helpers;
+	if(m_identity.backend == "csharp") { InspectManagedFields(p_root); return; }
 	if (m_identity.backend != "lua") {
 		const auto status = Status();
 		const char* message = status == Scripting::ScriptStatus::InstanceReady ? "C# runtime instance ready" :

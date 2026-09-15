@@ -124,6 +124,7 @@ OvCore::ECS::Actor* OvCore::SceneSystem::PrefabOperations::InstantiateFromFile(
 
 	std::vector<PendingAttachment> pendingAttachments;
 	std::unordered_map<int64_t, OvCore::ECS::Actor*> sourceToInstance;
+	std::unordered_map<uint64_t,uint64_t> guidMap;
 
 	for (auto* currentActor = actorsNode->FirstChildElement("actor");
 		currentActor;
@@ -134,6 +135,7 @@ OvCore::ECS::Actor* OvCore::SceneSystem::PrefabOperations::InstantiateFromFile(
 		const uint64_t generatedGUID = newActor.GetGUID();
 
 		newActor.OnDeserialize(doc, currentActor);
+		guidMap.emplace(newActor.GetGUID(),generatedGUID);
 		const uint64_t prefabNodeGUID = newActor.HasPrefabNodeGUID() ? newActor.GetPrefabNodeGUID() : newActor.GetGUID();
 		newActor.SetPrefabNodeGUID(prefabNodeGUID);
 
@@ -149,6 +151,8 @@ OvCore::ECS::Actor* OvCore::SceneSystem::PrefabOperations::InstantiateFromFile(
 	}
 
 	OvCore::ECS::Actor* instantiatedRoot = nullptr;
+	for(auto& pending:pendingAttachments)
+		for(auto& [key,behaviour]:pending.actor->GetBehaviours()) behaviour.RemapManagedActorReferences(guidMap);
 
 	for (auto& pending : pendingAttachments)
 	{

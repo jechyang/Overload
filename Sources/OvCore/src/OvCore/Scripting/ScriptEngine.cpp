@@ -17,7 +17,7 @@ namespace OvCore::Scripting
 #endif
     namespace
     {
-        // Type attachment in edit mode, session-owned instance from the first Awake.
+        // Type attachment is metadata-only; the same Prepared instance serves Inspector and Play.
         class CSharpTypeScript final : public Script
         {
         public:
@@ -25,6 +25,25 @@ namespace OvCore::Scripting
             OvCsSessionHandle session{};
             OvCsInstanceHandle instance{};
             bool faulted = false;
+            bool awakened = false;
+            std::vector<ManagedField> fields;
+            const std::vector<ManagedField>& ManagedFields() const override { return fields; }
+            std::optional<ManagedFieldValue> ReadManagedField(uint64_t token) const override {
+                if (!instance.id || !host) return {};
+                OvCsOwnedFieldValue value{};
+                try {
+                    host->Check(host->Api().read_field(session,instance,token,&value), "read field",session);
+                    ManagedFieldValue result{value.tag,value.auxiliary,value.scalar,{}};
+                    if(value.text.length) result.text.assign(reinterpret_cast<const char*>(value.text.data),static_cast<size_t>(value.text.length));
+                    host->Check(host->Api().release_field_value(&value),"release field value");
+                    return result;
+                } catch(const std::exception& e) { if(value.text.data) host->Api().release_field_value(&value); OVLOG_ERROR(e.what()); return {}; }
+            }
+            bool WriteManagedField(uint64_t token, const ManagedFieldValue& value) override {
+                if(!instance.id || !host) return false;
+                try { auto view=value.View(); host->Check(host->Api().write_field(session,instance,token,&view),"write field",session); return true; }
+                catch(const std::exception& e) { OVLOG_ERROR(e.what()); return false; }
+            }
             ~CSharpTypeScript() override {
                 DispatchScope callbackScope;
                 if (instance.id && host && host->Api().destroy_instance) {
@@ -70,7 +89,7 @@ namespace OvCore::Scripting
     {
         if (!m_behaviours.insert(&target).second) return;
         if (target.Identity().backend == "lua") m_legacy->AddBehaviour(target);
-        else if (target.Status() == ScriptStatus::TypeReady) target.SetScript(std::make_unique<CSharpTypeScript>());
+        else if (target.Status() == ScriptStatus::TypeReady) AttachCSharp(target);
     }
     void ScriptEngine::RemoveBehaviour(ECS::Components::Behaviour& target)
     {
@@ -82,8 +101,13 @@ namespace OvCore::Scripting
     {
         m_legacy->Reload();
         for (auto* target : m_behaviours) if (target->Identity().backend == "csharp") {
+            // Editor StartPlaying reloads Lua files. Keep the actual C# Prepared
+            // object which supplied defaults; no assembly replacement occurs here.
+            auto current=target->GetScript();
+            auto* prepared=current?dynamic_cast<CSharpTypeScript*>(&current.value()):nullptr;
+            if(prepared && prepared->instance.id && !prepared->awakened && !prepared->faulted) continue;
             target->RemoveScript();
-            if (target->Status() == ScriptStatus::TypeReady) target->SetScript(std::make_unique<CSharpTypeScript>());
+            if (target->Status() == ScriptStatus::TypeReady) AttachCSharp(*target);
         }
     }
     void ScriptEngine::ClearCSharpProject()
@@ -95,7 +119,7 @@ namespace OvCore::Scripting
             try { m_host->Check(m_host->Api().close_session(m_session), "close project", m_session); }
             catch (const std::exception& error) { OVLOG_ERROR(error.what()); }
         }
-        m_session = {}; m_host = nullptr; m_tokens.clear();
+        m_session = {}; m_host = nullptr; m_tokens.clear(); m_fields.clear();
         m_types.clear(); m_csharp = false; m_error.clear();
     }
     OvReflection::Script::Context& ScriptEngine::GameplayContext(uint64_t context)
@@ -117,6 +141,7 @@ namespace OvCore::Scripting
             host.Check(api.create_session(&info, &session), "discover project");
             std::unordered_map<std::string, ScriptIdentity> candidate;
             std::unordered_map<std::string, uint64_t> tokens;
+            std::unordered_map<std::string, std::vector<ManagedField>> fields;
             uint32_t count = 0;
             host.Check(api.get_type_count(session, &count), "get_type_count", session);
             for (uint32_t i = 0; i < count; ++i) {
@@ -125,6 +150,21 @@ namespace OvCore::Scripting
                 try {
                     auto identity = ScriptIdentity::CSharp(Text(type.assembly_logical_name), Text(type.canonical_type_name), Text(type.stable_id));
                     tokens.emplace(identity.Key(), type.type_token);
+                    auto& list = fields[identity.Key()];
+                    for(uint32_t f=0; f<type.field_count; ++f) {
+                        OvCsFieldInfo fieldInfo{};
+                        host.Check(api.get_field_info(session,type.type_token,f,&fieldInfo),"get_field_info",session);
+                        try {
+                            ManagedField field{fieldInfo.field_token,fieldInfo.tag,fieldInfo.auxiliary,Text(fieldInfo.stable_id),Text(fieldInfo.managed_name),{}};
+                            for(uint32_t a=0;a<fieldInfo.alias_count;++a) {
+                                OvCsOwnedUtf8 alias{}; host.Check(api.get_field_alias(session,type.type_token,fieldInfo.field_token,a,&alias),"get_field_alias",session);
+                                try { field.aliases.push_back(Text(alias)); } catch(...) { api.release_owned_utf8(&alias); throw; }
+                                host.Check(api.release_owned_utf8(&alias),"release field alias");
+                            }
+                            list.push_back(std::move(field));
+                        } catch(...) { api.release_field_info(&fieldInfo); throw; }
+                        host.Check(api.release_field_info(&fieldInfo),"release_field_info");
+                    }
                     if (!candidate.emplace(identity.Key(), identity).second) throw std::runtime_error("Duplicate native identity key");
                     for (uint32_t a = 0; a < type.alias_count; ++a) {
                         OvCsOwnedUtf8 alias{};
@@ -153,11 +193,11 @@ namespace OvCore::Scripting
                 reinterpret_cast<uintptr_t>(&OvScript_GetOvCoreApi)), "bind project R6", session);
             ClearCSharpProject();
             m_host = &host; m_session = session; session = {}; m_tokens = std::move(tokens);
-            m_types = std::move(candidate); m_csharp = true; m_error.clear();
+            m_types = std::move(candidate); m_fields = std::move(fields); m_csharp = true; m_error.clear();
             for (auto* target : m_behaviours) if (target->Identity().backend == "csharp") {
                 target->RefreshIdentity();
                 target->RemoveScript();
-                if (target->Status() == ScriptStatus::TypeReady) target->SetScript(std::make_unique<CSharpTypeScript>());
+                if (target->Status() == ScriptStatus::TypeReady) AttachCSharp(*target);
             }
             return true;
         } catch (const std::exception& error) {
@@ -172,23 +212,40 @@ namespace OvCore::Scripting
         return target.Identity().backend == "lua" && script && script->IsValid();
     }
 
-    void ScriptEngine::DispatchCSharp(ECS::Components::Behaviour& target, uint32_t event, float dt,
-        ECS::Components::CPhysicalObject* other)
+    void ScriptEngine::AttachCSharp(ECS::Components::Behaviour& target)
     {
-        if (!m_host || target.Identity().backend != "csharp") return;
+        auto runtime=std::make_unique<CSharpTypeScript>();
+        runtime->host=m_host; runtime->session=m_session; runtime->fields=m_fields[target.CurrentIdentity().Key()];
+        target.SetScript(std::move(runtime));
+    }
+    bool ScriptEngine::PrepareCSharp(ECS::Components::Behaviour& target)
+    {
+        if (!m_host || target.Identity().backend != "csharp") return false;
         auto script = target.GetScript();
         auto* runtime = script ? dynamic_cast<CSharpTypeScript*>(&script.value()) : nullptr;
-        if (!runtime || (runtime->faulted && event != OVCS_LIFECYCLE_DESTROY)) return;
+        if (!runtime || runtime->faulted) return false;
+        if(runtime->instance.id) return true;
+        DispatchScope scope;
         try {
-            if (!runtime->instance.id) {
-                if (event != OVCS_LIFECYCLE_AWAKE) return;
                 const auto token = m_tokens.find(target.CurrentIdentity().Key());
-                if (token == m_tokens.end()) return;
+                if (token == m_tokens.end()) return false;
                 runtime->host = m_host; runtime->session = m_session;
                 const auto owner = PublishComponent(m_host->NativeContext(), target.owner.transform);
                 OvCsInstanceCreateInfo info{sizeof(info), 0, token->second, m_host->NativeContext().Id(), owner, target.owner.GetGUID()};
                 m_host->Check(m_host->Api().create_instance(m_session, &info, &runtime->instance), "construct instance", m_session);
-            }
+                target.RestoreManagedFields();
+                return true;
+        } catch (const std::exception& error) { runtime->faulted = true; OVLOG_ERROR(error.what()); return false; }
+    }
+    void ScriptEngine::DispatchCSharp(ECS::Components::Behaviour& target, uint32_t event, float dt,
+        ECS::Components::CPhysicalObject* other)
+    {
+        if (!m_host || target.Identity().backend != "csharp") return;
+        auto script=target.GetScript(); auto* runtime=script?dynamic_cast<CSharpTypeScript*>(&script.value()):nullptr;
+        if(!runtime || (runtime->faulted && event != OVCS_LIFECYCLE_DESTROY)) return;
+        if(!runtime->instance.id && (event != OVCS_LIFECYCLE_AWAKE || !PrepareCSharp(target))) return;
+        try {
+            if(event==OVCS_LIFECYCLE_AWAKE) runtime->awakened=true;
             const auto otherHandle = other ? PublishComponent(m_host->NativeContext(), other->owner.transform) : 0;
             OvCsLifecycleCall call{sizeof(call), event, runtime->instance, dt, 0, otherHandle};
             m_host->Check(m_host->Api().dispatch_lifecycle(m_session, &call), "lifecycle", m_session);

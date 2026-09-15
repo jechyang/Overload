@@ -30,10 +30,11 @@ namespace OvCore::Scripting
         void RemoveBehaviour(ECS::Components::Behaviour& target);
         void Reload();
         bool IsOk() const;
-        // Loading is metadata-only; instances are constructed at the first Awake.
+        // Loading is metadata-only. Inspector or Play prepares the attached instance once.
         bool LoadCSharpProject(CSharp::RuntimeHost& host, const std::filesystem::path& root,
             const std::filesystem::path& assembly, const std::string& logical);
         void ClearCSharpProject();
+        bool PrepareCSharp(ECS::Components::Behaviour& target);
         OvReflection::Script::Context& GameplayContext(uint64_t context);
         ScriptIdentity ResolveIdentity(const ScriptIdentity& identity) const;
         ScriptStatus Status(const ScriptIdentity& identity) const;
@@ -65,5 +66,7 @@ namespace OvCore::Scripting
         CSharp::RuntimeHost* m_host = nullptr;
         OvCsSessionHandle m_session{};
         std::unordered_map<std::string, uint64_t> m_tokens;
+        std::unordered_map<std::string, std::vector<ManagedField>> m_fields;
+        void AttachCSharp(ECS::Components::Behaviour& target);
     };
 }

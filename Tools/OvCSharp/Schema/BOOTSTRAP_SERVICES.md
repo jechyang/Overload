@@ -1,4 +1,4 @@
-# Resident bootstrap services (S1–S3)
+# Resident bootstrap services (S1–S4)
 
 `BootstrapABI.h` describes the bootstrap transport, separate from the frozen Host
 ABI 1 and R6 ABI 1. It does not change either signature. All three use Windows x64,
@@ -68,8 +68,15 @@ managed Destroy and before native Actor/component destruction notifications.
 | 9 | find living Actor by name in Owner's current scene; anchor or zero |
 | 10 | create Actor in Owner's current scene; gameplay starts at safe point |
 | 11 | request existing SceneManager delayed file load and stop old dispatch |
+| 12 | resolve ActorRef GUID in the validated Owner's scene; anchor or zero |
+| 13 | resolve AssetRef kind/path in the validated Owner's project asset root; 0/1 |
 
 Operations 9–11 verify that the resolved Owner belongs to the current scene.
+S4 operations 12–13 use the anchor's owning Scene directly, so separate scenes cannot
+resolve each other's actors. ActorRef never stores an R6 handle. Missing/deleted GUIDs
+return zero; AssetRef resolution checks a normalized relative path, file existence
+and optional kind without loading a resource. These read operations remain available
+for valid cleanup reads; they still check native Context, Main and the Owner epoch.
 Component publication additionally verifies the facade's native context. The
 resident managed adapter converts values between ScriptCore math types and the
 unchanged generated R6 types. Cached facades check session closure and Main before
