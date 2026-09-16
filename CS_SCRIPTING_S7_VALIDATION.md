@@ -51,14 +51,14 @@ Publish 的代表性汇总如下，完整 Debug/Release/Publish 数据保留在�
 ## 回归矩阵与边界
 
 - R0、R1、R2、R3、R4、R5 均通过；R2/R4/R5 的 Debug/Release/Publish 默认和 RenderThread 真实 GPU 用例通过。R3 包含 fixture 事务、失败恢复、并发配置、无修改 MSBuild 和全解决方案矩阵。
-- R6 的 `--skip-build --engine` 三配置通过生成 ABI、C/C++/Clang、CoreCLR、错配拒绝、默认和 RenderThread 引擎用例。R6 额外的全量 solution build 在 Debug link 处因 H 盘空间不足报 `LNK1180`，因此未把该次全量 build 写成通过；S7 自身三配置 native build 已在同一入口通过。
-- S1–S6 的固定收据分别沿用既有验收记录；S6 收据 `s6-aaF4Qf/verification.json` 已证明 WeakReference 回收和 20 次两模式热重载。S5 指定基线本会话第一次沙箱运行因 FileTracker `E_ACCESSDENIED` 失败，沙箱外复核随后在 S4 OvGame link 因 H 盘空间报 `LNK1180`；既有 S5/S6 成功收据保留，不能把本次失败尝试改写为通过。
+- R6 三配置完整 build、无修改构建、生成 ABI、C/C++/Clang、CoreCLR、错配拒绝、默认和 RenderThread 引擎用例均通过；空间清理后的完整证据为 `r6-wc1ilxam/verification.json`。
+- S1–S6 的固定收据分别沿用既有验收记录；S6 收据 `s6-aaF4Qf/verification.json` 已证明 WeakReference 回收和 20 次两模式热重载。S5 指定基线在空间清理后的沙箱外完整通过，证据为 `s5-wATFex/verification.json`；此前沙箱 FileTracker `E_ACCESSDENIED` 与 H 盘空间 `LNK1180` 作为环境失败记录保留。
 - 本地真实 GPU：已执行，R2/R4/R5 记录 NVIDIA GeForce RTX 3070 Ti、OpenGL 4.5，默认/RenderThread 均通过。
 - 本地无 GPU：已执行，S7 headless 三配置通过，不创建窗口或 GPU。
 - 本地隔离环境：已执行，三配置 AppContainer 无 capability 包运行通过。
 - 独立机器/VM：未执行；远端 CI：未执行。`.github/workflows/scripting.yml` 提供完整三配置无 GPU CI 入口，不能把入库的 workflow 标成远端通过。
 
-恢复 R6 全量 native build 的最小步骤是为 H 盘释放足够空间后重跑：
+R6 全量 native build 已在释放 H 盘空间后按以下命令重跑成功，证据为 `r6-wc1ilxam/verification.json`：
 
 ```text
 python Tests/Reflection/Integration/verify_r6.py --engine --config Debug Release Publish --dotnet Build/Toolchains/dotnet-10.0.401/dotnet.exe --runtime Build/Toolchains/dotnet-10.0.401/shared/Microsoft.NETCore.App/10.0.12
