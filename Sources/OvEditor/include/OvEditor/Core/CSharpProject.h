@@ -23,6 +23,7 @@ namespace OvEditor::Core
         bool Pending() const { return !m_pending.empty(); }
         const std::filesystem::path& PendingGeneration() const { return m_pending; }
         bool watch = true;
+        bool hotReload = false; // Explicit opt-in to supported runtime field migration.
     private:
         void CheckMain() const;
         void EnsureProject();

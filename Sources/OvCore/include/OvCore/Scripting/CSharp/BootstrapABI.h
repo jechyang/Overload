@@ -17,3 +17,7 @@ typedef struct OvCsBootstrapServices
 typedef OvCsStatus (OVCS_CALL* OvCsConfigureFn)(const OvCsBootstrapServices* services);
 typedef OvCsStatus (OVCS_CALL* OvCsDetachFn)();
 static_assert(sizeof(OvCsBootstrapServices) == 32);
+// S6 resident exports; Host ABI 1 and R6 remain unchanged.
+typedef OvCsStatus (OVCS_CALL* OvCsPrepareReloadFn)(OvCsSessionHandle, OvCsInstanceHandle, OvCsSessionHandle, OvCsInstanceHandle);
+typedef OvCsStatus (OVCS_CALL* OvCsRetireReloadFn)(OvCsSessionHandle);
+typedef OvCsStatus (OVCS_CALL* OvCsCollectibleStatsFn)(uint32_t, uint64_t*, uint64_t*);

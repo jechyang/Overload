@@ -27,6 +27,7 @@ namespace OvCore::Scripting
             bool faulted = false;
             bool awakened = false;
             std::vector<ManagedField> fields;
+            std::map<std::string,ManagedFieldValue> reloadDefaults;
             const std::vector<ManagedField>& ManagedFields() const override { return fields; }
             std::optional<ManagedFieldValue> ReadManagedField(uint64_t token) const override {
                 if (!instance.id || !host) return {};
@@ -135,7 +136,7 @@ namespace OvCore::Scripting
         return m_host->NativeContext();
     }
     bool ScriptEngine::LoadCSharpProject(CSharp::RuntimeHost& host, const std::filesystem::path& root,
-        const std::filesystem::path& assembly, const std::string& logical)
+        const std::filesystem::path& assembly, const std::string& logical, bool migrateRuntime)
     {
         OvCsSessionHandle session{};
         const auto& api = host.Api();
@@ -198,6 +199,55 @@ namespace OvCore::Scripting
             for (size_t i = 0; i < 32; ++i) signature[i] = static_cast<uint8_t>(std::stoul(hex.substr(i * 2, 2), nullptr, 16));
             host.Check(api.bind_native_api(session, View(module), 1, sizeof(OvScriptOvCoreTable), signature,
                 reinterpret_cast<uintptr_t>(&OvScript_GetOvCoreApi)), "bind project R6", session);
+            if (migrateRuntime && m_session.id) {
+                if (m_host != &host) throw std::runtime_error("Reload requires the same resident host");
+                const auto prepare = reinterpret_cast<OvCsPrepareReloadFn>(host.Entry(L"Overload.ManagedHost.Bootstrap, Overload.ManagedHost", L"PrepareReload"));
+                const auto retire = reinterpret_cast<OvCsRetireReloadFn>(host.Entry(L"Overload.ManagedHost.Bootstrap, Overload.ManagedHost", L"RetireReload"));
+                std::vector<std::pair<ECS::Components::Behaviour*, std::unique_ptr<CSharpTypeScript>>> replacements;
+                // No user lifecycle runs until every attachment and value has passed preflight.
+                for (auto* target : m_behaviours) if (target->Identity().backend == "csharp") {
+                    auto current = target->GetScript();
+                    auto* old = current ? dynamic_cast<CSharpTypeScript*>(&current.value()) : nullptr;
+                    const auto found = candidate.find(target->CurrentIdentity().Key());
+                    if (found == candidate.end()) throw std::runtime_error("Reload would remove attached type: " + target->CurrentIdentity().type);
+                    auto next = std::make_unique<CSharpTypeScript>();
+                    next->host = &host; next->session = session; next->fields = fields.at(found->second.Key());
+                    if (old && old->instance.id) {
+                        const auto owner = PublishComponent(host.NativeContext(), target->owner.transform);
+                        OvCsInstanceCreateInfo create{sizeof(create), 0, tokens.at(found->second.Key()), host.NativeContext().Id(), owner, target->owner.GetGUID()};
+                        host.Check(api.create_instance(session, &create, &next->instance), "reload construct", session);
+                        for (const auto& field : next->fields) if (auto value=next->ReadManagedField(field.token)) next->reloadDefaults[field.id]=*value;
+                        host.Check(prepare(m_session, old->instance, session, next->instance), "reload preflight", session);
+                        next->awakened = old->awakened;
+                    }
+                    replacements.emplace_back(target, std::move(next));
+                }
+                DispatchScope commitScope;
+                // Retire rejects old handles, clears caches and releases registered subscriptions.
+                // Cleanup exceptions are logged; this is the irreversible commit boundary.
+                host.Check(retire(m_session), "reload retire", m_session);
+                for (auto& [target, next] : replacements) {
+                    auto current = target->GetScript();
+                    if (auto* old = current ? dynamic_cast<CSharpTypeScript*>(&current.value()) : nullptr) old->instance = {};
+                    target->RemoveScript();
+                }
+                m_host = &host; m_session = session; session = {}; m_tokens = std::move(tokens);
+                m_types = std::move(candidate); m_fields = std::move(fields); m_csharp = true; m_error.clear();
+                for (auto& [target, next] : replacements) {
+                    target->RefreshIdentity();
+                    auto* installed = next.get(); const auto handle = installed->instance;
+                    // SetScript must invalidate UI without overwriting the migrated runtime values.
+                    installed->instance = {}; target->SetScript(std::move(next)); installed->instance = handle;
+                    target->RebindManagedFieldDefaults(std::move(installed->reloadDefaults));
+                }
+                for (auto& [target, next] : replacements) {
+                    (void)next;
+                    auto current = target->GetScript();
+                    auto* installed = dynamic_cast<CSharpTypeScript*>(&current.value());
+                    if (installed->instance.id) DispatchCSharp(*target, OVCS_LIFECYCLE_RELOAD_RESTORE);
+                }
+                return true;
+            }
             ClearCSharpProject();
             m_host = &host; m_session = session; session = {}; m_tokens = std::move(tokens);
             m_types = std::move(candidate); m_fields = std::move(fields); m_csharp = true; m_error.clear();

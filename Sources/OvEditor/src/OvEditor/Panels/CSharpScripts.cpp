@@ -14,7 +14,8 @@ namespace OvEditor::Panels
         for(const std::string configuration:{"Debug","Release"})
             CreateWidget<Buttons::Button>("Build / Reload C# ("+configuration+")").ClickedEvent += [configuration]{EDITOR_CONTEXT(csharpProject)->RequestBuild(configuration);};
         CreateWidget<Selection::CheckBox>(true,"Watch source files").ValueChangedEvent += [](bool enabled){EDITOR_CONTEXT(csharpProject)->watch=enabled;};
-        CreateWidget<Texts::Text>("Compile errors include source file, line and column. New assemblies apply after Stop.\nAttach a compiled C# type through Inspector > Add Component.");
+        CreateWidget<Selection::CheckBox>(false,"Reload during Play (supported fields)").ValueChangedEvent += [](bool enabled){EDITOR_CONTEXT(csharpProject)->hotReload=enabled;};
+        CreateWidget<Texts::Text>("Compile errors include source file, line and column. New assemblies apply after Stop unless runtime reload is enabled.\nAttach a compiled C# type through Inspector > Add Component.");
         m_status=&CreateWidget<Texts::Text>("");m_diagnostics=&CreateWidget<Texts::Text>("");
     }
     void CSharpScripts::_Draw_Impl()

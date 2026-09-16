@@ -25,12 +25,16 @@ public static unsafe partial class Bootstrap
 
     private sealed class ProjectContext(string file) : AssemblyLoadContext(isCollectible: true)
     {
+        internal string ShadowDirectory => directory;
         private readonly AssemblyDependencyResolver resolver = new(file);
         private readonly string directory = Path.GetDirectoryName(file)!;
         protected override Assembly? Load(AssemblyName name)
         {
             foreach (Assembly shared in new[] { typeof(Overload.Behaviour).Assembly, typeof(Bootstrap).Assembly })
-                if (name.Name == shared.GetName().Name) return shared;
+                if (name.Name == shared.GetName().Name) {
+                    Require(name.FullName == shared.GetName().FullName, Status.AbiMismatch, "Shared assembly identity mismatch: " + name.FullName);
+                    return shared;
+                }
             string? dependency = resolver.ResolveAssemblyToPath(name);
             // Direct compiler fixtures and simple project libraries need no deps.json.
             // Resolve their adjacent dependencies only inside the explicit project directory.
@@ -38,7 +42,17 @@ public static unsafe partial class Bootstrap
                 string adjacent = Path.Combine(directory, name.Name + ".dll");
                 if (File.Exists(adjacent)) dependency = adjacent;
             }
-            return dependency == null ? null : LoadFromAssemblyPath(dependency);
+            return dependency == null ? null : LoadFromAssemblyPath(PrivatePath(dependency));
+        }
+        private string PrivatePath(string path) {
+            string relative = Path.GetRelativePath(directory, Path.GetFullPath(path));
+            Require(!Path.IsPathRooted(relative) && relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal), Status.InvalidArgument, "Project dependency escaped its shadow generation: " + path);
+            return path;
+        }
+        protected override nint LoadUnmanagedDll(string name) {
+            string? dependency = resolver.ResolveUnmanagedDllToPath(name);
+            if (dependency == null) { string adjacent = Path.Combine(directory, name + (name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? "" : ".dll")); if (File.Exists(adjacent)) dependency = adjacent; }
+            return dependency == null ? 0 : LoadUnmanagedDllFromPath(PrivatePath(dependency));
         }
     }
     private static string Part(string text) => Encoding.GetByteCount(text) + ":" + text;
@@ -56,6 +70,7 @@ public static unsafe partial class Bootstrap
         Session result = new() { LogicalName = logical };
         if (file.Length == 0) return result; // S1 bootstrap remains supported.
         Require(Path.IsPathFullyQualified(file) && File.Exists(file), Status.InvalidArgument, "Missing absolute project assembly: " + file);
+        file = ShadowCopy(file);
         result.Project = new ProjectContext(file);
         try {
             Assembly assembly = result.Project.LoadFromAssemblyPath(file);

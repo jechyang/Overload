@@ -17,6 +17,7 @@ public static unsafe partial class Bootstrap
         internal readonly ulong Guid = guid;
         internal readonly ProjectType Type = type;
         internal bool Awake, Started, Enabled, Faulted, Destroyed;
+        internal bool RestorePending, RestoreAwake, RestoreStarted, RestoreEnabled;
     }
     private static ulong nextInstance;
     private static bool constructing;
@@ -85,18 +86,19 @@ public static unsafe partial class Bootstrap
         session.Instances.Add(id, new Instance(value, info->Guid, type));
         *output = new InstanceHandle { Id = id, Generation = s.Generation };
     }
-    private static void Destroy(Instance instance) {
+    private static void Destroy(Instance instance, bool reloading = false) {
         if (instance.Destroyed) return;
         instance.Destroyed = true; instance.Enabled = false;
-        try { if (instance.Awake) instance.Value.OnDestroy(); }
+        try { if (instance.Awake) { if (reloading) instance.Value.OnReloadRelease(); else instance.Value.OnDestroy(); } }
         catch (Exception ex) { Log($"Destroy script={instance.Value.GetType().FullName} actor={instance.Guid}: {ex}"); }
-        finally { instance.Value.owner = null; }
+        finally { instance.Value.ReleaseSubscriptions(Log); instance.Value.owner = null; }
     }
     private static void Invoke(SessionHandle s, LifecycleCall* call) {
         Require(call != null && call->Size == 40 && call->Flags == 0 && float.IsFinite(call->Delta), Status.InvalidArgument, "Invalid lifecycle call");
         Instance i = FindInstance(s, call->Instance);
         uint e = call->Event;
-        Require(e >= 1 && e <= 14, Status.InvalidLifecycle, "Unknown/reserved lifecycle");
+        Require(e >= 1 && e <= 15, Status.InvalidLifecycle, "Unknown/reserved lifecycle");
+        if (e == 15) { RestoreReload(i); return; }
         if (e == 14) { Destroy(i); return; }
         Require(!i.Destroyed, Status.InvalidLifecycle, "Destroyed instance");
         Require(!i.Faulted, Status.InstanceFaulted, "Faulted instance");

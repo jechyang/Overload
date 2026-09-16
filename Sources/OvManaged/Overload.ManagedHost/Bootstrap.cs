@@ -30,11 +30,12 @@ public static unsafe partial class Bootstrap
         internal bool Closed;
         internal bool Closing;
         internal string LogicalName = "";
-        internal void Close() {
+        internal void Close(bool reloading = false) {
             Closing = true;
-            foreach (Instance instance in Instances.Values) Destroy(instance);
+            foreach (Instance instance in Instances.Values) Destroy(instance, reloading);
             Instances.Clear(); Closed = true;
-            Core = null; Entry = 0; Types.Clear(); Project?.Unload(); Project = null;
+            Core = null; Entry = 0; Types.Clear();
+            if (Project != null) Retire(Project); Project = null;
         }
     }
     private sealed class Failure(Status status, string message) : Exception(message)

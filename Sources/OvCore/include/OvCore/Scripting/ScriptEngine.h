@@ -32,8 +32,9 @@ namespace OvCore::Scripting
         bool IsOk() const;
         // Loading is metadata-only. Inspector or Play prepares the attached instance once.
         bool LoadCSharpProject(CSharp::RuntimeHost& host, const std::filesystem::path& root,
-            const std::filesystem::path& assembly, const std::string& logical);
+            const std::filesystem::path& assembly, const std::string& logical, bool migrateRuntime = false);
         void ClearCSharpProject();
+        OvCsSessionHandle CSharpSession() const { return m_session; } // Numeric generation for diagnostics.
         bool PrepareCSharp(ECS::Components::Behaviour& target);
         OvReflection::Script::Context& GameplayContext(uint64_t context);
         ScriptIdentity ResolveIdentity(const ScriptIdentity& identity) const;

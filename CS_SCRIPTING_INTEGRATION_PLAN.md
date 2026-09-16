@@ -10,7 +10,8 @@
 S4 已实现托管字段、Inspector、场景/Prefab 存档与引用恢复，详见
 [S4 验收记录](CS_SCRIPTING_S4_VALIDATION.md)，固定源码完整复验通过。
 S5 已完成项目模板、后台构建、类型挂载与停止态应用，详见
-[S5 验收记录](CS_SCRIPTING_S5_VALIDATION.md)，S5 与 S1–S4 完整回归通过。S6–S7 未实施。
+[S5 验收记录](CS_SCRIPTING_S5_VALIDATION.md)，S5 与 S1–S4 完整回归通过。S6 已完成可回收项目代、有限字段热重载与固定源码验收，
+详见 [S6 验收记录](CS_SCRIPTING_S6_VALIDATION.md)。S7 未实施。
 当前 Windows 的标准 `dotnet build` 仍因 CET 失败；显式兼容入口的
 完整 MSBuild 重建与新程序集真实宿主运行通过，二者分别记录，不能混称标准构建通过。
 
@@ -173,7 +174,7 @@ Inspector 使用精确字段文本、覆盖开关和引用身份/解析状态，
 最终收据 `Build/Tests/Scripting/s5-MuAls9/verification.json` 为 success=true。
 默认/RenderThread、Lua、新项目完整编辑器流程、中文/空格路径、项目内/外缓存、
 失败保留旧版、Play/暂停待应用、Main 停止态切换、并发/配置切换/无变化构建均通过。
-运行态热重载、字段迁移及发布仍属于未实施的 S6/S7。
+S5 本身不包含运行态热重载和发布；运行态热重载与字段迁移由后续 S6 独立验收。
 
 任务：提供用户 GameScripts 项目模板和引用，接入新建 C# 脚本、资源识别、类型选择与挂载、编译诊断、明确的 Build/Reload 状态。一文件多个类时由类型清单选择，不能拖入文件后任意选第一个类。更新 Lua 硬编码菜单/过滤器，继续支持 Lua。
 
@@ -183,6 +184,11 @@ Inspector 使用精确字段文本、覆盖开关和引用身份/解析状态，
 建议提交：feat(editor): complete S5 C# project build and attachment workflow
 
 ### S6：可卸载项目会话与有限状态热重载
+
+状态：已完成实现与固定源码完整验收，详见 `CS_SCRIPTING_S6_VALIDATION.md`。
+收据 `Build/Tests/Scripting/s6-aaF4Qf/verification.json` 为 success=true，包含 S1–S5、
+默认/RenderThread 各 20 次构建/重载与 Play/Stop；两模式均 WeakReference alive=0、
+collected=25。保留事件根负例明确报告待回收，没有把 Unload 当作回收证明。
 
 任务：项目程序集和项目依赖进入 collectible ALC，固定共享程序集身份，采用代际 shadow-copy 避免覆盖已加载文件。卸载前停止该会话分派，完成在途同步调用，清理实例、事件、缓存、UI 引用；旧代实例 ID 拒绝调用。ALC 卸载是协作式，调用 Unload 不等于完成卸载，需 WeakReference 验证。[官方卸载指南](https://learn.microsoft.com/en-us/dotnet/standard/assembly/unloadability)
 

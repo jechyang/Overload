@@ -41,7 +41,8 @@ namespace OvCore::ECS::Components
 		void DeserializeRecord(tinyxml2::XMLDocument& doc, tinyxml2::XMLElement* record);
 		void SerializeRecord(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* parent);
 		bool PrepareManagedFields();
-		void RestoreManagedFields();
+		void RestoreManagedFields(bool applyValues = true);
+		void RebindManagedFieldDefaults(std::map<std::string,Scripting::ManagedFieldValue> defaults);
 		bool EditManagedField(const std::string& id, const Scripting::ManagedFieldValue& value);
 		bool SetManagedFieldOverride(const std::string& id, bool enabled);
 		bool HasManagedFieldOverride(const std::string& id) const { return m_managedOverrides.contains(id); }

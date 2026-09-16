@@ -9,6 +9,17 @@ namespace Overload;
 public abstract class Behaviour
 {
     internal Actor? owner;
+    private readonly System.Collections.Generic.List<IDisposable> subscriptions = new();
+    private bool subscriptionsClosed;
+    protected T TrackSubscription<T>(T subscription) where T : IDisposable {
+        if (subscriptionsClosed) { subscription.Dispose(); throw new InvalidOperationException("Behaviour subscription scope closed"); }
+        subscriptions.Add(subscription); return subscription;
+    }
+    internal void ReleaseSubscriptions(Action<string> log) {
+        subscriptionsClosed = true;
+        foreach (IDisposable subscription in subscriptions) try { subscription.Dispose(); } catch (Exception ex) { log("Subscription cleanup: " + ex); }
+        subscriptions.Clear();
+    }
     public Actor Owner => owner ?? throw new InvalidOperationException("Owner is unavailable during construction");
     public Transform Transform => Owner.Transform;
     public virtual void OnAwake() { }
@@ -25,6 +36,8 @@ public abstract class Behaviour
     public virtual void OnTriggerStay(Collision other) { }
     public virtual void OnTriggerExit(Collision other) { }
     public virtual void OnDestroy() { }
+    public virtual void OnReloadRelease() { }
+    public virtual void OnReloadRestore() { }
 }
 
 internal interface INativeAccess

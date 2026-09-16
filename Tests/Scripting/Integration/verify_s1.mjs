@@ -11,9 +11,10 @@ const s2 = args.includes('--s2');
 const s3 = args.includes('--s3');
 const s4 = args.includes('--s4');
 const s5 = args.includes('--s5');
+const s6 = args.includes('--s6');
 const compat = args.includes('--compat-build');
-const stage = s5 ? 'S5' : s4 ? 'S4' : s3 ? 'S3' : s2 ? 'S2' : 'S1';
-const baseline = s5 ? '194e339' : s4 ? 'ef3ea8f' : s3 ? 'c3ae12d' : s2 ? 'a1c3a1a' : '80ef9de';
+const stage = s6 ? 'S6' : s5 ? 'S5' : s4 ? 'S4' : s3 ? 'S3' : s2 ? 'S2' : 'S1';
+const baseline = s6 ? 'fcfcecd' : s5 ? '194e339' : s4 ? 'ef3ea8f' : s3 ? 'c3ae12d' : s2 ? 'a1c3a1a' : '80ef9de';
 const python = args[args.indexOf('--python') + 1];
 if (!args.includes('--python') || !path.isAbsolute(python)) throw new Error('Supply --python <absolute Python 3 executable>');
 const evidenceRoot = process.env.OV_SCRIPTING_EVIDENCE_ROOT || path.join(root, 'Build/Tests/Scripting');
@@ -85,7 +86,7 @@ try {
   const msbuild = path.join(tc.vs_root, 'MSBuild/Current/Bin/amd64/MSBuild.exe');
   const buildArgs = [path.join(root, 'Overload.sln'), '/nologo', '/m:2', '/nr:false', '/v:minimal', '/t:Build',
     '/p:Configuration=Debug', '/p:Platform=x64', '/p:PreferredToolArchitecture=x64', '/p:PROCESSOR_ARCHITECTURE=AMD64',
-    '/p:VcpkgEnabled=false', '/p:VcpkgApplocalDeps=false', '/p:VCToolsVersion=' + tc.msvc_version, '/p:WindowsTargetPlatformVersion=' + tc.sdk_version];
+    '/p:LinkIncremental=false', '/p:VcpkgEnabled=false', '/p:VcpkgApplocalDeps=false', '/p:VCToolsVersion=' + tc.msvc_version, '/p:WindowsTargetPlatformVersion=' + tc.sdk_version];
   run('native-build', msbuild, buildArgs, 0, 900000);
   const gen = path.join(root, 'Build/Generated/Reflection/x86_64-pc-windows-msvc/Debug');
   const managedProject = path.join(root, 'Sources/OvManaged/Overload.ManagedHost');
@@ -265,6 +266,10 @@ try {
   if(s5) {
     const {verifyWorkflow}=await import('./verify_s5_cases.mjs');
     await verifyWorkflow({root,output,run,env,compiler,nativeOptions,libraries,gen,python,project:path.join(output,'project 空格')});
+  }
+  if(s6) {
+    const {verifyReload}=await import('./verify_s6_cases.mjs');
+    await verifyReload({root,output,run,env,compiler,nativeOptions,libraries,gen,python,project:path.join(output,'project 空格')});
   }
   const objectsBefore = nativeSnapshot();
   run('native-no-change-build', msbuild, buildArgs, 0, 900000);

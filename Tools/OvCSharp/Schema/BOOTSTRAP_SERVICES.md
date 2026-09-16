@@ -1,4 +1,52 @@
-# Resident bootstrap services (S1–S4)
+# Resident bootstrap services (S1–S6)
+
+## S6 reload transport
+
+The frozen Host ABI 1 and R6 tables are unchanged. The resident Bootstrap adds
+three synchronous, Main-only guarded exports described in `BootstrapABI.h`:
+`PrepareReload(oldSession, oldInstance, newSession, newInstance)`,
+`RetireReload(oldSession)`, and `CollectibleStats(collect, alive*, collected*)`.
+The existing lifecycle value 15 is now implemented as ReloadRestore. It requires
+successful preparation and consumes that permission once.
+
+Project assemblies and adjacent dependencies are copied into a unique process/session
+directory before loading. The collectible resolver owns managed/native project
+dependencies; ScriptCore and ManagedHost (including the generated NativeApi) use
+their resident identity, with an exact referenced assembly identity check. The
+optional process variable `OV_SCRIPTING_SHADOW_ROOT` selects the shadow root.
+Shadow evidence is retained on disk; its presence does not imply a live ALC.
+
+Editor runtime reload is explicitly enabled using **Reload during Play (supported
+fields)**. With it disabled, S5's pending-until-Stop behavior remains unchanged.
+Every attachment must exist in the candidate catalogue. Constructors and exact
+field migration complete before retirement; constructors cannot use native APIs.
+Fields match by stable ID or new aliases, require identical tag and enum width,
+and use the existing owned ABI value protocol. Removed fields are dropped, new
+fields retain initializer values. No static state, arbitrary object graph, task,
+delegate or subscription is migrated. Unsupported fields are diagnosed at discovery.
+
+At commit, old dispatch has drained on Main. `OnReloadRelease` is attempted once
+for each awakened old instance, instead of OnDestroy. Owner access remains checked;
+structural mutation through a closing session is rejected. Registered subscription
+tokens are disposed in finally, even if the release hook throws. User subscriptions
+to external publishers must register their IDisposable token with the protected
+`TrackSubscription` helper. Unregistered external roots cannot be forcefully removed.
+
+All new native attachments are installed before `OnReloadRestore`. It runs only
+for previously awakened instances; Awake/Start/Enabled markers are restored without
+replaying those callbacks. Prepared edit instances retain ordinary first-Play
+semantics. Restore exceptions fault only the new instance; peers keep running and
+native effects already performed are not rolled back. New subscriptions belong in
+the restore hook as well as normal initialization. Normal Play/Stop still uses
+OnDestroy and the saved edit scene, not the migrated runtime snapshot.
+
+Retirement clears instance/type/field caches, native bindings, and attachment UI
+tickets, then calls Unload. Only weak ALC references and diagnostic strings survive.
+CollectibleStats with collect=1 is an explicit acceptance/diagnostic GC probe, never
+a frame-loop operation. A live weak reference is reported as pending with a shadow
+path and external-event/static/thread/task root clues. At 64 pending retired contexts
+further loads are rejected until collection is diagnosed or the process restarted;
+Unload alone is never reported as proof of collection.
 
 `BootstrapABI.h` describes the bootstrap transport, separate from the frozen Host
 ABI 1 and R6 ABI 1. It does not change either signature. All three use Windows x64,

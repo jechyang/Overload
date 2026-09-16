@@ -143,11 +143,11 @@ namespace OvEditor::Core
                 else if(!m_requested&&!m_dirty&&m_buildConfiguration==m_configuration) {
                     tinyxml2::XMLDocument doc;const auto text=Read(m_result);
                     if(doc.Parse(text.c_str())!=tinyxml2::XML_SUCCESS||!doc.RootElement()||!doc.RootElement()->Attribute("generation"))throw std::runtime_error("Missing complete build receipt");
-                    m_pending=Paths::FromUtf8(doc.RootElement()->Attribute("generation"));m_status="C#: built; reload pending Stop";
+                    m_pending=Paths::FromUtf8(doc.RootElement()->Attribute("generation"));m_status=hotReload?"C#: built; reload pending Main safe point":"C#: built; reload pending Stop";
                 }
             }
             if(!m_process&&m_requested)Launch();
-            if(!m_pending.empty()&&stopped&&!m_requested&&!m_dirty&&!m_process) {
+            if(!m_pending.empty()&&(stopped||hotReload)&&!m_requested&&!m_dirty&&!m_process) {
                 const auto generation=m_pending;m_pending.clear();
                 if(generation==m_applied){m_status="C#: up to date";return false;}
                 tinyxml2::XMLDocument manifest;const auto text=Read(generation/"manifest.xml");
@@ -168,7 +168,7 @@ namespace OvEditor::Core
                     auto host=std::make_unique<OvCore::Scripting::CSharp::RuntimeHost>(m_context.scriptingMain);
                     host->Start(Paths::Resolve(OvCore::Scripting::CSharp::RuntimeHost::ExecutableDirectory(),runtime,generation/"host"));host->OpenSession(m_context.projectFolder);m_context.csharpHost=std::move(host);
                 }
-                if(!m_context.scriptEngine->LoadCSharpProject(*m_context.csharpHost,m_context.projectFolder,generation/"GameScripts.dll","GameScripts"))throw std::runtime_error(m_context.scriptEngine->LastError());
+                if(!m_context.scriptEngine->LoadCSharpProject(*m_context.csharpHost,m_context.projectFolder,generation/"GameScripts.dll","GameScripts",!stopped))throw std::runtime_error(m_context.scriptEngine->LastError());
                 m_applied=generation;m_status="C#: applied "+m_configuration;
                 auto& settings=m_context.projectSettings;
                 const auto save=[&](const std::string& key,const std::string& value){if(!settings.Set(key,value))settings.Add(key,value);};

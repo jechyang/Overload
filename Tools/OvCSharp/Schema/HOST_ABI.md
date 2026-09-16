@@ -203,9 +203,9 @@ around `Start`; `Start` occurs once before the first update. Update, fixed updat
 late update, collision, and trigger events require Started+Enabled. `Destroy` is
 attempted at most once from every non-destroyed state. A user callback exception
 makes only that instance `Faulted`; further gameplay callbacks are skipped, but the
-single destroy cleanup attempt and host reference release still occur. `ReloadRestore`
-is reserved for S6 and is illegal until a new instance has passed S6 compatibility
-preflight.
+single destroy cleanup attempt and host reference release still occur. `ReloadRestore` (15) requires S6 compatibility preflight and restores lifecycle
+markers without replaying Awake/Start; see `BOOTSTRAP_SERVICES.md` for the
+commit boundary, subscription cleanup, restore hook and collection diagnostics.
 
 The existing Scene/Actor loop remains authoritative. Calls made during a callback
 that add/remove Behaviour or Actor, change active state, switch scene, close a

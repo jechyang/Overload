@@ -51,9 +51,12 @@ bool Behaviour::PrepareManagedFields() { return OVSERVICE(Scripting::ScriptEngin
 std::optional<ManagedFieldValue> Behaviour::ManagedDefault(const std::string& id) const {
     auto it=m_managedDefaults.find(id); return it==m_managedDefaults.end()?std::nullopt:std::optional{it->second};
 }
-void Behaviour::RestoreManagedFields() {
+void Behaviour::RebindManagedFieldDefaults(std::map<std::string,ManagedFieldValue> defaults) {
+    m_managedDefaults=std::move(defaults); RestoreManagedFields(false);
+}
+void Behaviour::RestoreManagedFields(bool applyValues) {
     if(!m_script || !m_script->IsValid()) return;
-    for(const auto& f:m_script->ManagedFields()) {
+    if(applyValues) for(const auto& f:m_script->ManagedFields()) {
         if(!m_managedDefaults.contains(f.id)) if(auto value=m_script->ReadManagedField(f.token)) m_managedDefaults[f.id]=*value;
         if(auto it=m_managedDefaults.find(f.id);it!=m_managedDefaults.end()) m_script->WriteManagedField(f.token,it->second);
     }
@@ -70,9 +73,9 @@ void Behaviour::RestoreManagedFields() {
         }
         if(candidates.size()!=1) { if(candidates.size()>1) OVLOG_WARNING("C# ambiguous field records retained: "+f.id); continue; }
         auto value=Decode(*candidates.front());
-        if(m_script->WriteManagedField(f.token,*value)) {
+        if(!applyValues || m_script->WriteManagedField(f.token,*value)) {
             // Read back normalization (e.g. asset paths) without invoking any getter.
-            auto normalized=m_script->ReadManagedField(f.token);
+            auto normalized=applyValues?m_script->ReadManagedField(f.token):value;
             m_managedOverrides[f.id]=normalized?*normalized:*value; m_managedLoaded.insert(Record(*candidates.front()));
         }
     }
