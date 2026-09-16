@@ -11,7 +11,8 @@ S4 已实现托管字段、Inspector、场景/Prefab 存档与引用恢复，详
 [S4 验收记录](CS_SCRIPTING_S4_VALIDATION.md)，固定源码完整复验通过。
 S5 已完成项目模板、后台构建、类型挂载与停止态应用，详见
 [S5 验收记录](CS_SCRIPTING_S5_VALIDATION.md)，S5 与 S1–S4 完整回归通过。S6 已完成可回收项目代、有限字段热重载与固定源码验收，
-详见 [S6 验收记录](CS_SCRIPTING_S6_VALIDATION.md)。S7 未实施。
+详见 [S6 验收记录](CS_SCRIPTING_S6_VALIDATION.md)。S7 已完成本地构建、发布包、隔离运行、GPU/无 GPU 回归与性能采样，详见
+[S7 验收记录](CS_SCRIPTING_S7_VALIDATION.md)。标准 dotnet build 的 CET 失败、R6 全量重建的 H 盘空间阻塞、独立机器/VM 和远端 CI 未执行均已单独记录。
 当前 Windows 的标准 `dotnet build` 仍因 CET 失败；显式兼容入口的
 完整 MSBuild 重建与新程序集真实宿主运行通过，二者分别记录，不能混称标准构建通过。
 
@@ -198,6 +199,9 @@ collected=25。保留事件根负例明确报告待回收，没有把 Unload 当
 建议提交：feat(scripting): complete S6 collectible reload and field migration
 
 ### S7：发布、回归与性能验收
+
+状态：已完成本地和本机隔离验收，详见 `CS_SCRIPTING_S7_VALIDATION.md`。
+Debug/Release/Publish 均完成私有运行时打包、无修改构建和实际 AppContainer OvGame 启动；默认/RenderThread、无 GPU、Lua、R0–R6 相关回归和 1/100/1000 性能原始数据已记录。标准 dotnet build 仍因 CET 失败；R6 额外全量 native rebuild 因 H 盘 `LNK1180` 未完成，使用 skip-build engine 回归并明确标注。独立机器/VM 和远端 CI 未执行，CI 用例已入库。
 
 任务：默认采用应用私有、版本受控的运行时部署，验证实际 hostfxr 查找位置；分发 ManagedHost、ScriptCore、NativeApi、GameScripts、deps/runtimeconfig 和完整依赖/许可清单。禁止只复制一个托管 DLL 就声称发布完成。编辑器可使用 SDK 构建，发布游戏不运行编译器、不要求 SDK，也不依赖开发机绝对路径。
 

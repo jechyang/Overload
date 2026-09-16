@@ -242,12 +242,28 @@ def generate_config(r, args, config, *, bootstrap=False):
                         shutil.copyfile(directory / filename, target / filename)
                 documents[name] = r.read_json(target / "schema.json")
             owned, owners = {}, {}
+            declared_owners = {}
+            for name, item in prepared.items():
+                for cpp_name in item["module"]["types"]:
+                    if cpp_name in declared_owners:
+                        raise ValueError("Duplicate C++ type ownership: " + cpp_name)
+                    declared_owners[cpp_name] = name
             for name, document in documents.items():
-                owned[name] = [t for t in document["types"] if t["source"]["path"].startswith(f"Sources/{name}/")]
-                for t in owned[name]:
-                    if t["cpp_name"] in owners:
+                owned[name] = []
+                for t in document["types"]:
+                    owner = declared_owners.get(t["cpp_name"])
+                    if owner is None:
+                        source = t["source"]["path"].replace("\\", "/")
+                        if not source or source.startswith(f"Sources/{name}/") or f"/Sources/{name}/" in source:
+                            owner = name
+                            declared_owners[t["cpp_name"]] = owner
+                    if owner is None:
+                        continue
+                    if owner == name:
+                        owned[name].append(t)
+                    if t["cpp_name"] in owners and owners[t["cpp_name"]] != owner:
                         raise ValueError("Duplicate C++ type ownership: " + t["cpp_name"])
-                    owners[t["cpp_name"]] = name
+                    owners[t["cpp_name"]] = owner
             state, published = {"version": 1, "configuration": config, "modules": {}}, 0
             for name, document in documents.items():
                 dependencies = set()

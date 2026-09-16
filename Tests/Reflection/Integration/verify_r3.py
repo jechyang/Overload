@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from evidence import evidence_root
 import shutil
 import subprocess
 import sys
@@ -266,7 +267,7 @@ def fixture_matrix(v, tc, generator):
 def project_matrix(v, tc, configurations, full_solution):
     msbuild = Path(tc["vs_root"]) / "MSBuild/Current/Bin/amd64/MSBuild.exe"
     flags = ["/nologo", "/m:2", "/nr:false", "/v:normal", "/t:Build", "/p:Platform=x64", "/p:PreferredToolArchitecture=x64",
-             "/p:PROCESSOR_ARCHITECTURE=AMD64", "/p:VcpkgEnabled=false", "/p:VcpkgApplocalDeps=false",
+             "/p:LinkIncremental=false", "/p:PROCESSOR_ARCHITECTURE=AMD64", "/p:VcpkgEnabled=false", "/p:VcpkgApplocalDeps=false",
              "/p:VCToolsVersion=" + tc["msvc_version"], "/p:WindowsTargetPlatformVersion=" + tc["sdk_version"]]
     cli = [sys.executable, ROOT / "Tools/OvReflectGen/reflection.py"]
     v.run("premake", [ROOT / "Dependencies/premake5/bin/premake5.exe", "--reflection-python=" + sys.executable, "vs2022"])
@@ -284,10 +285,10 @@ def project_matrix(v, tc, configurations, full_solution):
     # bootstrap without any generated file. Preserve the old tree as test evidence.
     if generated.exists():
         require(generated.resolve() == (ROOT / "Build/Generated/Reflection").resolve(), "Unexpected clean path")
-        generated.rename(v.output / "generated-before-clean")
+        shutil.move(str(generated), str(v.output / "generated-before-clean"))
     executable = ROOT / "Build/Tools/OvReflectGen/Release/OvReflectGen.exe"
     if executable.exists():
-        executable.rename(v.output / "generator-before-clean.exe")
+        shutil.move(str(executable), str(v.output / "generator-before-clean.exe"))
     target = ROOT / "Overload.sln" if full_solution else ROOT / "Sources/OvMaths/OvMaths.vcxproj"
     for config in configurations:
         command = [msbuild, target, *flags, "/p:Configuration=" + config]
@@ -338,7 +339,7 @@ def main():
     parser.add_argument("--fixtures-only", action="store_true")
     parser.add_argument("--config", nargs="+", default=["Debug", "Release", "Publish"], choices=("Debug", "Release", "Publish"))
     args = parser.parse_args()
-    parent = ROOT / "Build/Tests/Reflection"
+    parent = evidence_root(ROOT)
     parent.mkdir(parents=True, exist_ok=True)
     output = Path(tempfile.mkdtemp(prefix="r3-", dir=parent))
     print(f"R3 evidence: {output}", flush=True)

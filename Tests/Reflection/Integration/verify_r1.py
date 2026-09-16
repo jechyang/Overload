@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from evidence import evidence_root
 import re
 import sys
 import tempfile
@@ -37,7 +38,7 @@ def main():
     parser.add_argument("--generator", default=str(ROOT / "Build/Tools/OvReflectGen/Release/OvReflectGen.exe"))
     parser.add_argument("--llvm-root")
     args = parser.parse_args()
-    parent = ROOT / "Build/Tests/Reflection"
+    parent = evidence_root(ROOT)
     parent.mkdir(parents=True, exist_ok=True)
     output = Path(tempfile.mkdtemp(prefix="r1-", dir=parent))
     print(f"R1 evidence: {output}", flush=True)

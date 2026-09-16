@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from evidence import evidence_root
 import sys
 import tempfile
 sys.dont_write_bytecode = True
@@ -18,7 +19,7 @@ def main():
     parser.add_argument("--skip-build", action="store_true", help="Use already built native libraries")
     parser.add_argument("--engine", action="store_true", help="Run GL/audio/Bullet scene behavior tests (requires OpenGL 4.5)")
     args = parser.parse_args()
-    output = Path(tempfile.mkdtemp(prefix="r5-", dir=ROOT / "Build/Tests/Reflection"))
+    output = Path(tempfile.mkdtemp(prefix="r5-", dir=evidence_root(ROOT)))
     print("R5 evidence: " + str(output), flush=True)
     v = Verification(output)
     v.run("export", [sys.executable, r.TOOL / "reflection.py", "export", "--output", output / "Export"])

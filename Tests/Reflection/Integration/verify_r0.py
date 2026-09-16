@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import json
 from pathlib import Path
+from evidence import evidence_root
 import re
 import sys
 import tempfile
@@ -28,7 +29,7 @@ def main():
     parser.add_argument("--llvm-root")
     parser.add_argument("--generator", default=str(ROOT / "Build/Tools/OvReflectGen/Release/OvReflectGen.exe"))
     args = parser.parse_args()
-    output_parent = ROOT / "Build/Tests/Reflection"
+    output_parent = evidence_root(ROOT)
     output_parent.mkdir(parents=True, exist_ok=True)
     # Keep evidence for diagnosis; no deletion of the user's generated directories.
     output = Path(tempfile.mkdtemp(prefix="r0-", dir=output_parent))

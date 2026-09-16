@@ -41,7 +41,7 @@ public static unsafe partial class Bootstrap
             Require(!constructing, Status.InvalidLifecycle, "Native APIs are unavailable during construction");
         }
         public ulong Query(ulong owner, uint operation, ulong argument = 0, string text = "") {
-            Check();
+            Check(); ++nativeCalls;
             Require(!session.Closing || operation <= 4 || operation is 12 or 13, Status.SessionClosing, "Session closing rejects structural mutations");
             // Behaviour names are metadata names; native receives the explicit logical assembly too.
             if (operation is 7 or 8) text = LogicalName + "\n" + text;
@@ -52,13 +52,13 @@ public static unsafe partial class Bootstrap
             return result;
         }
         public Vector3 Read(ulong component, bool box) {
-            Check();
+            Check(); ++nativeCalls;
             var v = box ? session.Core!.OvCore_ECS_Components_CPhysicalBox_get_size(component) :
                 session.Core!.OvCore_ECS_Components_CTransform_get_position(component);
             return new(v.x, v.y, v.z);
         }
         public void Write(ulong component, bool box, Vector3 value) {
-            Check(); var v = new Overload.Script.Vector3 { x = value.X, y = value.Y, z = value.Z };
+            Check(); ++nativeCalls; var v = new Overload.Script.Vector3 { x = value.X, y = value.Y, z = value.Z };
             if (box) session.Core!.OvCore_ECS_Components_CPhysicalBox_set_size(component, v);
             else session.Core!.OvCore_ECS_Components_CTransform_set_position(component, v);
         }
@@ -96,6 +96,7 @@ public static unsafe partial class Bootstrap
     private static void Invoke(SessionHandle s, LifecycleCall* call) {
         Require(call != null && call->Size == 40 && call->Flags == 0 && float.IsFinite(call->Delta), Status.InvalidArgument, "Invalid lifecycle call");
         Instance i = FindInstance(s, call->Instance);
+        ++lifecycleCalls;
         uint e = call->Event;
         Require(e >= 1 && e <= 15, Status.InvalidLifecycle, "Unknown/reserved lifecycle");
         if (e == 15) { RestoreReload(i); return; }

@@ -89,7 +89,7 @@ void OvTools::Filesystem::IniFile::RegisterPair(const AttributePair& p_pair)
 
 void OvTools::Filesystem::IniFile::Load()
 {
-	std::fstream iniFile;
+	std::ifstream iniFile;
 	iniFile.open(m_filePath);
 
 	if (iniFile.is_open())

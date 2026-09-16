@@ -4,7 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const help = 'node Scripts/Windows/BuildCSharp.mjs --compat <project.csproj> [--configuration Debug|Release] [--rebuild] [--artifacts-path <directory>] [--output <directory>] [--define <symbol>]';
+const help = 'node Scripts/Windows/BuildCSharp.mjs --compat <project.csproj> [--configuration Debug|Release|Publish] [--publish <directory>] [--rebuild] [--artifacts-path <directory>] [--output <directory>] [--define <symbol>]';
 try {
   const args = process.argv.slice(2);
   if (args.length === 1 && args[0] === '--help') { console.log(help); process.exit(0); }
@@ -12,18 +12,19 @@ try {
   if (args.shift() !== '--compat') throw new Error('Compatibility mode must be explicitly enabled. ' + help);
   const project = path.resolve(args.shift() || '');
   if (!project.endsWith('.csproj') || !fs.existsSync(project)) throw new Error('Supply an existing .csproj. ' + help);
-  let configuration = 'Debug', artifacts = path.join(root, 'Build/CSharpCompat/artifacts'), output, define, rebuild = false;
+  let configuration = 'Debug', artifacts = path.join(root, 'Build/CSharpCompat/artifacts'), output, define, publish, rebuild = false;
   while (args.length) {
     const arg = args.shift();
     if (arg === '--rebuild') { rebuild = true; continue; }
-    if (!['--configuration','--artifacts-path','--output','--define'].includes(arg) || !args.length) throw new Error('Invalid option: ' + arg);
+    if (!['--configuration','--artifacts-path','--output','--define','--publish'].includes(arg) || !args.length) throw new Error('Invalid option: ' + arg);
     const value = args.shift();
     if (arg === '--configuration') configuration = value;
     if (arg === '--artifacts-path') artifacts = path.resolve(value);
     if (arg === '--output') output = path.resolve(value);
     if (arg === '--define') define = value;
+    if (arg === '--publish') publish = path.resolve(value);
   }
-  if (!['Debug','Release'].includes(configuration)) throw new Error('Configuration must be Debug or Release.');
+  if (!['Debug','Release','Publish'].includes(configuration)) throw new Error('Configuration must be Debug, Release or Publish.');
   if (define && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(define)) throw new Error('--define accepts one compiler symbol.');
   const lock = JSON.parse(fs.readFileSync(path.join(root, 'Tools/OvCSharp/toolchain.lock.json'), 'utf8'));
   const pin = JSON.parse(fs.readFileSync(path.join(root, 'global.json'), 'utf8')).sdk;
@@ -61,7 +62,9 @@ try {
     '-p:UseSharedCompilation=false', '-p:UseHostCompilerIfAvailable=false', '-p:SkipCompilerExecution=false',
     '-p:CscToolPath=' + path.join(root, 'Tools/OvCSharp'), '-p:CscToolExe=csc-dotnet.cmd'];
   if (output) properties.push('-p:OutputPath=' + output.replaceAll('\\', '/') + '/');
+  if (configuration === 'Publish') properties.push('-p:Optimize=true', '-p:DebugType=portable');
   if (define) properties.push('-p:DefineConstants=' + define);
   run('restore', ['restore', project, '--locked-mode', '--configfile', config, ...properties]);
   run('compat-build', ['build', project, '--no-restore', ...(rebuild ? ['-t:Rebuild'] : []), '-v:normal', '-nr:false', ...properties]);
+  if (publish) run('compat-publish', ['publish', project, '--no-restore', '--no-build', '-v:normal', '-nr:false', ...properties, '-p:PublishDir=' + publish.replaceAll('\\', '/') + '/']);
 } catch (error) { console.error(String(error)); process.exitCode = 1; }

@@ -1,0 +1,22 @@
+[
+  {
+    "name": "ImGui-LICENSE.txt",
+    "url": "https://raw.githubusercontent.com/ocornut/imgui/v1.92.7/LICENSE.txt",
+    "sha256": "173506a2d6f7fb67990d257fb2507f188690eca39060c39469ae7bef43aae2a3"
+  },
+  {
+    "name": "FreeType-FTL.TXT",
+    "url": "https://raw.githubusercontent.com/freetype/freetype/VER-2-14-3/docs/FTL.TXT",
+    "sha256": "5a5ee54c5001bbad1cdc1a57cc3dd4c42199b2da09d39c7ee41fab002d02967f"
+  },
+  {
+    "name": "Tracy-LICENSE.txt",
+    "url": "https://raw.githubusercontent.com/wolfpld/tracy/v0.11.1/LICENSE",
+    "sha256": "b04d971f616a03d75b51ae90bc1db6a3dd9ae195b68636d481539c008e013594"
+  },
+  {
+    "name": "Roboto-OFL.txt",
+    "url": "https://raw.githubusercontent.com/googlefonts/roboto-classic/main/OFL.txt",
+    "sha256": "061402327a96aadb0bfb694a960ed289ecd38d383e396243831ab81feb109c41"
+  }
+]

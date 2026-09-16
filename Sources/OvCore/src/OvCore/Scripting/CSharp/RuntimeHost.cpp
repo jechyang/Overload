@@ -159,6 +159,8 @@ namespace OvCore::Scripting::CSharp
             m_loadAssembly = nullptr;
             throw std::runtime_error("hostfxr loaded a different CoreCLR than the explicit locked runtime");
         }
+        OVLOG_INFO("C# private hostfxr: " + Utf8(expectedFxr.wstring()));
+        OVLOG_INFO("C# private CoreCLR: " + Utf8(expectedClr.wstring()));
         m_assembly = paths.assembly;
         try {
             const uint8_t signature[32] = {OVCS_HOST_ABI_SIGNATURE_BYTES};

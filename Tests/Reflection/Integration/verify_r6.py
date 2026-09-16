@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from evidence import evidence_root
 import sys
 import tempfile
 sys.dont_write_bytecode = True
@@ -18,7 +19,7 @@ def main():
     parser.add_argument('--dotnet',default='C:/Program Files/dotnet/dotnet.exe')
     parser.add_argument('--runtime',help='CoreCLR runtime directory; defaults to the newest installed runtime >= 6')
     args=parser.parse_args()
-    output=Path(tempfile.mkdtemp(prefix='r6-',dir=ROOT/'Build/Tests/Reflection'))
+    output=Path(tempfile.mkdtemp(prefix='r6-',dir=evidence_root(ROOT)))
     print('R6 evidence: '+str(output),flush=True)
     v=Verification(output)
     v.run('export',[sys.executable,r.TOOL/'reflection.py','export','--output',output/'Export'])

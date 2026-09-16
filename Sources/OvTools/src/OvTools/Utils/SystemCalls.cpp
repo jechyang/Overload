@@ -22,6 +22,7 @@
 #include <cstring>
 #include <format>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 
 namespace
@@ -249,13 +250,29 @@ std::string OvTools::Utils::SystemCalls::GetPathToAppdata()
 	PWSTR rawPath = nullptr;
 	const HRESULT hr = SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &rawPath);
 	std::unique_ptr<wchar_t, decltype(&CoTaskMemFree)> path(rawPath, CoTaskMemFree);
-	assert(SUCCEEDED(hr) && "Failed to get AppData path");
-
-	// Convert app-data path from wide char to UTF-8 string
-	const int size_needed = WideCharToMultiByte(CP_UTF8, 0, path.get(), -1, nullptr, 0, nullptr, nullptr);
-	assert(size_needed > 0 && "failed to convert from wide char to UTF-8");
-	std::string appDataPath(size_needed - 1, 0);
-	WideCharToMultiByte(CP_UTF8, 0, path.get(), -1, &appDataPath[0], size_needed, nullptr, nullptr);
+	std::wstring fallback;
+	const wchar_t* selected = path.get();
+	if (FAILED(hr) || !selected)
+	{
+		// Capability-isolated Win32 hosts may have no shell known-folder mapping.
+		// Honor only an existing absolute per-process APPDATA directory in that case.
+		const DWORD required = GetEnvironmentVariableW(L"APPDATA", nullptr, 0);
+		if (!required) throw std::runtime_error("AppData is unavailable");
+		fallback.resize(required);
+		const DWORD count = GetEnvironmentVariableW(L"APPDATA", fallback.data(), required);
+		if (!count || count >= required) throw std::runtime_error("AppData environment changed");
+		fallback.resize(count);
+		const std::filesystem::path candidate(fallback);
+		if (!candidate.is_absolute() || !std::filesystem::is_directory(candidate))
+			throw std::runtime_error("AppData fallback must be an existing absolute directory");
+		selected = fallback.c_str();
+	}
+	const int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, selected, -1, nullptr, 0, nullptr, nullptr);
+	if (size <= 0) throw std::runtime_error("Invalid AppData path encoding");
+	std::string appDataPath(size, 0);
+	if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, selected, -1, appDataPath.data(), size, nullptr, nullptr))
+		throw std::runtime_error("AppData path conversion failed");
+	appDataPath.pop_back();
 	return appDataPath;
 #else
 	// On Linux, use the home directory or XDG_CONFIG_HOME

@@ -3,6 +3,7 @@
 import argparse
 import os
 from pathlib import Path
+from evidence import evidence_root
 import subprocess
 import sys
 import tempfile
@@ -19,7 +20,7 @@ def main():
     parser.add_argument("--engine", action="store_true", help="Build SDK libraries and run real CPhysicalBox and GL RenderThread acceptance")
     parser.add_argument("--config", nargs="+", choices=("Debug", "Release", "Publish"), default=["Debug", "Release", "Publish"])
     args = parser.parse_args()
-    parent = ROOT / "Build/Tests/Reflection"
+    parent = evidence_root(ROOT)
     parent.mkdir(parents=True, exist_ok=True)
     output = Path(tempfile.mkdtemp(prefix="r2-", dir=parent))
     print(f"R2 evidence: {output}", flush=True)
@@ -149,7 +150,7 @@ def verify_engine(args, output, tc, env, options, compile_source, execute, check
         ET.ElementTree(project).write(build / "sdk.proj", encoding="utf-8", xml_declaration=True)
         execute([msbuild, build / "sdk.proj", "/nologo", "/m:2", "/v:minimal",
                  "/t:Build", "/p:Configuration=" + config, "/p:Platform=x64",
-                 "/p:TrackFileAccess=false", "/p:ForceRebuild=true", "/p:PreferredToolArchitecture=x64",
+                 "/p:LinkIncremental=false", "/p:PreferredToolArchitecture=x64",
                  "/p:PROCESSOR_ARCHITECTURE=AMD64",
                  "/p:VcpkgEnabled=false", "/p:VcpkgApplocalDeps=false",
                  "/p:VCToolsVersion=" + tc["msvc_version"], "/p:WindowsTargetPlatformVersion=" + tc["sdk_version"]],
