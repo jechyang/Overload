@@ -23,6 +23,7 @@
 #include <OvTools/Utils/SystemCalls.h>
 
 #include <OvEditor/Core/Editor.h>
+#include <OvEditor/Panels/CSharpScripts.h>
 #include <OvEditor/Panels/AssetBrowser.h>
 #include <OvEditor/Panels/ItemPicker.h>
 #include <OvEditor/Panels/AssetProperties.h>
@@ -212,6 +213,7 @@ void OvEditor::Core::Editor::SetupUI()
 	m_panelsManager.CreatePanel<Panels::SceneView>("Scene View", true, settings);
 	m_panelsManager.CreatePanel<Panels::GameView>("Game View", true, settings);
 	m_panelsManager.CreatePanel<Panels::Toolbar>("Toolbar", true, settings);
+    m_panelsManager.CreatePanel<Panels::CSharpScripts>("C# Scripts", true, settings);
 	m_panelsManager.CreatePanel<Panels::MaterialEditor>("Material Editor", false, settings);
 	m_panelsManager.CreatePanel<Panels::ProjectSettings>("Project Settings", false, settings);
 	m_panelsManager.CreatePanel<Panels::AssetProperties>("Asset Properties", false, settings);
@@ -236,6 +238,8 @@ void OvEditor::Core::Editor::PreUpdate()
 	ZoneScopedN("Editor Pre-Update");
 	OvDebug::Logger::DispatchPendingEvents();
     CollectCompletedFrames();
+    if (m_context.csharpProject->Tick(m_editorActions.GetCurrentEditorMode() == EditorActions::EEditorMode::EDIT))
+        m_panelsManager.GetPanelAs<Panels::Inspector>("Inspector").Refresh();
 	m_context.device->PollEvents();
 }
 

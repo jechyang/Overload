@@ -10,9 +10,10 @@ const args = process.argv.slice(2);
 const s2 = args.includes('--s2');
 const s3 = args.includes('--s3');
 const s4 = args.includes('--s4');
+const s5 = args.includes('--s5');
 const compat = args.includes('--compat-build');
-const stage = s4 ? 'S4' : s3 ? 'S3' : s2 ? 'S2' : 'S1';
-const baseline = s4 ? 'ef3ea8f' : s3 ? 'c3ae12d' : s2 ? 'a1c3a1a' : '80ef9de';
+const stage = s5 ? 'S5' : s4 ? 'S4' : s3 ? 'S3' : s2 ? 'S2' : 'S1';
+const baseline = s5 ? '194e339' : s4 ? 'ef3ea8f' : s3 ? 'c3ae12d' : s2 ? 'a1c3a1a' : '80ef9de';
 const python = args[args.indexOf('--python') + 1];
 if (!args.includes('--python') || !path.isAbsolute(python)) throw new Error('Supply --python <absolute Python 3 executable>');
 const evidenceRoot = process.env.OV_SCRIPTING_EVIDENCE_ROOT || path.join(root, 'Build/Tests/Scripting');
@@ -39,6 +40,8 @@ function filesBelow(directory) {
   });
 }
 const sourceFiles = [
+  ...(s5 ? [...filesBelow(path.join(root,'Sources/OvEditor/include')),...filesBelow(path.join(root,'Sources/OvEditor/src')),
+    path.join(root,'Scripts/Windows/BuildGameScripts.mjs'),path.join(root,'Sources/OvTools/src/OvTools/Utils/PathParser.cpp')] : []),
   ...(s4 ? ['Sources/OvCore/src/OvCore/ECS/Components/BehaviourFields.cpp',
     'Sources/OvCore/src/OvCore/SceneSystem/PrefabOperations.cpp','Sources/OvEditor/src/OvEditor/Core/EditorActions.cpp'].map(p => path.join(root,p)) : []),
   ...(s3 ? [...filesBelow(path.join(root, 'Examples/CSharpGameplay')),
@@ -258,6 +261,10 @@ try {
         verifyFields({ root, output, run, env, compiler, nativeOptions, libraries, gen, dotnetRoot, production, project });
       }
     }
+  }
+  if(s5) {
+    const {verifyWorkflow}=await import('./verify_s5_cases.mjs');
+    await verifyWorkflow({root,output,run,env,compiler,nativeOptions,libraries,gen,python,project:path.join(output,'project 空格')});
   }
   const objectsBefore = nativeSnapshot();
   run('native-no-change-build', msbuild, buildArgs, 0, 900000);

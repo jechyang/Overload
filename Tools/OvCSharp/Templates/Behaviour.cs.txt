@@ -1,0 +1,14 @@
+using Overload;
+
+namespace GameScripts;
+
+[ScriptId("@ID@")]
+public sealed class @NAME@ : Behaviour
+{
+    public float Speed = 1.0f;
+
+    public override void OnUpdate(float deltaTime)
+    {
+        // Edit this script, then Build C#. New assemblies apply after Stop.
+    }
+}

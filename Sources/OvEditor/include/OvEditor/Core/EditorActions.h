@@ -353,7 +353,7 @@ namespace OvEditor::Core
 		* @param p_initialDirectory  Directory the dialog opens in
 		* @param p_initialName       Suggested filename (without extension)
 		*/
-		std::string CreateScript(const std::string& p_initialDirectory, const std::string& p_initialName);
+		std::string CreateScript(const std::string& p_initialDirectory, const std::string& p_initialName, bool p_csharp = false);
 
 		/**
 		* Import an asset at location

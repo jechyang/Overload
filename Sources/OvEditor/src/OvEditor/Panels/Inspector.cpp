@@ -222,6 +222,17 @@ void OvEditor::Panels::Inspector::_DrawAddSection()
 			});
 		}
 
+        for (const auto& identity : EDITOR_CONTEXT(scriptEngine)->CSharpTypes())
+        {
+            if (m_targetActor->GetBehaviour(identity)) continue;
+            const auto label = "C# / " + identity.type + " [" + identity.assembly + "]";
+            items.Add({identity.Key(), label, label, addScriptIconID, [this, ticket, identity] {
+                if (ticket.expired() || !m_targetActor.has_value()) return;
+                auto& engine = *EDITOR_CONTEXT(scriptEngine);
+                if (engine.Status(identity) == OvCore::Scripting::ScriptStatus::TypeReady && !m_targetActor->GetBehaviour(identity))
+                    m_targetActor->AddBehaviour(identity);
+            }});
+        }
 		OvEditor::Helpers::PickerHelpers::AddFileItems(
 			items,
 			OvTools::Utils::PathParser::EFileType::SCRIPT,
@@ -248,7 +259,9 @@ void OvEditor::Panels::Inspector::_DrawAddSection()
 			},
 			true, false,
 			[this, ticket](const std::string& p_resourcePath) {
-                if (ticket.expired()) return false;
+                auto extension = std::filesystem::path(p_resourcePath).extension().string();
+                std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (ticket.expired() || extension == ".cs") return false;
 				const std::string scriptPath = EDITOR_EXEC(GetScriptPath(p_resourcePath));
 				return !m_targetActor->GetBehaviour(scriptPath);
 			}

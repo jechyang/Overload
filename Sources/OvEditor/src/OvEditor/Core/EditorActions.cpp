@@ -1511,7 +1511,7 @@ bool OvEditor::Core::EditorActions::ImportAsset(const std::string& p_initialDest
 	std::string shaderFormats = "*.ovfx;";
 	std::string shaderPartFormats = "*.ovfxh;";
 	std::string soundFormats = "*.mp3;*.ogg;*.wav;";
-	std::string scriptFormats = "*.lua;";
+	std::string scriptFormats = "*.lua;*.cs;";
 
 	OpenFileDialog selectAssetDialog("Select an asset to import");
 	selectAssetDialog.AddFileType("Any supported format", modelFormats + textureFormats + shaderFormats + shaderPartFormats + soundFormats + scriptFormats);
@@ -1520,7 +1520,7 @@ bool OvEditor::Core::EditorActions::ImportAsset(const std::string& p_initialDest
 	selectAssetDialog.AddFileType("Shader (.ovfx)", shaderFormats);
 	selectAssetDialog.AddFileType("Shader Parts (.ovfxh)", shaderPartFormats);
 	selectAssetDialog.AddFileType("Sound (.mp3, .ogg, .wav)", soundFormats);
-	selectAssetDialog.AddFileType("Script (.lua)", scriptFormats);
+	selectAssetDialog.AddFileType("Script (.lua, .cs)", scriptFormats);
 	selectAssetDialog.Show();
 
 	if (selectAssetDialog.HasSucceeded())
@@ -1551,11 +1551,11 @@ bool OvEditor::Core::EditorActions::ImportAsset(const std::string& p_initialDest
 	return false;
 }
 
-std::string OvEditor::Core::EditorActions::CreateScript(const std::string& p_initialDirectory, const std::string& p_initialName)
+std::string OvEditor::Core::EditorActions::CreateScript(const std::string& p_initialDirectory, const std::string& p_initialName, bool p_csharp)
 {
 	using namespace OvWindowing::Dialogs;
 
-	const std::string extension = m_context.scriptEngine->GetDefaultExtension();
+	const std::string extension = p_csharp ? ".cs" : m_context.scriptEngine->GetDefaultExtension();
 
 	SaveFileDialog dialog("Create Script");
 	dialog.SetInitialDirectory(p_initialDirectory);
@@ -1572,6 +1572,13 @@ std::string OvEditor::Core::EditorActions::CreateScript(const std::string& p_ini
 		return {};
 
 	const std::string destination = dialog.GetSelectedFilePath();
+
+    if (p_csharp)
+    {
+        if (!m_context.csharpProject->CreateScript(destination)) return {};
+        EDITOR_PANEL(Panels::AssetBrowser, "Asset Browser").Refresh();
+        return destination;
+    }
 
 	if (!std::filesystem::exists(destination))
 	{
@@ -1596,7 +1603,7 @@ bool OvEditor::Core::EditorActions::ImportAssetAtLocation(const std::string& p_d
 	std::string shaderFormats = "*.ovfx;";
 	std::string shaderPartFormats = "*.ovfxh;";
 	std::string soundFormats = "*.mp3;*.ogg;*.wav;";
-	std::string scriptFormats = "*.lua;";
+	std::string scriptFormats = "*.lua;*.cs;";
 
 	OpenFileDialog selectAssetDialog("Select an asset to import");
 	selectAssetDialog.AddFileType("Any supported format", modelFormats + textureFormats + shaderFormats + soundFormats + scriptFormats);
@@ -1605,7 +1612,7 @@ bool OvEditor::Core::EditorActions::ImportAssetAtLocation(const std::string& p_d
 	selectAssetDialog.AddFileType("Shader (.ovfx)", shaderFormats);
 	selectAssetDialog.AddFileType("Shader Parts (.ovfxh)", shaderPartFormats);
 	selectAssetDialog.AddFileType("Sound (.mp3, .ogg, .wav)", soundFormats);
-	selectAssetDialog.AddFileType("Script (.lua)", scriptFormats);
+	selectAssetDialog.AddFileType("Script (.lua, .cs)", scriptFormats);
 	selectAssetDialog.Show();
 
 	if (selectAssetDialog.HasSucceeded())

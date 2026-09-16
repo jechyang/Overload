@@ -8,7 +8,9 @@
 完成后端门面、类型身份与缺失记录保留；S3 已按 [S3 验收记录](CS_SCRIPTING_S3_VALIDATION.md)
 完成托管实例、受控 API、生命周期和真实 Editor/Game 默认/RenderThread 运行验收。
 S4 已实现托管字段、Inspector、场景/Prefab 存档与引用恢复，详见
-[S4 验收记录](CS_SCRIPTING_S4_VALIDATION.md)，固定源码完整复验通过。S5–S7 未实施。
+[S4 验收记录](CS_SCRIPTING_S4_VALIDATION.md)，固定源码完整复验通过。
+S5 已完成项目模板、后台构建、类型挂载与停止态应用，详见
+[S5 验收记录](CS_SCRIPTING_S5_VALIDATION.md)，S5 与 S1–S4 完整回归通过。S6–S7 未实施。
 当前 Windows 的标准 `dotnet build` 仍因 CET 失败；显式兼容入口的
 完整 MSBuild 重建与新程序集真实宿主运行通过，二者分别记录，不能混称标准构建通过。
 
@@ -166,6 +168,12 @@ Inspector 使用精确字段文本、覆盖开关和引用身份/解析状态，
 建议提交：feat(scripting): complete S4 managed fields and editor persistence
 
 ### S5：脚本项目构建与编辑器工作流
+
+状态：已完成实现与固定源码完整验收，详见 `CS_SCRIPTING_S5_VALIDATION.md`。
+最终收据 `Build/Tests/Scripting/s5-MuAls9/verification.json` 为 success=true。
+默认/RenderThread、Lua、新项目完整编辑器流程、中文/空格路径、项目内/外缓存、
+失败保留旧版、Play/暂停待应用、Main 停止态切换、并发/配置切换/无变化构建均通过。
+运行态热重载、字段迁移及发布仍属于未实施的 S6/S7。
 
 任务：提供用户 GameScripts 项目模板和引用，接入新建 C# 脚本、资源识别、类型选择与挂载、编译诊断、明确的 Build/Reload 状态。一文件多个类时由类型清单选择，不能拖入文件后任意选第一个类。更新 Lua 硬编码菜单/过滤器，继续支持 Lua。
 

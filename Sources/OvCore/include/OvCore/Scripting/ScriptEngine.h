@@ -39,6 +39,7 @@ namespace OvCore::Scripting
         ScriptIdentity ResolveIdentity(const ScriptIdentity& identity) const;
         ScriptStatus Status(const ScriptIdentity& identity) const;
         const std::string& LastError() const { return m_error; }
+        std::vector<ScriptIdentity> CSharpTypes() const;
         void OnAwake(ECS::Components::Behaviour& target);
         void OnStart(ECS::Components::Behaviour& target);
         void OnEnable(ECS::Components::Behaviour& target);

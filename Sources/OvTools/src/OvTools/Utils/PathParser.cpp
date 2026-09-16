@@ -133,7 +133,7 @@ OvTools::Utils::PathParser::EFileType OvTools::Utils::PathParser::GetFileType(co
 	else if (ext == "wav" || ext == "mp3" || ext == "ogg") return EFileType::SOUND;
 	else if (ext == "ovscene") return EFileType::SCENE;
 	else if (ext == "ovprefab") return EFileType::PREFAB;
-	else if (ext == "lua" || ext == "ovscript") return EFileType::SCRIPT;
+	else if (ext == "lua" || ext == "ovscript" || ext == "cs") return EFileType::SCRIPT;
 	else if (ext == "ttf") return EFileType::FONT;
 
 	return EFileType::UNKNOWN;

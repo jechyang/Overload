@@ -24,6 +24,7 @@
 #include <OvCore/Scripting/ScriptEngine.h>
 #include <OvCore/Scripting/CSharp/RuntimeHost.h>
 #include <OvEditor/Core/EditorResources.h>
+#include <OvEditor/Core/CSharpProject.h>
 #include <OvPhysics/Core/PhysicsEngine.h>
 #include <OvTools/Filesystem/IniFile.h>
 #include <OvTools/Jobs/JobSystem.h>
@@ -119,5 +120,6 @@ namespace OvEditor::Core
 		CopyBuffer copyBuffer;
 		// Declared last: also detaches before scene/services during constructor unwinding.
 		std::unique_ptr<OvCore::Scripting::CSharp::RuntimeHost> csharpHost;
+        std::unique_ptr<CSharpProject> csharpProject;
 	};
 }

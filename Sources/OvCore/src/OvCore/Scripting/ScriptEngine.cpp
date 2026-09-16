@@ -70,7 +70,14 @@ namespace OvCore::Scripting
     std::unordered_set<std::string> ScriptEngine::GetValidExtensions() { return m_legacy->GetValidExtensions(); }
     std::string ScriptEngine::GetDefaultScriptContent(const std::string& name) { return m_legacy->GetDefaultScriptContent(name); }
     std::string ScriptEngine::GetDefaultExtension() { return m_legacy->GetDefaultExtension(); }
-    bool ScriptEngine::IsOk() const { return m_legacy->IsOk() && m_error.empty(); }
+    bool ScriptEngine::IsOk() const { return m_legacy->IsOk() && (m_csharp || m_error.empty()); }
+    std::vector<ScriptIdentity> ScriptEngine::CSharpTypes() const
+    {
+        std::vector<ScriptIdentity> result;
+        for (const auto& [key, identity] : m_types) if (key == identity.Key()) result.push_back(identity);
+        std::sort(result.begin(),result.end(),[](const auto& a,const auto& b){return a.type < b.type;});
+        return result;
+    }
     ScriptIdentity ScriptEngine::ResolveIdentity(const ScriptIdentity& identity) const
     {
         if (const auto it = m_types.find(identity.Key()); it != m_types.end()) return it->second;

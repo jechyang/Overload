@@ -402,7 +402,15 @@ namespace
 
 				auto& createFolderMenu = createMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Folder");
 				auto& createSceneMenu = createMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Scene");
-				auto& createScriptMenu = createMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Script");
+				auto& createScriptMenu = createMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Lua Script");
+                auto& createCSharpMenu = createMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("C# Script");
+                auto& createCSharp = createCSharpMenu.CreateWidget<OvUI::Widgets::InputFields::InputText>("");
+                createCSharpMenu.ClickedEvent += [&createCSharp] { createCSharp.content = ""; };
+                createCSharp.EnterPressedEvent += [this](std::string name) {
+                    if (!ValidateFolderPath(filePath, "Create C# script") || name.empty() || name.find_first_of("/\\:") != std::string::npos) return;
+                    const auto destination = FindAvailableFilePath(filePath / (name + ".cs"));
+                    if (EDITOR_CONTEXT(csharpProject)->CreateScript(destination)) { ItemAddedEvent.Invoke(destination); Close(); }
+                };
 				auto& createShaderMenu = createMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Shader");
 				auto& createMaterialMenu = createMenu.CreateWidget<OvUI::Widgets::Menu::MenuList>("Material");
 

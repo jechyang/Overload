@@ -222,11 +222,13 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 		}
 	}
 
+    csharpProject = std::make_unique<CSharpProject>(*this);
 	ApplyProjectSettings();
 }
 
 OvEditor::Core::Context::~Context()
 {
+    csharpProject.reset();
 	// Stop/detach managed calls and invalidate R6 context before native scene storage.
 	scriptEngine->ClearCSharpProject();
 	csharpHost.reset();
