@@ -1,4 +1,10 @@
 #include <OvCore/Scripting/CSharp/GameplayBridge.h>
+#include <OvCore/Scripting/CSharp/UIBridge.h>
+#include <OvCore/ECS/Components/CUI.h>
+#include <OvCore/UI/Frame.h>
+#include <bit>
+#include <limits>
+#include <span>
 #include <OvCore/Scripting/ScriptBridge.h>
 #include <OvCore/Scripting/DispatchScope.h>
 #include <OvCore/Global/ServiceLocator.h>
@@ -13,6 +19,17 @@ namespace OvCore::Scripting::CSharp
         using namespace OvReflection::Script;
         return Guard(context, [&](State& state) {
             Require(output != nullptr); *output = 0;
+            if (operation == 45)
+            {
+                Require(text.length <= std::numeric_limits<size_t>::max());
+                UploadUIMesh(state, owner, std::span<const uint8_t>(text.data, static_cast<size_t>(text.length)), *output);
+                return;
+            }
+            if (operation >= 40 && operation <= 48)
+            {
+                QueryUI(state, owner, operation, argument, Decode({text.data, text.length}), *output);
+                return;
+            }
             // The mandatory, non-removable Transform is the Actor lifetime anchor.
             // Resolve checks context, captured Main, weak epoch and exact native type.
             auto& actor = state.Get<ECS::Components::CTransform>(owner)->owner;
@@ -58,6 +75,41 @@ namespace OvCore::Scripting::CSharp
             case 13: {
                 auto* scene=actor.GetScene(); Require(scene!=nullptr,OV_SCRIPT_INVALID_HANDLE);
                 Require(argument<=9); *output=scene->ResolveScriptAsset(static_cast<uint32_t>(argument),value); break;
+            }
+            case 14: if (auto* parent = actor.GetParent()) *output = publish(parent->transform); break;
+            case 15: *output = actor.GetChildren().size(); break;
+            case 16: Require(argument < actor.GetChildren().size()); *output = publish(actor.GetChildren()[argument]->transform); break;
+            case 17: {
+                Require(actor.CanRunScripts(), OV_SCRIPT_INVALID_HANDLE);
+                if (argument) {
+                    auto& parent = state.Get<ECS::Components::CTransform>(argument)->owner;
+                    Require(parent.GetScene() == actor.GetScene() && parent.CanRunScripts(), OV_SCRIPT_INVALID_HANDLE);
+                    for (auto* cursor = &parent; cursor; cursor = cursor->GetParent()) Require(cursor != &actor);
+                    actor.SetParent(parent);
+                } else actor.DetachFromParent();
+                break;
+            }
+            case 18: *output = actor.IsActive(); break;
+            case 19: *output = actor.GetScene() == state.Get<ECS::Components::CTransform>(argument)->owner.GetScene(); break;
+            case 20: {
+                Require(actor.GetScene() != nullptr, OV_SCRIPT_INVALID_HANDLE);
+                UI::UpdateRectContexts(*actor.GetScene(), {std::bit_cast<float>(uint32_t(argument)), std::bit_cast<float>(uint32_t(argument >> 32))});
+                break;
+            }
+            case 21: *output = actor.CanRunScripts(); break;
+            case 30: case 31: {
+                if (operation == 31) Require(actor.CanRunScripts(), OV_SCRIPT_INVALID_HANDLE);
+                if (argument == 1) {
+                    auto* rect = operation == 31 ? &actor.AddComponent<ECS::Components::CRectTransform>() : actor.GetComponent<ECS::Components::CRectTransform>();
+                    if (rect) *output = publish(*rect);
+                } else if (argument == 2) {
+                    auto* canvas = operation == 31 ? &actor.AddComponent<ECS::Components::CCanvas>() : actor.GetComponent<ECS::Components::CCanvas>();
+                    if (canvas) *output = publish(*canvas);
+                } else if (argument == 3) {
+                    auto* renderer = operation == 31 ? &actor.AddComponent<ECS::Components::CCanvasRenderer>() : actor.GetComponent<ECS::Components::CCanvasRenderer>();
+                    if (renderer) *output = publish(*renderer);
+                } else Require(false);
+                break;
             }
             default: Require(false);
             }

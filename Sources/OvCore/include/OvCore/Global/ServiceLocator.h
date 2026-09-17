@@ -21,6 +21,14 @@ namespace OvCore::Global
 	class ServiceLocator
 	{
 	public:
+        template<typename T>
+        static T* TryGet()
+        {
+            const auto found = __SERVICES.find(typeid(T).hash_code());
+            if (found == __SERVICES.end()) return nullptr;
+            const auto value = std::any_cast<T*>(&found->second);
+            return value ? *value : nullptr;
+        }
 		/**
 		* Register a service in the service locator
 		* @param p_service

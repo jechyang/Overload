@@ -14,6 +14,8 @@
 #endif
 
 namespace OvCore::Scripting::CSharp { class RuntimeHost; }
+namespace OvCore::SceneSystem { class Scene; }
+namespace OvMaths { struct FVector2; }
 namespace OvCore::Scripting
 {
     enum class ScriptStatus { MissingBackend, MissingType, TypeReady, InstanceReady, Faulted };
@@ -30,10 +32,11 @@ namespace OvCore::Scripting
         void RemoveBehaviour(ECS::Components::Behaviour& target);
         void Reload();
         bool IsOk() const;
-        // Loading is metadata-only. Inspector or Play prepares the attached instance once.
+        // Loading is metadata-only. Inspector, UI rendering or Play prepares an instance once.
         bool LoadCSharpProject(CSharp::RuntimeHost& host, const std::filesystem::path& root,
             const std::filesystem::path& assembly, const std::string& logical, bool migrateRuntime = false);
         void ClearCSharpProject();
+        void RebuildUI(SceneSystem::Scene& scene, const OvMaths::FVector2& viewport);
         OvCsSessionHandle CSharpSession() const { return m_session; } // Numeric generation for diagnostics.
         bool PrepareCSharp(ECS::Components::Behaviour& target);
         OvReflection::Script::Context& GameplayContext(uint64_t context);
@@ -60,6 +63,7 @@ namespace OvCore::Scripting
         std::unique_ptr<Legacy> m_legacy;
         std::unordered_set<ECS::Components::Behaviour*> m_behaviours;
         std::unordered_map<std::string, ScriptIdentity> m_types;
+        std::unordered_set<std::string> m_uiTypes;
         std::string m_error;
         bool m_csharp = false;
         bool CanDispatch(ECS::Components::Behaviour& target) const;

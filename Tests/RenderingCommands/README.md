@@ -13,6 +13,7 @@ node Tests\Skinning\run-validation.mjs Debug --pipeline
 node Tests\Skinning\run-validation.mjs Debug --parallel-recording
 node Tests\Skinning\run-validation.mjs Debug --editor --command-list --editor-ui --product-loop
 node Tests\Skinning\run-validation.mjs Debug --editor-stress
+node Tests\Skinning\run-validation.mjs Debug --editor-camera
 node Tests\Skinning\run-validation.mjs Debug --game-thread
 ~~~
 
@@ -27,6 +28,7 @@ Release 使用相同命令，将 Debug 替换为 Release。可用 --vs 指定 VS
 | --pipeline | inspection_pipeline.h 的双视图配置；选择 Opaque/Transparent/SceneUI；声明多个附件；冻结配置、源销毁、无效资源/视图/Stage/尺寸诊断 |
 | --parallel-recording | 延迟编码依赖图和共享材质压力；串行、单 Worker、多 Worker，确定命令顺序与资源退役 |
 | --editor --command-list --editor-ui --product-loop | Scene/Game/Asset 三视口、Grid/Outline/Gizmo/调试对象、真实 Picking、对象删除/场景替换、完整 UI 和产品循环 |
+| --editor-camera | 含 OverlayUI 时，未选中对象/选中 Canvas 的 Scene 相机旋转会改变网格和辅助图形像素，屏幕 UI 保持固定；注入右键事件验证控制器不依赖对象选择（不覆盖操作系统鼠标焦点） |
 | --editor-stress / --game-thread | 实际产品 Main/Render owner 对照；在途帧、resize/最小化、场景/模式切换、关闭和呈现失败；Prepare 与 Record 在不同 Worker 上实际重叠 |
 
 命令/资源后端的独立入口继续有效：--geometry、--material、--snapshots、--target-state、--ui-commands、--render-frame、--render-thread、--log-dispatch、--resource-lifetime、--texture-registry、--imgui-lifetime、--gpu-profiling、--resource-executor。它们分别验证底层接口，不是第二套场景准备路径。原蒙皮 --parallel、--asan 和 --mutex-deque 入口仍使用统一渲染前端。

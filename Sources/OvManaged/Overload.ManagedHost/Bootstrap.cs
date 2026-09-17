@@ -27,13 +27,14 @@ public static unsafe partial class Bootstrap
         internal ProjectContext? Project;
         internal readonly List<ProjectType> Types = new();
         internal readonly Dictionary<ulong, Instance> Instances = new();
+        internal readonly UI.CanvasUpdateRegistry UIRegistry = new();
         internal bool Closed;
         internal bool Closing;
         internal string LogicalName = "";
         internal void Close(bool reloading = false) {
             Closing = true;
             foreach (Instance instance in Instances.Values) Destroy(instance, reloading);
-            Instances.Clear(); Closed = true;
+            Instances.Clear(); UIRegistry.Clear(); Closed = true;
             Core = null; Entry = 0; Types.Clear();
             if (Project != null) Retire(Project); Project = null;
         }

@@ -115,6 +115,11 @@ OvRendering::Entities::Camera & OvCore::ECS::Components::CCamera::GetCamera()
 	return m_camera;
 }
 
+const OvRendering::Entities::Camera& OvCore::ECS::Components::CCamera::GetCamera() const
+{
+	return m_camera;
+}
+
 void OvCore::ECS::Components::CCamera::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
 {
 	OvCore::Helpers::Serializer::SerializeFloat(p_doc, p_node, "fov", m_camera.GetFov());

@@ -12,6 +12,8 @@
 #include <OvCore/ECS/Components/CPhysicalSphere.h>
 #include <OvCore/ECS/Components/CPointLight.h>
 #include <OvCore/ECS/Components/CSpotLight.h>
+#include <OvCore/ECS/Components/CUI.h>
+#include <OvCore/UI/Frame.h>
 
 #include <OvDebug/Assertion.h>
 #include <OvEditor/Rendering/EditorOverlayCollector.h>
@@ -93,6 +95,22 @@ namespace
 	}
 
 	std::vector<OvMaths::FMatrix4> CreateDebugLights() { return {CreateDebugDirectionalLight(),CreateDebugAmbientLight()}; }
+
+	OvCore::ECS::Components::CCanvas* FindRootCanvas(OvCore::ECS::Actor& actor)
+	{
+		OvCore::ECS::Components::CCanvas* result = nullptr;
+		for (auto* current = &actor; current; current = current->GetParent())
+			if (auto* canvas = current->GetComponent<OvCore::ECS::Components::CCanvas>()) result = canvas;
+		return result;
+	}
+
+	bool HasEditableTransformGizmo(OvCore::ECS::Actor& actor)
+	{
+		const auto* rect = actor.GetComponent<OvCore::ECS::Components::CRectTransform>();
+		const auto* rootCanvas = FindRootCanvas(actor);
+		return !rect || !rootCanvas ||
+			(&rootCanvas->owner == &actor && rootCanvas->GetRenderMode() == OvCore::ECS::Components::CCanvas::RenderMode::WorldSpace);
+	}
 }
 
 class DebugCamerasCollector
@@ -285,6 +303,7 @@ public:
 			const bool isActorHovered = debugSceneDescriptor.highlightedActor && debugSceneDescriptor.highlightedActor->GetID() == selectedActor.GetID();
 
 			DrawActorDebugElements(selectedActor);
+			if (auto* canvas = FindRootCanvas(selectedActor)) DrawCanvasRect(*canvas);
 			m_outline.DrawOutline(
 				selectedActor,
 				isActorHovered ?
@@ -293,13 +312,14 @@ public:
 				kSelectedOutlineWidth
 			);
 			m_collector.Clear(false, true, false);
-			m_gizmo.DrawGizmo(
-				selectedActor.transform.GetWorldPosition(),
-				selectedActor.transform.GetWorldRotation(),
-				debugSceneDescriptor.gizmoOperation,
-				false,
-				debugSceneDescriptor.highlightedGizmoDirection
-			);
+			if (HasEditableTransformGizmo(selectedActor))
+				m_gizmo.DrawGizmo(
+					selectedActor.transform.GetWorldPosition(),
+					selectedActor.transform.GetWorldRotation(),
+					debugSceneDescriptor.gizmoOperation,
+					false,
+					debugSceneDescriptor.highlightedGizmoDirection
+				);
 		}
 
 		if (debugSceneDescriptor.highlightedActor)
@@ -374,6 +394,29 @@ public:
 				DrawActorDebugElements(*child);
 			}
 		}
+	}
+
+	void DrawCanvasRect(OvCore::ECS::Components::CCanvas& canvas)
+	{
+		for (auto* parent = canvas.owner.GetParent(); parent; parent = parent->GetParent())
+			if (parent->GetComponent<OvCore::ECS::Components::CCanvas>()) return;
+		auto viewport = OvMaths::FVector2{static_cast<float>(m_gameViewSize.first), static_cast<float>(m_gameViewSize.second)};
+		if (viewport.x <= 0 || viewport.y <= 0) viewport = {16, 9};
+		const auto geometry = OvCore::UI::ResolveCanvasGeometry(canvas, viewport);
+		if (!geometry) return;
+		const auto end = geometry->rect.min + geometry->rect.size;
+		const std::array<OvMaths::FVector2, 4> local{geometry->rect.min,
+			OvMaths::FVector2{geometry->rect.min.x, end.y}, end, OvMaths::FVector2{end.x, geometry->rect.min.y}};
+		std::array<OvMaths::FVector3, 4> world;
+		for (size_t i = 0; i < local.size(); ++i)
+		{
+			const auto point = geometry->localToWorld * OvMaths::FVector4{local[i].x, local[i].y, 0, 1};
+			world[i] = {point.x, point.y, point.z};
+		}
+		auto pso = m_collector.CreatePipelineState(); pso.depthTest = false;
+		const OvMaths::FVector3 color{0.2f, 0.75f, 1.0f};
+		for (size_t i = 0; i < world.size(); ++i)
+			m_debugShapeFeature.DrawLine(pso, world[i], world[(i + 1) % world.size()], color, 1.5f, false);
 	}
 
 	void DrawFrustumLines(

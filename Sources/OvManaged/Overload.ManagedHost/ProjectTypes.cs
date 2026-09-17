@@ -20,6 +20,9 @@ public static unsafe partial class Bootstrap
     }
     private sealed record ProjectType(ulong Token, string Id, string Assembly, string Name, List<string> Aliases, Type Type, List<ProjectField> Fields);
     private static ulong nextType;
+    private static bool IsUIType(Type type) => typeof(EventSystems.UIBehaviour).IsAssignableFrom(type) ||
+        typeof(UI.ILayoutElement).IsAssignableFrom(type) || typeof(UI.ILayoutController).IsAssignableFrom(type) ||
+        typeof(UI.ICanvasElement).IsAssignableFrom(type) || typeof(UI.ILayoutIgnorer).IsAssignableFrom(type);
     // Separate ownership receipt prevents releasing copied, forged or mixed type structs.
     private static readonly Dictionary<nuint, TypeResult> TypeResults = new();
 
@@ -75,7 +78,12 @@ public static unsafe partial class Bootstrap
         try {
             Assembly assembly = result.Project.LoadFromAssemblyPath(file);
             Dictionary<string, string> keys = new(StringComparer.Ordinal);
-            foreach (Type type in assembly.GetTypes().OrderBy(t => t.FullName, StringComparer.Ordinal)) {
+            Type[] projectTypes = assembly.GetTypes();
+            bool uiEnabled = assembly.IsDefined(typeof(UI.EnableUIAttribute)) || projectTypes.Any(IsUIType);
+            var candidates = uiEnabled ? projectTypes.Concat(new[] { typeof(UI.CanvasScaler), typeof(UI.LayoutElement),
+                typeof(UI.HorizontalLayoutGroup), typeof(UI.VerticalLayoutGroup), typeof(UI.ContentSizeFitter),
+                typeof(UI.Image), typeof(UI.RawImage) }) : projectTypes;
+            foreach (Type type in candidates.OrderBy(t => t.FullName, StringComparer.Ordinal)) {
                 if (!type.IsSubclassOf(typeof(Overload.Behaviour))) continue;
                 if (type.IsAbstract || type.ContainsGenericParameters || !type.IsVisible || type.GetConstructor(Type.EmptyTypes) == null) {
                     Log($"Skipped Behaviour {type.FullName}: requires public concrete closed type and public parameterless constructor");
@@ -113,7 +121,8 @@ public static unsafe partial class Bootstrap
         Session value = Lookup(session);
         Require(index < value.Types.Count, Status.TypeNotFound, "Type index out of range");
         ProjectType type = value.Types[(int)index];
-        TypeResult info = new() { Size = (uint)sizeof(TypeResult), Token = type.Token, AliasCount = (uint)type.Aliases.Count, FieldCount = (uint)type.Fields.Count };
+        TypeResult info = new() { Size = (uint)sizeof(TypeResult), Flags = IsUIType(type.Type) ? 1u : 0u,
+            Token = type.Token, AliasCount = (uint)type.Aliases.Count, FieldCount = (uint)type.Fields.Count };
         try {
             info.Id = Allocate(type.Id); info.Assembly = Allocate(type.Assembly); info.Type = Allocate(type.Name);
             TypeResults.Add((nuint)info.Type.Data, info);

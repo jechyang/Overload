@@ -28,6 +28,18 @@ Core::MeshRangeResult Core::MeshFeatureProcessor::PrepareRange(const Data::Rende
 }
 Data::PipelineState Core::MeshFeatureProcessor::BuildState(Data::PipelineState state, const Data::StateMask& material, Data::RenderStage stage)
 {
+    if (stage == Data::RenderStage::OverlayUI)
+    {
+        // Overlay owns its state. Do not inherit editor wireframe, stencil or
+        // scissor settings. Rectangular clipping is resolved in the UI snapshot.
+        state = Data::PipelineState{};
+        state.stencilTest = state.scissorTest = state.depthTest = state.depthWriting = false;
+        state.blending = true; state.culling = false; state.colorWriting.mask = 0xF;
+        state.blendingSrcFactor = baregl::types::EBlendingFactor::SRC_ALPHA;
+        state.blendingDestFactor = baregl::types::EBlendingFactor::ONE_MINUS_SRC_ALPHA;
+        state.blendingEquation = baregl::types::EBlendingEquation::FUNC_ADD;
+        return state;
+    }
     // All three old SceneRenderPass implementations unconditionally set stencil.
     if (stage == Data::RenderStage::Opaque || stage == Data::RenderStage::Transparent || stage == Data::RenderStage::SceneUI)
     {

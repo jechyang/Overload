@@ -2,6 +2,8 @@
 #include <OvCore/ECS/Components/CLight.h>
 #include <OvCore/ECS/Components/CPostProcessStack.h>
 #include <OvCore/ECS/Components/CReflectionProbe.h>
+#include <OvCore/ECS/Components/CUI.h>
+#include <OvCore/UI/RenderResources.h>
 #include <algorithm>
 #include <cstring>
 #include <limits>
@@ -11,7 +13,7 @@ using namespace OvRendering;
 
 std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest& request,
     const std::shared_ptr<baregl::Texture>& white, const std::shared_ptr<baregl::Texture>& black,
-    Core::MeshCommandRecorder::ProgramCache* programs)
+    Core::MeshCommandRecorder::ProgramCache* programs, UI::RenderResources* uiResources)
 {
     auto frame = std::unique_ptr<SceneFrame>(new SceneFrame);
     auto main = request.main;
@@ -155,6 +157,53 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
         }
     }
     else addView(main,request.target,"MainView",std::move(mainReads),{},probes);
+    if (main.includeUI && std::find(main.pipeline.stages.begin(), main.pipeline.stages.end(), Data::RenderStage::SceneUI) != main.pipeline.stages.end())
+    {
+        const auto ui = UI::ExtractFrame(main.scene, {float(main.width), float(main.height)}, generation, &main.camera);
+        if (!ui.images.empty() || !ui.meshes.empty())
+        {
+            UI::RenderResources localResources;
+            std::vector<Data::ResourceUse> reads;
+            const auto addTextureRead = [&](const std::shared_ptr<baregl::Texture>& texture) {
+                if (!texture) return;
+                const auto& desc = texture->GetDesc();
+                const auto resource = addResource(texture, static_cast<uint16_t>(desc.width),
+                    static_cast<uint16_t>(desc.height), 1, 1, Data::ResourceOrigin::Imported);
+                if (std::none_of(reads.begin(), reads.end(), [&](const auto& r) { return r.resource == resource; }))
+                    reads.push_back({resource, 1});
+            };
+            for (const auto& image : ui.images)
+                if (image.texture && image.color.w > 0)
+                    addTextureRead(image.texture);
+            for (const auto& mesh : ui.meshes)
+                addTextureRead(mesh.texture);
+            const auto hasSceneUI = std::any_of(ui.images.begin(), ui.images.end(), [](const auto& image) {
+                    return image.renderMode != ECS::Components::CCanvas::RenderMode::ScreenSpaceOverlay;
+                }) || std::any_of(ui.meshes.begin(), ui.meshes.end(), [](const auto& mesh) {
+                    return mesh.renderMode != ECS::Components::CCanvas::RenderMode::ScreenSpaceOverlay;
+                });
+            const auto hasOverlay = std::any_of(ui.images.begin(), ui.images.end(), [](const auto& image) {
+                    return image.renderMode == ECS::Components::CCanvas::RenderMode::ScreenSpaceOverlay;
+                }) || std::any_of(ui.meshes.begin(), ui.meshes.end(), [](const auto& mesh) {
+                    return mesh.renderMode == ECS::Components::CCanvas::RenderMode::ScreenSpaceOverlay;
+                });
+            auto& resources = uiResources ? *uiResources : localResources;
+            if (hasSceneUI)
+            {
+                auto sceneUI = resources.Extract(ui, viewId(), white, black, Data::RenderStage::SceneUI, &lightingView);
+                frame->m_plan.passes.push_back({"CanvasUI", frame->m_views.size(), sceneUI->GetView().id,
+                    {Data::RenderStage::SceneUI}, request.target, reads, {}, {}});
+                frame->m_views.push_back(std::move(sceneUI));
+            }
+            if (hasOverlay)
+            {
+                auto overlay = resources.Extract(ui, viewId(), white, black);
+                frame->m_plan.passes.push_back({"OverlayUI", frame->m_views.size(), overlay->GetView().id,
+                    {Data::RenderStage::OverlayUI}, request.target, std::move(reads), {}, {}});
+                frame->m_views.push_back(std::move(overlay));
+            }
+        }
+    }
     frame->m_plan.Validate(frame->m_views);
     return frame;
 }

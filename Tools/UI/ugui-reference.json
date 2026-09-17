@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/Unity-Technologies/uGUI.git",
+  "branch": "2018.4",
+  "commit": "7ae6166c9b673a966f62905953f4bc6b3153a675",
+  "directory": "Build/Reference/uGUI",
+  "license": "LICENSE"
+}

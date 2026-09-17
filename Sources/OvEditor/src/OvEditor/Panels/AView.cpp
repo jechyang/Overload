@@ -6,6 +6,7 @@
 */
 
 #include <tracy/Tracy.hpp>
+#include <algorithm>
 
 #include <OvCore/Rendering/FramebufferUtil.h>
 #include <OvEditor/Core/EditorActions.h>
@@ -61,7 +62,13 @@ OvRendering::Data::RenderCommandList OvEditor::Panels::AView::RecordRenderComman
         OvCore::Rendering::SceneFrameRequest frameRequest{request,m_surface.GetTarget(),m_shadowFallback};
         frameRequest.postProcess=&m_postProcess;frameRequest.postProcessTarget=&m_surface.GetFramebuffer();frameRequest.postProcessState=state;
         auto frame=m_frontend.PrepareFrame(m_frontend.ExtractFrame(frameRequest),state,m_jobs);
-        const auto view=frame->GetPreparedViews().back()->GetView();
+        // A trailing OverlayUI pass has screen-space matrices, not the viewport
+        // camera. Editor grids and gizmos must always use the requested camera.
+        const auto preparedViews=frame->GetPreparedViews();
+        const auto mainView=std::find_if(preparedViews.begin(),preparedViews.end(),
+            [&](const auto& prepared) { return prepared->GetView().input.id == request.viewId; });
+        if(mainView==preparedViews.end())throw std::logic_error("Viewport main camera view is missing");
+        const auto view=(*mainView)->GetView();
         m_frameInfo=frame->GetFrameInfo();
         commands.Append(m_frontend.RecordFrame(std::move(frame),m_jobs));
         m_overlayRequest=CreateOverlayRequest();

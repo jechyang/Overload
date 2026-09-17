@@ -4,6 +4,7 @@
 #include <OvCore/ECS/Components/CCamera.h>
 #include <OvCore/ECS/Components/CLight.h>
 #include <OvCore/ECS/Components/CReflectionProbe.h>
+#include <OvCore/ECS/Components/CUI.h>
 #include <OvCore/Rendering/FramebufferUtil.h>
 #include <OvCore/Rendering/SkinningUtils.h>
 namespace
@@ -27,6 +28,22 @@ namespace
 		{
 			p_material.SetProperty(p_uniformName, color, true);
 		}
+	}
+
+	OvCore::ECS::Components::CCanvas* FindRootCanvas(OvCore::ECS::Actor& actor)
+	{
+		OvCore::ECS::Components::CCanvas* result = nullptr;
+		for (auto* current = &actor; current; current = current->GetParent())
+			if (auto* canvas = current->GetComponent<OvCore::ECS::Components::CCanvas>()) result = canvas;
+		return result;
+	}
+
+	bool HasEditableTransformGizmo(OvCore::ECS::Actor& actor)
+	{
+		const auto* rect = actor.GetComponent<OvCore::ECS::Components::CRectTransform>();
+		const auto* rootCanvas = FindRootCanvas(actor);
+		return !rect || !rootCanvas ||
+			(&rootCanvas->owner == &actor && rootCanvas->GetRenderMode() == OvCore::ECS::Components::CCanvas::RenderMode::WorldSpace);
 	}
 }
 
@@ -168,10 +185,11 @@ OvRendering::Data::RenderCommandList OvEditor::Rendering::PickingCollector::Extr
     DrawPickableCameras(state,request.scene);DrawPickableReflectionProbes(state,request.scene);DrawPickableLights(state,request.scene);
     m_collector.Clear(false,true,false);
     auto* selected=request.scene.FindActorByGUID(overlay.selected);
-    if(selected)DrawPickableGizmo(state,selected->transform.GetWorldPosition(),selected->transform.GetWorldRotation(),overlay.operation);
+    const bool hasGizmo=selected&&HasEditableTransformGizmo(*selected);
+    if(hasGizmo)DrawPickableGizmo(state,selected->transform.GetWorldPosition(),selected->transform.GetWorldRotation(),overlay.operation);
     auto readback=std::make_shared<PickingReadback>();readback->completion=commands.GetCompletion();
     readback->scene=request.scene.GetLifetimeToken();readback->width=request.width;readback->height=request.height;
-    readback->gizmoActorGUID=selected?selected->GetGUID():0;readback->gizmoOperation=overlay.operation;
+    readback->gizmoActorGUID=hasGizmo?selected->GetGUID():0;readback->gizmoOperation=overlay.operation;
     readback->pixels.resize(size_t(request.width)*request.height*4);
     for(const auto* actor:request.scene.GetActors())readback->actors.emplace(static_cast<uint32_t>(actor->GetID()),actor->GetGUID());
     m_collector.SubmitRenderOperation([readback,target=m_actorPickingFramebuffer.RecordTarget()](auto&){target.ReadRGBA8(readback->pixels);});

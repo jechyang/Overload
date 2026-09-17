@@ -13,6 +13,7 @@
 #include <OvRendering/Resources/IMesh.h>
 
 namespace OvCore::Rendering { class SceneRenderExtractor; }
+namespace OvCore::UI { class RenderResources; }
 namespace OvRendering::Core { class ViewPreparer; class RenderTaskCoordinator; }
 
 namespace OvRendering::Data
@@ -67,6 +68,7 @@ namespace OvRendering::Data
     class RenderSceneSnapshot final
     {
         friend class OvCore::Rendering::SceneRenderExtractor;
+        friend class OvCore::UI::RenderResources;
     public:
         const RenderViewInput& GetView() const { return m_view; }
         const RenderPipeline& GetPipeline() const { return m_pipeline; }

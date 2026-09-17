@@ -31,11 +31,17 @@
         "OvCore/ECS/Components/CReflectionProbe.h",
         "OvCore/ECS/Components/CSkinnedMeshRenderer.h",
         "OvCore/ECS/Components/CSpotLight.h",
-        "OvCore/ECS/Components/CTransform.h"
+        "OvCore/ECS/Components/CTransform.h",
+        "OvCore/ECS/Components/CUI.h"
       ],
       "types": [
         "OvCore::ECS::Components::CPhysicalBox",
-        "OvCore::ECS::Components::CTransform"
+        "OvCore::ECS::Components::CTransform",
+        "OvCore::ECS::Components::CRectTransform",
+        "OvCore::ECS::Components::CCanvas",
+        "OvCore::ECS::Components::CUIImage",
+        "OvCore::ECS::Components::CCanvasGroup",
+        "OvCore::ECS::Components::CRectMask2D"
       ]
     }
   ]

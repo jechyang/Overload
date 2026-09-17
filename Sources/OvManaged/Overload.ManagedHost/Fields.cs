@@ -142,5 +142,6 @@ public static unsafe partial class Bootstrap
             default: throw new Failure(Status.UnsupportedField,"Unsupported field");
         }
         f.Field.SetValue(i.Value,value);
+        if (i.Value is EventSystems.UIBehaviour ui) ui.MarkDirtyFromHost();
     }
 }

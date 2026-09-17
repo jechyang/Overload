@@ -43,10 +43,13 @@ public abstract class Behaviour
 internal interface INativeAccess
 {
     ulong Query(ulong owner, uint operation, ulong argument = 0, string text = "");
+    void SetUIMesh(ulong renderer, UI.UIVertex[] vertices, int[] indices);
     Vector3 Read(ulong component, bool box);
     void Write(ulong component, bool box, Vector3 value);
     void Log(string text);
     string LogicalName { get; }
+    System.Collections.Generic.IReadOnlyList<Behaviour> GetBehaviours(ulong owner);
+    UI.CanvasUpdateRegistry UIRegistry { get; }
 }
 
 public sealed class Actor
@@ -57,10 +60,31 @@ public sealed class Actor
     public ulong Guid => Access.Query(Handle, 1);
     public Transform Transform => GetComponent<Transform>()!;
     public bool Active { get => Access.Query(Handle, 4) != 0; set => Access.Query(Handle, 5, value ? 1ul : 0ul); }
+    public bool ActiveInHierarchy => Access.Query(Handle, 18) != 0;
+    internal bool CanModify => Access.Query(Handle, 21) != 0;
+    public Actor? Parent {
+        get { ulong id = Access.Query(Handle, 14); return id == 0 ? null : new Actor(Access, id); }
+        set { if (value != null) _ = value.Guid; Access.Query(Handle, 17, value?.Handle ?? 0); }
+    }
+    public int ChildCount => checked((int)Access.Query(Handle, 15));
+    public Actor GetChild(int index) => new(Access, Access.Query(Handle, 16, checked((ulong)index)));
+    public T[] GetComponents<T>() where T : class {
+        var result = new System.Collections.Generic.List<T>();
+        if (typeof(Behaviour).IsAssignableFrom(typeof(T)) || typeof(T).IsInterface) {
+            foreach (Behaviour value in Access.GetBehaviours(Handle)) if (value is T typed) result.Add(typed);
+        } else { T? value = GetComponent<T>(); if (value != null) result.Add(value); }
+        return result.ToArray();
+    }
+    public T AddComponent<T>() where T : NativeUIComponent => (T)NativeUIComponent.Resolve(this, typeof(T), true)!;
     public T? GetComponent<T>() where T : class
     {
+        if (typeof(NativeUIComponent).IsAssignableFrom(typeof(T))) return NativeUIComponent.Resolve(this, typeof(T), false) as T;
+        if (typeof(Behaviour).IsAssignableFrom(typeof(T)) || typeof(T).IsInterface) {
+            foreach (Behaviour value in Access.GetBehaviours(Handle)) if (value is T typed) return typed;
+            return null;
+        }
         uint kind = typeof(T) == typeof(Transform) ? 2u : typeof(T) == typeof(Box) ? 3u :
-            throw new NotSupportedException("S3 components: Transform and Box");
+            throw new NotSupportedException("Unsupported native component: " + typeof(T).FullName);
         ulong handle = Access.Query(Handle, kind);
         if (handle == 0) return null;
         return (T)(object)(kind == 2 ? (object)new Transform(Access, handle) : new Box(Access, handle));
@@ -69,6 +93,7 @@ public sealed class Actor
     public void AddBehaviour<T>() where T : Behaviour => Access.Query(Handle, 7, 0, typeof(T).FullName!);
     public void RemoveBehaviour<T>() where T : Behaviour => Access.Query(Handle, 8, 0, typeof(T).FullName!);
     public Actor? Find(string name) { ulong id = Access.Query(Handle, 9, 0, name); return id == 0 ? null : new Actor(Access, id); }
+    public Actor? Find(ulong guid) { ulong id = Access.Query(Handle, 12, guid); return id == 0 ? null : new Actor(Access, id); }
     public Actor Create(string name) => new(Access, Access.Query(Handle, 10, 0, name));
     public void LoadScene(string path) => Access.Query(Handle, 11, 0, path);
     public void Log(string message) { _ = Guid; Access.Log(message); }

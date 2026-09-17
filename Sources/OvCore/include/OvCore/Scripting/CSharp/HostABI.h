@@ -168,6 +168,8 @@ typedef struct OvCsSessionCreateInfo
     OvCsUtf8View assembly_logical_name;
 } OvCsSessionCreateInfo;
 
+/* Optional type capabilities; unknown bits may be ignored by older consumers. */
+#define OVCS_TYPE_UI ((uint32_t)1)
 typedef struct OvCsTypeInfo
 {
     uint32_t struct_size;

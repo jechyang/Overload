@@ -1,0 +1,14 @@
+executable_name=NativeUI
+gravity=-9.81
+x_resolution=768
+y_resolution=768
+start_scene=Scenes/NativeUI.ovscene
+fullscreen=false
+vsync=true
+samples=1
+multisampling=false
+window_icon=
+build_type=0
+csharp_enabled=false
+render_commands=true
+render_thread=false

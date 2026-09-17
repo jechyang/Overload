@@ -5,6 +5,7 @@
 #include <OvCore/Rendering/SceneFrameExtractor.h>
 #include <OvRendering/Core/MeshCommandRecorder.h>
 #include <OvTools/Jobs/JobSystem.h>
+#include <OvCore/UI/RenderResources.h>
 
 namespace OvCore::Rendering
 {
@@ -36,5 +37,6 @@ namespace OvCore::Rendering
         std::thread::id m_owner = std::this_thread::get_id();
         OvRendering::Core::MeshCommandRecorder m_recorder;
         mutable OvRendering::Core::MeshCommandRecorder::ProgramCache m_programs;
+        mutable UI::RenderResources m_uiResources;
     };
 }

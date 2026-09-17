@@ -4,7 +4,7 @@
 
 namespace OvRendering::Data
 {
-    enum class RenderStage { Opaque, Transparent, ShadowCaster, ReflectionCapture, SceneUI, Picking };
+    enum class RenderStage { Opaque, Transparent, ShadowCaster, ReflectionCapture, SceneUI, Picking, OverlayUI };
     enum class DrawSorting { MaterialFrontToBack, BackToFront, Collection };
     enum class TechniqueFallback { DefaultEmptyFeatures, ShadowMaterial, PickingMaterial };
     struct StageDescription
@@ -29,6 +29,7 @@ namespace OvRendering::Data
         case ShadowCaster: return {stage, "SHADOW_PASS", Collection, ShadowMaterial, true, false, false};
         case ReflectionCapture: return {stage, "REFLECTION_PASS", MaterialFrontToBack, DefaultEmptyFeatures, true, false, false};
         case Picking: return {stage, "PICKING_PASS", Collection, PickingMaterial, true, false, false};
+        case OverlayUI: return {stage, "", Collection, DefaultEmptyFeatures, true, false, false};
         }
         throw std::invalid_argument("Unknown render stage");
     }

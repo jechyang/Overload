@@ -134,6 +134,7 @@ namespace OvCore::ECS::Components
 		* Returns the OvRendering camera instance attached to this component
 		*/
 		OvRendering::Entities::Camera& GetCamera();
+		const OvRendering::Entities::Camera& GetCamera() const;
 
 		/**
 		* Serialize the component

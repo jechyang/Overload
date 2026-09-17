@@ -2,6 +2,7 @@
 #include <OvCore/Rendering/SceneRenderExtractor.h>
 #include <OvRendering/Data/RenderPlan.h>
 #include <OvCore/Rendering/PostProcess/PostProcessPipeline.h>
+namespace OvCore::UI { class RenderResources; }
 namespace OvCore::Rendering
 {
     struct SceneFrameRequest
@@ -42,6 +43,7 @@ namespace OvCore::Rendering
     public:
         static std::unique_ptr<SceneFrame> Extract(const SceneFrameRequest& request,
             const std::shared_ptr<baregl::Texture>& white, const std::shared_ptr<baregl::Texture>& black,
-            OvRendering::Core::MeshCommandRecorder::ProgramCache* programs = nullptr);
+            OvRendering::Core::MeshCommandRecorder::ProgramCache* programs = nullptr,
+            UI::RenderResources* uiResources = nullptr);
     };
 }

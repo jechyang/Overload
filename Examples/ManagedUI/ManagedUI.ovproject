@@ -1,0 +1,15 @@
+executable_name=ManagedUI
+gravity=0
+x_resolution=900
+y_resolution=600
+start_scene=Scenes/ManagedUI.ovscene
+fullscreen=false
+vsync=true
+samples=1
+multisampling=false
+window_icon=
+build_type=0
+csharp_enabled=true
+csharp_assembly_name=GameScripts
+render_commands=true
+render_thread=false

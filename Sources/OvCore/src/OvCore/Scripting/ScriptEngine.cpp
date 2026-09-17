@@ -5,11 +5,42 @@
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/Scripting/ScriptBridge.h>
 #include <OvCore/Scripting/DispatchScope.h>
+#include <OvCore/SceneSystem/Scene.h>
+#include <OvMaths/FVector2.h>
 #include "OvCore/Reflection.generated.h"
 #include "OvCore/Script.generated.h"
 
 namespace OvCore::Scripting
 {
+    void ScriptEngine::RebuildUI(SceneSystem::Scene& scene, const OvMaths::FVector2& viewport)
+    {
+        if (!m_host || !m_session.id || scene.GetActors().empty()) return;
+        // Non-UI projects (including hosts predating this optional extension) do
+        // not acquire a new host entry or run a second script traversal.
+        bool enabled = false;
+        for (const auto& [key, type] : m_types) if (type.type == "Overload.UI.CanvasScaler") { enabled = true; break; }
+        if (!enabled) return;
+        // Run user UI code on Main, before immutable render data is captured.
+        DispatchScope scope;
+        using Entry = OvCsStatus(OVCS_CALL*)(OvCsSessionHandle, uint64_t, float, float);
+        try
+        {
+            // Inspector must not be the trigger for edit-mode UI initialization.
+            // Prepare only this scene's UI participants; normal gameplay remains
+            // lazy, and Awake/Enable/Start still belong to the Play lifecycle.
+            for (auto* actor : scene.GetActors())
+                for (auto& [key, behaviour] : actor->GetBehaviours())
+                    if (m_uiTypes.contains(behaviour.CurrentIdentity().Key())) PrepareCSharp(behaviour);
+            const auto update = reinterpret_cast<Entry>(m_host->Entry(L"Overload.ManagedHost.Bootstrap, Overload.ManagedHost", L"UpdateUI"));
+            const auto anchor = PublishComponent(m_host->NativeContext(), scene.GetActors().front()->transform);
+            m_host->Check(update(m_session, anchor, viewport.x, viewport.y), "UI rebuild", m_session);
+        }
+        catch (const std::exception& error)
+        {
+            m_error = error.what();
+            OVLOG_ERROR(m_error);
+        }
+    }
 #if defined(LUA_SCRIPTING)
     struct ScriptEngine::Legacy : LuaScriptEngine { using LuaScriptEngine::LuaScriptEngine; };
 #else
@@ -128,7 +159,7 @@ namespace OvCore::Scripting
             catch (const std::exception& error) { OVLOG_ERROR(error.what()); }
         }
         m_session = {}; m_host = nullptr; m_tokens.clear(); m_fields.clear();
-        m_types.clear(); m_csharp = false; m_error.clear();
+        m_types.clear(); m_uiTypes.clear(); m_csharp = false; m_error.clear();
     }
     OvReflection::Script::Context& ScriptEngine::GameplayContext(uint64_t context)
     {
@@ -148,6 +179,7 @@ namespace OvCore::Scripting
             OvCsSessionCreateInfo info{sizeof(info), 0, 0, View(rootText), View(assemblyText), View(logical)};
             host.Check(api.create_session(&info, &session), "discover project");
             std::unordered_map<std::string, ScriptIdentity> candidate;
+            std::unordered_set<std::string> uiTypes;
             std::unordered_map<std::string, uint64_t> tokens;
             std::unordered_map<std::string, std::vector<ManagedField>> fields;
             uint32_t count = 0;
@@ -158,6 +190,7 @@ namespace OvCore::Scripting
                 try {
                     auto identity = ScriptIdentity::CSharp(Text(type.assembly_logical_name), Text(type.canonical_type_name), Text(type.stable_id));
                     tokens.emplace(identity.Key(), type.type_token);
+                    if (type.flags & OVCS_TYPE_UI) uiTypes.insert(identity.Key());
                     auto& list = fields[identity.Key()];
                     for(uint32_t f=0; f<type.field_count; ++f) {
                         OvCsFieldInfo fieldInfo{};
@@ -232,7 +265,7 @@ namespace OvCore::Scripting
                     target->RemoveScript();
                 }
                 m_host = &host; m_session = session; session = {}; m_tokens = std::move(tokens);
-                m_types = std::move(candidate); m_fields = std::move(fields); m_csharp = true; m_error.clear();
+                m_types = std::move(candidate); m_uiTypes = std::move(uiTypes); m_fields = std::move(fields); m_csharp = true; m_error.clear();
                 for (auto& [target, next] : replacements) {
                     target->RefreshIdentity();
                     auto* installed = next.get(); const auto handle = installed->instance;
@@ -250,7 +283,7 @@ namespace OvCore::Scripting
             }
             ClearCSharpProject();
             m_host = &host; m_session = session; session = {}; m_tokens = std::move(tokens);
-            m_types = std::move(candidate); m_fields = std::move(fields); m_csharp = true; m_error.clear();
+            m_types = std::move(candidate); m_uiTypes = std::move(uiTypes); m_fields = std::move(fields); m_csharp = true; m_error.clear();
             for (auto* target : m_behaviours) if (target->Identity().backend == "csharp") {
                 target->RefreshIdentity();
                 target->RemoveScript();
