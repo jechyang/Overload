@@ -9,8 +9,18 @@ namespace Overload.UI;
 public sealed class CanvasUpdateRegistry
 {
     private readonly HashSet<ICanvasElement> layout = new(), graphics = new();
+    private readonly Dictionary<Type, IUISessionResource> sessionResources = new();
+    internal UISessionRegistry<T> GetRegistry<T>() where T : class {
+        if (!sessionResources.TryGetValue(typeof(T), out IUISessionResource? registry))
+            sessionResources.Add(typeof(T), registry = new UISessionRegistry<T>(this));
+        return (UISessionRegistry<T>)registry;
+    }
+    private readonly LayoutChangeObserver layoutChanges = new();
+    private readonly HashSet<ulong> executingLayouts = new();
+    internal bool EnterLayout(ulong handle) => executingLayouts.Add(handle);
+    internal void ExitLayout(ulong handle) => executingLayouts.Remove(handle);
     internal bool rebuildingLayout, rebuildingGraphics;
-    public static bool IsRebuildingLayout(Actor owner) => owner.Access.UIRegistry.rebuildingLayout;
+    public static bool IsRebuildingLayout(Actor owner) => owner.Access.UIRegistry.rebuildingLayout || owner.Access.UIRegistry.executingLayouts.Count != 0;
     public static bool IsRebuildingGraphics(Actor owner) => owner.Access.UIRegistry.rebuildingGraphics;
     public static bool TryRegisterCanvasElementForLayoutRebuild(ICanvasElement element) => element.transform.Owner.Access.UIRegistry.layout.Add(element);
     public static bool TryRegisterCanvasElementForGraphicRebuild(ICanvasElement element) => element.transform.Owner.Access.UIRegistry.graphics.Add(element);
@@ -20,7 +30,11 @@ public sealed class CanvasUpdateRegistry
         var registry = element.transform.Owner.Access.UIRegistry;
         registry.layout.Remove(element); registry.graphics.Remove(element);
     }
-    internal void Clear() { layout.Clear(); graphics.Clear(); }
+    internal void Clear() {
+        layout.Clear(); graphics.Clear(); layoutChanges.Clear(); executingLayouts.Clear();
+        foreach (IUISessionResource resource in sessionResources.Values) resource.Release();
+        sessionResources.Clear();
+    }
     private static int Depth(ICanvasElement element) {
         int depth = 0; for (Actor? p = element.transform.Owner.Parent; p != null; p = p.Parent) ++depth; return depth;
     }
@@ -43,7 +57,7 @@ public sealed class CanvasUpdateRegistry
         }
         try {
             rebuildingLayout = true; Run(layout, CanvasUpdate.Prelayout, CanvasUpdate.PostLayout, true);
-            rebuildingLayout = false; afterLayout();
+            afterLayout(); rebuildingLayout = false;
             rebuildingGraphics = true; Run(graphics, CanvasUpdate.PreRender, CanvasUpdate.LatePreRender, false);
         } finally { rebuildingLayout = rebuildingGraphics = false; }
     }
@@ -55,16 +69,13 @@ public sealed class CanvasUpdateRegistry
             foreach (var ui in components.OfType<EventSystems.UIBehaviour>())
                 try { ui.NotifyNativeChanges(); } catch (Exception ex) { report(ex); }
         }
+        DrivenRectTransformTracker.ReleaseInactive(anchor, report);
+        FontUpdateTracker.Update(anchor);
         Notify();
-        // Native hierarchy/dimension change notifications are not exposed yet. Schedule
-        // roots once per frame so editor/native writes cannot leave a stale layout.
-        // All measurement/control remains virtual managed code.
-        foreach (var component in components)
-            if (component is ILayoutElement or ILayoutController && LayoutUtility.Active(component)) {
-                var rect = component.Owner.GetComponent<RectTransform>();
-                if (rect != null) LayoutRebuilder.MarkLayoutForRebuild(rect);
-            }
-        PerformUpdate(report, Notify);
+        layoutChanges.Observe(components, true, report);
+        PerformUpdate(report, () => {
+            Notify(); layoutChanges.Observe(components, false, report); ClipperRegistry.Cull(anchor);
+        });
     }
 }
 
@@ -79,8 +90,9 @@ public sealed class LayoutRebuilder : ICanvasElement, IEquatable<LayoutRebuilder
     public bool IsDestroyed() { _ = transform.rect; return false; } // Validates the native component epoch.
     public void LayoutComplete() { }
     public void GraphicUpdateComplete() { }
-    public static void MarkLayoutForRebuild(RectTransform rect) {
-        if (CanvasUpdateRegistry.IsRebuildingLayout(rect.Owner)) return;
+    public static void MarkLayoutForRebuild(RectTransform rect) => MarkLayoutForRebuild(rect, false);
+    internal static void MarkLayoutForRebuild(RectTransform rect, bool deferDuringLayout) {
+        if (!deferDuringLayout && CanvasUpdateRegistry.IsRebuildingLayout(rect.Owner)) return;
         RectTransform root = rect;
         for (RectTransform? parent = root.parent; parent != null; parent = parent.parent) {
             if (!parent.Owner.GetComponents<ILayoutGroup>().Any(LayoutUtility.Active)) break;
@@ -113,6 +125,9 @@ public sealed class LayoutRebuilder : ICanvasElement, IEquatable<LayoutRebuilder
     }
     public void Rebuild(CanvasUpdate executing) {
         if (executing != CanvasUpdate.Layout) return;
-        Calculate(transform, 0); Control(transform, 0); Calculate(transform, 1); Control(transform, 1);
+        var registry = transform.Owner.Access.UIRegistry;
+        if (!registry.EnterLayout(key)) throw new InvalidOperationException("Layout cycle: recursive ForceRebuildLayoutImmediate on the same root");
+        try { Calculate(transform, 0); Control(transform, 0); Calculate(transform, 1); Control(transform, 1); }
+        finally { registry.ExitLayout(key); }
     }
 }

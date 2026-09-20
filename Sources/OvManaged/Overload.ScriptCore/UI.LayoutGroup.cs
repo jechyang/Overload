@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Overload.EventSystems;
+using Overload.Maths;
 
 namespace Overload.UI;
 
@@ -16,12 +17,21 @@ public abstract class LayoutGroup : UIBehaviour, ILayoutElement, ILayoutGroup
     [SerializeField] private int m_PaddingLeft, m_PaddingRight, m_PaddingTop, m_PaddingBottom;
     [SerializeField] private TextAnchor m_ChildAlignment;
     protected readonly List<RectTransform> rectChildren = new();
+    protected readonly DrivenRectTransformTracker m_Tracker = new();
+    public override void OnEnable() { base.OnEnable(); SetDirty(); }
+    public override void OnDisable() { m_Tracker.Clear(); SetDirty(); base.OnDisable(); }
+    internal override void ReleaseNativeComponents() { m_Tracker.Clear(); base.ReleaseNativeComponents(); }
+    protected override void SetDirty() { if (owner != null) LayoutRebuilder.MarkLayoutForRebuild(rectTransform, true); }
+    protected void SetProperty<T>(ref T field, T value) {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        field = value; SetDirty();
+    }
     private readonly float[] minimum = new float[2], preferred = new float[2], flexible = new float[2];
     public RectOffset padding {
         get => new(m_PaddingLeft, m_PaddingRight, m_PaddingTop, m_PaddingBottom);
-        set { m_PaddingLeft = value.left; m_PaddingRight = value.right; m_PaddingTop = value.top; m_PaddingBottom = value.bottom; SetDirty(); }
+        set { if (padding == value) return; m_PaddingLeft = value.left; m_PaddingRight = value.right; m_PaddingTop = value.top; m_PaddingBottom = value.bottom; SetDirty(); }
     }
-    public TextAnchor childAlignment { get => m_ChildAlignment; set { m_ChildAlignment = value; SetDirty(); } }
+    public TextAnchor childAlignment { get => m_ChildAlignment; set { if (!Enum.IsDefined(value)) throw new ArgumentOutOfRangeException(nameof(value)); SetProperty(ref m_ChildAlignment, value); } }
     public virtual float minWidth => minimum[0];
     public virtual float minHeight => minimum[1];
     public virtual float preferredWidth => preferred[0];
@@ -30,6 +40,7 @@ public abstract class LayoutGroup : UIBehaviour, ILayoutElement, ILayoutGroup
     public virtual float flexibleHeight => flexible[1];
     public virtual int layoutPriority => 0;
     public virtual void CalculateLayoutInputHorizontal() {
+        m_Tracker.BeginUpdate();
         rectChildren.Clear();
         for (int i = 0; i < Owner.ChildCount; ++i) {
             Actor child = Owner.GetChild(i);
@@ -53,9 +64,26 @@ public abstract class LayoutGroup : UIBehaviour, ILayoutElement, ILayoutGroup
         float totalPadding = axis == 0 ? padding.horizontal : padding.vertical;
         return start + (rectTransform.rect.size[axis] - totalPadding - requiredSpaceWithoutPadding) * GetAlignmentOnAxis(axis);
     }
-    protected void SetChildAlongAxis(RectTransform child, int axis, float position) => SetChildAlongAxis(child, axis, position, child.sizeDelta[axis]);
-    protected void SetChildAlongAxis(RectTransform child, int axis, float position, float size) =>
-        child.SetInsetAndSizeFromParentEdge(axis == 0 ? RectTransform.Edge.Left : RectTransform.Edge.Top, position, size);
+    protected static void SetAnchors(RectTransform child, int axis = -1) {
+        Vector2 low = child.anchorMin, high = child.anchorMax;
+        if (axis != 1) low.x = high.x = 0;
+        if (axis != 0) low.y = high.y = 1;
+        if (child.anchorMin != low) child.anchorMin = low;
+        if (child.anchorMax != high) child.anchorMax = high;
+    }
+    protected void SetChildAlongAxis(RectTransform child, int axis, float position) => PlaceChild(child, axis, position, null);
+    protected void SetChildAlongAxis(RectTransform child, int axis, float position, float size) => PlaceChild(child, axis, position, size);
+    private void PlaceChild(RectTransform child, int axis, float position, float? size) {
+        var properties = DrivenTransformProperties.Anchors | (axis == 0 ? DrivenTransformProperties.AnchoredPositionX : DrivenTransformProperties.AnchoredPositionY);
+        if (size.HasValue) properties |= axis == 0 ? DrivenTransformProperties.SizeDeltaX : DrivenTransformProperties.SizeDeltaY;
+        m_Tracker.Add(this, child, properties);
+        SetAnchors(child, axis);
+        Vector2 delta = child.sizeDelta;
+        if (size.HasValue && delta[axis] != size.Value) { delta[axis] = size.Value; child.sizeDelta = delta; }
+        Vector2 anchored = child.anchoredPosition;
+        float value = axis == 0 ? position + delta[axis] * child.pivot[axis] : -position - delta[axis] * (1 - child.pivot[axis]);
+        if (anchored[axis] != value) { anchored[axis] = value; child.anchoredPosition = anchored; }
+    }
 }
 
 public abstract class HorizontalOrVerticalLayoutGroup : LayoutGroup
@@ -63,11 +91,11 @@ public abstract class HorizontalOrVerticalLayoutGroup : LayoutGroup
     [SerializeField] private float m_Spacing;
     [SerializeField] private bool m_ChildControlWidth = true, m_ChildControlHeight = true;
     [SerializeField] private bool m_ChildForceExpandWidth = true, m_ChildForceExpandHeight = true;
-    public float spacing { get => m_Spacing; set { m_Spacing = CanvasScaler.Finite(value); SetDirty(); } }
-    public bool childControlWidth { get => m_ChildControlWidth; set { m_ChildControlWidth = value; SetDirty(); } }
-    public bool childControlHeight { get => m_ChildControlHeight; set { m_ChildControlHeight = value; SetDirty(); } }
-    public bool childForceExpandWidth { get => m_ChildForceExpandWidth; set { m_ChildForceExpandWidth = value; SetDirty(); } }
-    public bool childForceExpandHeight { get => m_ChildForceExpandHeight; set { m_ChildForceExpandHeight = value; SetDirty(); } }
+    public float spacing { get => m_Spacing; set => SetProperty(ref m_Spacing, CanvasScaler.Finite(value)); }
+    public bool childControlWidth { get => m_ChildControlWidth; set => SetProperty(ref m_ChildControlWidth, value); }
+    public bool childControlHeight { get => m_ChildControlHeight; set => SetProperty(ref m_ChildControlHeight, value); }
+    public bool childForceExpandWidth { get => m_ChildForceExpandWidth; set => SetProperty(ref m_ChildForceExpandWidth, value); }
+    public bool childForceExpandHeight { get => m_ChildForceExpandHeight; set => SetProperty(ref m_ChildForceExpandHeight, value); }
     protected virtual void GetChildSizes(RectTransform child, int axis, bool controlSize, bool forceExpand,
         out float min, out float preferred, out float flexible) {
         min = controlSize ? LayoutUtility.GetMinSize(child, axis) : child.sizeDelta[axis];
@@ -97,7 +125,8 @@ public abstract class HorizontalOrVerticalLayoutGroup : LayoutGroup
         float alignment = GetAlignmentOnAxis(axis);
         void Place(RectTransform child, float position, float available) {
             float ownSize = control ? available : child.sizeDelta[axis];
-            SetChildAlongAxis(child, axis, position + (available - ownSize) * alignment, ownSize);
+            if (control) SetChildAlongAxis(child, axis, position, ownSize);
+            else SetChildAlongAxis(child, axis, position + (available - ownSize) * alignment);
         }
         if (isVertical != (axis == 1)) {
             foreach (var child in rectChildren) {
@@ -125,12 +154,12 @@ public class HorizontalLayoutGroup : HorizontalOrVerticalLayoutGroup
     public override void CalculateLayoutInputHorizontal() { base.CalculateLayoutInputHorizontal(); CalcAlongAxis(0, false); }
     public override void CalculateLayoutInputVertical() => CalcAlongAxis(1, false);
     public override void SetLayoutHorizontal() => SetChildrenAlongAxis(0, false);
-    public override void SetLayoutVertical() => SetChildrenAlongAxis(1, false);
+    public override void SetLayoutVertical() { SetChildrenAlongAxis(1, false); m_Tracker.EndUpdate(); }
 }
 public class VerticalLayoutGroup : HorizontalOrVerticalLayoutGroup
 {
     public override void CalculateLayoutInputHorizontal() { base.CalculateLayoutInputHorizontal(); CalcAlongAxis(0, true); }
     public override void CalculateLayoutInputVertical() => CalcAlongAxis(1, true);
     public override void SetLayoutHorizontal() => SetChildrenAlongAxis(0, true);
-    public override void SetLayoutVertical() => SetChildrenAlongAxis(1, true);
+    public override void SetLayoutVertical() { SetChildrenAlongAxis(1, true); m_Tracker.EndUpdate(); }
 }
