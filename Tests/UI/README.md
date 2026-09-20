@@ -47,3 +47,18 @@ requested stages, checks and exit codes in a unique evidence directory.
 `node Tools/UI/reference-ugui.mjs --check --complete` additionally rejects any
 pending, partial or blocked type or engine dependency; use it for the final U13
 completion gate.
+
+U1 utility and lifetime work in progress can be checked with:
+
+    node Tests/UI/run-validation.mjs Debug --managed --foundations --scripting-regression
+
+This adds randomized IndexedSet mutations, pool ownership/reset checks, event
+mutation and thread rejection, and real native-host tests for receiver/source
+destruction, weak registries, three hot reloads and collectible project contexts.
+It is a subset of U1; field serialization, cloning and the remaining U1 acceptance
+are still outstanding, so `--u1` remains unavailable.
+
+When another task changes native headers, build a matching OvCore library in an
+independent output directory and pass `--core-library=<absolute .lib path>`.
+The override is recorded in evidence. It must match the current headers; this
+option does not rebuild the library or make a stale library compatible.

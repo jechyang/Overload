@@ -22,7 +22,10 @@ namespace Overload.EventSystems
         protected virtual void OnRectTransformDimensionsChange() => SetDirty();
         protected virtual void OnTransformParentChanged() => SetDirty();
         protected virtual void OnCanvasHierarchyChanged() => SetDirty();
-        protected virtual void SetDirty() { if (owner != null) UI.LayoutRebuilder.MarkLayoutForRebuild(rectTransform); }
+        protected virtual void SetDirty() {
+            if (owner != null && Owner.GetComponent<RectTransform>() is RectTransform rect)
+                UI.LayoutRebuilder.MarkLayoutForRebuild(rect);
+        }
         internal virtual void EnsureNativeComponents() {
             Owner.AddComponent<RectTransform>();
             if (this is UI.CanvasScaler) Owner.AddComponent<Canvas>();
@@ -31,7 +34,12 @@ namespace Overload.EventSystems
         internal void MarkDirtyFromHost() => SetDirty();
         internal void NotifyNativeChanges() {
             if (owner == null) return;
-            var size = rectTransform.rect.size;
+            // Event systems and input modules participate in UI lifetime without layout.
+            if (Owner.GetComponent<RectTransform>() is not RectTransform rect) {
+                previousSize = null;
+                return;
+            }
+            var size = rect.rect.size;
             ulong parent = Owner.Parent?.Handle ?? 0, canvas = 0;
             for (Actor? cursor = Owner; cursor != null; cursor = cursor.Parent)
                 if (cursor.GetComponent<Canvas>() != null) { canvas = cursor.Handle; break; }

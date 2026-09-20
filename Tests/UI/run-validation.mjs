@@ -24,9 +24,17 @@ function run(name,exe,argv) {
     console.log('PASS '+name);
 }
 try {
-    const allowed=new Set(['--managed','--scripting-regression','--matrix-only',...stages.map(s=>s.flag)]);
-    for(const option of process.argv.slice(3)) if(!allowed.has(option)) throw Error('Unknown UI validation option: '+option);
+    const allowed=new Set(['--managed','--scripting-regression','--matrix-only','--foundations',...stages.map(s=>s.flag)]);
+    for(const option of process.argv.slice(3)) if(!allowed.has(option)&&!option.startsWith('--core-library=')) throw Error('Unknown UI validation option: '+option);
+    const coreOptions=process.argv.filter(option=>option.startsWith('--core-library='));
+    if(coreOptions.length>1) throw Error('--core-library may only be specified once');
+    const coreLibrary=coreOptions[0]?.slice('--core-library='.length);
+    if(coreLibrary!==undefined&&(!path.isAbsolute(coreLibrary)||path.extname(coreLibrary).toLowerCase()!=='.lib'||!fs.existsSync(coreLibrary)||!fs.statSync(coreLibrary).isFile())) throw Error('--core-library requires an existing absolute .lib path');
+    if(coreLibrary) evidence.libraryOverrides={OvCore:coreLibrary};
     if(process.argv.includes('--scripting-regression')&&!process.argv.includes('--managed')) throw Error('--scripting-regression requires --managed');
+    if(process.argv.includes('--foundations')&&!process.argv.includes('--managed')) throw Error('--foundations requires --managed');
+    if(process.argv.includes('--matrix-only')&&process.argv.some(option=>['--managed','--scripting-regression','--foundations'].includes(option)||option.startsWith('--core-library=')))
+        throw Error('--matrix-only cannot be combined with runtime validation options');
     for(const stage of stages.filter(s=>s.requested)) {
         stage.status='running';
         if(stage.id!=='U0') { stage.status='unavailable'; throw Error(`${stage.flag} is reserved; ${stage.id} acceptance is not implemented yet`); }
@@ -57,8 +65,9 @@ try {
         path.join(root,'Tests/UI/native_ui_validation.cpp'),'/Fo'+object]);
     const libraries=['OvReflection','OvCore','OvRendering','OvUI','OvTools','OvMaths','OvAudio','OvDebug','OvPhysics','OvWindowing',
         'assimp','baregl','bullet3','freetype','glfw','ImGui','lua','soloud','tinyxml2','tracy'];
+    const libraryPaths=libraries.map(x=>x==='OvCore'&&coreLibrary?coreLibrary:path.join(root,'Bin',config,x,x+'.lib'));
     run('link',path.join(bin,'link.exe'),['/nologo','/OPT:REF','/OPT:ICF','/OUT:'+exe,object,
-        ...libraries.map(x=>path.join(root,'Bin',config,x,x+'.lib')),
+        ...libraryPaths,
         ...['opengl32','dbghelp','ws2_32','winmm','imm32','version','user32','gdi32','shell32','ole32','oleaut32','advapi32','comdlg32','uuid'].map(x=>x+'.lib')]);
     run('native-ui',exe,[output]);
     if (process.argv.includes('--managed')) {
@@ -77,20 +86,36 @@ try {
             '/out:'+JSON.stringify(fixture),'/reference:'+JSON.stringify(path.join(managed,'Overload.ScriptCore.dll')),
             ...fs.readdirSync(references).filter(p=>p.endsWith('.dll')).map(p=>'/reference:'+JSON.stringify(path.join(references,p))),
             JSON.stringify(path.join(root,'Tests/UI/ManagedContracts.cs')),
+            ...(process.argv.includes('--foundations')?['FoundationLifetime.cs','FoundationFields.cs'].map(file=>JSON.stringify(path.join(root,'Tests/UI/fixtures',file))):[]),
             JSON.stringify(path.join(root,'Examples/ManagedUI/Assets/Scripts/CustomHorizontalLayout.cs'))
         ].join('\n'));
         run('managed-fixture',path.join(runtime,'dotnet.exe'),[path.join(runtime,'sdk',lock.sdk_version,'Roslyn/bincore/csc.dll'),'@'+response]);
+        if(process.argv.includes('--foundations')) {
+            const foundation=path.join(managed,'UIFoundationTests.dll'),foundationResponse=path.join(output,'foundations.rsp');
+            const common=fs.readFileSync(response,'utf8').split('\n').filter(line=>line.startsWith('/')&&!line.startsWith('/out:')&&!line.startsWith('/target:'));
+            fs.writeFileSync(foundationResponse,[...common,'/target:exe','/out:'+JSON.stringify(foundation),
+                JSON.stringify(path.join(root,'Tests/UI/fixtures/FoundationCollections.cs'))].join('\n'));
+            fs.copyFileSync(path.join(managed,'Overload.ManagedHost.runtimeconfig.json'),path.join(managed,'UIFoundationTests.runtimeconfig.json'));
+            run('U1-foundations-compile',path.join(runtime,'dotnet.exe'),[path.join(runtime,'sdk',lock.sdk_version,'Roslyn/bincore/csc.dll'),'@'+foundationResponse]);
+            run('U1-foundations',path.join(runtime,'dotnet.exe'),[foundation]);
+        }
         const uiObject=path.join(output,'managed-ui.obj'),uiExe=path.join(output,'managed-ui.exe');
         run('managed-native-compile',path.join(bin,'cl.exe'),['/nologo','/std:c++20','/EHsc',config==='Debug'?'/MDd':'/MD','/c',...includes,
             path.join(root,'Tests/UI/managed_ui_validation.cpp'),'/Fo'+uiObject]);
         run('managed-native-link',path.join(bin,'link.exe'),['/nologo','/OPT:REF','/OPT:ICF','/OUT:'+uiExe,uiObject,
-            ...libraries.map(x=>path.join(root,'Bin',config,x,x+'.lib')),
+            ...libraryPaths,
             ...['opengl32','dbghelp','ws2_32','winmm','imm32','version','user32','gdi32','shell32','ole32','oleaut32','advapi32','comdlg32','uuid'].map(x=>x+'.lib')]);
         run('managed-ui',uiExe,[runtime,managed,fixture]);
         if(fs.readFileSync(path.join(output,'managed-ui.log'),'utf8').includes('[ERROR]')) throw Error('Managed UI reported an engine/lifecycle error; see managed-ui.log');
+        if(process.argv.includes('--foundations')) {
+            run('U1-event-lifetime',uiExe,[runtime,managed,fixture,'foundations']);
+            if(fs.readFileSync(path.join(output,'U1-event-lifetime.log'),'utf8').includes('[ERROR]')) throw Error('UI event lifetime reported an engine error');
+            // This mode deliberately submits invalid ABI values and asserts rejected writes.
+            run('U1-value-fields',uiExe,[runtime,managed,fixture,'fields']);
+        }
         const demo=path.join(output,'demo'); fs.mkdirSync(demo);
         const demoAssembly=path.join(demo,'GameScripts.dll'), demoResponse=path.join(output,'demo.rsp');
-        const demoOptions=fs.readFileSync(response,'utf8').split('\n').filter(line=>!line.startsWith('/out:') && !line.includes('ManagedContracts.cs'));
+        const demoOptions=fs.readFileSync(response,'utf8').split('\n').filter(line=>!line.startsWith('/out:') && !line.includes('ManagedContracts.cs') && !line.includes('FoundationLifetime.cs') && !line.includes('FoundationFields.cs'));
         fs.writeFileSync(demoResponse,[...demoOptions,'/out:'+JSON.stringify(demoAssembly),
             JSON.stringify(path.join(root,'Examples/ManagedUI/Assets/Scripts/DemoComponents.cs')),
             JSON.stringify(path.join(root,'Tests/UI/FirstFrameContracts.cs'))].join('\n'));
@@ -110,7 +135,7 @@ try {
             run('s3-native-compile',path.join(bin,'cl.exe'),['/nologo','/std:c++20','/EHsc',config==='Debug'?'/MDd':'/MD','/c',...includes,
                 path.join(root,'Tests/Scripting/Integration/native_s3_validation.cpp'),'/Fo'+legacyObject]);
             run('s3-native-link',path.join(bin,'link.exe'),['/nologo','/OPT:REF','/OPT:ICF','/OUT:'+legacyExe,legacyObject,
-                ...libraries.map(x=>path.join(root,'Bin',config,x,x+'.lib')),
+                ...libraryPaths,
                 ...['opengl32','dbghelp','ws2_32','winmm','imm32','version','user32','gdi32','shell32','ole32','oleaut32','advapi32','comdlg32','uuid'].map(x=>x+'.lib')]);
             for (const mode of ['default','render-thread']) {
                 env.OV_S3_TRACE=path.join(output,'s3-'+mode+'-events.txt'); env.OV_S3_SCENE=path.join(output,'s3-next.ovscene');

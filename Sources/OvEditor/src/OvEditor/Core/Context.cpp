@@ -10,6 +10,7 @@
 
 #include <OvCore/Global/ServiceLocator.h>
 #include <OvCore/Scripting/ScriptEngine.h>
+#include <OvCore/ResourceManagement/FontManager.h>
 #include <OvDebug/Assertion.h>
 #include <OvEditor/Core/Context.h>
 #include <OvEditor/Utils/FileSystem.h>
@@ -92,6 +93,7 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 	ShaderManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	MaterialManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	SoundManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
+    FontManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 
 	materialManager.ProvideStandardShaderDefinition({
 		.shaderPath = ":Shaders/Standard.ovfx"

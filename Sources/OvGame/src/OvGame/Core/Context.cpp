@@ -9,6 +9,7 @@
 #include <OvCore/Global/ServiceLocator.h>
 #include <OvCore/Rendering/FramebufferUtil.h>
 #include <OvCore/Scripting/ScriptEngine.h>
+#include <OvCore/ResourceManagement/FontManager.h>
 
 #include <OvDebug/Logger.h>
 
@@ -63,6 +64,7 @@ OvGame::Core::Context::Context() :
 	ShaderManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	MaterialManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 	SoundManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
+    FontManager::ProvideAssetPaths(projectAssetsPath, engineAssetsPath);
 
 	materialManager.ProvideStandardShaderDefinition({
 		.shaderPath = ":Shaders/Standard.ovfx"

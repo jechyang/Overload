@@ -63,3 +63,15 @@ node Tests/UI/run-layout-validation.mjs --runtime
 工作起点 HEAD：870c494538629e8c06e825297a8387cf293f284e；U1/A、U2/B、U6/E、U7/F 接口为共享工作区正在验证的生产改动，不把它们描述为已发布提交。
 
 参考：Build/Reference/uGUI，2018.4 / 7ae6166c9b673a966f62905953f4bc6b3153a675。实现按参考行为重写；不声明 UnityEngine 二进制兼容。
+
+## A 最终共享验收交接
+
+- D 第四轮最新完整证据：`Build/UGUI-D/layout-osZabR/result.json`，9145 断言，26 帧逐字节一致。
+- A 最终标准 UI/managed/foundations/S3：`Build/UIValidation/Debug-GN2U0m/result.json` 成功。
+- 最终示例 generation：`0c94c9a2-b47a-442d-b68f-30d86ce401af`，见
+  `Build/UIValidation/u1-final-example-generation.json`。
+- 第四轮两份 OvEditor 完全一致：`Build/UIValidation/u1-final-editor-binaries.json`。
+- editor-camera 最终通过 8 组渲染组合：`Build/JobsValidation/Skinning/Debug-editor-camera-editor/result.json`；
+  仅隐藏窗口的 OS cursor warp 检查明确 SKIP，实际 ImGui 导航点击已另行回放验证。
+- D 实现提交为 `223ae46`、`fee3e11`。工作包验收通过；整个 uGUI 类型级矩阵、
+  U1 剩余依赖及总阶段 flag 仍由 A 继续收口，不借此宣称 U0–U13 全部完成。

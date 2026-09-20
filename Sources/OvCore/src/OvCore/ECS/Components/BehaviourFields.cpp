@@ -8,9 +8,24 @@
 #include <OvUI/Widgets/Texts/Text.h>
 #include <tinyxml2.h>
 #include <algorithm>
+#include <cfloat>
+#include <cstring>
+#include <imgui.h>
+#include <OvCore/Helpers/ManagedFieldInput.h>
+#include <OvCore/Helpers/InspectorLabel.h>
+#include <OvCore/Helpers/GUIHelpers.h>
+#include <OvUI/Widgets/Layout/Dummy.h>
+#include <OvUI/Widgets/Layout/TreeNode.h>
+#include <OvUI/Plugins/DDTarget.h>
 
 using namespace OvCore::Scripting;
 namespace {
+    class ManagedFieldLabel final : public OvUI::Widgets::Texts::Text {
+    public:
+        using Text::Text;
+    protected:
+        void _Draw_Impl() override { ImGui::AlignTextToFramePadding(); Text::_Draw_Impl(); }
+    };
     // The Inspector may switch to another Actor without redrawing this Behaviour.
     // Widget destruction must invalidate copied/deferred events independently of attachment lifetime.
     class FieldWidgetsLifetime final : public OvUI::Plugins::IPlugin {
@@ -38,11 +53,18 @@ namespace {
         // Stored scalar/hex lexemes allow XML whitespace; actual string bytes stay hex encoded.
         const auto first=text.find_first_not_of(" \t\r\n");
         text=first==std::string::npos?"":text.substr(first,text.find_last_not_of(" \t\r\n")-first+1);
-        if(tag==12 || tag==18) {
+        if(tag==12 || tag==18 || tag==OVCS_FIELD_COMPONENT_REF) {
             if(!node.Attribute("encoding","utf8-hex")) return {};
             auto decoded=Unhex(text); if(!decoded) return {}; text=*decoded;
         } else if(node.Attribute("encoding")) return {};
-        return ManagedFieldValue::Parse(tag,aux,text);
+        auto result=ManagedFieldValue::Parse(tag,aux,text);
+        if(result && tag==OVCS_FIELD_COMPONENT_REF) {
+            const auto* guid=node.Attribute("actor_guid"); if(!guid) return {};
+            const auto* end=guid+std::strlen(guid);
+            const auto parsed=std::from_chars(guid,end,result->scalar.actor_guid);
+            if(parsed.ec!=std::errc{} || parsed.ptr!=end) return {};
+        }
+        return result;
     }
     bool Matches(const ManagedField& f,const char* id) { return id && (f.id==id || std::find(f.aliases.begin(),f.aliases.end(),id)!=f.aliases.end()); }
 }
@@ -119,7 +141,8 @@ void Behaviour::SerializeManagedFields(tinyxml2::XMLDocument& doc,tinyxml2::XMLN
         }
         if(!n) n=doc.NewElement("field");
         n->SetAttribute("id",id.c_str()); n->SetAttribute("tag",v.tag); n->SetAttribute("auxiliary",v.auxiliary);
-        if(v.tag==12 || v.tag==18) { n->SetAttribute("encoding","utf8-hex"); n->SetText(Hex(v.text).c_str()); }
+        if(v.tag==OVCS_FIELD_COMPONENT_REF) n->SetAttribute("actor_guid",std::to_string(v.scalar.actor_guid).c_str());
+        if(v.tag==12 || v.tag==18 || v.tag==OVCS_FIELD_COMPONENT_REF) { n->SetAttribute("encoding","utf8-hex"); n->SetText(Hex(v.text).c_str()); }
         else { n->DeleteAttribute("encoding"); n->SetText(v.Display().c_str()); }
         fields->InsertEndChild(n);
     }
@@ -128,64 +151,202 @@ void Behaviour::RemapManagedActorReferences(const std::unordered_map<uint64_t,ui
     if(m_identity.backend!="csharp") return;
     tinyxml2::XMLDocument doc; auto* data=doc.NewElement("data");doc.InsertEndChild(data); OnSerialize(doc,data);
     if(auto* fields=data->FirstChildElement("managed_fields")) for(auto* n=fields->FirstChildElement("field");n;n=n->NextSiblingElement("field")) {
-        auto v=Decode(*n); if(!v || v->tag!=OVCS_FIELD_ACTOR_REF || v->auxiliary!=0) continue;
-        auto it=mapping.find(v->scalar.actor_guid); if(it!=mapping.end()) n->SetText(std::to_string(it->second).c_str());
+        auto v=Decode(*n); if(!v || (v->tag!=OVCS_FIELD_ACTOR_REF && v->tag!=OVCS_FIELD_COMPONENT_REF) || v->auxiliary!=0) continue;
+        auto it=mapping.find(v->scalar.actor_guid); if(it!=mapping.end()) {
+            if(v->tag==OVCS_FIELD_COMPONENT_REF) n->SetAttribute("actor_guid",std::to_string(it->second).c_str());
+            else n->SetText(std::to_string(it->second).c_str());
+        }
     }
     // Also works without a project assembly; only explicitly tagged GUID references are rewritten.
     m_rawData=Record(*data); m_managedLoaded.clear(); m_managedOverrides.clear();
     if(m_script && m_script->IsValid()) RestoreManagedFields();
 }
-void Behaviour::InspectManagedFields(OvUI::Internal::WidgetContainer& root) {
-    using OvUI::Widgets::Texts::Text;
-    using OvUI::Widgets::Selection::CheckBox;
-    using OvUI::Widgets::InputFields::InputText;
-    m_managedUi=std::make_shared<const bool>(true);
-    if(!PrepareManagedFields()) { root.CreateWidget<Text>("C# unavailable or faulted; serialized data preserved. See console."); return; }
-    root.CreateWidget<Text>("C# fields: enable override to edit; disable to reset to constructor default.");
-    std::weak_ptr<const bool> lifetime=m_managedUi;
-    for(const auto& f:m_script->ManagedFields()) {
-        const auto live=m_script->ReadManagedField(f.token);
-        if(!live) { root.CreateWidget<Text>(f.name+": unsupported value; see console"); continue; }
-        auto& toggle=root.CreateWidget<CheckBox>(HasManagedFieldOverride(f.id),f.name);
-        std::weak_ptr<const bool> widgets=toggle.AddPlugin<FieldWidgetsLifetime>().token;
-        auto& input=root.CreateWidget<InputText>(live->Display(),"##"+f.id);
-        input.disabled=!HasManagedFieldOverride(f.id);
-        // Text parsing supports the complete integer domain, including UInt64.MaxValue.
-        input.ContentChangedEvent += [this,lifetime,widgets,f,aux=live->auxiliary](std::string text) {
-            if(lifetime.expired() || widgets.expired()) return;
-            auto current=f.tag==OVCS_FIELD_ASSET_REF?m_script->ReadManagedField(f.token):std::nullopt;
-            auto value=ManagedFieldValue::Parse(f.tag,current?current->auxiliary:aux,text);
-            if(!value || !EditManagedField(f.id,*value)) OVLOG_WARNING("Invalid C# field value: "+f.id);
-        };
-        toggle.ValueChangedEvent += [this,lifetime,widgets,id=f.id,&input](bool enabled) {
-            if(lifetime.expired() || widgets.expired()) return;
-            if(SetManagedFieldOverride(id,enabled)) {
-                input.disabled=!enabled;
-                if(!enabled) if(auto value=ManagedDefault(id)) input.content=value->Display();
-            }
-        };
-        if(f.tag==OVCS_FIELD_ACTOR_REF) {
-            auto* scene=owner.GetScene(); auto* actor=scene?scene->FindActorByGUID(live->scalar.actor_guid):nullptr;
-            root.CreateWidget<Text>(live->scalar.actor_guid==0?"Actor: none":actor?"Actor: "+actor->GetName():"Actor: missing (GUID retained)");
+void Behaviour::InspectManagedFields(OvUI::Internal::WidgetContainer& root)
+{
+    using namespace OvUI::Widgets;
+    using Helpers::GUIHelpers;
+    m_managedUi = std::make_shared<const bool>(true);
+    if (!PrepareManagedFields()) {
+        root.CreateWidget<Texts::Text>("Script unavailable");
+        root.CreateWidget<Texts::Text>("See Console. Saved fields are preserved.");
+        return;
+    }
+    std::weak_ptr<const bool> lifetime = m_managedUi;
+    for (const auto& field : m_script->ManagedFields()) {
+        const auto label = !field.displayName.empty() && field.displayName != field.name ? field.displayName : Helpers::InspectorLabel(field.name);
+        auto& title = root.CreateWidget<ManagedFieldLabel>(label);
+        title.tooltip = field.name + "\nRight-click the value to reset to its script default.";
+        if (!m_script->ReadManagedField(field.token)) {
+            auto& unavailable = root.CreateWidget<Texts::Text>("Unavailable");
+            unavailable.tooltip = "This value cannot be edited. Saved data is preserved; see Console for details.";
+            continue;
         }
-        if(f.tag==OVCS_FIELD_ASSET_REF) {
-            auto& kind=root.CreateWidget<InputText>(std::to_string(live->auxiliary),"Asset kind##"+f.id);
-            kind.disabled=input.disabled;
-            toggle.ValueChangedEvent += [this,lifetime,widgets,id=f.id,&kind](bool enabled) {
-                if(lifetime.expired() || widgets.expired()) return; kind.disabled=!enabled;
-                if(!enabled) if(auto value=ManagedDefault(id)) kind.content=std::to_string(value->auxiliary);
+        std::weak_ptr<const bool> widgets = title.AddPlugin<FieldWidgetsLifetime>().token;
+        auto valid = [lifetime, widgets] { return !lifetime.expired() && !widgets.expired(); };
+        auto& input = root.CreateWidget<Helpers::ManagedFieldInput>();
+        input.fieldId = field.id;
+        input.read = [this,valid,token=field.token]() -> std::optional<ManagedFieldValue> {
+            return valid() ? m_script->ReadManagedField(token) : std::nullopt;
+        };
+        auto commit = [this,valid,id=field.id](ManagedFieldValue value) {
+            if (valid() && !EditManagedField(id,value)) OVLOG_WARNING("Invalid C# field value: " + id);
+        };
+        input.ValueChangedEvent += commit;
+        input.reset = [this,valid,id=field.id] { if (valid()) SetManagedFieldOverride(id,false); };
+        title.AddPlugin<OvUI::Plugins::DataDispatcher<std::string>>().RegisterGatherer([this,valid,label,id=field.id] {
+            return valid() && HasManagedFieldOverride(id) ? label + " *" : label;
+        });
+        if (field.tag == OVCS_FIELD_ACTOR_REF || field.tag == OVCS_FIELD_COMPONENT_REF) {
+            input.referenceLabel = [this,valid](const ManagedFieldValue& value) {
+                if (!valid() || !value.scalar.actor_guid) return std::string{value.tag==OVCS_FIELD_COMPONENT_REF?"None (Component)":"None (Actor)"};
+                auto* scene = owner.GetScene();
+                auto* actor = scene ? scene->FindActorByGUID(value.scalar.actor_guid) : nullptr;
+                return actor ? actor->GetName() : std::string{"Missing (Actor)"};
             };
-            kind.ContentChangedEvent += [this,lifetime,widgets,f](std::string text) {
-                if(lifetime.expired() || widgets.expired()) return;
-                uint32_t auxiliary=0; if(!ManagedFieldValue::ParseNumber(text,auxiliary)) return;
-                auto current=m_script->ReadManagedField(f.token); if(!current) return;
-                current->auxiliary=auxiliary; EditManagedField(f.id,*current);
+            input.pick = [this,valid,commit,field,read=input.read] {
+                if (!valid()) return;
+                auto* scene = owner.GetScene(); if (!scene) return;
+                GUIHelpers::PickerItemList items;
+                auto select = [commit,read](uint64_t guid) {
+                    auto value=read(); if(!value) return; value->scalar.actor_guid=guid; commit(*value);
+                };
+                items.Add({"__none__","None","Clear reference",0u,[select] { select(0); }});
+                for (auto* actor : scene->GetActors()) {
+                    const auto guid = actor->GetGUID();
+                    items.Add({std::to_string(guid),actor->GetName(),"Actor reference",GUIHelpers::GetActorIconID(),[select,guid] { select(guid); }});
+                }
+                GUIHelpers::OpenPicker(std::move(items),"Select Actor");
             };
-            root.CreateWidget<Text>("Asset kind: 0 any, 1 model, 2 texture, 3 shader, 4 material, 5 sound, 6 scene, 7 script, 8 font, 9 prefab");
-            const auto* scene=owner.GetScene();
-            root.CreateWidget<Text>(live->text.empty()?"Asset: none":scene && scene->ResolveScriptAsset(live->auxiliary,live->text)?"Asset: resolved":"Asset: missing (identity retained)");
+            using Payload = std::pair<OvCore::ECS::Actor*,Layout::TreeNode*>;
+            input.AddPlugin<OvUI::Plugins::DDTarget<Payload>>("Actor").DataReceivedEvent += [this,valid,commit,read=input.read](Payload payload) {
+                if (!valid() || !payload.first || payload.first->GetScene() != owner.GetScene()) return;
+                auto value=read(); if(!value) return; value->scalar.actor_guid=payload.first->GetGUID(); commit(*value);
+            };
         }
-        if(f.tag==OVCS_FIELD_ENUM_INT64 || f.tag==OVCS_FIELD_ENUM_UINT64) root.CreateWidget<Text>("Enum underlying tag="+std::to_string(f.auxiliary));
+        if (field.tag == OVCS_FIELD_ASSET_REF) {
+            input.pick = [valid,read=input.read,commit] {
+                if (!valid()) return;
+                const auto current = read(); if (!current) return;
+                using Type = OvTools::Utils::PathParser::EFileType;
+                static const Type kinds[] = {Type::UNKNOWN,Type::MODEL,Type::TEXTURE,Type::SHADER,Type::MATERIAL,
+                    Type::SOUND,Type::SCENE,Type::SCRIPT,Type::FONT,Type::PREFAB};
+                const auto kind = current->auxiliary < std::size(kinds) ? kinds[current->auxiliary] : Type::UNKNOWN;
+                GUIHelpers::OpenAssetPicker(kind,[valid,read,commit](std::string path) {
+                    if (!valid()) return;
+                    auto value = read(); if (!value) return;
+                    value->text=std::move(path); commit(*value);
+                },true,false);
+            };
+        }
+    }
+    if (m_script->ManagedFields().empty()) {
+        root.CreateWidget<Texts::Text>("No serialized fields");
+        root.CreateWidget<Layout::Dummy>();
     }
 }
+}
+
+int OvCore::Helpers::ManagedFieldInput::ResizeText(ImGuiInputTextCallbackData* data)
+{
+    auto& text = *static_cast<std::string*>(data->UserData);
+    text.resize(static_cast<size_t>(data->BufTextLen));
+    data->Buf = text.data();
+    return 0;
+}
+
+void OvCore::Helpers::ManagedFieldInput::_Draw_Impl()
+{
+    auto current = read ? read() : std::nullopt;
+    if (!current) { ImGui::TextDisabled("Unavailable"); return; }
+    auto value = *current;
+    ImGui::PushID(m_widgetID.c_str());
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    bool changed = false;
+    switch (value.tag) {
+    case OVCS_FIELD_BOOL: {
+        bool enabled = value.scalar.boolean != 0;
+        changed = ImGui::Checkbox("##value",&enabled); value.scalar.boolean = enabled ? 1 : 0; break;
+    }
+    case OVCS_FIELD_INT8: changed=ImGui::InputScalar("##value",ImGuiDataType_S8,&value.scalar.int8_value); break;
+    case OVCS_FIELD_UINT8: changed=ImGui::InputScalar("##value",ImGuiDataType_U8,&value.scalar.uint8_value); break;
+    case OVCS_FIELD_INT16: changed=ImGui::InputScalar("##value",ImGuiDataType_S16,&value.scalar.int16_value); break;
+    case OVCS_FIELD_UINT16: changed=ImGui::InputScalar("##value",ImGuiDataType_U16,&value.scalar.uint16_value); break;
+    case OVCS_FIELD_INT32: changed=ImGui::DragScalar("##value",ImGuiDataType_S32,&value.scalar.int32_value,1); break;
+    case OVCS_FIELD_UINT32: changed=ImGui::DragScalar("##value",ImGuiDataType_U32,&value.scalar.uint32_value,1); break;
+    case OVCS_FIELD_INT64: case OVCS_FIELD_ENUM_INT64: changed=ImGui::InputScalar("##value",ImGuiDataType_S64,&value.scalar.int64_value); break;
+    case OVCS_FIELD_UINT64: case OVCS_FIELD_ENUM_UINT64: changed=ImGui::InputScalar("##value",ImGuiDataType_U64,&value.scalar.uint64_value); break;
+    case OVCS_FIELD_FLOAT32: changed=ImGui::DragScalar("##value",ImGuiDataType_Float,&value.scalar.float32_value,0.05f,nullptr,nullptr,"%.4g"); break;
+    case OVCS_FIELD_FLOAT64: changed=ImGui::DragScalar("##value",ImGuiDataType_Double,&value.scalar.float64_value,0.05f,nullptr,nullptr,"%.6g"); break;
+    case OVCS_FIELD_VECTOR2: case OVCS_FIELD_VECTOR3: case OVCS_FIELD_VECTOR4: case OVCS_FIELD_QUATERNION: case OVCS_FIELD_RECT: {
+        const int count = value.tag == OVCS_FIELD_VECTOR2 ? 2 : value.tag == OVCS_FIELD_VECTOR3 ? 3 : 4;
+        float parts[4]{};
+        if (value.tag == OVCS_FIELD_VECTOR3) { parts[0]=value.scalar.vector3.x; parts[1]=value.scalar.vector3.y; parts[2]=value.scalar.vector3.z; }
+        else if (value.tag == OVCS_FIELD_QUATERNION) { parts[0]=value.scalar.quaternion.x; parts[1]=value.scalar.quaternion.y; parts[2]=value.scalar.quaternion.z; parts[3]=value.scalar.quaternion.w; }
+        else std::copy_n(value.scalar.float_values,count,parts);
+        const float width = std::max(1.0f,(ImGui::GetContentRegionAvail().x-ImGui::GetStyle().ItemInnerSpacing.x*(count-1))/count);
+        const char* formats[] = {"X: %.3f","Y: %.3f","Z: %.3f","W: %.3f"};
+        if (value.tag == OVCS_FIELD_RECT) { formats[2]="W: %.3f"; formats[3]="H: %.3f"; }
+        ImGui::BeginGroup();
+        for (int i=0;i<count;++i) {
+            if (i) ImGui::SameLine(0,ImGui::GetStyle().ItemInnerSpacing.x);
+            ImGui::PushID(i); ImGui::SetNextItemWidth(width);
+            changed |= ImGui::DragFloat("##axis",&parts[i],0.025f,0,0,formats[i]); ImGui::PopID();
+        }
+        ImGui::EndGroup();
+        if (value.tag == OVCS_FIELD_VECTOR3) value.scalar.vector3={parts[0],parts[1],parts[2]};
+        else if (value.tag == OVCS_FIELD_QUATERNION) value.scalar.quaternion={parts[0],parts[1],parts[2],parts[3]};
+        else std::copy_n(parts,count,value.scalar.float_values);
+        break;
+    }
+    case OVCS_FIELD_COLOR:
+        changed=ImGui::ColorEdit4("##value",value.scalar.float_values,ImGuiColorEditFlags_Float|ImGuiColorEditFlags_HDR);
+        break;
+    case OVCS_FIELD_RECT_OFFSET: {
+        const float width=std::max(1.0f,(ImGui::GetContentRegionAvail().x-ImGui::GetStyle().ItemInnerSpacing.x*3)/4);
+        const char* formats[]={"L: %d","R: %d","T: %d","B: %d"};
+        ImGui::BeginGroup();
+        for(int i=0;i<4;++i) {
+            if(i) ImGui::SameLine(0,ImGui::GetStyle().ItemInnerSpacing.x);
+            ImGui::PushID(i); ImGui::SetNextItemWidth(width);
+            changed|=ImGui::InputScalar("##edge",ImGuiDataType_S32,&value.scalar.int32_values[i],nullptr,nullptr,formats[i]);
+            ImGui::PopID();
+        }
+        ImGui::EndGroup();
+        break;
+    }
+    case OVCS_FIELD_ACTOR_REF: case OVCS_FIELD_COMPONENT_REF: {
+        const auto label = referenceLabel ? referenceLabel(value) : value.Display();
+        if (ImGui::Button((label+"###reference").c_str(),ImVec2(-FLT_MIN,0)) && pick) pick();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s\nClick to choose; drag an actor from the Hierarchy.",value.Display().c_str());
+        break;
+    }
+    default: {
+        if (value.tag == OVCS_FIELD_ASSET_REF) {
+            static const char* kinds[] = {"Any asset","Model","Texture","Shader","Material","Sound","Scene","Script","Font","Prefab"};
+            int kind = static_cast<int>(value.auxiliary);
+            if (ImGui::Combo("##kind",&kind,kinds,static_cast<int>(std::size(kinds)))) { value.auxiliary=static_cast<uint32_t>(kind); changed=true; }
+            ImGui::SetNextItemWidth(std::max(1.0f,ImGui::GetContentRegionAvail().x-ImGui::GetFrameHeight()-ImGui::GetStyle().ItemSpacing.x));
+        }
+        if (!m_textActive) m_text = value.text;
+        const bool edited = ImGui::InputText("##value",m_text.data(),m_text.capacity()+1,ImGuiInputTextFlags_CallbackResize,ResizeText,&m_text);
+        m_textActive = ImGui::IsItemActive();
+        if (edited) { m_text.resize(std::strlen(m_text.c_str())); value.text=m_text; changed=true; }
+        if (value.tag == OVCS_FIELD_ASSET_REF) {
+            ImGui::SameLine(); if (ImGui::Button("...",ImVec2(ImGui::GetFrameHeight(),0)) && pick) pick();
+        }
+        break;
+    }
+    }
+    if (changed) ValueChangedEvent.Invoke(value);
+    if (ImGui::BeginPopupContextItem("field_actions")) {
+        if (ImGui::MenuItem("Reset to Script Default") && reset) { reset(); m_textActive=false; }
+        if (value.tag == OVCS_FIELD_ACTOR_REF || value.tag == OVCS_FIELD_ASSET_REF || value.tag == OVCS_FIELD_COMPONENT_REF) {
+            if (ImGui::MenuItem("Clear Reference")) {
+                value.scalar.actor_guid=0; if(value.tag!=OVCS_FIELD_COMPONENT_REF) value.text.clear();
+                ValueChangedEvent.Invoke(value); m_textActive=false;
+            }
+        }
+        ImGui::EndPopup();
+    }
+    ImGui::PopID();
 }

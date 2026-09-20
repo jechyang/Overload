@@ -80,6 +80,12 @@ typedef uint32_t OvCsFieldTag;
 #define OVCS_FIELD_QUATERNION ((OvCsFieldTag)16)
 #define OVCS_FIELD_ACTOR_REF ((OvCsFieldTag)17)
 #define OVCS_FIELD_ASSET_REF ((OvCsFieldTag)18)
+#define OVCS_FIELD_VECTOR2 ((OvCsFieldTag)19)
+#define OVCS_FIELD_VECTOR4 ((OvCsFieldTag)20)
+#define OVCS_FIELD_RECT ((OvCsFieldTag)21)
+#define OVCS_FIELD_RECT_OFFSET ((OvCsFieldTag)22)
+#define OVCS_FIELD_COLOR ((OvCsFieldTag)23)
+#define OVCS_FIELD_COMPONENT_REF ((OvCsFieldTag)24) /* actor_guid + stable component type in text */
 
 typedef struct OvCsUtf8View
 {
@@ -136,6 +142,10 @@ typedef union OvCsFieldScalar
     OvCsVector3 vector3;
     OvCsQuaternion quaternion;
     uint64_t actor_guid;
+    /* Tags 19/20: xy/xyzw; 21: min.x,min.y,size.x,size.y; 23: rgba. */
+    float float_values[4];
+    /* Tag 22: left,right,top,bottom. Size and ABI offsets remain unchanged. */
+    int32_t int32_values[4];
 } OvCsFieldScalar;
 
 typedef struct OvCsFieldValueView

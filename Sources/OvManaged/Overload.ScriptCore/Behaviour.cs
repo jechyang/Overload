@@ -45,7 +45,9 @@ public abstract class Behaviour
 internal interface INativeAccess
 {
     ulong Query(ulong owner, uint operation, ulong argument = 0, string text = "");
+    bool IsActorAlive(ulong owner) => Query(owner, 21) != 0;
     void SetUIMesh(ulong renderer, UI.UIVertex[] vertices, int[] indices);
+    ulong ExchangeFont(ulong owner, uint operation, byte[] packet);
     Vector3 Read(ulong component, bool box);
     void Write(ulong component, bool box, Vector3 value);
     void Log(string text);
@@ -54,12 +56,14 @@ internal interface INativeAccess
     UI.CanvasUpdateRegistry UIRegistry { get; }
 }
 
-public sealed class Actor
+public sealed partial class Actor
 {
     internal readonly INativeAccess Access;
     internal readonly ulong Handle;
     internal Actor(INativeAccess access, ulong handle) { Access = access; Handle = handle; }
     public ulong Guid => Access.Query(Handle, 1);
+    /// <summary>False for a destroyed or pending-destroy Actor. Main-thread/session checks still apply.</summary>
+    public bool IsAlive => Access.IsActorAlive(Handle);
     public Transform Transform => GetComponent<Transform>()!;
     public bool Active { get => Access.Query(Handle, 4) != 0; set => Access.Query(Handle, 5, value ? 1ul : 0ul); }
     public bool ActiveInHierarchy => Access.Query(Handle, 18) != 0;
@@ -89,7 +93,7 @@ public sealed class Actor
             throw new NotSupportedException("Unsupported native component: " + typeof(T).FullName);
         ulong handle = Access.Query(Handle, kind);
         if (handle == 0) return null;
-        return (T)(object)(kind == 2 ? (object)new Transform(Access, handle) : new Box(Access, handle));
+        return (T)(object)(kind == 2 ? (object)new Transform(this, handle) : new Box(this, handle));
     }
     public void Destroy() => Access.Query(Handle, 6);
     public void AddBehaviour<T>() where T : Behaviour => Access.Query(Handle, 7, 0, typeof(T).FullName!);
@@ -102,16 +106,18 @@ public sealed class Actor
 }
 public sealed class Transform
 {
+    public Actor Owner { get; }
     private readonly INativeAccess access;
     private readonly ulong handle;
-    internal Transform(INativeAccess access, ulong handle) { this.access = access; this.handle = handle; }
+    internal Transform(Actor owner, ulong handle) { Owner = owner; access = owner.Access; this.handle = handle; }
     public Vector3 Position { get => access.Read(handle, false); set => access.Write(handle, false, value); }
 }
 public sealed class Box
 {
+    public Actor Owner { get; }
     private readonly INativeAccess access;
     private readonly ulong handle;
-    internal Box(INativeAccess access, ulong handle) { this.access = access; this.handle = handle; }
+    internal Box(Actor owner, ulong handle) { Owner = owner; access = owner.Access; this.handle = handle; }
     public Vector3 Size { get => access.Read(handle, true); set => access.Write(handle, true, value); }
 }
 public sealed class Collision

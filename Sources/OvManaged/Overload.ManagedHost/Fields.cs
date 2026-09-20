@@ -40,17 +40,20 @@ public static unsafe partial class Bootstrap
     private static uint Tag(Type t) => t == typeof(bool) ? 1u : t == typeof(sbyte) ? 2u : t == typeof(byte) ? 3u :
         t == typeof(short) ? 4u : t == typeof(ushort) ? 5u : t == typeof(int) ? 6u : t == typeof(uint) ? 7u :
         t == typeof(long) ? 8u : t == typeof(ulong) ? 9u : t == typeof(float) ? 10u : t == typeof(double) ? 11u :
-        t == typeof(string) ? 12u : t == typeof(V3) ? 15u : t == typeof(Q4) ? 16u : t == typeof(ActorRef) ? 17u : t == typeof(AssetRef) ? 18u : 0;
+        t == typeof(string) ? 12u : t == typeof(V3) ? 15u : t == typeof(Q4) ? 16u : t == typeof(ActorRef) ? 17u : t == typeof(AssetRef) ? 18u : UITag(t);
     private static List<ProjectField> DiscoverFields(Type type)
     {
         List<ProjectField> fields = new(); HashSet<string> keys = new(StringComparer.Ordinal);
         for (Type? t = type; t != null && t != typeof(Behaviour); t = t.BaseType)
-        foreach (FieldInfo f in t.GetFields(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly).OrderBy(f => f.Name, StringComparer.Ordinal)) {
+        foreach (FieldInfo f in t.GetFields(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly).OrderBy(f => f.MetadataToken)) {
             if (f.IsStatic || f.IsInitOnly || f.IsLiteral || f.IsDefined(typeof(NonSerializedAttribute)) ||
                 (!f.IsPublic && !f.IsDefined(typeof(SerializeFieldAttribute)))) continue;
-            uint tag = Tag(f.FieldType), auxiliary = 0;
-            if (f.FieldType.IsEnum) { auxiliary = Tag(Enum.GetUnderlyingType(f.FieldType)); tag = auxiliary % 2 == 0 ? 13u : 14u; }
+            var (tag, auxiliary) = DescribeField(f.FieldType);
+            // The bounded collection codec is tested independently; expose fields only
+            // after native XML/Inspector support is connected, preserving saved records meanwhile.
+            if (tag == 25) tag = 0;
             if (tag == 0) { Log($"UnsupportedField: {type.FullName}.{f.Name} ({f.FieldType.FullName}); serialized data retained"); continue; }
+            if (tag == 24) _ = ReferenceType(f.FieldType);
             string id = f.GetCustomAttribute<FieldIdAttribute>()?.Id ?? f.Name; IdentityText(id);
             List<string> aliases = f.GetCustomAttributes<FormerlySerializedAsAttribute>().Select(a => a.Name).ToList();
             if (id != f.Name && !aliases.Contains(f.Name, StringComparer.Ordinal)) aliases.Add(f.Name);
@@ -68,7 +71,7 @@ public static unsafe partial class Bootstrap
         ProjectType type = FindType(s, token); Require(index < type.Fields.Count, Status.FieldNotFound, "Field index out of range");
         ProjectField f = type.Fields[(int)index];
         FieldResult r = new() { Size = 80, Token = f.Token, Tag = f.Tag, Auxiliary = f.Auxiliary, AliasCount = (uint)f.Aliases.Count };
-        try { r.Id = Allocate(f.Id); r.Name = Allocate(f.Name); r.Display = Allocate(f.Name); FieldResults.Add((nuint)r.Id.Data, r); *p = r; }
+        try { r.Id = Allocate(f.Id); r.Name = Allocate(f.Name); r.Display = Allocate(f.Field.GetCustomAttribute<InspectorNameAttribute>()?.DisplayName ?? f.Name); FieldResults.Add((nuint)r.Id.Data, r); *p = r; }
         catch { Free(r.Id); Free(r.Name); Free(r.Display); throw; }
     }
     private static void ReleaseFieldResult(FieldResult* p) {
@@ -82,21 +85,7 @@ public static unsafe partial class Bootstrap
         Instance i = FindInstance(s,id); Require(!i.Destroyed, Status.InvalidLifecycle, "Destroyed instance");
         ProjectField f = FindField(i.Type,token);
         object? value = f.Field.GetValue(i.Value); // Only cached fields, never property getters.
-        Require(value != null, Status.UnsupportedField, $"Null field {f.Name} is unsupported in ABI 1");
-        FieldValue r = new() { Size = 48, Tag = f.Tag, Auxiliary = f.Auxiliary }; string text = "";
-        switch (f.Tag) {
-            case 1: r.Scalar.B = (bool)value! ? (byte)1 : (byte)0; break;
-            case 2: r.Scalar.I8 = (sbyte)value!; break; case 3: r.Scalar.B = (byte)value!; break;
-            case 4: r.Scalar.I16 = (short)value!; break; case 5: r.Scalar.U16 = (ushort)value!; break;
-            case 6: r.Scalar.I32 = (int)value!; break; case 7: r.Scalar.U32 = (uint)value!; break;
-            case 8: r.Scalar.I64 = (long)value!; break; case 9: r.Scalar.U64 = (ulong)value!; break;
-            case 10: r.Scalar.F32 = (float)value!; break; case 11: r.Scalar.F64 = (double)value!; break;
-            case 12: text = (string)value!; break;
-            case 13: r.Scalar.I64 = Convert.ToInt64(value); break; case 14: r.Scalar.U64 = Convert.ToUInt64(value); break;
-            case 15: r.Scalar.Vector = (V3)value!; break; case 16: r.Scalar.Quaternion = (Q4)value!; break;
-            case 17: r.Scalar.U64 = ((ActorRef)value!).Guid; break;
-            case 18: var asset = (AssetRef)value!; r.Auxiliary = (uint)asset.Kind; text = NormalizeAsset(asset.Path ?? ""); break;
-        }
+        FieldValue r = PackField(f.Field.FieldType, value, out string text);
         // Even scalar/empty-string results own a unique zero-length allocation receipt.
         r.Text = Allocate(text);
         if (r.Text.Data == null) { r.Text.Data = (byte*)NativeMemory.Alloc(1); Buffers.Add((nuint)r.Text.Data,0); }
@@ -117,30 +106,7 @@ public static unsafe partial class Bootstrap
         Require(p != null && p->Size == 48 && p->Flags == 0, Status.InvalidArgument, "Invalid field value layout/flags");
         Instance i = FindInstance(s,id); Require(!i.Destroyed && !i.Faulted, Status.InstanceFaulted, "Destroyed/faulted instance");
         ProjectField f = FindField(i.Type,token);
-        Require(p->Tag == f.Tag && (f.Tag == 18 ? p->Auxiliary <= (uint)AssetKind.Prefab : p->Auxiliary == f.Auxiliary), Status.FieldTypeMismatch, "Field tag/enum underlying type/asset kind mismatch");
-        Require(f.Tag is 12 or 18 || p->Text.Length == 0, Status.InvalidArgument, "Unexpected scalar text");
-        object value;
-        switch (f.Tag) {
-            case 1: Require(p->Scalar.B <= 1, Status.InvalidArgument, "Bool must be 0 or 1"); value = p->Scalar.B != 0; break;
-            case 2: value = p->Scalar.I8; break; case 3: value = p->Scalar.B; break;
-            case 4: value = p->Scalar.I16; break; case 5: value = p->Scalar.U16; break;
-            case 6: value = p->Scalar.I32; break; case 7: value = p->Scalar.U32; break;
-            case 8: value = p->Scalar.I64; break; case 9: value = p->Scalar.U64; break;
-            case 10: value = p->Scalar.F32; break; case 11: value = p->Scalar.F64; break;
-            case 12: value = Decode(p->Text); break;
-            case 13: {
-                long v = p->Scalar.I64; Require(f.Auxiliary == 8 || f.Auxiliary == 2 && v >= sbyte.MinValue && v <= sbyte.MaxValue || f.Auxiliary == 4 && v >= short.MinValue && v <= short.MaxValue || f.Auxiliary == 6 && v >= int.MinValue && v <= int.MaxValue, Status.InvalidArgument, "Enum underlying overflow");
-                value = Enum.ToObject(f.Field.FieldType,v); break;
-            }
-            case 14: {
-                ulong v = p->Scalar.U64; Require(f.Auxiliary == 9 || f.Auxiliary == 3 && v <= byte.MaxValue || f.Auxiliary == 5 && v <= ushort.MaxValue || f.Auxiliary == 7 && v <= uint.MaxValue, Status.InvalidArgument, "Enum underlying overflow");
-                value = Enum.ToObject(f.Field.FieldType,v); break;
-            }
-            case 15: value = p->Scalar.Vector; break; case 16: value = p->Scalar.Quaternion; break;
-            case 17: value = new ActorRef(p->Scalar.U64); break;
-            case 18: value = new AssetRef((AssetKind)p->Auxiliary,NormalizeAsset(Decode(p->Text))); break;
-            default: throw new Failure(Status.UnsupportedField,"Unsupported field");
-        }
+        object? value = UnpackField(f.Field.FieldType, p);
         f.Field.SetValue(i.Value,value);
         if (i.Value is EventSystems.UIBehaviour ui) ui.MarkDirtyFromHost();
     }

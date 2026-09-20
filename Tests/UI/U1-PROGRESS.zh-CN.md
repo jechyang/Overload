@@ -106,3 +106,49 @@ UI.Rebuild 的 session registry 交接已随 D 的 `223ae46` 提交，A 不再�
 随后 D 已修复上述两项布局/清理问题，标准总回归通过：
 `Build/UIValidation/Debug-9ajrk6/result.json`；独立完整 U4 验收通过：
 `Build/UGUI-D/layout-QOxghO/result.json`。示例 generation 尚需包含这些最终修复。
+
+### 第 4 轮最终集成记录
+
+- B 标准 Debug 构建：`Build/UGUI-B/debug-build-4.log` 成功。
+- A 完整总回归：`Build/UIValidation/Debug-VSMChf/result.json` 成功，
+  包括 U0、native UI、managed UI、公共集合、事件生命周期、UI 标量/组件引用字段、
+  示例，以及 S3 普通/RenderThread。此前 Debug-UPCqoj 的失败已由 D 修复。
+- 当前字段 codec + 宿主异常清理共 587 项断言：
+  `Build/UIValidation/field-codec-As11WK/result.json`。即使 OnDestroy 和 native UI
+  release 同时抛异常，也释放订阅并保持销毁幂等。
+- 最终示例 generation：`3edf3675-0c70-424c-bd9c-8755eb9b6964`；
+  三份程序集大小/时间/SHA256 在 `Build/UIValidation/u1-final-example-generation.json`。
+- D 最新第 4 轮验收：`Build/UGUI-D/layout-osZabR/result.json`，9145 断言和
+  26 帧普通/RenderThread 完全一致。
+- A 公共工具里程碑已提交 `f6ac031`。字段/引用/共享桥接仍与后续工作按归属分批提交。
+
+- 新增真实 Actor 层级专项：`Build/UIValidation/u1-hierarchy-7xstZl/result.json`，
+  子节点/根节点排序、索引边界、深度优先组件枚举、inactive 分支/parent 查询、
+  三次重载间激活状态、循环拒绝、pending destroy 与帧末删除通过。
+  `Actor.Active` 延用引擎现有 dispatch 结束后生效契约；最初测试在同一回调立即读取
+  新值而失败，已改为跨回调验证，未修改生命周期重入约束。XML sibling 顺序仍待专项验收。
+- editor-camera 最终成功：`Build/JobsValidation/Skinning/Debug-editor-camera-editor/result.json`。
+  8 组相机/OverlayUI 像素回归通过；隐藏窗口 OS cursor warp 检查明确 SKIP，
+  实际 ImGui 导航点击普通/RenderThread 已由编辑器任务单独验证。
+- 第 4 轮两份 OvEditor 大小、mtime、SHA256 一致：
+  `Build/UIValidation/u1-final-editor-binaries.json`（SHA256 `35d4d5a8bc2c2da8729688c5259c5fcb841b5bb854c42cd833414dc64b745fc9`）。
+
+集合字段暂不由生产字段发现器暴露：tag25 codec 已实现并测试，但原生 XML/Inspector
+尚未接入，当前仍按 UnsupportedField 保留原始记录，避免发布不能完整往返的编辑入口。
+待原生集合编辑/重映射验收完成后移除这一临时发现边界。
+
+### 本轮最终源码冻结记录
+
+- B `d8acb1f` 已提交图形/遮罩里程碑，F `aa6467e` 已提交输入/事件里程碑。
+- codec/销毁清理/集合发现边界最新为 588 断言，`Build/UIValidation/field-codec-7kNael/result.json`。
+- 示例已再次串行刷新至 `0c94c9a2-b47a-442d-b68f-30d86ce401af`，包含 B 最后 Mask/Modifier
+  编辑模式删除清理，以及 E 最后默认字体与小于 1 行距修复；
+  `Build/UIValidation/u1-final-example-generation.json` 指向此 generation。
+- Actor 层级专项已加入基础字段正式 fixture，新增 Scene XML 对子/根 sibling 顺序、
+  inactive 继承与 parent 链的断言，不再把 XML sibling 列为未验收。
+- 最终集成将共同的类型化 Inspector、InspectorName 和字段声明顺序作为共享字段实现纳入，
+  保留编辑器任务其余 SceneView/Gizmo/CameraController 等未提交工作区改动。
+
+**最新完整 A 集成验收**：`Build/UIValidation/Debug-GN2U0m/result.json` 成功。
+该轮包含最新 Actor sibling/parent/active 的 Scene XML 验收、三次重载跨帧生命周期，
+集合字段发现边界，以及 B/D/E/F 冻结后的全部基础 UI/示例/S3 回归。

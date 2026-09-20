@@ -50,37 +50,43 @@ public static unsafe partial class Bootstrap
         }
         public ulong Query(ulong owner, uint operation, ulong argument = 0, string text = "") {
             Check(); ++nativeCalls;
-            Require(!session.Closing || operation <= 4 || operation is 12 or 13 or 14 or 15 or 16 or 18 or 19 or 21 or 30 or 40 or 42 or 44 or 48, Status.SessionClosing, "Session closing rejects mutations");
+            Require(!session.Closing || operation <= 4 || operation is 12 or 13 or 14 or 15 or 16 or 18 or 19 or 21 or 22 or 30 or 40 or 42 or 44 or 48 or 49 or 51 or 53 or 61 or 62 || operation == 50 && argument == 0 && text == "release" || operation == 52 && argument == 0, Status.SessionClosing, "Session closing rejects mutations");
             // Behaviour names are metadata names; native receives the explicit logical assembly too.
             if (operation is 7 or 8) text = LogicalName + "\n" + text;
+            // Native context survives hot reload; driven ownership is a managed generation identity.
+            if (operation is >= 60 and <= 62) text = session.Identity.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n" + text;
             byte[] bytes = Encoding.GetBytes(text);
             ulong result = 0;
             fixed (byte* p = bytes) Overload.Script.Bridge.Check((int)gameplay(services.Context, owner, operation, argument,
                 new Utf8 { Data = p, Length = (ulong)bytes.Length }, &result));
             return result;
         }
+        public bool IsActorAlive(ulong owner) {
+            Check(); ++nativeCalls;
+            ulong result = 0;
+            uint status = gameplay(services.Context, owner, 21, 0, default, &result);
+            if (status == 2) return false; // OV_SCRIPT_INVALID_HANDLE only.
+            Overload.Script.Bridge.Check((int)status);
+            return result != 0;
+        }
         public void SetUIMesh(ulong renderer, UI.UIVertex[] vertices, int[] indices) {
             Check(); ++nativeCalls;
             Require(!session.Closing, Status.SessionClosing, "Session closing rejects UI mesh upload");
-            Require(vertices.Length <= 65535 && indices.Length <= 65535 * 6 && indices.Length % 3 == 0,
-                Status.InvalidArgument, "Invalid UI mesh size");
-            byte[] payload = new byte[checked(8 + vertices.Length * 36 + indices.Length * 4)];
-            Span<byte> bytes = payload;
-            BinaryPrimitives.WriteUInt32LittleEndian(bytes, (uint)vertices.Length);
-            BinaryPrimitives.WriteUInt32LittleEndian(bytes[4..], (uint)indices.Length);
-            int offset = 8;
-            foreach (UI.UIVertex vertex in vertices) {
-                float[] values = [vertex.position.X, vertex.position.Y, vertex.position.Z, vertex.uv0.x, vertex.uv0.y,
-                    vertex.color.r / 255f, vertex.color.g / 255f, vertex.color.b / 255f, vertex.color.a / 255f];
-                foreach (float value in values) { BinaryPrimitives.WriteSingleLittleEndian(bytes[offset..], value); offset += 4; }
-            }
-            foreach (int index in indices) {
-                Require(index >= 0 && index < vertices.Length, Status.InvalidArgument, "UI mesh index is out of range");
-                BinaryPrimitives.WriteUInt32LittleEndian(bytes[offset..], (uint)index); offset += 4;
-            }
+            byte[] payload = UI.UIMeshEncoding.Encode(vertices, indices);
             ulong result = 0;
             fixed (byte* p = payload) Overload.Script.Bridge.Check((int)gameplay(services.Context, renderer, 45, 0,
                 new Utf8 { Data = p, Length = (ulong)payload.Length }, &result));
+        }
+        public ulong ExchangeFont(ulong owner, uint operation, byte[] packet) {
+            Check(); ++nativeCalls;
+            ArgumentNullException.ThrowIfNull(packet);
+            Require(operation is >= 100 and <= 103 && packet.Length is >= 64 and <= 1024 * 1024,
+                Status.InvalidArgument, "Invalid font binary exchange");
+            Require(!session.Closing || operation == 102, Status.SessionClosing, "Session closing permits only font release");
+            ulong result = 0;
+            fixed (byte* p = packet) Overload.Script.Bridge.Check((int)gameplay(services.Context, owner, operation, session.Identity,
+                new Utf8 { Data = p, Length = (ulong)packet.Length }, &result));
+            return result;
         }
         public Vector3 Read(ulong component, bool box) {
             Check(); ++nativeCalls;
@@ -100,6 +106,24 @@ public static unsafe partial class Bootstrap
         Require(id.Generation == s.Generation && session.Instances.ContainsKey(id.Id), Status.InstanceNotFound, "Unknown instance or stale session generation");
         return session.Instances[id.Id];
     }
+    private static void ReleaseSessionFonts(Session session) {
+        if (session.Core == null || gameplay == null || session.Identity == 0) return;
+        byte[] packet = new byte[64];
+        BinaryPrimitives.WriteUInt32LittleEndian(packet, 0x3146544f);
+        BinaryPrimitives.WriteUInt32LittleEndian(packet.AsSpan(4), 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(packet.AsSpan(8), 64);
+        BinaryPrimitives.WriteUInt32LittleEndian(packet.AsSpan(12), 64);
+        new Access(session).ExchangeFont(0, 102, packet);
+    }
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
+    public static uint TickUI(SessionHandle handle, ulong sceneAnchor, float deltaTime, float unscaledDeltaTime) => Guard(handle, () => {
+        Require(float.IsFinite(deltaTime) && float.IsFinite(unscaledDeltaTime) && deltaTime >= 0 && unscaledDeltaTime >= 0,
+            Status.InvalidArgument, "Invalid UI frame deltas");
+        Session session = Lookup(handle);
+        Require(!session.Closing, Status.SessionClosing, "UI tick during session close");
+        var access = new Access(session); _ = access.Query(sceneAnchor, 1);
+        UI.GraphicRebuildTracker.Update(new Actor(access, sceneAnchor), deltaTime, unscaledDeltaTime);
+    });
     private static void Create(SessionHandle s, InstanceInfo* info, InstanceHandle* output) {
         if (output != null) *output = default;
         Require(info != null && output != null && info->Size == 40 && info->Flags == 0 && info->Context == services.Context,
@@ -124,8 +148,9 @@ public static unsafe partial class Bootstrap
         try { if (instance.Awake) { if (reloading) instance.Value.OnReloadRelease(); else instance.Value.OnDestroy(); } }
         catch (Exception ex) { Log($"Destroy script={instance.Value.GetType().FullName} actor={instance.Guid}: {ex}"); }
         finally {
-            if (instance.Value is EventSystems.UIBehaviour ui) ui.ReleaseNativeComponents();
-            instance.Value.ReleaseSubscriptions(Log); instance.Value.owner = null;
+            try { if (instance.Value is EventSystems.UIBehaviour ui) ui.ReleaseNativeComponents(); }
+            catch (Exception ex) { Log($"Release native UI script={instance.Value.GetType().FullName} actor={instance.Guid}: {ex}"); }
+            finally { instance.Value.ReleaseSubscriptions(Log); instance.Value.owner = null; }
         }
     }
     private static void Invoke(SessionHandle s, LifecycleCall* call) {

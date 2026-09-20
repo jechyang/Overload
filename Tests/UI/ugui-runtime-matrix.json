@@ -14,7 +14,50 @@
     "Session-owned update/tween scheduling replaces MonoBehaviour coroutines.",
     "Editor-only inspectors and menus excluded; Overload editor equivalents remain required."
   ],
-  "tests": {},
+  "tests": {
+    "U1-FOUNDATIONS": {
+      "status": "passed",
+      "command": "node Tests/UI/run-validation.mjs Debug --managed --foundations --scripting-regression",
+      "source": "Tests/UI/fixtures/FoundationCollections.cs",
+      "evidence": "Tests/UI/U1-PROGRESS.zh-CN.md"
+    },
+    "U1-FIELDS": {
+      "status": "passed",
+      "command": "node Tests/UI/run-validation.mjs Debug --u0 --managed --foundations --scripting-regression",
+      "source": "Tests/UI/foundation_fields_checks.h",
+      "evidence": "Tests/UI/U1-PROGRESS.zh-CN.md"
+    },
+    "U1-CODEC": {
+      "status": "passed",
+      "command": "node Tests/UI/run-field-codec-validation.mjs",
+      "source": "Tests/UI/FieldCodecContracts.cs",
+      "evidence": "Tests/UI/U1-PROGRESS.zh-CN.md"
+    },
+    "U4-LAYOUT-RUNTIME": {
+      "status": "passed",
+      "command": "node Tests/UI/run-layout-validation.mjs --runtime",
+      "source": "Tests/UI/layout_runtime_validation.cpp",
+      "evidence": "Tests/UI/U4-PROGRESS.zh-CN.md"
+    },
+    "U7-EVENTS-RUNTIME": {
+      "status": "passed",
+      "command": "node Tests/UI/run-input-validation.mjs --runtime",
+      "source": "Tests/UI/event_system_validation.cpp",
+      "evidence": "Tests/UI/U7-PROGRESS.zh-CN.md"
+    },
+    "U2-U5-GRAPHICS-RUNTIME": {
+      "status": "passed",
+      "command": "node Tests/UI/run-graphics-validation.mjs --runtime",
+      "source": "Tests/UI/fixtures/GraphicRuntime.cs",
+      "evidence": "Tests/UI/B-PROGRESS.zh-CN.md"
+    },
+    "U6-TEXT-RUNTIME": {
+      "status": "passed",
+      "command": "node Tests/UI/run-font-validation.mjs Debug --integration",
+      "source": "Tests/UI/text_validation.cpp",
+      "evidence": "Tests/UI/E-PROGRESS.zh-CN.md"
+    }
+  },
   "files": [
     {
       "path": "UnityEngine.UI/EventSystem/EventData/AxisEventData.cs",
@@ -2028,10 +2071,12 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.SetPropertyUtility",
-          "status": "pending",
+          "status": "partial",
           "stage": "U1",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U1-FOUNDATIONS"
+          ],
+          "differences": "Managed behavior rewrite with tested mutation invariants; U1 full stage acceptance remains outstanding."
         }
       ]
     },
@@ -2095,10 +2140,12 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.Collections.IndexedSet<T>",
-          "status": "pending",
+          "status": "partial",
           "stage": "U1",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U1-FOUNDATIONS"
+          ],
+          "differences": "Managed behavior rewrite with tested mutation invariants; U1 full stage acceptance remains outstanding."
         }
       ]
     },
@@ -2230,10 +2277,12 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.ListPool<T>",
-          "status": "pending",
+          "status": "partial",
           "stage": "U1",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U1-FOUNDATIONS"
+          ],
+          "differences": "Implemented as disposable instance-owned reference pools, without static project roots; bounded retention and invalid-release rejection. U1 field and scene acceptance remains outstanding."
         }
       ]
     },
@@ -2247,10 +2296,12 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.ObjectPool<T>",
-          "status": "pending",
+          "status": "partial",
           "stage": "U1",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U1-FOUNDATIONS"
+          ],
+          "differences": "Implemented as disposable instance-owned reference pools, without static project roots; bounded retention and invalid-release rejection. U1 field and scene acceptance remains outstanding."
         }
       ]
     },
@@ -2517,6 +2568,7 @@
     "IClipRegion.cs declares IClipper and IClippable; there is no IClipRegion type in the pinned source.",
     "CoroutineTween is a namespace/file, not a standalone type.",
     "Obsolete BaseVertexEffect and IVertexModifier are inventoried as well.",
-    "pending and partial are progress states only; neither counts as complete."
+    "pending and partial are progress states only; neither counts as complete.",
+    "A integration milestone: B/D/F production runtime packages have passed independent GPU/CLR tests and shared regressions. Registered evidence does not mark every reference type complete; type-by-type compatibility review and remaining U1/U3/U8-U13 work are still required. See Tests/UI/A-SHARED-CONTRACT.zh-CN.md."
   ]
 }

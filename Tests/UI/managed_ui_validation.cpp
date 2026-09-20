@@ -25,6 +25,7 @@ static int Field(Behaviour& behaviour, const char* name)
         if (field.name == name) return behaviour.GetScript()->ReadManagedField(field.token)->scalar.int32_value;
     throw std::runtime_error("Missing managed field");
 }
+#include "foundation_fields_checks.h"
 static void Render(OvCore::SceneSystem::Scene& scene, OvRendering::Context::Driver& driver, uint16_t width=300, uint16_t height=200,
     bool expectTriangle=false)
 {
@@ -59,16 +60,55 @@ static void Render(OvCore::SceneSystem::Scene& scene, OvRendering::Context::Driv
 }
 int wmain(int argc, wchar_t** argv) try
 {
-    Require(argc==4 || argc==5,"managed UI arguments: runtime, managed host, fixture assembly, optional demo");
+    Require(argc==4 || argc==5,"managed UI arguments: runtime, managed host, fixture assembly, optional demo/foundations/fields");
     std::setvbuf(stdout,nullptr,_IONBF,0);
     OvReflection::MainThread main; RuntimeHost host(main);
     host.Start(HostPaths::Resolve(RuntimeHost::ExecutableDirectory(),argv[1],argv[2]));
     const std::filesystem::path assembly=argv[3], project=assembly.parent_path();
     OvCore::Scripting::ScriptEngine scripts(project,project); OvCore::Global::ServiceLocator::Provide(scripts);
     Engine engine(false); OvCore::Global::ServiceLocator::Provide(engine.scenes);
-    const bool demo=argc==5;
+    const std::wstring mode=argc==5?argv[4]:L"";
+    const bool demo=mode==L"demo", foundations=mode==L"foundations", fields=mode==L"fields";
+    Require(mode.empty() || demo || foundations || fields,"known managed UI validation mode");
     Require(scripts.LoadCSharpProject(host,project,assembly,demo?"GameScripts":"ManagedUI"),"load real project C# UI classes");
     auto& scene=*engine.scenes.GetCurrentScene();
+    if(fields)
+    {
+        FoundationFieldChecks(scene,scripts,host,project,assembly);
+        engine.scenes.UnloadCurrentScene(); scripts.ClearCSharpProject();
+        const auto collect=reinterpret_cast<OvCsCollectibleStatsFn>(host.Entry(L"Overload.ManagedHost.Bootstrap, Overload.ManagedHost",L"CollectibleStats"));
+        uint64_t alive=0,collected=0; host.Check(collect(1,&alive,&collected),"field session collection");
+        Require(alive==0 && collected>=4,"field metadata does not root retired project contexts");
+        host.Shutdown(); std::puts("PASS U1 UI value fields, Inspector, XML, reload and validation"); return 0;
+    }
+    if(foundations)
+    {
+        auto& source=scene.CreateActor("EventSource"); Add(source,"UIFixture.Foundation.EventSource");
+        auto& receiver=scene.CreateActor("EventReceiver"); Add(receiver,"UIFixture.Foundation.EventReceiver");
+        Add(scene.CreateActor("LiveSource"),"UIFixture.Foundation.EventSource");
+        auto& probe=Add(scene.CreateActor("EventProbe"),"UIFixture.Foundation.EventLifetimeProbe");
+        for(auto* actor:scene.GetActors()) for(auto& [key, behaviour]:actor->GetBehaviours())
+            Require(scripts.PrepareCSharp(behaviour),"prepare real event fixture");
+        scene.Play(); scene.Update(1);
+        Require(Field(probe,"passed")==1,"owner-bound UI event dispatch");
+        Require(receiver.RemoveBehaviour(ScriptIdentity::CSharp("ManagedUI","UIFixture.Foundation.EventReceiver")),"remove event receiver");
+        scene.Update(2); Require(Field(probe,"passed")==2,"receiver destruction cancels subscription");
+        scene.Update(6); Require(Field(probe,"passed")==6,"removed receiver is collected while event source remains alive");
+        Require(source.RemoveBehaviour(ScriptIdentity::CSharp("ManagedUI","UIFixture.Foundation.EventSource")),"remove event source");
+        scene.Update(3); Require(Field(probe,"passed")==3,"source destruction disposes retained event");
+        scene.Update(4); Require(Field(probe,"received")==1,"live listener before reload");
+        for(int generation=0;generation<3;++generation) {
+            Require(scripts.LoadCSharpProject(host,project,assembly,"ManagedUI",true),"hot reload event project");
+            scene.Update(5);
+            Require(Field(probe,"received")==generation+2,"reload restores state without duplicate listeners");
+        }
+        engine.scenes.UnloadCurrentScene(); scripts.ClearCSharpProject();
+        const auto collect=reinterpret_cast<OvCsCollectibleStatsFn>(host.Entry(L"Overload.ManagedHost.Bootstrap, Overload.ManagedHost",L"CollectibleStats"));
+        uint64_t alive=0,collected=0;
+        host.Check(collect(1,&alive,&collected),"event session collection");
+        Require(alive==0 && collected>=4,"events do not root retired project contexts");
+        host.Shutdown(); std::puts("PASS U1 event lifetime and collectible sessions"); return 0;
+    }
     if(demo)
     {
         tinyxml2::XMLDocument doc;
@@ -153,7 +193,9 @@ int wmain(int argc, wchar_t** argv) try
     Require(Field(probe,"passed")==1,"managed API, layout, scaler, interface lookup and wrong-thread contracts");
     Render(scene,*engine.driver,300,200,true);
     const int before=Field(group,"horizontalPasses");
-    Require(before>1,"managed layout runs before production rendering");
+    Require(before>=1,"managed layout runs before production rendering");
+    Render(scene,*engine.driver,300,200,true);
+    Require(Field(group,"horizontalPasses")==before,"static frame does not rebuild managed layout");
     a.RemoveComponent<CRectTransform>(); a.AddComponent<CRectTransform>().SetPivot({0,0});
     scene.Update(2); Require(Field(probe,"passed")==2,"native UI handles retain component epochs");
     Require(scripts.LoadCSharpProject(host,project,assembly,"ManagedUI",true),"hot reload managed UI project");

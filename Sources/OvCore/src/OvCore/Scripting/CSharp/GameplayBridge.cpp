@@ -1,8 +1,13 @@
 #include <OvCore/Scripting/CSharp/GameplayBridge.h>
 #include <OvCore/Scripting/CSharp/UIBridge.h>
+#include <OvCore/Scripting/CSharp/DrivenBridge.h>
+#include <OvCore/Scripting/CSharp/InputBridge.h>
+#include <OvCore/Scripting/CSharp/FontBridge.h>
 #include <OvCore/ECS/Components/CUI.h>
 #include <OvCore/UI/Frame.h>
 #include <bit>
+#include <algorithm>
+#include <charconv>
 #include <limits>
 #include <span>
 #include <OvCore/Scripting/ScriptBridge.h>
@@ -19,13 +24,37 @@ namespace OvCore::Scripting::CSharp
         using namespace OvReflection::Script;
         return Guard(context, [&](State& state) {
             Require(output != nullptr); *output = 0;
+            if (operation >= 100 && operation <= 103)
+            {
+                // These dedicated operations carry a pinned mutable binary buffer,
+                // not UTF-8. All ordinary gameplay text remains read-only.
+                Require(text.data != nullptr && text.length >= 64 && text.length <= 1024 * 1024);
+                QueryFont(state, argument, owner, operation,
+                    std::span<uint8_t>(const_cast<uint8_t*>(text.data), static_cast<size_t>(text.length)), *output);
+                return;
+            }
+            if (operation >= 80 && operation <= 88)
+            {
+                QueryInput(state, owner, operation, argument, Decode({text.data, text.length}), *output);
+                return;
+            }
+            if (operation >= 60 && operation <= 62)
+            {
+                const auto request = Decode({text.data, text.length});
+                const auto separator = request.find('\n'); Require(separator != std::string::npos);
+                uint64_t session = 0;
+                const auto parsed = std::from_chars(request.data(), request.data() + separator, session);
+                Require(parsed.ec == std::errc{} && parsed.ptr == request.data() + separator && session != 0);
+                QueryDriven(state, session, owner, operation, argument, request.substr(separator + 1), *output);
+                return;
+            }
             if (operation == 45)
             {
                 Require(text.length <= std::numeric_limits<size_t>::max());
                 UploadUIMesh(state, owner, std::span<const uint8_t>(text.data, static_cast<size_t>(text.length)), *output);
                 return;
             }
-            if (operation >= 40 && operation <= 48)
+            if (operation >= 40 && operation <= 59)
             {
                 QueryUI(state, owner, operation, argument, Decode({text.data, text.length}), *output);
                 return;
@@ -97,6 +126,28 @@ namespace OvCore::Scripting::CSharp
                 break;
             }
             case 21: *output = actor.CanRunScripts(); break;
+            case 22: case 23: {
+                auto* scene = actor.GetScene(); Require(scene != nullptr, OV_SCRIPT_INVALID_HANDLE);
+                auto* parent = actor.GetParent();
+                std::vector<ECS::Actor*> siblings;
+                if (parent) siblings = parent->GetChildren();
+                else for (auto* candidate : scene->GetActors()) if (!candidate->GetParent()) siblings.push_back(candidate);
+                const auto found = std::find(siblings.begin(), siblings.end(), &actor);
+                Require(found != siblings.end(), OV_SCRIPT_INVALID_HANDLE);
+                const size_t previous = static_cast<size_t>(found - siblings.begin());
+                if (operation == 22) { *output = previous; break; }
+                Require(actor.CanRunScripts(), OV_SCRIPT_INVALID_HANDLE);
+                const size_t desired = static_cast<size_t>(std::min<uint64_t>(argument, siblings.size() - 1));
+                if (desired == previous) break;
+                if (desired < previous) std::rotate(siblings.begin() + desired, siblings.begin() + previous, siblings.begin() + previous + 1);
+                else std::rotate(siblings.begin() + previous, siblings.begin() + previous + 1, siblings.begin() + desired + 1);
+                if (parent) parent->GetChildren() = siblings;
+                // Scene XML enumerates the flat actor list. Keep its sibling order in sync
+                // without moving unrelated descendants or changing parent/transform state.
+                size_t next = 0;
+                for (auto*& candidate : scene->GetActors()) if (candidate->GetParent() == parent) candidate = siblings[next++];
+                break;
+            }
             case 30: case 31: {
                 if (operation == 31) Require(actor.CanRunScripts(), OV_SCRIPT_INVALID_HANDLE);
                 if (argument == 1) {
@@ -108,6 +159,12 @@ namespace OvCore::Scripting::CSharp
                 } else if (argument == 3) {
                     auto* renderer = operation == 31 ? &actor.AddComponent<ECS::Components::CCanvasRenderer>() : actor.GetComponent<ECS::Components::CCanvasRenderer>();
                     if (renderer) *output = publish(*renderer);
+                } else if (argument == 4) {
+                    auto* group = operation == 31 ? &actor.AddComponent<ECS::Components::CCanvasGroup>() : actor.GetComponent<ECS::Components::CCanvasGroup>();
+                    if (group) *output = publish(*group);
+                } else if (argument == 5) {
+                    auto* mask = operation == 31 ? &actor.AddComponent<ECS::Components::CRectMask2D>() : actor.GetComponent<ECS::Components::CRectMask2D>();
+                    if (mask) *output = publish(*mask);
                 } else Require(false);
                 break;
             }

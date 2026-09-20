@@ -22,6 +22,7 @@ public static unsafe partial class Bootstrap
     internal const string Signature = "1f7e282e2f1353962d004dfe3f9b88a52fe17311d6b4d51491d8622a529a1b10";
     private sealed class Session
     {
+        internal ulong Identity;
         internal CoreApi? Core;
         internal nuint Entry;
         internal ProjectContext? Project;
@@ -34,9 +35,12 @@ public static unsafe partial class Bootstrap
         internal void Close(bool reloading = false) {
             Closing = true;
             foreach (Instance instance in Instances.Values) Destroy(instance, reloading);
+            Exception? fontCleanup = null;
+            try { ReleaseSessionFonts(this); } catch (Exception ex) { fontCleanup = ex; }
             Instances.Clear(); UIRegistry.Clear(); Closed = true;
             Core = null; Entry = 0; Types.Clear();
             if (Project != null) Retire(Project); Project = null;
+            if (fontCleanup != null) throw new InvalidOperationException("Native font session cleanup failed", fontCleanup);
         }
     }
     private sealed class Failure(Status status, string message) : Exception(message)
@@ -150,6 +154,7 @@ public static unsafe partial class Bootstrap
         Require(Path.IsPathFullyQualified(root) && Directory.Exists(root) && logical.Length != 0, Status.InvalidArgument, "Session requires an existing absolute project root and logical name");
         Session session = LoadProject(assembly, logical);
         ulong id = checked(nextId + 1);
+        session.Identity = id;
         Sessions.Add(id, session);
         nextId = id;
         *output = new SessionHandle(id, id);

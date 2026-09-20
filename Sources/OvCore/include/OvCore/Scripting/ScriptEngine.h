@@ -37,6 +37,7 @@ namespace OvCore::Scripting
             const std::filesystem::path& assembly, const std::string& logical, bool migrateRuntime = false);
         void ClearCSharpProject();
         void RebuildUI(SceneSystem::Scene& scene, const OvMaths::FVector2& viewport);
+        void TickUI(SceneSystem::Scene& scene, float deltaTime, float unscaledDeltaTime);
         OvCsSessionHandle CSharpSession() const { return m_session; } // Numeric generation for diagnostics.
         bool PrepareCSharp(ECS::Components::Behaviour& target);
         OvReflection::Script::Context& GameplayContext(uint64_t context);

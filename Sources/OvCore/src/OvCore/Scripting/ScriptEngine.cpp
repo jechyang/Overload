@@ -12,6 +12,20 @@
 
 namespace OvCore::Scripting
 {
+    void ScriptEngine::TickUI(SceneSystem::Scene& scene, float deltaTime, float unscaledDeltaTime)
+    {
+        if (!m_host || !m_session.id || scene.GetActors().empty()) return;
+        bool enabled = false;
+        for (const auto& [key, type] : m_types) if (type.type == "Overload.UI.CanvasScaler") { enabled = true; break; }
+        if (!enabled) return;
+        DispatchScope scope;
+        using Entry = OvCsStatus(OVCS_CALL*)(OvCsSessionHandle, uint64_t, float, float);
+        try {
+            const auto tick = reinterpret_cast<Entry>(m_host->Entry(L"Overload.ManagedHost.Bootstrap, Overload.ManagedHost", L"TickUI"));
+            const auto anchor = PublishComponent(m_host->NativeContext(), scene.GetActors().front()->transform);
+            m_host->Check(tick(m_session, anchor, deltaTime, unscaledDeltaTime), "UI tick", m_session);
+        } catch (const std::exception& error) { m_error = error.what(); OVLOG_ERROR(m_error); }
+    }
     void ScriptEngine::RebuildUI(SceneSystem::Scene& scene, const OvMaths::FVector2& viewport)
     {
         if (!m_host || !m_session.id || scene.GetActors().empty()) return;
@@ -197,6 +211,7 @@ namespace OvCore::Scripting
                         host.Check(api.get_field_info(session,type.type_token,f,&fieldInfo),"get_field_info",session);
                         try {
                             ManagedField field{fieldInfo.field_token,fieldInfo.tag,fieldInfo.auxiliary,Text(fieldInfo.stable_id),Text(fieldInfo.managed_name),{}};
+                            field.displayName = Text(fieldInfo.display_name);
                             for(uint32_t a=0;a<fieldInfo.alias_count;++a) {
                                 OvCsOwnedUtf8 alias{}; host.Check(api.get_field_alias(session,type.type_token,fieldInfo.field_token,a,&alias),"get_field_alias",session);
                                 try { field.aliases.push_back(Text(alias)); } catch(...) { api.release_owned_utf8(&alias); throw; }

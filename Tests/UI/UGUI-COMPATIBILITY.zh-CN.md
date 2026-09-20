@@ -68,6 +68,10 @@ UnityEngine 外部依赖（如 UIVertex、DrivenRectTransformTracker 和移动�
 
 ## 当前边界
 
+U1 的公共集合、运行时 UIEvent 和 session-owned 弱注册工具已有实现及真实宿主生命周期
+验收，详见 `U1-PROGRESS.zh-CN.md`。U1 的完整字段和 Actor 能力仍待补齐，相关类型保持
+partial；这不改变下列未完成范围。
+
 - 不是 `UnityEngine.UI` 的二进制或源码兼容层，使用 Overload 的 Actor/Behaviour 生命周期及命名空间。
 - `Image` 当前是基础纹理四边形，不包含 Sprite border、fill、preserveAspect 或 set-native-size 语义；`RawImage` 支持基础 `uvRect`。
 - 自定义材质路径可提交，但材质 shader 需自行遵守当前 UI 顶点和 uniform 约定；尚无 uGUI 的 `IMaterialModifier` 链。

@@ -281,6 +281,8 @@ void OvCore::SceneSystem::Scene::LateUpdate(float p_deltaTime)
 	ZoneScoped;
     ActorUpdateSnapshot snapshot(m_actors);
     for (auto* actor : snapshot.actors) if (!m_dispatchStopped && actor && actor->IsAlive()) actor->OnLateUpdate(p_deltaTime);
+    if (!m_dispatchStopped) if (auto* scripts = Global::ServiceLocator::TryGet<Scripting::ScriptEngine>())
+        scripts->TickUI(*this, p_deltaTime, p_deltaTime);
     Scripting::DispatchScope::Flush();
     CollectGarbages();
 }
