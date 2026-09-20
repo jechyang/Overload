@@ -9,6 +9,10 @@ const config=process.argv[2]||'Debug';
 if(!['Debug','Release'].includes(config))throw Error('Expected Debug or Release');
 const parent=path.join(root,'Build/UIValidation'); fs.mkdirSync(parent,{recursive:true});
 const output=fs.mkdtempSync(path.join(parent,config+'-'));
+// Keep compiler temporaries and collectible CLR copies beside this run on the workspace drive.
+const temporary=path.join(output,'temp'); fs.mkdirSync(temporary,{recursive:true});
+process.env.TEMP=temporary; process.env.TMP=temporary;
+process.env.OV_SCRIPTING_SHADOW_ROOT=path.join(output,'managed-shadow');
 const checks=[];
 const env={...process.env,VSLANG:'1033'};
 const stages=Array.from({length:14},(_,i)=>({id:'U'+i,flag:'--u'+i,requested:process.argv.includes('--u'+i),status:'not-requested'}));

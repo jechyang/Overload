@@ -9,6 +9,10 @@ if(!['Debug','Release'].includes(config))throw Error('Expected Debug or Release'
 for(const option of process.argv.slice(3))if(option!=='--integration')throw Error('Unknown font validation option: '+option);
 const parent=path.join(root,'Build/UIValidation');fs.mkdirSync(parent,{recursive:true});
 const output=fs.mkdtempSync(path.join(parent,config+'-font-'));
+// Keep compiler temporaries and collectible CLR copies beside this run on the workspace drive.
+const temporary=path.join(output,'temp'); fs.mkdirSync(temporary,{recursive:true});
+process.env.TEMP=temporary; process.env.TMP=temporary;
+process.env.OV_SCRIPTING_SHADOW_ROOT=path.join(output,'managed-shadow');
 const checks=[];
 const env={...process.env,VSLANG:'1033'};
 const revision=cp.spawnSync('git',['-c',`safe.directory=${root.replaceAll('\\','/')}`,'rev-parse','HEAD'],{cwd:root,encoding:'utf8',windowsHide:true});

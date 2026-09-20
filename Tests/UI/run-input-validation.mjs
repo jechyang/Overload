@@ -5,6 +5,10 @@ import {fileURLToPath} from 'node:url';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const parent=path.join(root,'Build/UIValidation'); fs.mkdirSync(parent,{recursive:true});
 const output=fs.mkdtempSync(path.join(parent,'F-Debug-'));
+// Keep compiler temporaries and collectible CLR copies beside this run on the workspace drive.
+const temporary=path.join(output,'temp'); fs.mkdirSync(temporary,{recursive:true});
+process.env.TEMP=temporary; process.env.TMP=temporary;
+process.env.OV_SCRIPTING_SHADOW_ROOT=path.join(output,'managed-shadow');
 const evidence={scope:'F independent input/event consumers; not full U7 GPU acceptance',checks:[]};
 const env={...process.env,VSLANG:'1033',DOTNET_CLI_HOME:path.join(output,'cli')};
 function run(name,exe,args) {

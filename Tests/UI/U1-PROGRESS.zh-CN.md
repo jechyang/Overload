@@ -152,3 +152,10 @@ UI.Rebuild 的 session registry 交接已随 D 的 `223ae46` 提交，A 不再�
 **最新完整 A 集成验收**：`Build/UIValidation/Debug-GN2U0m/result.json` 成功。
 该轮包含最新 Actor sibling/parent/active 的 Scene XML 验收、三次重载跨帧生命周期，
 集合字段发现边界，以及 B/D/E/F 冻结后的全部基础 UI/示例/S3 回归。
+
+### H 盘运行配置复验
+
+六个 UGUI runner 已在启动子进程前统一 TEMP、TMP 与 OV_SCRIPTING_SHADOW_ROOT 到
+各自 H 盘随机验收目录。最新完整回归 `Build/UIValidation/Debug-G3aK9G/result.json`
+全部通过；已核对该次 `temp` 与 `managed-shadow` 实际存在，路径记录见
+`Build/UIValidation/u1-h-drive-paths.json`。它是当前最终总回归证据。

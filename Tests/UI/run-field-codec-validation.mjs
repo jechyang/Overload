@@ -6,11 +6,15 @@ import {fileURLToPath} from 'node:url';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const parent=path.join(root,'Build/UIValidation');fs.mkdirSync(parent,{recursive:true});
 const output=fs.mkdtempSync(path.join(parent,'field-codec-'));
+// Keep compiler temporaries and collectible CLR copies beside this run on the workspace drive.
+const temporary=path.join(output,'temp'); fs.mkdirSync(temporary,{recursive:true});
+process.env.TEMP=temporary; process.env.TMP=temporary;
+process.env.OV_SCRIPTING_SHADOW_ROOT=path.join(output,'managed-shadow');
 const lock=JSON.parse(fs.readFileSync(path.join(root,'Tools/OvCSharp/toolchain.lock.json'),'utf8'));
 const runtime=path.join(root,'Build/Toolchains/dotnet-'+lock.sdk_version);
 const refs=path.join(runtime,'packs/Microsoft.NETCore.App.Ref',lock.runtime_version,'ref',lock.target_framework);
 const dotnet=path.join(runtime,'dotnet.exe'),checks=[],sources={};
-const env={...process.env,TEMP:output,TMP:output};
+const env={...process.env};
 const flags=['/nologo','/nostdlib+','/langversion:14.0','/nullable:enable','/warnaserror+','/unsafe+','/deterministic+','/platform:x64',
  ...fs.readdirSync(refs).filter(x=>x.endsWith('.dll')).map(x=>'/reference:'+JSON.stringify(path.join(refs,x)))];
 function run(name,args) {
