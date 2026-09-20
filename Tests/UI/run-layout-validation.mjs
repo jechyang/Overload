@@ -67,6 +67,9 @@ try {
      run('runtime-'+mode,native,[runtime,managed,fixture,mode]);
      if(fs.readFileSync(path.join(output,'runtime-'+mode+'.log'),'utf8').includes('[ERROR]'))throw Error('Runtime logged an engine or managed error');
    }
+   const serial=fs.readFileSync(path.join(project,'default.rgba')),threaded=fs.readFileSync(path.join(project,'render-thread.rgba'));
+   if(serial.length!==26*300*200*4||!serial.equals(threaded))throw Error('All 26 real layout frames must match exactly across RenderThread');
+   evidence.pixels={frames:26,width:300,height:200,sha256:crypto.createHash('sha256').update(serial).digest('hex'),exactRenderThreadMatch:true};
  }
 
  fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({...evidence,success:true,scope:process.argv.includes('--runtime')?'production C# contracts plus native runtime, pixels, reload and session restoration':'production C# components with deterministic native-access double; no GPU claim',checks},null,2));

@@ -18,6 +18,9 @@ public class LayoutElement : UIBehaviour, ILayoutElement, ILayoutIgnorer
     public virtual float flexibleHeight { get => m_FlexibleHeight; set { var next = CanvasScaler.Finite(value); if (m_FlexibleHeight == next) return; m_FlexibleHeight = next; SetDirty(); } }
     public virtual int layoutPriority { get => m_LayoutPriority; set { var next = value; if (m_LayoutPriority == next) return; m_LayoutPriority = next; SetDirty(); } }
     protected override void SetDirty() { if (owner != null) LayoutRebuilder.MarkLayoutForRebuild(rectTransform, true); }
+    protected override void OnRectTransformDimensionsChange() {
+        if (!CanvasUpdateRegistry.IsRebuildingLayout(Owner)) SetDirty();
+    }
     public virtual void CalculateLayoutInputHorizontal() { }
     public virtual void CalculateLayoutInputVertical() { }
 }
@@ -28,12 +31,15 @@ public class ContentSizeFitter : UIBehaviour, ILayoutSelfController
     [SerializeField] private FitMode m_HorizontalFit, m_VerticalFit;
     private readonly DrivenRectTransformTracker tracker = new();
     protected override void SetDirty() { if (owner != null) LayoutRebuilder.MarkLayoutForRebuild(rectTransform, true); }
+    protected override void OnRectTransformDimensionsChange() {
+        if (!CanvasUpdateRegistry.IsRebuildingLayout(Owner)) SetDirty();
+    }
 
     public override void OnEnable() { base.OnEnable(); SetDirty(); }
     public override void OnDisable() { tracker.Clear(); SetDirty(); base.OnDisable(); }
     internal override void ReleaseNativeComponents() { tracker.Clear(); base.ReleaseNativeComponents(); }
-    public FitMode horizontalFit { get => m_HorizontalFit; set { var next = value; if (m_HorizontalFit == next) return; m_HorizontalFit = next; SetDirty(); } }
-    public FitMode verticalFit { get => m_VerticalFit; set { var next = value; if (m_VerticalFit == next) return; m_VerticalFit = next; SetDirty(); } }
+    public FitMode horizontalFit { get => m_HorizontalFit; set { var next = value; if (m_HorizontalFit == next) return; m_HorizontalFit = next; if (next == FitMode.Unconstrained) tracker.Release(DrivenTransformProperties.SizeDeltaX); SetDirty(); } }
+    public FitMode verticalFit { get => m_VerticalFit; set { var next = value; if (m_VerticalFit == next) return; m_VerticalFit = next; if (next == FitMode.Unconstrained) tracker.Release(DrivenTransformProperties.SizeDeltaY); SetDirty(); } }
     protected virtual void HandleSelfFittingAlongAxis(int axis) {
         FitMode mode = axis == 0 ? horizontalFit : verticalFit;
         if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
@@ -42,6 +48,11 @@ public class ContentSizeFitter : UIBehaviour, ILayoutSelfController
         float size = mode == FitMode.MinSize ? LayoutUtility.GetMinSize(rectTransform, axis) : LayoutUtility.GetPreferredSize(rectTransform, axis);
         if (rectTransform.rect.size[axis] != size) rectTransform.SetSizeWithCurrentAnchors((RectTransform.Axis)axis, size);
     }
-    public virtual void SetLayoutHorizontal() { tracker.BeginUpdate(); HandleSelfFittingAlongAxis(0); }
+    public virtual void SetLayoutHorizontal() {
+        tracker.BeginUpdate();
+        var wanted = (horizontalFit == FitMode.Unconstrained ? DrivenTransformProperties.None : DrivenTransformProperties.SizeDeltaX) |
+            (verticalFit == FitMode.Unconstrained ? DrivenTransformProperties.None : DrivenTransformProperties.SizeDeltaY);
+        tracker.Retain(rectTransform, wanted); HandleSelfFittingAlongAxis(0);
+    }
     public virtual void SetLayoutVertical() { HandleSelfFittingAlongAxis(1); tracker.EndUpdate(); }
 }

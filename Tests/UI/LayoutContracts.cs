@@ -22,6 +22,7 @@ internal sealed class LayoutWorld : INativeAccess
     internal readonly List<Exception> Errors = new();
     internal readonly List<string> Logs = new();
     internal int Writes;
+    internal bool ForeignBridgeException;
     private ulong next = 1, token = 1;
     public string LogicalName => "LayoutTests";
     public CanvasUpdateRegistry UIRegistry { get; } = new();
@@ -38,7 +39,7 @@ internal sealed class LayoutWorld : INativeAccess
         return new(parent.x*(n.Max.x-n.Min.x)+n.Delta.x,parent.y*(n.Max.y-n.Min.y)+n.Delta.y);
     }
     internal void Tick(Actor root) => UIRegistry.Update(root,new(800,600),Nodes.Values.Where(n=>n.Alive).SelectMany(n=>n.Behaviours).ToArray(),Errors.Add);
-    private Node Get(ulong id) { if(!Nodes.TryGetValue(id,out var n)||!n.Alive)throw new InvalidOperationException("Invalid native epoch"); return n; }
+    private Node Get(ulong id) { if(!Nodes.TryGetValue(id,out var n)||!n.Alive){if(ForeignBridgeException)throw new Exception("Native invalid handle");throw new InvalidOperationException("Invalid native epoch");} return n; }
     public IReadOnlyList<Behaviour> GetBehaviours(ulong owner) => Get(owner).Behaviours;
     public Vector3 Read(ulong component,bool box)=>new(0,0,0);
     public void Write(ulong component,bool box,Vector3 value) { }
@@ -207,10 +208,20 @@ internal static class LayoutContracts
         ie.ignoreLayout=false;ignoredWorld.Tick(ip);
         typeof(Overload.EventSystems.UIBehaviour).GetField("m_Enabled",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance)!.SetValue(ig,false);
         ignoredWorld.Tick(ip);Check(ignoredWorld.Nodes[ic.Handle].Leases.Count==0,"Inspector disable releases driven properties before rebuild");
+        var switched=new LayoutWorld();var sa=switched.New();var sr=Rect(sa);sr.sizeDelta=new(120,80);var af=switched.Add<AspectRatioFitter>(sa);af.aspectRatio=2;af.aspectMode=AspectRatioFitter.AspectMode.WidthControlsHeight;switched.Tick(sa);switched.Tick(sa);switched.Tick(sa);
+        typeof(AspectRatioFitter).GetField("m_AspectMode",System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.Instance)!.SetValue(af,AspectRatioFitter.AspectMode.HeightControlsWidth);af.MarkDirtyFromHost();
+        switched.Tick(sa);Check(sr.sizeDelta==new Vector2(160,80),"Inspector aspect mode switch restores old axis before solving");
+        g.childControlWidth=false;Rect(child).sizeDelta=new(23,30);dynamicWorld.Tick(p);Near(Rect(child).sizeDelta.x,23,"User write after disabling child control survives reconciliation");
+        // Layout-generated child dimension notifications must not dirty their parent again.
+        var stable=new LayoutWorld();var sp=stable.New();var sg=stable.Add<CountingGrid>(sp);var sc=stable.New(sp);stable.Add<LayoutElement>(sc);stable.Tick(sp);int measured=sg.Passes;stable.Tick(sp);Check(sg.Passes==measured,"First layout consumes child dimension notification without another pass");
+        var reparented=new LayoutWorld();var oldParent=reparented.New();var moved=reparented.New(oldParent);reparented.Add<LayoutElement>(moved);reparented.Tick(oldParent);
+        var newParent=reparented.New();reparented.Nodes[moved.Handle].Parent=newParent.Handle;reparented.Nodes[newParent.Handle].Children.Add(moved.Handle);reparented.Nodes[oldParent.Handle].Children.Clear();reparented.Nodes[oldParent.Handle].Alive=false;reparented.ForeignBridgeException=true;
+        reparented.Tick(newParent);Check(reparented.Errors.Count==0,"Reparenting away from a destroyed parent ignores only old-parent lookup failure");
         var invalid=new AspectRatioFitter();bool rejected=false;try{invalid.aspectRatio=0;}catch(ArgumentOutOfRangeException){rejected=true;}Check(rejected,"Zero aspect rejected");
         rejected=false;try{ig.cellSize=new(float.NaN,1);}catch(ArgumentException){rejected=true;}Check(rejected,"Nonfinite grid rejected");
-        // A removed native epoch must be ignored during cleanup, with no new claim leaked.
-        ignoredWorld.Nodes[ic.Handle].Alive=false;ig.ReleaseSubscriptions(_=>{});
+        // A removed native epoch must be ignored even when the host uses its own Exception subtype.
+        var deadWorld=new LayoutWorld();var dp=deadWorld.New();var dg=deadWorld.Add<GridLayoutGroup>(dp);var dc=deadWorld.New(dp);deadWorld.Tick(dp);deadWorld.Nodes[dc.Handle].Alive=false;deadWorld.ForeignBridgeException=true;
+        var cleanupErrors=new List<string>();dg.ReleaseSubscriptions(cleanupErrors.Add);Check(cleanupErrors.Count==0,"Deleted child cleanup accepts native host exception type");
     }
     public static void Main(){Grids();Aspects();HorizontalVertical();SchedulingAndLifetime();FitterAndMutation();Console.WriteLine("PASS U4 layout contracts: "+checks+" assertions");}
 }

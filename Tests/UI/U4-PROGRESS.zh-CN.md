@@ -1,6 +1,6 @@
 # D / U4 布局工作包
 
-状态：实现与独立行为测试已落盘；真实原生 / GPU / 热重载及标准构建验收正在进行，尚未宣称完整 U4。
+状态：D 实现与专项验收、标准 Debug、UI/managed/scripting 总回归及示例 host generation 均已通过。完整 U4 阶段门禁暂保留 partial：editor-camera 被并行编辑器导航命中区域回归阻塞，已交 A/编辑器负责人处理。
 
 ## 生产实现
 
@@ -42,18 +42,23 @@ node Tests/UI/run-layout-validation.mjs --runtime
 
 所有产物在 Build/UGUI-D/layout-*，每次独立目录。普通入口编译完整生产 ScriptCore 和确定性 native-access double，再编译真实 DrivenProperties 头测试；不把 double 当 GPU 验收。
 
-已通过 evidence：Build/UGUI-D/layout-pEwOQW/result.json。
+已通过专项 runtime evidence：Build/UGUI-D/layout-QOxghO/result.json（9144 条断言及全部 runtime 检查）；最后补充已销毁旧父节点的异常边界后，Build/UGUI-D/layout-kT49C1/result.json 的 9145 条托管断言与原生属性测试通过。
 
-- 9140 条生产 C# 行为断言，包括全部 24 个 Grid corner/axis/constraint × 9 alignment、非中心 pivot/stretch、全部 Aspect 模式、父 resize、HV control/expand、ContentSizeFitter、动态非 UI ILayoutElement 输入、重建期 dirty、静止帧不重算、原生几何编辑、成员变化、Inspector 直接禁用的 driven 清理和循环拒绝。
+- 9145 条生产 C# 行为断言，包括全部 24 个 Grid corner/axis/constraint × 9 alignment、非中心 pivot/stretch、全部 Aspect 模式、父 resize、HV control/expand、ContentSizeFitter、动态非 UI ILayoutElement 输入、重建期 dirty、静止帧不重算、原生几何编辑、成员变化、Inspector 直接禁用的 driven 清理和循环拒绝。
 - 原生 DrivenProperties authored 值、各轴、部分释放、冲突、session 隔离测试通过。
-- 真实引擎测试源码与独立 ManagedHost 已编译；首次链接因并行 F QueryInput 未入库失败（Build/UGUI-D/layout-rJ7WzW/runtime-link.log），等待共享库构建后重跑。B 第二轮构建因 Frame.cpp 的 DotProduct 名称失败，已由 B 改为 Dot，待下一轮统一构建。
+- 真实引擎 24 种 Grid corner/axis/constraint + 2 种 Aspect 场景（stretch、非中心 pivot、父 resize）共 26 帧，300×200 RGBA，普通 / RenderThread 逐字节一致。像素 SHA-256：478d28c87cea52e8dca33b1579e9d3b7149e1ae1477dbb2f22096e33c9d470d4。
+- 真实原生几何、像素、Inspector 禁用/启用、XML authored 值、热重载、组件删除、共享 R6 context 的跨 managed session token 拒绝、session closing 恢复、ContentSizeFitter 和两代 collectible context 回收均通过。
+- 标准 Debug：B 的 Build/UGUI-B/debug-build-3.log 成功退出 0。两份 OvEditor.exe 大小 43059200、时间 2026-09-20T17:34:38.899Z、SHA-256 eec1bfae9540b6042faac9a0d4bd3518bbec9cf28aaa01e5fe6d034e70b85cd3 完全一致；证据 Build/UGUI-D/editor-binary-consistency.json。
+- 控制模式切换先释放旧驱动轴，避免 Inspector 切换 Aspect 模式使用旧驱动尺寸，以及关闭 childControl 后覆盖用户新输入。
+- 尺寸写回通知不再次排队；真实参数变化保留延迟 dirty。销毁恢复对宿主自有 BridgeException 类型正确判定 native epoch 失效，活句柄恢复错误仍会报告。重设父节点后旧父节点已销毁的只读查询同样按宿主异常类型安全退出，并有独立回归。
+- 标准总回归：Build/UIValidation/Debug-9ajrk6/result.json，native-ui、managed-ui（含首个静止帧不重算断言）、managed-demo、S3 default / render-thread 全通过。
+- 示例 host generation：A 执行成功，Examples/ManagedUI/.overload/csharp/build.xml generation 5d6f08a6-7705-4226-8ee7-070da003331d；日志 Build/UIValidation/u1-example-generation.log。该 generation 在最后调度修复前生成，A 汇总时须再核对/重建至最终源码。
 
-## 尚待最终验收
+## 尚待全阶段门禁与交接
 
-- --runtime 的生产 frame/像素、RenderThread、XML、热重载、删除和 closing 全通过。
-- 标准 Debug 构建、UI/managed/scripting 回归、editor-camera；Build/Debug 与 Bin/Debug 的 OvEditor.exe 大小/时间/SHA256 一致。
-- 修改托管层后的 Examples/ManagedUI host generation 由共享输出负责人串行重建。
-- A 已授权 D 的实现里程碑整体提交 UI.Rebuild.cs（包含 A 的 registry 前置 hunks）；其余 A/B/E 共享集成由原负责人提交。里程碑提交不代表完整 U4 验收通过；不整体暂存其他任务改动。
+- editor-camera：Build/JobsValidation/Skinning/Debug-editor-camera-editor/current/run.log，失败项 navigation overlay hit region follows Scene viewport；不属于 D 布局文件，未覆盖其他负责人改动。修复后由 A 重新确认门禁。
+- 最终 ScriptCore 调度修复后的 Examples/ManagedUI host generation 由 A 串行刷新（既有成功 generation 如上）。
+- A 已授权 D 的实现里程碑整体提交 UI.Rebuild.cs（包含 A 的 registry 前置 hunks）；其余 A/B/E 共享集成由原负责人提交。实现里程碑 commit：223ae46；其后模式切换修复与 runtime 验收收尾另行提交。不整体暂存其他任务改动。
 
 工作起点 HEAD：870c494538629e8c06e825297a8387cf293f284e；U1/A、U2/B、U6/E、U7/F 接口为共享工作区正在验证的生产改动，不把它们描述为已发布提交。
 

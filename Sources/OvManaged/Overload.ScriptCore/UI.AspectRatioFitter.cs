@@ -10,7 +10,11 @@ public class AspectRatioFitter : UIBehaviour, ILayoutSelfController
     [SerializeField] private AspectMode m_AspectMode;
     [SerializeField] private float m_AspectRatio = 1;
     private readonly DrivenRectTransformTracker tracker = new();
+    private AspectMode appliedMode;
     protected override void SetDirty() { if (owner != null) LayoutRebuilder.MarkLayoutForRebuild(rectTransform, true); }
+    protected override void OnRectTransformDimensionsChange() {
+        if (!CanvasUpdateRegistry.IsRebuildingLayout(Owner)) SetDirty();
+    }
     public AspectMode aspectMode {
         get => m_AspectMode;
         set {
@@ -39,6 +43,7 @@ public class AspectRatioFitter : UIBehaviour, ILayoutSelfController
         if (!IsActive()) return;
         if (!float.IsFinite(aspectRatio) || aspectRatio <= 0 || !Enum.IsDefined(aspectMode))
             throw new InvalidOperationException("Invalid aspect fitter settings");
+        if (appliedMode != aspectMode) { tracker.Clear(); appliedMode = aspectMode; }
         tracker.BeginUpdate();
         switch (aspectMode) {
             case AspectMode.WidthControlsHeight:

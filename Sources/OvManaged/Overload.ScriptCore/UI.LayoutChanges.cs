@@ -58,7 +58,7 @@ internal sealed class LayoutChangeObserver
                         try {
                             var oldParent = new Actor(owner.Access, before.Own.Parent).GetComponent<RectTransform>();
                             if (oldParent != null) LayoutRebuilder.MarkLayoutForRebuild(oldParent);
-                        } catch (InvalidOperationException) { }
+                        } catch (Exception) { /* The old parent may already have lost its native epoch. */ }
                     }
                 }
                 previous[component] = now;

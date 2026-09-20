@@ -22,6 +22,9 @@ public abstract class LayoutGroup : UIBehaviour, ILayoutElement, ILayoutGroup
     public override void OnDisable() { m_Tracker.Clear(); SetDirty(); base.OnDisable(); }
     internal override void ReleaseNativeComponents() { m_Tracker.Clear(); base.ReleaseNativeComponents(); }
     protected override void SetDirty() { if (owner != null) LayoutRebuilder.MarkLayoutForRebuild(rectTransform, true); }
+    protected override void OnRectTransformDimensionsChange() {
+        if (!CanvasUpdateRegistry.IsRebuildingLayout(Owner)) SetDirty();
+    }
     protected void SetProperty<T>(ref T field, T value) {
         if (EqualityComparer<T>.Default.Equals(field, value)) return;
         field = value; SetDirty();
@@ -92,10 +95,17 @@ public abstract class HorizontalOrVerticalLayoutGroup : LayoutGroup
     [SerializeField] private bool m_ChildControlWidth = true, m_ChildControlHeight = true;
     [SerializeField] private bool m_ChildForceExpandWidth = true, m_ChildForceExpandHeight = true;
     public float spacing { get => m_Spacing; set => SetProperty(ref m_Spacing, CanvasScaler.Finite(value)); }
-    public bool childControlWidth { get => m_ChildControlWidth; set => SetProperty(ref m_ChildControlWidth, value); }
-    public bool childControlHeight { get => m_ChildControlHeight; set => SetProperty(ref m_ChildControlHeight, value); }
+    public bool childControlWidth { get => m_ChildControlWidth; set { if (m_ChildControlWidth && !value) m_Tracker.Release(DrivenTransformProperties.SizeDeltaX); SetProperty(ref m_ChildControlWidth, value); } }
+    public bool childControlHeight { get => m_ChildControlHeight; set { if (m_ChildControlHeight && !value) m_Tracker.Release(DrivenTransformProperties.SizeDeltaY); SetProperty(ref m_ChildControlHeight, value); } }
     public bool childForceExpandWidth { get => m_ChildForceExpandWidth; set => SetProperty(ref m_ChildForceExpandWidth, value); }
     public bool childForceExpandHeight { get => m_ChildForceExpandHeight; set => SetProperty(ref m_ChildForceExpandHeight, value); }
+    public override void CalculateLayoutInputHorizontal() {
+        base.CalculateLayoutInputHorizontal();
+        var wanted = DrivenTransformProperties.Anchors | DrivenTransformProperties.AnchoredPosition |
+            (childControlWidth ? DrivenTransformProperties.SizeDeltaX : DrivenTransformProperties.None) |
+            (childControlHeight ? DrivenTransformProperties.SizeDeltaY : DrivenTransformProperties.None);
+        foreach (var child in rectChildren) m_Tracker.Retain(child, wanted);
+    }
     protected virtual void GetChildSizes(RectTransform child, int axis, bool controlSize, bool forceExpand,
         out float min, out float preferred, out float flexible) {
         min = controlSize ? LayoutUtility.GetMinSize(child, axis) : child.sizeDelta[axis];

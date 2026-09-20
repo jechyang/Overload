@@ -71,6 +71,17 @@ public sealed class DrivenRectTransformTracker
     internal void BeginUpdate() {
         CheckThread(); foreach (var entry in entries.Values) entry.Wanted = DrivenTransformProperties.None;
     }
+    internal void Retain(RectTransform rect, DrivenTransformProperties wanted) {
+        CheckThread();
+        if (!entries.TryGetValue(rect.Handle, out var entry)) return;
+        Restore(entry, entry.Properties & ~wanted);
+        entry.Properties &= wanted; entry.Wanted &= wanted;
+        if (entry.Properties == DrivenTransformProperties.None) entries.Remove(rect.Handle);
+    }
+    internal void Release(DrivenTransformProperties properties) {
+        CheckThread();
+        foreach (var entry in new List<Entry>(entries.Values)) Retain(entry.Rect, entry.Properties & ~properties);
+    }
     internal void EndUpdate() {
         CheckThread();
         foreach (var key in new List<ulong>(entries.Keys)) {
@@ -84,10 +95,11 @@ public sealed class DrivenRectTransformTracker
         try {
             entry.Rect.Owner.Access.Query(entry.Rect.Handle, 61, entry.Token,
                 ((uint)properties).ToString(System.Globalization.CultureInfo.InvariantCulture));
-        } catch (InvalidOperationException) {
+        } catch (Exception) {
+            // The native host exception type lives outside ScriptCore.
             // Suppress only invalid epochs. Real restore failures must reach the host log.
             bool invalid = false;
-            try { _ = entry.Rect.rect; } catch (InvalidOperationException) { invalid = true; }
+            try { _ = entry.Rect.rect; } catch (Exception) { invalid = true; }
             if (!invalid) throw;
         }
     }

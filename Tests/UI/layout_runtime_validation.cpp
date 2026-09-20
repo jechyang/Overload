@@ -13,8 +13,10 @@
 #include <tinyxml2.h>
 #include <array>
 #include <cmath>
+#include <fstream>
 using namespace OvCore::ECS::Components;
 using OvCore::Scripting::ScriptIdentity;
+static std::vector<uint8_t> pixels;
 static bool Near(float a,float b){return std::abs(a-b)<.003f;}
 static auto& Add(OvCore::ECS::Actor& actor,const char* name){return actor.AddBehaviour(ScriptIdentity::CSharp("LayoutRuntime",name));}
 static void SetInt(OvCore::ECS::Components::Behaviour& b,const char* field,int value){
@@ -36,11 +38,13 @@ static void Render(Engine& engine,OvCore::SceneSystem::Scene& scene,const std::v
     OvCore::Rendering::RenderFrontend frontend;
     auto extracted=frontend.ExtractFrame(request);auto prepared=frontend.PrepareFrame(std::move(extracted),{});auto commands=frontend.RecordFrame(std::move(prepared));
     OvRendering::Data::RenderFrame frame;frame.Append(std::move(commands));frame.Seal();
-    auto draw=[&](auto& driver){frame.Submit(driver);frame.Wait();frame.GetCompletion().RethrowIfFailed();output.Bind();
+    auto read=[&](auto&){output.Bind();
         for(auto center:centers){uint8_t pixel[4]{};glReadPixels(int(center.x),int(center.y),1,1,GL_RGBA,GL_UNSIGNED_BYTE,pixel);Require(pixel[0]>240&&pixel[1]<5&&pixel[2]<5,"production layout center pixel");}
         uint8_t gap[4]{};glReadPixels(2,2,1,1,GL_RGBA,GL_UNSIGNED_BYTE,gap);Require(gap[0]<5&&gap[1]<5&&gap[2]<5,"production layout padding pixel");
+        const auto offset=pixels.size();pixels.resize(offset+300*200*4);glReadPixels(0,0,300,200,GL_RGBA,GL_UNSIGNED_BYTE,pixels.data()+offset);
         baregl::Framebuffer::BindDefault();};
-    if(engine.render)engine.render->Invoke(draw);else draw(*engine.driver);
+    if(engine.render){Require(glfwGetCurrentContext()==nullptr,"layout Main never acquires Render context");auto done=engine.render->Submit(std::move(frame));engine.render->WaitIdle();done.RethrowIfFailed();engine.render->Invoke(read);}
+    else{frame.Submit(*engine.driver);frame.Wait();frame.GetCompletion().RethrowIfFailed();read(*engine.driver);}
     // Resources retain their command leases until completion; destructor queues release.
 }
 int wmain(int argc,wchar_t** argv)try{
@@ -50,6 +54,8 @@ int wmain(int argc,wchar_t** argv)try{
     std::filesystem::path assembly=argv[3],project=assembly.parent_path();
     OvCore::Scripting::ScriptEngine scripts(project,project);OvCore::Global::ServiceLocator::Provide(scripts);
     Engine engine(std::wstring(argv[4])==L"render-thread");OvCore::Global::ServiceLocator::Provide(engine.scenes);
+    std::unique_ptr<baregl::ResourceExecutor> executor;
+    if(engine.render)executor=std::make_unique<baregl::ResourceExecutor>([&](std::function<void()> fn){engine.render->Invoke([&](auto&){fn();});});
     Require(scripts.LoadCSharpProject(host,project,assembly,"LayoutRuntime"),"load layout runtime fixture");
     auto& scene=*engine.scenes.GetCurrentScene();auto& root=scene.CreateActor("Grid");root.AddComponent<CCanvas>();auto& grid=Add(root,"LayoutRuntime.Grid");
     std::vector<OvCore::ECS::Actor*> children;
@@ -96,5 +102,6 @@ int wmain(int argc,wchar_t** argv)try{
     engine.scenes.UnloadCurrentScene();
     const auto collect=reinterpret_cast<OvCsCollectibleStatsFn>(host.Entry(L"Overload.ManagedHost.Bootstrap, Overload.ManagedHost",L"CollectibleStats"));
     uint64_t alive=0,collected=0;host.Check(collect(1,&alive,&collected),"collect retired layout sessions");Require(alive==0&&collected>=2,"layout trackers and observations do not retain retired project contexts");
+    std::ofstream capture(project/(std::wstring(argv[4])+L".rgba"),std::ios::binary);capture.write(reinterpret_cast<const char*>(pixels.data()),std::streamsize(pixels.size()));capture.close();
     host.Shutdown();std::puts("PASS U4 real engine geometry, pixels, driven XML, reload and closing");return 0;
 }catch(const std::exception& error){std::fprintf(stderr,"U4 runtime failed: %s\n",error.what());return 1;}
