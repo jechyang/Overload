@@ -36,6 +36,7 @@ namespace OvEditor::Panels
 		* Returns the scene used by this view
 		*/
 		virtual OvCore::SceneSystem::Scene* GetScene();
+        void Update(float deltaTime) override;
 
 	private:
 		OvCore::SceneSystem::SceneManager& m_sceneManager;

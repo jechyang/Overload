@@ -8,6 +8,8 @@
 
 #include <string>
 #include <optional>
+#include <OvWindowing/Inputs/UIPlatformInput.h>
+#include <OvWindowing/Inputs/UIInputSnapshot.h>
 
 #include <OvTools/Eventing/Event.h>
 
@@ -26,6 +28,9 @@ namespace OvWindowing
 	{
 	public:
 		/* Inputs events */
+        OvTools::Eventing::Event<Inputs::UIInputEvent> UIInputEvent;
+        std::string GetClipboardText() const;
+        void SetClipboardText(const std::string& text) const;
 		OvTools::Eventing::Event<int> KeyPressedEvent;
 		OvTools::Eventing::Event<int> KeyReleasedEvent;
 		OvTools::Eventing::Event<int> MouseButtonPressedEvent;
@@ -306,6 +311,7 @@ namespace OvWindowing
 
 		/* Callbacks binding */
 		void BindKeyCallback() const;
+        void BindCharacterCallback() const;
 		void BindMouseCallback() const;
 		void BindScrollCallback() const;
 		void BindResizeCallback() const;
@@ -330,6 +336,7 @@ namespace OvWindowing
 
 		const Context::Device& m_device;
 		GLFWwindow* m_glfwWindow;
+        std::unique_ptr<Inputs::UIPlatformInput> m_uiPlatformInput;
 
 		/* Window settings */
 		std::string m_title;

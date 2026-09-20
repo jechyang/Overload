@@ -85,6 +85,14 @@ namespace OvWindowing::Inputs
 		*/
 		void ClearEvents();
 
+        UIInputCollector& UIInput() { return m_uiInput; }
+        const Window& GetWindow() const { return m_window; }
+        const std::vector<uint64_t>& CaptureUIWords();
+        void SetUIFocused(bool focused);
+        void SetUIViewport(UIInputViewport viewport) { viewport.Convert({}); m_uiViewport = viewport; }
+        const std::string& CaptureUIClipboard() { m_uiClipboard = m_window.GetClipboardText(); if (m_uiClipboard.size() > 1048576) throw std::length_error("Clipboard limit"); return m_uiClipboard; }
+        const std::string& GetUIClipboard() const { return m_uiClipboard; }
+
 	private:
 		void OnKeyPressed(int p_key);
 		void OnKeyReleased(int p_key);
@@ -94,6 +102,13 @@ namespace OvWindowing::Inputs
 
 	private:
 		Window& m_window;
+        UIInputCollector m_uiInput;
+        std::optional<UIInputViewport> m_uiViewport;
+        std::vector<uint64_t> m_uiWords;
+        std::string m_uiClipboard;
+        double m_uiLastTime = 0;
+        bool m_uiGameFocused = true;
+        OvTools::Eventing::ListenerID m_uiInputListener;
 
 		OvTools::Eventing::ListenerID m_keyPressedListener;
 		OvTools::Eventing::ListenerID m_keyReleasedListener;

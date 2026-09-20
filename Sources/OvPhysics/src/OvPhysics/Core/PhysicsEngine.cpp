@@ -1,3 +1,6 @@
+#include <cmath>
+#include <algorithm>
+#include <stdexcept>
 /**
 * @project: Overload
 * @author: Overload Tech.
@@ -283,4 +286,27 @@ bool OvPhysics::Core::PhysicsEngine::CollisionCallback(btManifoldPoint& cp, cons
 void OvPhysics::Core::PhysicsEngine::SetCollisionCallback()
 {
 	gContactAddedCallback = &PhysicsEngine::CollisionCallback;
+}
+
+std::vector<OvPhysics::Core::PhysicsEngine::QueryHit> OvPhysics::Core::PhysicsEngine::RaycastAll(OvMaths::FVector3 origin, OvMaths::FVector3 direction, float distance, int mask)
+{
+    if (m_queryThread != std::this_thread::get_id()) throw std::logic_error("Physics queries require their owner thread");
+    for (float value : {origin.x,origin.y,origin.z,direction.x,direction.y,direction.z,distance})
+        if (!std::isfinite(value)) throw std::invalid_argument("Non-finite physics ray");
+    float length = std::sqrt(direction.x*direction.x+direction.y*direction.y+direction.z*direction.z);
+    if (length <= 1e-8f || distance < 0) throw std::invalid_argument("Invalid physics ray");
+    direction /= length;
+    const auto start = Tools::Conversion::ToBtVector3(origin);
+    const auto end = Tools::Conversion::ToBtVector3(origin+direction*distance);
+    btCollisionWorld::AllHitsRayResultCallback callback(start,end);
+    callback.m_collisionFilterMask = mask; m_world->rayTest(start,end,callback);
+    std::vector<QueryHit> result;
+    for (int i = 0; i < callback.m_collisionObjects.size(); ++i)
+    {
+        auto* object = static_cast<Entities::PhysicalObject*>(callback.m_collisionObjects[i]->getUserPointer());
+        const auto& p = callback.m_hitPointWorld[i]; const auto& n = callback.m_hitNormalWorld[i];
+        if (object) result.push_back({object,callback.m_hitFractions[i]*distance,{p.x(),p.y(),p.z()},{n.x(),n.y(),n.z()}});
+    }
+    std::stable_sort(result.begin(),result.end(),[](const auto& a,const auto& b) { return a.distance < b.distance; });
+    return result;
 }

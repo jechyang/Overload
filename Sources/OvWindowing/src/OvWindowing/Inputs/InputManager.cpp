@@ -5,11 +5,15 @@
 */
 
 #include <GLFW/glfw3.h>
+#include <OvWindowing/Inputs/UIInputEncoding.h>
 
 #include "OvWindowing/Inputs/InputManager.h"
 
-OvWindowing::Inputs::InputManager::InputManager(Window& p_window) : m_window(p_window)
+OvWindowing::Inputs::InputManager::InputManager(Window& p_window) : m_window(p_window), m_scrollData{0, 0}
 {
+	m_uiInputListener = m_window.UIInputEvent.AddListener([this](UIInputEvent event) { if (event.kind == UIInputKind::Focus && event.id != 0 && !m_uiGameFocused) event.id = 0; m_uiInput.Push(std::move(event)); });
+    m_uiInput.Push({UIInputKind::Focus, m_window.IsFocused() ? 1 : 0});
+    const auto mouse = GetMousePosition(); m_uiInput.Push({UIInputKind::PointerMove, 0, {mouse.first, mouse.second}});
 	m_keyPressedListener = m_window.KeyPressedEvent.AddListener(std::bind(&InputManager::OnKeyPressed, this, std::placeholders::_1));
 	m_keyReleasedListener = m_window.KeyReleasedEvent.AddListener(std::bind(&InputManager::OnKeyReleased, this, std::placeholders::_1));
 	m_mouseButtonPressedListener = m_window.MouseButtonPressedEvent.AddListener(std::bind(&InputManager::OnMouseButtonPressed, this, std::placeholders::_1));
@@ -19,6 +23,7 @@ OvWindowing::Inputs::InputManager::InputManager(Window& p_window) : m_window(p_w
 
 OvWindowing::Inputs::InputManager::~InputManager()
 {
+	m_window.UIInputEvent.RemoveListener(m_uiInputListener);
 	m_window.KeyPressedEvent.RemoveListener(m_keyPressedListener);
 	m_window.KeyReleasedEvent.RemoveListener(m_keyReleasedListener);
 	m_window.MouseButtonPressedEvent.RemoveListener(m_mouseButtonPressedListener);
@@ -82,6 +87,8 @@ std::pair<double, double> OvWindowing::Inputs::InputManager::GetMouseScroll() co
 
 void OvWindowing::Inputs::InputManager::ClearEvents()
 {
+	CaptureUIWords(); // Drain even when no UI consumer is active.
+    m_uiWords.clear();
 	m_keyEvents.clear();
 	m_mouseButtonEvents.clear();
 	m_scrollData = { 0.0, 0.0 };
@@ -109,5 +116,27 @@ void OvWindowing::Inputs::InputManager::OnMouseButtonReleased(int p_button)
 
 void OvWindowing::Inputs::InputManager::OnMouseScroll(double p_xOffset, double p_yOffset)
 {
-	m_scrollData = { p_xOffset, p_yOffset };
+	m_scrollData.first += p_xOffset; m_scrollData.second += p_yOffset;
+}
+
+const std::vector<uint64_t>& OvWindowing::Inputs::InputManager::CaptureUIWords()
+{
+    if (m_uiWords.empty())
+    {
+        const auto size = m_window.GetSize(); const auto pixels = m_window.GetFramebufferSize();
+        UIInputViewport viewport = m_uiViewport.value_or(UIInputViewport{{}, {double(size.first),double(size.second)},
+            {size.first ? double(pixels.first)/size.first : 1, size.second ? double(pixels.second)/size.second : 1}});
+        if (viewport.extent.x <= 0 || viewport.extent.y <= 0) viewport.extent = {1,1};
+        const double time = glfwGetTime();
+        m_uiWords = EncodeUIInput(*m_uiInput.Capture(viewport,time,m_uiLastTime > 0 ? time-m_uiLastTime : 0));
+        m_uiLastTime = time;
+    }
+    return m_uiWords;
+}
+
+void OvWindowing::Inputs::InputManager::SetUIFocused(bool focused)
+{
+    if (m_uiGameFocused == focused) return;
+    m_uiGameFocused = focused;
+    m_uiInput.Push({UIInputKind::Focus, focused && m_window.IsFocused() ? 1 : 0});
 }

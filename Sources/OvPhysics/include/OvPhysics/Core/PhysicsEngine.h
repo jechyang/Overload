@@ -7,6 +7,7 @@
 #pragma once
 
 #include <map>
+#include <thread>
 #include <optional>
 #include <vector>
 
@@ -62,7 +63,10 @@ namespace OvPhysics::Core
 		* Defines the world gravity to apply
 		* @param p_gravity
 		*/
-		void SetGravity(const OvMaths::FVector3& p_gravity);
+		struct QueryHit { Entities::PhysicalObject* object; float distance; OvMaths::FVector3 point, normal; };
+        std::vector<QueryHit> RaycastAll(OvMaths::FVector3 origin, OvMaths::FVector3 direction, float distance, int mask = -1);
+
+        void SetGravity(const OvMaths::FVector3& p_gravity);
 
 		/**
 		* Returns the current world gravity
@@ -88,7 +92,8 @@ namespace OvPhysics::Core
 		void SetCollisionCallback();
 
 	private:
-		/* Bullet world */
+		const std::thread::id m_queryThread = std::this_thread::get_id();
+        /* Bullet world */
 		std::unique_ptr<btDynamicsWorld> m_world;
 		std::unique_ptr<btDispatcher> m_dispatcher;
 		std::unique_ptr<btCollisionConfiguration> m_collisionConfig;

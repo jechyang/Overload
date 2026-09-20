@@ -39,6 +39,7 @@ OvWindowing::Window::Window(const Context::Device& p_device, const Settings::Win
 
 	/* Callback binding */
 	BindKeyCallback();
+    BindCharacterCallback();
 	BindMouseCallback();
 	BindScrollCallback();
 	BindIconifyCallback();
@@ -49,6 +50,7 @@ OvWindowing::Window::Window(const Context::Device& p_device, const Settings::Win
 	BindContentScaleCallback();
 	BindMoveCallback();
 	BindFocusCallback();
+    m_uiPlatformInput = std::make_unique<Inputs::UIPlatformInput>(*this);
 
 	/* Event listening */
 	ResizeEvent.AddListener(std::bind(&Window::OnResize, this, std::placeholders::_1, std::placeholders::_2));
@@ -57,6 +59,8 @@ OvWindowing::Window::Window(const Context::Device& p_device, const Settings::Win
 
 OvWindowing::Window::~Window()
 {
+	m_uiPlatformInput.reset();
+    __WINDOWS_MAP.erase(m_glfwWindow);
 	glfwDestroyWindow(m_glfwWindow);
 }
 
@@ -394,6 +398,7 @@ void OvWindowing::Window::BindKeyCallback() const
 
 		if (windowInstance)
 		{
+			if (p_key >= 0) windowInstance->UIInputEvent.Invoke({p_action == GLFW_RELEASE ? Inputs::UIInputKind::KeyUp : p_action == GLFW_REPEAT ? Inputs::UIInputKind::KeyRepeat : Inputs::UIInputKind::KeyDown, p_key});
 			if (p_action == GLFW_PRESS)
 				windowInstance->KeyPressedEvent.Invoke(p_key);
 
@@ -413,6 +418,8 @@ void OvWindowing::Window::BindMouseCallback() const
 
 		if (windowInstance)
 		{
+			double x, y; glfwGetCursorPos(p_window, &x, &y);
+            windowInstance->UIInputEvent.Invoke({p_action == GLFW_RELEASE ? Inputs::UIInputKind::PointerUp : Inputs::UIInputKind::PointerDown, p_button, {x,y}});
 			if (p_action == GLFW_PRESS)
 				windowInstance->MouseButtonPressedEvent.Invoke(p_button);
 
@@ -433,6 +440,7 @@ void OvWindowing::Window::BindScrollCallback() const
 		if (windowInstance)
 		{
 			windowInstance->MouseScrollEvent.Invoke(p_xOffset, p_yOffset);
+            windowInstance->UIInputEvent.Invoke({Inputs::UIInputKind::Scroll, 0, {p_xOffset,p_yOffset}});
 		}
 	};
 
@@ -492,7 +500,8 @@ void OvWindowing::Window::BindCursorMoveCallback() const
 
 		if (windowInstance)
 		{
-			windowInstance->CursorMoveEvent.Invoke(static_cast<int16_t>(p_x), static_cast<int16_t>(p_y));
+			windowInstance->UIInputEvent.Invoke({Inputs::UIInputKind::PointerMove, 0, {p_x,p_y}});
+            windowInstance->CursorMoveEvent.Invoke(static_cast<int16_t>(p_x), static_cast<int16_t>(p_y));
 		}
 	};
 
@@ -541,7 +550,8 @@ void OvWindowing::Window::BindFocusCallback() const
 
 		if (windowInstance)
 		{
-			if (p_focused == GLFW_TRUE)
+			windowInstance->UIInputEvent.Invoke({Inputs::UIInputKind::Focus, p_focused});
+            if (p_focused == GLFW_TRUE)
 				windowInstance->GainFocusEvent.Invoke();
 
 			if (p_focused == GLFW_FALSE)
@@ -592,4 +602,20 @@ void OvWindowing::Window::UpdateSizeLimit() const
 		static_cast<int>(m_maximumSize.first),
 		static_cast<int>(m_maximumSize.second)
 	);
+}
+
+void OvWindowing::Window::BindCharacterCallback() const
+{
+    glfwSetCharCallback(m_glfwWindow, [](GLFWwindow* window, unsigned int scalar) {
+        if (auto* instance = FindInstance(window)) instance->UIInputEvent.Invoke({Inputs::UIInputKind::Character, static_cast<int32_t>(scalar)});
+    });
+}
+std::string OvWindowing::Window::GetClipboardText() const
+{
+    const char* text = glfwGetClipboardString(m_glfwWindow); return text ? text : "";
+}
+void OvWindowing::Window::SetClipboardText(const std::string& text) const
+{
+    if (text.size() > 1048576 || text.find('\0') != std::string::npos) throw std::invalid_argument("Invalid clipboard text");
+    glfwSetClipboardString(m_glfwWindow, text.c_str());
 }

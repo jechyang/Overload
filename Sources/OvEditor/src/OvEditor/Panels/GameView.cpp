@@ -40,3 +40,17 @@ OvCore::SceneSystem::Scene* OvEditor::Panels::GameView::GetScene()
 	return m_sceneManager.GetCurrentScene();
 }
 
+
+void OvEditor::Panels::GameView::Update(float deltaTime)
+{
+    AView::Update(deltaTime);
+    auto& input = *EDITOR_CONTEXT(inputManager);
+    const auto [width,height] = GetSafeSize();
+    const auto origin = ImGui::GetMainViewport()->Pos;
+    if (width && height)
+        input.SetUIViewport({{m_position.x-origin.x,m_position.y-origin.y+ImGui::GetFrameHeight()},
+            {double(width),double(height)}, {1,1}});
+    // The AView render target currently uses GetSafeSize pixels. Its scale to
+    // ImGui content is 1 even on high-DPI desktops; never multiply OS DPI twice.
+    input.SetUIFocused(IsOpened() && IsVisible() && IsFocused());
+}
