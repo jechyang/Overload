@@ -5,10 +5,11 @@
 
 ## 状态
 
-F 实现及核心原生/CLR/GPU 联合矩阵已通过，**统一回归收口仍待 A 确认，尚不更新总矩阵为完成**。
-B 第四轮标准 Debug 构建通过；F 在该新库上再次完整验证通过。F 标准 UI/managed/scripting 通过。
-editor-camera 在并行编辑器任务的 OS 鼠标焦点断言失败，A 已协调对应任务修订；
-最终总矩阵/统一回归由 A 收口。本提交为 A 授权的 F 已验收里程碑，A/B 共享依赖尚待统一提交。
+F 实现及核心原生/CLR/GPU 联合矩阵已通过，并已在 `cf675b5` 接入提交后的 A/B 共享依赖。
+B 第四轮标准 Debug 构建通过；F 在该新库上再次完整验证通过，A 最终统一回归也已通过。
+editor-camera 的 8 组像素回归通过；隐藏窗口 OS cursor warp 检查明确 SKIP，
+导航按钮另由编辑器任务的实际 ImGui event replay 验证。最终逐类型兼容审核仍由 A 负责，
+本文件不把尚待审核的总矩阵条目直接改成完成。
 
 ## 已实现
 
@@ -112,13 +113,19 @@ node Tests/UI/run-input-validation.mjs --runtime
   `Examples/ManagedUI/.overload/csharp/build.xml`。后续第四轮统一 generation 由 A 负责。
 - A 最终第四轮 host generation：`3edf3675-0c70-424c-bd9c-8755eb9b6964`，
   evidence `Build/UIValidation/u1-final-example-generation.json`。
+- A 最终冻结后的完整集成回归：`Build/UIValidation/Debug-GN2U0m/result.json`，success=true。
+- 最终示例 generation 更新为 `0c94c9a2-b47a-442d-b68f-30d86ce401af`；上述最终 generation receipt 已更新。
+- 最终双 EXE：size=43059712，mtime=2026-09-20T17:45:07.193Z，
+  SHA256=`35d4d5a8bc2c2da8729688c5259c5fcb841b5bb854c42cd833414dc64b745fc9`，
+  证据 `Build/UIValidation/u1-final-editor-binaries.json`。
+- editor-camera：`Build/JobsValidation/Skinning/Debug-editor-camera-editor/result.json`。
+  8 组像素验证通过；OS cursor warp 跳过原因及 ImGui 回放替代证据见 `U1-PROGRESS.zh-CN.md`。
 
 每个 F 运行目录保存命令、编译器、commit 和退出码。
 
 ## 尚待验收/已知适配限制
 
-- 完整标准 Debug、UI/managed/scripting、editor-camera 回归、两份 OvEditor.exe 的时间/大小/SHA256，
-  以及 ManagedUI host generation；由共享构建窗口串行执行，F 不使用过期库伪验收。
+- 统一 Debug、UI/managed/scripting、双 EXE 及示例 generation 已收口；editor-camera 保留上述明确的系统鼠标跳过项。
 - 当前核心真实 CLR/GPU 联合矩阵已过；嵌套遮罩更深组合由 B 的 U5 矩阵与主线完整集成继续覆盖。
 - 桌面真实 WM_IME/WM_TOUCH 注入与剪贴板轮回（目前是生产源编译和确定性事件载荷验证）。
 - 二维 backend 是 query-only oriented box/circle，不承担完整 2D rigid-body simulation。
@@ -135,5 +142,5 @@ node Tests/UI/run-input-validation.mjs --runtime
   `fixtures/InputEvents.cs`、`fixtures/NativeInputContracts.cs`、本进度文件。
 - A 持有且已接入：GameplayBridge 总分发 80–88、Actor.IsAlive、UIBehaviour 非 RectTransform guard。
 - B 持有且已接入：GraphicHitSource/op53/Frame 正式命中。
-- 依赖 A/B 当前共享工作区正式实现，不能把单独 F commit 声称为无需上游即可构建。
+- 集成顶点为 `cf675b5`，已包含 F `aa6467e`、B `d8acb1f` 与 A 共享接口；单独 F commit 不应脱离上游使用。
 - 未改总 runner/总矩阵、AView、SceneView、CameraController 或 Button/InputField 控件。
