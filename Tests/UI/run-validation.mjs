@@ -7,18 +7,15 @@ import {fileURLToPath} from 'node:url';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const config=process.argv[2]||'Debug';
 if(!['Debug','Release'].includes(config))throw Error('Expected Debug or Release');
-const generated=path.join(root,'Build/Generated/Reflection/x86_64-pc-windows-msvc',config);
-const args=JSON.parse(fs.readFileSync(path.join(generated,'OvCore/compile_commands.json'),'utf8'))[0].arguments;
-const system=args.filter(x=>x.startsWith('/clang:C:/')).map(x=>x.slice(7));
-const msvc=path.dirname(system.find(x=>x.includes('/MSVC/')&&x.endsWith('/include')));
-const sdkInclude=system.find(x=>x.endsWith('/ucrt'));
-const sdkVersion=path.basename(path.dirname(sdkInclude));
-const sdk=path.resolve(sdkInclude,'../../..');
-const bin=path.join(msvc,'bin/Hostx64/x64');
 const parent=path.join(root,'Build/UIValidation'); fs.mkdirSync(parent,{recursive:true});
 const output=fs.mkdtempSync(path.join(parent,config+'-'));
 const checks=[];
-const env={...process.env,VSLANG:'1033',LIB:[path.join(msvc,'lib/x64'),...['ucrt','um'].map(x=>path.join(sdk,'Lib',sdkVersion,x,'x64'))].join(';')};
+const env={...process.env,VSLANG:'1033'};
+const stages=Array.from({length:14},(_,i)=>({id:'U'+i,flag:'--u'+i,requested:process.argv.includes('--u'+i),status:'not-requested'}));
+if(process.argv.includes('--matrix-only')) stages[0].requested=true;
+const revision=cp.spawnSync('git',['-c',`safe.directory=${root.replaceAll('\\','/')}`,'rev-parse','HEAD'],{cwd:root,encoding:'utf8',windowsHide:true});
+const evidence={config,commit:revision.status===0?revision.stdout.trim():null,command:[process.execPath,...process.argv.slice(1)],node:process.version,
+    scope:process.argv.includes('--matrix-only')?'matrix-only':'runtime',renderModes:[],stages,checks};
 function run(name,exe,argv) {
     const log=path.join(output,name+'.log'),fd=fs.openSync(log,'w');
     const r=cp.spawnSync(exe,argv,{cwd:root,env,windowsHide:true,stdio:['ignore',fd,fd],timeout:120000});
@@ -27,6 +24,31 @@ function run(name,exe,argv) {
     console.log('PASS '+name);
 }
 try {
+    const allowed=new Set(['--managed','--scripting-regression','--matrix-only',...stages.map(s=>s.flag)]);
+    for(const option of process.argv.slice(3)) if(!allowed.has(option)) throw Error('Unknown UI validation option: '+option);
+    if(process.argv.includes('--scripting-regression')&&!process.argv.includes('--managed')) throw Error('--scripting-regression requires --managed');
+    for(const stage of stages.filter(s=>s.requested)) {
+        stage.status='running';
+        if(stage.id!=='U0') { stage.status='unavailable'; throw Error(`${stage.flag} is reserved; ${stage.id} acceptance is not implemented yet`); }
+        run('U0-reference',process.execPath,[path.join(root,'Tools/UI/reference-ugui.mjs'),'--check']);
+        run('U0-matrix',process.execPath,[path.join(root,'Tests/UI/runtime-matrix.test.mjs')]);
+        stage.status='passed';
+    }
+    if(process.argv.includes('--matrix-only')) {
+        fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({...evidence,success:true},null,2));
+        console.log('Evidence: '+output); process.exit(0);
+    }
+    const generated=path.join(root,'Build/Generated/Reflection/x86_64-pc-windows-msvc',config);
+    const args=JSON.parse(fs.readFileSync(path.join(generated,'OvCore/compile_commands.json'),'utf8'))[0].arguments;
+    const system=args.filter(x=>x.startsWith('/clang:C:/')).map(x=>x.slice(7));
+    const msvc=path.dirname(system.find(x=>x.includes('/MSVC/')&&x.endsWith('/include')));
+    const sdkInclude=system.find(x=>x.endsWith('/ucrt'));
+    const sdkVersion=path.basename(path.dirname(sdkInclude));
+    const sdk=path.resolve(sdkInclude,'../../..');
+    const bin=path.join(msvc,'bin/Hostx64/x64');
+    env.LIB=[path.join(msvc,'lib/x64'),...['ucrt','um'].map(x=>path.join(sdk,'Lib',sdkVersion,x,'x64'))].join(';');
+    evidence.compiler=path.join(bin,'cl.exe');
+    evidence.renderModes=['default','render-thread'];
     const includes=[...args.filter(x=>(x.startsWith('/I')||x.startsWith('/D'))&&!x.includes('OV_REFLECTION_ANALYSIS')),
         ...system.map(x=>'/I'+x),'/I'+root,'/I'+generated,
         ...['glfw/include','bullet3/src'].map(x=>'/I'+path.join(root,'Dependencies',x))];
@@ -42,6 +64,7 @@ try {
     if (process.argv.includes('--managed')) {
         const lock=JSON.parse(fs.readFileSync(path.join(root,'Tools/OvCSharp/toolchain.lock.json'),'utf8'));
         const runtime=path.join(root,'Build/Toolchains/dotnet-'+lock.sdk_version);
+        evidence.runtime={sdk:lock.sdk_version,version:lock.runtime_version,path:runtime};
         const managed=path.join(output,'managed'), project=path.join(output,'project');
         fs.mkdirSync(project,{recursive:true});
         run('managed-build',process.execPath,[path.join(root,'Scripts/Windows/BuildCSharp.mjs'),'--compat',
@@ -95,9 +118,10 @@ try {
             }
         }
     }
-    fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({success:true,config,checks},null,2));
+    fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({...evidence,success:true},null,2));
     console.log('Evidence: '+output);
 } catch(error) {
-    fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({success:false,config,checks,error:String(error)},null,2));
+    for(const stage of stages) if(stage.status==='running') stage.status='failed';
+    fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({...evidence,success:false,error:String(error)},null,2));
     console.error(String(error)); process.exitCode=1;
 }

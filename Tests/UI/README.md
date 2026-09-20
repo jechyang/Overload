@@ -26,3 +26,24 @@ Checks cover:
 - Existing C#/Lua lifecycle regression when --scripting-regression is requested.
 
 See [the compatibility map](UGUI-COMPATIBILITY.zh-CN.md) for the pinned upstream reference, module ownership and remaining differences. No automated Unity-vs-Overload differential certification is claimed.
+
+The complete pinned runtime inventory is [ugui-runtime-matrix.json](ugui-runtime-matrix.json).
+It covers 84 source files and 178 declarations, including 148 publicly accessible
+types, nested enums/delegates, obsolete interfaces and internal helpers. Existing
+baseline implementations remain `partial`; `pending` denotes unimplemented work.
+Neither status is a compatibility claim.
+
+    node Tools/UI/reference-ugui.mjs --check
+    node Tests/UI/run-validation.mjs Debug --matrix-only
+    node Tests/UI/run-validation.mjs Debug --u0 --managed --scripting-regression
+
+`--matrix-only` checks the pinned inventory and negative schema tests without a
+native compiler or GPU; its evidence explicitly says `scope: matrix-only` and
+cannot substitute for runtime acceptance. `--u0` adds these checks to the native
+and optional managed regression. Flags `--u1` through `--u13` are reserved and
+fail explicitly until their acceptance suites are implemented. Unknown flags
+also fail. Each result records the command, commit, available compiler/runtime,
+requested stages, checks and exit codes in a unique evidence directory.
+`node Tools/UI/reference-ugui.mjs --check --complete` additionally rejects any
+pending, partial or blocked type or engine dependency; use it for the final U13
+completion gate.

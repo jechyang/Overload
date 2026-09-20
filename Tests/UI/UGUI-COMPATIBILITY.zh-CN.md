@@ -8,6 +8,27 @@
 
 本地参考源码位于 `Build/Reference/uGUI`，保留原 LICENSE。`node Tools/UI/reference-ugui.mjs --check` 可校验版本和工作区，逐文件索引位于 `Build/Reference/ugui-files.json`。参考许可证为 Unity Companion License。
 
+## U0 完整运行时清单
+
+机器可读清单位于 `Tests/UI/ugui-runtime-matrix.json`，覆盖参考提交 `UI` 和
+`EventSystem` 下的全部 84 个运行时文件、178 个类型声明（其中 148 个公开可访问）。
+清单包含嵌套事件、枚举、委托、obsolete 接口和内部辅助类型；不将 Properties 下的
+程序集属性文件计为运行时类型文件。每项记录对应 Overload 类型、实施阶段、状态、
+测试编号及差异。现有基础能力保持 `partial`，尚未开始的实现使用 `pending`，均不计入完成。
+
+`reference-ugui.mjs --check` 同时验证固定提交、工作区、文件 SHA-256 和声明覆盖率。
+`node Tests/UI/run-validation.mjs Debug --matrix-only` 验证漏项、重复项、未知状态、
+缺测试的 implemented/adapted、错误声明和不完整 blocker 均会被拒绝。
+该命令只证明清单完整性，不代表运行时兼容验收通过。
+
+固定版本的 `IClipRegion.cs` 实际声明的是 `IClipper` 和 `IClippable`，没有
+`IClipRegion` 类型；`CoroutineTween` 是命名空间/文件，并非独立类型。
+`BaseVertexEffect`、`IVertexModifier` 等已过时类型也保留在清单中，避免遗漏。
+UnityEngine 外部依赖（如 UIVertex、DrivenRectTransformTracker 和移动软键盘）单列，
+后续仍须实现或明确适配，不能借文件范围排除完成条件。
+`node Tools/UI/reference-ugui.mjs --check --complete` 会拒绝任何仍为 pending、partial
+或 blocked 的类型及外部依赖，作为 U13 的最终完成闸门。
+
 ## 当前代码归属
 
 | 功能 | 实现位置 |
