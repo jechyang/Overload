@@ -15,10 +15,12 @@ public abstract class Behaviour
         if (subscriptionsClosed) { subscription.Dispose(); throw new InvalidOperationException("Behaviour subscription scope closed"); }
         subscriptions.Add(subscription); return subscription;
     }
+    internal T OwnSubscription<T>(T subscription) where T : IDisposable => TrackSubscription(subscription);
+    internal void DisownSubscription(IDisposable subscription) => subscriptions.Remove(subscription);
     internal void ReleaseSubscriptions(Action<string> log) {
         subscriptionsClosed = true;
-        foreach (IDisposable subscription in subscriptions) try { subscription.Dispose(); } catch (Exception ex) { log("Subscription cleanup: " + ex); }
-        subscriptions.Clear();
+        IDisposable[] pending = subscriptions.ToArray(); subscriptions.Clear();
+        foreach (IDisposable subscription in pending) try { subscription.Dispose(); } catch (Exception ex) { log("Subscription cleanup: " + ex); }
     }
     public Actor Owner => owner ?? throw new InvalidOperationException("Owner is unavailable during construction");
     public Transform Transform => Owner.Transform;
