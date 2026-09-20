@@ -119,7 +119,8 @@ bool OvCore::SceneSystem::SceneManager::LoadSceneFromMemory(tinyxml2::XMLDocumen
     }
 	if (!p_doc.Error())
 	{
-		tinyxml2::XMLNode* root = p_doc.FirstChild();
+		// XML declarations and comments may precede the document element.
+		tinyxml2::XMLElement* root = p_doc.RootElement();
 		if (root)
 		{
 			tinyxml2::XMLNode* sceneNode = root->FirstChildElement("scene");

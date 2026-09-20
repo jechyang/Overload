@@ -1,0 +1,69 @@
+<root>
+  <scene>
+    <actors>
+      <actor>
+        <name>Main Camera</name><tag></tag><active>true</active><id>1</id><guid>1000001</guid>
+        <prefab_source></prefab_source><prefab_node_guid>0</prefab_node_guid><parent>0</parent>
+        <components>
+          <component><type>class OvCore::ECS::Components::CTransform</type><data>
+            <position><x>0</x><y>3</y><z>8</z></position>
+            <rotation><x>0</x><y>0.984808</y><z>-0.173648</z><w>0</w></rotation>
+            <scale><x>1</x><y>1</y><z>1</z></scale>
+          </data></component>
+          <component><type>class OvCore::ECS::Components::CCamera</type><data>
+            <fov>45</fov><size>5</size><near>0.1</near><far>300</far>
+            <clear_color><x>0.035</x><y>0.055</y><z>0.085</z></clear_color>
+            <frustum_geometry_culling>true</frustum_geometry_culling><frustum_light_culling>true</frustum_light_culling><projection_mode>1</projection_mode>
+          </data></component>
+        </components>
+        <behaviours/>
+      </actor>
+      <actor>
+        <name>Directional Light</name><tag></tag><active>true</active><id>2</id><guid>1000002</guid>
+        <prefab_source></prefab_source><prefab_node_guid>0</prefab_node_guid><parent>0</parent>
+        <components>
+          <component><type>class OvCore::ECS::Components::CTransform</type><data>
+            <position><x>0</x><y>10</y><z>0</z></position>
+            <rotation><x>0.5</x><y>0</y><z>0</z><w>0.866025</w></rotation>
+            <scale><x>1</x><y>1</y><z>1</z></scale>
+          </data></component>
+          <component><type>class OvCore::ECS::Components::CDirectionalLight</type><data>
+            <color><x>1</x><y>0.96</y><z>0.88</z></color><intensity>2</intensity><cast_shadows>false</cast_shadows>
+            <shadow_area_size>50</shadow_area_size><shadow_follow_camera>false</shadow_follow_camera><shadow_map_resolution>1024</shadow_map_resolution>
+          </data></component>
+        </components>
+        <behaviours/>
+      </actor>
+      <actor>
+        <name>CSharp Moving Box</name><tag>csharp-test</tag><active>true</active><id>3</id><guid>1000003</guid>
+        <prefab_source></prefab_source><prefab_node_guid>0</prefab_node_guid><parent>0</parent>
+        <components>
+          <component><type>class OvCore::ECS::Components::CTransform</type><data>
+            <position><x>-1</x><y>0</y><z>0</z></position>
+            <rotation><x>0</x><y>0</y><z>0</z><w>1</w></rotation>
+            <scale><x>1</x><y>1</y><z>1</z></scale>
+          </data></component>
+          <component><type>class OvCore::ECS::Components::CModelRenderer</type><data>
+            <model>:Models/Cube.fbx</model><frustum_behaviour>0</frustum_behaviour>
+            <custom_bounding_sphere_position><x>0</x><y>0</y><z>0</z></custom_bounding_sphere_position><custom_bounding_sphere_radius>1</custom_bounding_sphere_radius>
+          </data></component>
+          <component><type>class OvCore::ECS::Components::CMaterialRenderer</type><data>
+            <materials><material>:Materials/Default.ovmat</material></materials><visibility_flags>7</visibility_flags>
+          </data></component>
+          <component><type>class OvCore::ECS::Components::CPhysicalBox</type><data>
+            <is_trigger>false</is_trigger><is_kinematic>true</is_kinematic><bounciness>0</bounciness><mass>0</mass><friction>0.5</friction>
+            <linear_factor><x>1</x><y>1</y><z>1</z></linear_factor><angular_factor><x>1</x><y>1</y><z>1</z></angular_factor><collision_mode>0</collision_mode>
+            <size><x>1</x><y>1</y><z>1</z></size>
+          </data></component>
+        </components>
+        <behaviours>
+          <behaviour>
+            <type>Gameplay.MoveAndResize</type>
+            <script_identity backend="csharp" assembly="GameScripts" type="Gameplay.MoveAndResize" id=""></script_identity>
+            <data/>
+          </behaviour>
+        </behaviours>
+      </actor>
+    </actors>
+  </scene>
+</root>

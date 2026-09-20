@@ -4,6 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { resolvePython } from './CSharpBuildTools.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const hash = p => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 const xml = s => String(s).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;');
@@ -37,7 +38,8 @@ try {
   while(args.length) {const key=args.shift();if(!['--project','--cache','--python','--configuration','--result'].includes(key)||!args.length)throw Error('Invalid argument '+key);options[key.slice(2)]=args.shift();}
   const configuration=options.configuration;
   if(!['Debug','Release'].includes(configuration))throw Error('Expected Debug or Release');
-  for(const key of ['project','cache','python','result'])if(!path.isAbsolute(options[key]||''))throw Error(key+' must be absolute');
+  for(const key of ['project','cache','result'])if(!path.isAbsolute(options[key]||''))throw Error(key+' must be absolute');
+  options.python=resolvePython(root,options.python);
   result=options.result;
   const project=fs.realpathSync(options.project), projectFile=path.join(project,'GameScripts.csproj');
   // Cache keys are based on canonical project identity, independent of display name.
@@ -58,7 +60,7 @@ try {
       ...files(path.join(root,'Sources/OvManaged')).filter(p=>/\.(cs|csproj|json|config)$/i.test(p)),
       path.join(root,'Build/Generated/Reflection/x86_64-pc-windows-msvc',configuration,'OvCore/Script.generated.cs'),
       path.join(root,'global.json'),path.join(root,'Tools/OvCSharp/toolchain.lock.json'),
-      path.join(root,'Scripts/Windows/BuildCSharp.mjs'),fileURLToPath(import.meta.url)];
+      path.join(root,'Scripts/Windows/BuildCSharp.mjs'),path.join(root,'Scripts/Windows/CSharpBuildTools.mjs'),fileURLToPath(import.meta.url)];
     const fingerprint=()=>crypto.createHash('sha256').update(JSON.stringify(inputFiles().map(p=>[p,hash(p)]))).digest('hex');
     const before=fingerprint(), latest=path.join(cache,'latest.json');
     const finish=(generation,unchanged)=>atomic(result,`<build configuration="${configuration}" generation="${xml(generation)}" unchanged="${unchanged}"/>`);

@@ -28,3 +28,6 @@ imgui.ini
 # Standalone resident managed host builds
 /Sources/OvManaged/**/bin/
 /Sources/OvManaged/**/obj/
+
+# Project-local script build generations, diagnostics and requests
+**/.overload/

@@ -49,23 +49,51 @@ namespace OvEditor::Core
     CSharpProject::CSharpProject(Context& context):m_context(context)
     {
         auto& settings=context.projectSettings;
+        ResolveTools();
+        watch=settings.GetOrDefault<bool>("csharp_auto_build",true);
+        hotReload=settings.GetOrDefault<bool>("csharp_hot_reload",false);
+        m_configuration=settings.GetOrDefault<std::string>("csharp_configuration","Debug");
+        if(m_configuration!="Debug"&&m_configuration!="Release")m_configuration="Debug";
+        const auto assembly=Paths::FromUtf8(settings.GetOrDefault<std::string>("csharp_project_assembly",""));
+        if(context.csharpHost && !context.scriptEngine->CSharpTypes().empty() && assembly.filename()=="GameScripts.dll"&&fs::exists(assembly.parent_path()/"manifest.xml"))m_applied=assembly.parent_path();
+        m_snapshot=Snapshot();
+        if(watch&&(fs::exists(context.projectFolder/"GameScripts.csproj")||!m_snapshot.empty()))RequestBuild(m_configuration);
+    }
+    void CSharpProject::ResolveTools()
+    {
+        // Read fresh settings on each retry so fixing a tool path needs no restart.
+        auto& settings=m_context.projectSettings;
+        settings.Reload();
         m_engine=Paths::FromUtf8(settings.GetOrDefault<std::string>("csharp_engine_root",""));
         if(m_engine.empty()) {
             auto p=OvCore::Scripting::CSharp::RuntimeHost::ExecutableDirectory();
             while(!p.empty()){if(fs::exists(p/"Scripts/Windows/BuildGameScripts.mjs")){m_engine=p;break;}auto parent=p.parent_path();if(parent==p)break;p=parent;}
         }
         m_node=Paths::FromUtf8(settings.GetOrDefault<std::string>("csharp_node",Utf8(FindExe(L"node.exe"))));
-        m_python=Paths::FromUtf8(settings.GetOrDefault<std::string>("csharp_python",Utf8(FindExe(L"python.exe"))));
-        m_cache=Paths::FromUtf8(settings.GetOrDefault<std::string>("csharp_build_cache",Utf8(context.projectFolder/".overload/csharp")));
-        const auto assembly=Paths::FromUtf8(settings.GetOrDefault<std::string>("csharp_project_assembly",""));
-        if(assembly.filename()=="GameScripts.dll"&&fs::exists(assembly.parent_path()/"manifest.xml"))m_applied=assembly.parent_path();
-        m_snapshot=Snapshot();
+        if(m_node.empty()&&fs::is_regular_file(m_engine/"Build/Toolchains/node/node.exe"))m_node=m_engine/"Build/Toolchains/node/node.exe";
+        // Version probes and Python discovery belong to the background worker.
+        m_python=Paths::FromUtf8(settings.GetOrDefault<std::string>("csharp_python",""));
+        m_cache=Paths::FromUtf8(settings.GetOrDefault<std::string>("csharp_build_cache",Utf8(m_context.projectFolder/".overload/csharp")));
     }
     CSharpProject::~CSharpProject() {if(m_job)CloseHandle(m_job);if(m_process)CloseHandle(m_process);}
     void CSharpProject::CheckMain() const {if(std::this_thread::get_id()!=m_main)throw std::logic_error("C# editor workflow requires Main");}
-    void CSharpProject::Fail(const std::string& error) {m_status="C#: failed; previous version retained";m_diagnostics=error;OVLOG_ERROR(error);}
+    void CSharpProject::Fail(const std::string& error) {m_status=m_applied.empty()?"C#: build failed; fix the error and save or retry":"C#: failed; previous version retained";m_diagnostics=error;OVLOG_ERROR(error);}
+    void CSharpProject::SetAutomaticBuild(bool enabled)
+    {
+        CheckMain();watch=enabled;m_dirty=false;
+        auto& settings=m_context.projectSettings;settings.Reload();
+        if(!settings.Set("csharp_auto_build",enabled))settings.Add("csharp_auto_build",enabled);settings.Rewrite();
+        if(enabled&&(fs::exists(m_context.projectFolder/"GameScripts.csproj")||!Snapshot().empty()))RequestBuild(m_configuration);
+    }
+    void CSharpProject::SetHotReload(bool enabled)
+    {
+        CheckMain();hotReload=enabled;
+        auto& settings=m_context.projectSettings;settings.Reload();
+        if(!settings.Set("csharp_hot_reload",enabled))settings.Add("csharp_hot_reload",enabled);settings.Rewrite();
+    }
     void CSharpProject::EnsureProject()
     {
+        ResolveTools();
         if(!m_engine.is_absolute()||!fs::exists(m_engine/"Scripts/Windows/BuildGameScripts.mjs"))throw std::runtime_error("Set csharp_engine_root to the Overload source directory");
         const auto project=m_context.projectFolder/"GameScripts.csproj";
         if(!fs::exists(project)) {
@@ -96,12 +124,13 @@ namespace OvEditor::Core
     std::string CSharpProject::Snapshot() const
     {
         std::set<std::string> entries;
-        if(!fs::exists(m_context.projectFolder/"GameScripts.csproj"))return {};
+        const bool hasProject=fs::exists(m_context.projectFolder/"GameScripts.csproj");
         std::error_code ec;
         for(fs::recursive_directory_iterator it(m_context.projectFolder,fs::directory_options::skip_permission_denied,ec),end;it!=end;it.increment(ec)) {
             if(ec){ec.clear();continue;}const auto& p=it->path();auto name=p.filename().string();std::transform(name.begin(),name.end(),name.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});
             if(it->is_directory()) {if(name=="bin"||name=="obj"||name==".overload"||name==".git"||name=="build"||name=="generations"||name=="artifacts"||fs::is_symlink(it->symlink_status())||fs::weakly_canonical(p)==fs::weakly_canonical(m_cache))it.disable_recursion_pending();continue;}
             auto ext=p.extension().string();std::transform(ext.begin(),ext.end(),ext.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});
+            if(!hasProject && (ext!=".cs" || p.lexically_relative(m_context.projectAssetsPath).empty() || *p.lexically_relative(m_context.projectAssetsPath).begin()==".."))continue;
             if(ext!=".cs"&&ext!=".csproj"&&ext!=".props"&&ext!=".targets"&&name!="global.json"&&name!="nuget.config"&&name!="packages.lock.json")continue;
             entries.insert(Utf8(p)+":"+std::to_string(it->last_write_time().time_since_epoch().count())+":"+std::to_string(it->file_size()));
         }
@@ -109,11 +138,13 @@ namespace OvEditor::Core
     }
     void CSharpProject::Launch()
     {
-        EnsureProject();for(const auto& p:{m_node,m_python})if(!p.is_absolute()||!fs::is_regular_file(p))throw std::runtime_error("Configure absolute csharp_node and csharp_python executable paths");
+        EnsureProject();if(!m_node.is_absolute()||!fs::is_regular_file(m_node))throw std::runtime_error("Node.js was not found. Set csharp_node to an absolute node.exe path in the .ovproject file, then retry Build.");
+        if(!m_python.empty()&&(!m_python.is_absolute()||!fs::is_regular_file(m_python)))throw std::runtime_error("Invalid csharp_python. Set an absolute Python 3.10+ executable path in the .ovproject file, or remove the setting for automatic discovery, then retry Build.");
         if(!m_cache.is_absolute())throw std::runtime_error("csharp_build_cache must be absolute");
         const auto requests=m_context.projectFolder/".overload/requests";fs::create_directories(requests);
         const auto id=Unique();m_result=requests/(id+".xml");m_log=requests/(id+".log");
-        std::vector<std::wstring> args={m_node.wstring(),(m_engine/"Scripts/Windows/BuildGameScripts.mjs").wstring(),L"--project",m_context.projectFolder.wstring(),L"--cache",m_cache.wstring(),L"--python",m_python.wstring(),L"--configuration",Paths::FromUtf8(m_configuration).wstring(),L"--result",m_result.wstring()};
+        std::vector<std::wstring> args={m_node.wstring(),(m_engine/"Scripts/Windows/BuildGameScripts.mjs").wstring(),L"--project",m_context.projectFolder.wstring(),L"--cache",m_cache.wstring(),L"--configuration",Paths::FromUtf8(m_configuration).wstring(),L"--result",m_result.wstring()};
+        if(!m_python.empty()){args.push_back(L"--python");args.push_back(m_python.wstring());}
         std::wstring command;for(const auto& arg:args){if(!command.empty())command+=L' ';command+=Quote(arg);}
         SECURITY_ATTRIBUTES sa{sizeof(sa),nullptr,TRUE};HANDLE log=CreateFileW(m_log.c_str(),GENERIC_WRITE,FILE_SHARE_READ,&sa,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
         if(log==INVALID_HANDLE_VALUE)throw std::runtime_error("Cannot create build log");
@@ -170,10 +201,10 @@ namespace OvEditor::Core
                 }
                 if(!m_context.scriptEngine->LoadCSharpProject(*m_context.csharpHost,m_context.projectFolder,generation/"GameScripts.dll","GameScripts",!stopped))throw std::runtime_error(m_context.scriptEngine->LastError());
                 m_applied=generation;m_status="C#: applied "+m_configuration;
-                auto& settings=m_context.projectSettings;
+                auto& settings=m_context.projectSettings;settings.Reload();
                 const auto save=[&](const std::string& key,const std::string& value){if(!settings.Set(key,value))settings.Add(key,value);};
                 if(!settings.Set("csharp_enabled",true))settings.Add("csharp_enabled",true);
-                save("csharp_runtime_root",Utf8(runtime));save("csharp_managed_root",Utf8(generation/"host"));save("csharp_project_assembly",Utf8(generation/"GameScripts.dll"));save("csharp_assembly_name","GameScripts");settings.Rewrite();
+                save("csharp_runtime_root",Utf8(runtime));save("csharp_managed_root",Utf8(generation/"host"));save("csharp_project_assembly",Utf8(generation/"GameScripts.dll"));save("csharp_assembly_name","GameScripts");save("csharp_configuration",m_configuration);settings.Rewrite();
                 return true;
             }
         }catch(const std::exception& e){m_requested=false;m_pending.clear();Fail(e.what());}

@@ -43,6 +43,9 @@ int wmain(int argc,wchar_t** argv){
         Require(fs::exists(context.projectFolder/"GameScripts.csproj"),"GameScripts project created");
         // Build the actual generated template before adding the multi-type fixture.
         wait([&]{return !project.Busy();});Require(!project.AppliedGeneration().empty(),"generated template compiles and applies");
+        const auto configuredCache=OvCore::Scripting::CSharp::HostPaths::FromUtf8(context.projectSettings.Get<std::string>("csharp_build_cache"));
+        const auto cacheRelative=project.AppliedGeneration().lexically_relative(configuredCache);
+        Require(!cacheRelative.empty()&&*cacheRelative.begin()!="..","configured cache is honored when the project path contains Chinese characters and spaces");
         Write(source,Source(1));
         auto* build=Button(panels.GetPanelAs<OvEditor::Panels::CSharpScripts>("C# Scripts"),"Build / Reload C# (Debug)");
         Require(build!=nullptr,"production C# panel exposes build command");build->ClickedEvent.Invoke();wait([&]{return !project.Busy();});

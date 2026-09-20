@@ -15,6 +15,8 @@ namespace OvEditor::Core
         ~CSharpProject();
         bool CreateScript(const std::filesystem::path& destination);
         void RequestBuild(const std::string& configuration = "Debug");
+        void SetAutomaticBuild(bool enabled);
+        void SetHotReload(bool enabled);
         bool Tick(bool stopped); // true only when the catalogue changed at this safe point
         const std::string& Status() const { return m_status; }
         const std::string& Diagnostics() const { return m_diagnostics; }
@@ -27,6 +29,7 @@ namespace OvEditor::Core
     private:
         void CheckMain() const;
         void EnsureProject();
+        void ResolveTools();
         void Launch();
         void Fail(const std::string& error);
         std::string Snapshot() const;

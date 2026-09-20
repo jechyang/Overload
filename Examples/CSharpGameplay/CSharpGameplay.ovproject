@@ -1,0 +1,15 @@
+executable_name=CSharpGameplay
+gravity=-9.81
+x_resolution=1280
+multisampling=false
+window_icon=
+y_resolution=720
+start_scene=Scenes/CSharpGameplay.ovscene
+fullscreen=false
+vsync=true
+samples=1
+build_type=0
+csharp_enabled=false
+render_commands=true
+render_thread=false
+csharp_assembly_name=GameScripts

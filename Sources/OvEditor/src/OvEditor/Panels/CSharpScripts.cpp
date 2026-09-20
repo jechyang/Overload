@@ -13,9 +13,9 @@ namespace OvEditor::Panels
         };
         for(const std::string configuration:{"Debug","Release"})
             CreateWidget<Buttons::Button>("Build / Reload C# ("+configuration+")").ClickedEvent += [configuration]{EDITOR_CONTEXT(csharpProject)->RequestBuild(configuration);};
-        CreateWidget<Selection::CheckBox>(true,"Watch source files").ValueChangedEvent += [](bool enabled){EDITOR_CONTEXT(csharpProject)->watch=enabled;};
-        CreateWidget<Selection::CheckBox>(false,"Reload during Play (supported fields)").ValueChangedEvent += [](bool enabled){EDITOR_CONTEXT(csharpProject)->hotReload=enabled;};
-        CreateWidget<Texts::Text>("Compile errors include source file, line and column. New assemblies apply after Stop unless runtime reload is enabled.\nAttach a compiled C# type through Inspector > Add Component.");
+        CreateWidget<Selection::CheckBox>(EDITOR_CONTEXT(csharpProject)->watch,"Build automatically on open and save").ValueChangedEvent += [](bool enabled){EDITOR_CONTEXT(csharpProject)->SetAutomaticBuild(enabled);};
+        CreateWidget<Selection::CheckBox>(EDITOR_CONTEXT(csharpProject)->hotReload,"Reload during Play (supported fields)").ValueChangedEvent += [](bool enabled){EDITOR_CONTEXT(csharpProject)->SetHotReload(enabled);};
+        CreateWidget<Texts::Text>("Save a C# file to build automatically. Build / Reload is also available for retry or configuration changes.\nDuring Play, successful builds wait for Stop unless runtime reload is enabled. Errors keep the last working version.\nAttach a compiled C# type through Inspector > Add Component.");
         m_status=&CreateWidget<Texts::Text>("");m_diagnostics=&CreateWidget<Texts::Text>("");
     }
     void CSharpScripts::_Draw_Impl()
