@@ -38,11 +38,12 @@ std::string CRectTransform::GetName() { return "Rect Transform"; }
 std::string CRectTransform::GetTypeName() { return std::string(ComponentTraits<CRectTransform>::Name); }
 void CRectTransform::OnSerialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
 {
-    Serializer::SerializeVec2(doc, node, "anchor_min", m_layout.anchorMin);
-    Serializer::SerializeVec2(doc, node, "anchor_max", m_layout.anchorMax);
-    Serializer::SerializeVec2(doc, node, "pivot", m_layout.pivot);
-    Serializer::SerializeVec2(doc, node, "anchored_position", m_layout.anchoredPosition);
-    Serializer::SerializeVec2(doc, node, "size_delta", m_layout.sizeDelta);
+    const auto authored = m_driven.Authored(m_layout);
+    Serializer::SerializeVec2(doc, node, "anchor_min", authored.anchorMin);
+    Serializer::SerializeVec2(doc, node, "anchor_max", authored.anchorMax);
+    Serializer::SerializeVec2(doc, node, "pivot", authored.pivot);
+    Serializer::SerializeVec2(doc, node, "anchored_position", authored.anchoredPosition);
+    Serializer::SerializeVec2(doc, node, "size_delta", authored.sizeDelta);
 }
 void CRectTransform::OnDeserialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
 {
@@ -54,6 +55,7 @@ void CRectTransform::OnDeserialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode
 }
 void CRectTransform::OnInspector(OvUI::Internal::WidgetContainer& root)
 {
+    if (m_driven.Mask()) GUIDrawer::CreateTitle(root, "Driven by managed layout (mask " + std::to_string(m_driven.Mask()) + ")");
     GUIDrawer::DrawVec2(root, "Anchor Min", std::function<OvMaths::FVector2()>([this] { return m_layout.anchorMin; }), std::function<void(OvMaths::FVector2)>([this](OvMaths::FVector2 value) { SetAnchorMin(value); }), 0.01f);
     GUIDrawer::DrawVec2(root, "Anchor Max", std::function<OvMaths::FVector2()>([this] { return m_layout.anchorMax; }), std::function<void(OvMaths::FVector2)>([this](OvMaths::FVector2 value) { SetAnchorMax(value); }), 0.01f);
     GUIDrawer::DrawVec2(root, "Pivot", std::function<OvMaths::FVector2()>([this] { return m_layout.pivot; }), std::function<void(OvMaths::FVector2)>([this](OvMaths::FVector2 value) { SetPivot(value); }), 0.01f);
@@ -167,7 +169,10 @@ void CCanvasRenderer::SetMesh(std::span<const UIVertex> vertices, std::span<cons
         if (!std::isfinite(vertex.position.x) || !std::isfinite(vertex.position.y) || !std::isfinite(vertex.position.z) ||
             !std::isfinite(vertex.uv.x) || !std::isfinite(vertex.uv.y) ||
             !std::isfinite(vertex.color.x) || !std::isfinite(vertex.color.y) ||
-            !std::isfinite(vertex.color.z) || !std::isfinite(vertex.color.w))
+            !std::isfinite(vertex.color.z) || !std::isfinite(vertex.color.w) ||
+            !std::isfinite(vertex.normal.x) || !std::isfinite(vertex.normal.y) || !std::isfinite(vertex.normal.z) ||
+            !std::isfinite(vertex.tangent.x) || !std::isfinite(vertex.tangent.y) || !std::isfinite(vertex.tangent.z) || !std::isfinite(vertex.tangent.w) ||
+            !UI::IsFinite(vertex.uv1) || !UI::IsFinite(vertex.uv2) || !UI::IsFinite(vertex.uv3))
             throw std::invalid_argument("UI mesh contains a non-finite vertex");
     }
     for (const auto index : indices) if (index >= vertices.size())
@@ -178,10 +183,42 @@ void CCanvasRenderer::SetMesh(std::span<const UIVertex> vertices, std::span<cons
 }
 void CCanvasRenderer::Clear()
 {
-    m_vertices.clear(); m_indices.clear(); m_texturePath.clear(); m_materialPath.clear(); ++m_meshGeneration;
+    m_vertices.clear(); m_indices.clear(); m_texturePath.clear(); m_materialPath.clear();
+    m_slots.assign(1, {}); m_popSlots.clear(); m_stencil = {}; m_popStencil = {}; m_hitFrame.reset(); m_cull = false; m_hasClip = false; m_managedRectClipping = false; m_depth = -1; ++m_meshGeneration;
 }
-void CCanvasRenderer::SetTexturePath(std::string value) { m_texturePath = std::move(value); }
-void CCanvasRenderer::SetMaterialPath(std::string value) { m_materialPath = std::move(value); }
+void CCanvasRenderer::SetTexturePath(std::string value) { SetSlotPath(0, false, std::move(value)); }
+void CCanvasRenderer::SetMaterialPath(std::string value) { SetSlotPath(0, true, std::move(value)); }
+void CCanvasRenderer::SetMaterialCount(size_t count, bool pop)
+{
+    if (count > MaximumMaterialSlots) throw std::invalid_argument("Too many UI material slots");
+    (pop ? m_popSlots : m_slots).resize(count); ++m_meshGeneration;
+}
+void CCanvasRenderer::SetSlotPath(size_t slot, bool material, std::string path, bool pop)
+{
+    auto& slots = pop ? m_popSlots : m_slots;
+    if (slot >= slots.size()) throw std::out_of_range("UI material slot");
+    auto& target = material ? slots[slot].materialPath : slots[slot].texturePath;
+    if (target == path) return;
+    target = std::move(path);
+    if (!pop && slot == 0) (material ? m_materialPath : m_texturePath) = target;
+    ++m_meshGeneration;
+}
+void CCanvasRenderer::SetIndexRange(size_t slot, uint32_t first, uint32_t count)
+{
+    if (slot >= m_slots.size() || first % 3 || count % 3 || first > m_indices.size() || count > m_indices.size()-first)
+        throw std::invalid_argument("Invalid UI submesh range");
+    auto& range = m_slots[slot]; range.firstIndex = first; range.indexCount = count; range.explicitRange = true;
+    ++m_meshGeneration;
+}
+void CCanvasRenderer::SetFontPage(size_t slot, std::shared_ptr<const UI::Fonts::AtlasPage> page)
+{
+    if (slot >= m_slots.size()) throw std::out_of_range("UI font slot");
+    m_slots[slot].fontPage = std::move(page); ++m_meshGeneration;
+}
+void CCanvasRenderer::SetColor(OvMaths::FVector4 value)
+{ m_color = {Unit(value.x), Unit(value.y), Unit(value.z), Unit(value.w)}; }
+void CCanvasRenderer::SetClipRect(UI::Rect value)
+{ Finite(value.min); Finite(value.size); m_clip = value; m_hasClip = true; }
 // CanvasRenderer data is generated by Graphic and is intentionally transient.
 void CCanvasRenderer::OnSerialize(tinyxml2::XMLDocument&, tinyxml2::XMLNode*) {}
 void CCanvasRenderer::OnDeserialize(tinyxml2::XMLDocument&, tinyxml2::XMLNode*) { Clear(); }
@@ -198,11 +235,15 @@ void CCanvasGroup::OnSerialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* no
     Serializer::SerializeFloat(doc, node, "alpha", m_alpha);
     Serializer::SerializeBoolean(doc, node, "interactable", m_interactable);
     Serializer::SerializeBoolean(doc, node, "blocks_raycasts", m_blocksRaycasts);
+    Serializer::SerializeBoolean(doc, node, "ignore_parent_groups", m_ignoreParentGroups);
+    Serializer::SerializeBoolean(doc, node, "enabled", m_enabled);
 }
 void CCanvasGroup::OnDeserialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
 {
     if (node->FirstChildElement("alpha")) { auto value = m_alpha; Serializer::DeserializeFloat(doc, node, "alpha", value); SetAlpha(value); }
     if (node->FirstChildElement("interactable")) { auto value = m_interactable; Serializer::DeserializeBoolean(doc, node, "interactable", value); SetInteractable(value); }
+    if (node->FirstChildElement("ignore_parent_groups")) Serializer::DeserializeBoolean(doc, node, "ignore_parent_groups", m_ignoreParentGroups);
+    if (node->FirstChildElement("enabled")) Serializer::DeserializeBoolean(doc, node, "enabled", m_enabled);
     if (node->FirstChildElement("blocks_raycasts")) { auto value = m_blocksRaycasts; Serializer::DeserializeBoolean(doc, node, "blocks_raycasts", value); SetBlocksRaycasts(value); }
 }
 void CCanvasGroup::OnInspector(OvUI::Internal::WidgetContainer& root)
@@ -210,6 +251,7 @@ void CCanvasGroup::OnInspector(OvUI::Internal::WidgetContainer& root)
     GUIDrawer::DrawScalar<float>(root, "Alpha", std::function<float()>([this] { return m_alpha; }), std::function<void(float)>([this](float value) { SetAlpha(value); }), 0.01f, 0.0f, 1.0f);
     GUIDrawer::DrawBoolean(root, "Interactable", m_interactable);
     GUIDrawer::DrawBoolean(root, "Blocks Raycasts", m_blocksRaycasts);
+    GUIDrawer::DrawBoolean(root, "Ignore Parent Groups", m_ignoreParentGroups);
 }
 
 std::string CRectMask2D::GetName() { return "Rect Mask 2D"; }

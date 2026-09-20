@@ -1,6 +1,8 @@
 #pragma once
 #include <OvCore/UI/Frame.h>
 #include <OvRendering/Data/PreparedFrameData.h>
+#include <map>
+#include <tuple>
 
 namespace OvCore::UI
 {
@@ -20,6 +22,8 @@ namespace OvCore::UI
             const OvRendering::Data::RenderViewInput* sceneView = nullptr);
     private:
         void Initialize();
+        struct FontPageResource { std::weak_ptr<const Fonts::AtlasPage> page; std::shared_ptr<baregl::Texture> texture; };
+        std::map<std::tuple<uint64_t,uint32_t,uint64_t>,FontPageResource> m_fontPages;
         OvRendering::Resources::Shader* m_shader = nullptr;
         OvRendering::Data::Material m_material;
         std::shared_ptr<const OvRendering::Resources::IMesh> m_quad;

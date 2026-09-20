@@ -3,15 +3,19 @@
 #include <OvReflection/Annotations.h>
 #include <OvCore/ECS/Components/AComponent.h>
 #include <OvCore/UI/Layout.h>
+#include <OvCore/UI/DrivenProperties.h>
 #include <OvMaths/FVector2.h>
 #include <OvMaths/FVector3.h>
 #include <OvMaths/FVector4.h>
 #include <array>
 #include <span>
+#include <memory>
 #include <string>
 #include <vector>
 
 namespace OvRendering::Resources { class Texture; }
+namespace OvCore::UI::Fonts { struct AtlasPage; }
+namespace OvCore::UI { struct Frame; }
 
 namespace OvCore::ECS::Components
 {
@@ -26,6 +30,7 @@ namespace OvCore::ECS::Components
         std::string GetName() override;
         std::string GetTypeName() override;
         const UI::RectLayout& GetLayout() const { return m_layout; }
+        UI::DrivenProperties& GetDrivenProperties() { return m_driven; }
         enum class Axis { Horizontal, Vertical };
         enum class Edge { Left, Right, Top, Bottom };
         OvMaths::FVector2 GetAnchorMin() const { return m_layout.anchorMin; }
@@ -55,6 +60,7 @@ namespace OvCore::ECS::Components
     private:
         OvMaths::FVector2 GetParentSize() const;
         UI::RectLayout m_layout;
+        UI::DrivenProperties m_driven;
         OvMaths::FVector2 m_parentSize{0, 0};
         bool m_rootCanvas = false;
     };
@@ -118,6 +124,19 @@ namespace OvCore::ECS::Components
         OvMaths::FVector3 position{0, 0, 0};
         OvMaths::FVector2 uv{0, 0};
         OvMaths::FVector4 color{1, 1, 1, 1};
+        OvMaths::FVector3 normal{0, 0, -1};
+        OvMaths::FVector4 tangent{1, 0, 0, -1};
+        OvMaths::FVector2 uv1{0, 0}, uv2{0, 0}, uv3{0, 0};
+    };
+
+    struct UIStencilState { bool enabled = false, replace = false, colorWrite = true; uint8_t reference = 0, readMask = 255, writeMask = 0; };
+
+    struct UIMaterialSlot
+    {
+        std::string materialPath, texturePath;
+        std::shared_ptr<const UI::Fonts::AtlasPage> fontPage;
+        uint32_t firstIndex = 0, indexCount = 0;
+        bool explicitRange = false;
     };
 
     // Low-level native sink for managed Graphic geometry. Mesh generation and
@@ -138,12 +157,43 @@ namespace OvCore::ECS::Components
         void SetTexturePath(std::string value);
         const std::string& GetMaterialPath() const { return m_materialPath; }
         void SetMaterialPath(std::string value);
+        static constexpr size_t MaximumMaterialSlots = 64;
+        const std::vector<UIMaterialSlot>& GetMaterialSlots() const { return m_slots; }
+        const std::vector<UIMaterialSlot>& GetPopMaterialSlots() const { return m_popSlots; }
+        void SetMaterialCount(size_t count, bool pop = false);
+        void SetSlotPath(size_t slot, bool material, std::string path, bool pop = false);
+        void SetIndexRange(size_t slot, uint32_t first, uint32_t count);
+        void SetFontPage(size_t slot, std::shared_ptr<const UI::Fonts::AtlasPage> page);
+        const UIStencilState& GetStencil() const { return m_stencil; }
+        const UIStencilState& GetPopStencil() const { return m_popStencil; }
+        void SetStencil(UIStencilState value, bool pop = false) { (pop ? m_popStencil : m_stencil) = value; }
+        OvMaths::FVector4 GetColor() const { return m_color; }
+        void SetColor(OvMaths::FVector4 value);
+        bool IsCulled() const { return m_cull; }
+        void SetCull(bool value) { m_cull = value; }
+        bool HasRectClipping() const { return m_hasClip; }
+        const UI::Rect& GetClipRect() const { return m_clip; }
+        void SetClipRect(UI::Rect value);
+        void DisableRectClipping() { m_hasClip = false; }
+        void SetIgnoreParentRectMasks(bool value) { m_managedRectClipping = value; }
+        bool UsesManagedRectClipping() const { return m_managedRectClipping; }
+        std::shared_ptr<const UI::Frame> GetHitFrame() const { return m_hitFrame; }
+        void SetHitFrame(std::shared_ptr<const UI::Frame> value) { m_hitFrame = std::move(value); }
+        int GetAbsoluteDepth() const { return m_depth; }
+        void SetAbsoluteDepth(int value) { m_depth = value; }
         bool IsRaycastTarget() const { return m_raycastTarget; }
         void SetRaycastTarget(bool value) { m_raycastTarget = value; }
         void OnSerialize(tinyxml2::XMLDocument&, tinyxml2::XMLNode*) override;
         void OnDeserialize(tinyxml2::XMLDocument&, tinyxml2::XMLNode*) override;
         void OnInspector(OvUI::Internal::WidgetContainer&) override;
     private:
+        std::vector<UIMaterialSlot> m_slots{1}, m_popSlots;
+        OvMaths::FVector4 m_color{1,1,1,1};
+        UI::Rect m_clip{};
+        UIStencilState m_stencil, m_popStencil;
+        std::shared_ptr<const UI::Frame> m_hitFrame;
+        bool m_cull = false, m_hasClip = false, m_managedRectClipping = false;
+        int m_depth = -1;
         std::vector<UIVertex> m_vertices;
         std::vector<uint32_t> m_indices;
         std::string m_texturePath;
@@ -162,6 +212,10 @@ namespace OvCore::ECS::Components
         void SetAlpha(float value);
         bool IsInteractable() const { return m_interactable; }
         void SetInteractable(bool value) { m_interactable = value; }
+        bool IsEnabled() const { return m_enabled; }
+        void SetEnabled(bool value) { m_enabled = value; }
+        bool IgnoresParentGroups() const { return m_ignoreParentGroups; }
+        void SetIgnoreParentGroups(bool value) { m_ignoreParentGroups = value; }
         bool BlocksRaycasts() const { return m_blocksRaycasts; }
         void SetBlocksRaycasts(bool value) { m_blocksRaycasts = value; }
         void OnSerialize(tinyxml2::XMLDocument&, tinyxml2::XMLNode*) override;
@@ -169,7 +223,7 @@ namespace OvCore::ECS::Components
         void OnInspector(OvUI::Internal::WidgetContainer&) override;
     private:
         float m_alpha = 1;
-        bool m_interactable = true, m_blocksRaycasts = true;
+        bool m_interactable = true, m_blocksRaycasts = true, m_ignoreParentGroups = false, m_enabled = true;
     };
 
     class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CRectMask2D", DisplayName = "Rect Mask 2D", Order = 34) CRectMask2D : public AComponent

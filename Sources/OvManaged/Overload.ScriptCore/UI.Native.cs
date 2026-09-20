@@ -35,11 +35,20 @@ namespace Overload
         internal NativeUIComponent(Actor owner, ulong handle) { Owner = owner; Handle = handle; }
         internal static NativeUIComponent? Resolve(Actor owner, Type type, bool create) {
             ulong kind = type == typeof(RectTransform) ? 1ul : type == typeof(Canvas) ? 2ul :
-                type == typeof(CanvasRenderer) ? 3ul :
+                type == typeof(CanvasRenderer) ? 3ul : type == typeof(NativeCanvasGroup) ? 4ul : type == typeof(NativeRectMask) ? 5ul :
                 throw new NotSupportedException("Unknown native UI component: " + type.FullName);
             ulong handle = owner.Access.Query(owner.Handle, create ? 31u : 30u, kind);
             return handle == 0 ? null : kind == 1 ? new RectTransform(owner, handle) :
-                kind == 2 ? new Canvas(owner, handle) : new CanvasRenderer(owner, handle);
+                kind == 2 ? new Canvas(owner, handle) : kind == 3 ? new CanvasRenderer(owner, handle) :
+                kind == 4 ? new NativeCanvasGroup(owner,handle) : new NativeRectMask(owner,handle);
+        }
+        internal void ValidateReference() {
+            if(this is RectTransform)Owner.Access.Query(Handle,40,0,"sizeDelta");
+            else if(this is Canvas)Owner.Access.Query(Handle,42,0,"scaleFactor");
+            else if(this is CanvasRenderer)Owner.Access.Query(Handle,48,0,"generation");
+            else if(this is NativeCanvasGroup)Owner.Access.Query(Handle,49,0,"flags");
+            else if(this is NativeRectMask)Owner.Access.Query(Handle,51);
+            else throw new NotSupportedException("Unknown native UI component");
         }
         internal static ulong Pack(Vector2 value) => BitConverter.SingleToUInt32Bits(value.x) | ((ulong)BitConverter.SingleToUInt32Bits(value.y) << 32);
         internal static Vector2 Unpack(ulong value) => new(BitConverter.UInt32BitsToSingle((uint)value), BitConverter.UInt32BitsToSingle((uint)(value >> 32)));
@@ -51,6 +60,7 @@ namespace Overload
         internal RectTransform(Actor owner, ulong handle) : base(owner, handle) { }
         private Vector2 Get(string name) => Unpack(Owner.Access.Query(Handle, 40, 0, name));
         private void Set(string name, Vector2 value) {
+            if(Get(name)==value)return;
             Owner.Access.Query(Handle, 41, Pack(value), name);
             UI.LayoutRebuilder.MarkLayoutForRebuild(this);
         }
@@ -88,20 +98,68 @@ namespace Overload
     public sealed class CanvasRenderer : NativeUIComponent
     {
         internal CanvasRenderer(Actor owner, ulong handle) : base(owner, handle) { }
-        internal void SetMesh(UI.UIVertex[] vertices, int[] indices) => Owner.Access.SetUIMesh(Handle, vertices, indices);
+        public void SetMesh(UI.UIVertex[] vertices, int[] indices) => Owner.Access.SetUIMesh(Handle, vertices, indices);
         public void Clear() => Owner.Access.Query(Handle, 44);
-        internal void SetTexture(AssetRef value) {
+        public void SetTexture(AssetRef value, int index = 0) {
             if (value.Kind is not (AssetKind.Unknown or AssetKind.Texture)) throw new ArgumentException("CanvasRenderer texture must be a Texture AssetRef", nameof(value));
-            Owner.Access.Query(Handle, 46, (ulong)AssetKind.Texture, value.Path ?? "");
+            Owner.Access.Query(Handle, 46, Slot(AssetKind.Texture,index,false), value.Path ?? "");
         }
-        internal void SetMaterial(AssetRef value) {
+        public void SetMaterial(AssetRef value, int index = 0) {
             if (value.Kind is not (AssetKind.Unknown or AssetKind.Material)) throw new ArgumentException("CanvasRenderer material must be a Material AssetRef", nameof(value));
-            Owner.Access.Query(Handle, 46, (ulong)AssetKind.Material, value.Path ?? "");
+            Owner.Access.Query(Handle, 46, Slot(AssetKind.Material,index,false), value.Path ?? "");
         }
+        private static ulong Slot(AssetKind kind, int index, bool pop) {
+            if ((uint)index >= 64) throw new ArgumentOutOfRangeException(nameof(index));
+            return (ulong)kind | ((ulong)index << 8) | (pop ? 1ul << 24 : 0);
+        }
+        public void SetMesh(UI.UIMesh mesh) { ArgumentNullException.ThrowIfNull(mesh); SetMesh(mesh.vertices,mesh.indices); }
+        public int materialCount { get => checked((int)Owner.Access.Query(Handle,48,0,"materialCount")); set => Owner.Access.Query(Handle,47,checked((ulong)value),"materialCount"); }
+        public int popMaterialCount { get => checked((int)Owner.Access.Query(Handle,48,0,"popMaterialCount")); set => Owner.Access.Query(Handle,47,checked((ulong)value),"popMaterialCount"); }
+        public bool cull { get => Owner.Access.Query(Handle,48,0,"cull")!=0; set => Owner.Access.Query(Handle,47,value?1ul:0ul,"cull"); }
+        public int absoluteDepth => unchecked((int)Owner.Access.Query(Handle,48,0,"depth"));
+        public void SetPopMaterial(AssetRef value, int index) {
+            if(value.Kind is not (AssetKind.Unknown or AssetKind.Material))throw new ArgumentException("Expected material");
+            Owner.Access.Query(Handle,46,Slot(AssetKind.Material,index,true),value.Path??"");
+        }
+        public void SetIndexRange(int slot, int firstIndex, int indexCount) {
+            if((uint)slot>=64 || firstIndex<0 || indexCount<0)throw new ArgumentOutOfRangeException(nameof(slot));
+            Owner.Access.Query(Handle,47,(ulong)(uint)firstIndex | ((ulong)(uint)indexCount<<32),"range:"+slot);
+        }
+        public void SetColor(UI.Color value) {
+            if(!float.IsFinite(value.r)||!float.IsFinite(value.g)||!float.IsFinite(value.b)||!float.IsFinite(value.a))throw new ArgumentException("Color must be finite");
+            Owner.Access.Query(Handle,47,Pack(new(value.r,value.g)),"colorRG");
+            Owner.Access.Query(Handle,47,Pack(new(value.b,value.a)),"colorBA");
+        }
+        public UI.Color GetColor() { var rg=Unpack(Owner.Access.Query(Handle,48,0,"colorRG"));var ba=Unpack(Owner.Access.Query(Handle,48,0,"colorBA"));return new(rg.x,rg.y,ba.x,ba.y); }
+        public void SetStencil(UI.UIStencilState state) => Owner.Access.Query(Handle,47,state.Packed,"stencil");
+        public void SetPopStencil(UI.UIStencilState state) => Owner.Access.Query(Handle,47,state.Packed,"popStencil");
+        public void SetAlpha(float alpha) { var c=GetColor();SetColor(new(c.r,c.g,c.b,alpha)); }
+        public float GetAlpha() => GetColor().a;
+        /// <summary>Clip in renderer-local coordinates, converted during immutable frame extraction.</summary>
+        public void EnableRectClipping(Rect rect) {
+            if(!float.IsFinite(rect.min.x)||!float.IsFinite(rect.min.y)||!float.IsFinite(rect.size.x)||!float.IsFinite(rect.size.y))throw new ArgumentException("Clip must be finite");
+            Owner.Access.Query(Handle,47,Pack(rect.min),"clipMin");Owner.Access.Query(Handle,47,Pack(rect.size),"clipSize");
+        }
+        internal void IgnoreParentRectMasks(bool value) => Owner.Access.Query(Handle,47,value?1ul:0ul,"ignoreParentMasks");
+        public void DisableRectClipping() => Owner.Access.Query(Handle,47,0,"disableClip");
         internal void SetRaycastTarget(bool value) => Owner.Access.Query(Handle, 47, value ? 1ul : 0ul);
         public int vertexCount => checked((int)Owner.Access.Query(Handle, 48, 0, "vertices"));
         public int indexCount => checked((int)Owner.Access.Query(Handle, 48, 0, "indices"));
         public ulong meshGeneration => Owner.Access.Query(Handle, 48, 0, "generation");
+    }
+    internal sealed class NativeCanvasGroup : NativeUIComponent
+    {
+        internal NativeCanvasGroup(Actor owner,ulong handle):base(owner,handle){}
+        internal void Clear() => Owner.Access.Query(Handle,50,0,"release");
+        internal void Set(float alpha,bool interactable,bool blocks,bool ignore,bool active){
+            Owner.Access.Query(Handle,50,Pack(new(alpha,0)),"alpha");
+            Owner.Access.Query(Handle,50,(interactable?1ul:0ul)|(blocks?2ul:0ul)|(ignore?4ul:0ul)|(active?8ul:0ul),"flags");
+        }
+    }
+    internal sealed class NativeRectMask : NativeUIComponent
+    {
+        internal NativeRectMask(Actor owner,ulong handle):base(owner,handle){}
+        internal bool enabled {get=>Owner.Access.Query(Handle,51)!=0;set=>Owner.Access.Query(Handle,52,value?1ul:0ul);}
     }
     public sealed class Canvas : NativeUIComponent
     {

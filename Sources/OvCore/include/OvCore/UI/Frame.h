@@ -31,6 +31,13 @@ namespace OvCore::UI
         std::shared_ptr<baregl::Texture> texture;
         bool raycastTarget = true, interactable = true;
     };
+    struct MaterialSlot
+    {
+        std::string materialPath;
+        std::shared_ptr<baregl::Texture> texture;
+        std::shared_ptr<const Fonts::AtlasPage> fontPage;
+        uint32_t firstIndex = 0, indexCount = 0;
+    };
     struct Mesh
     {
         uint64_t actorGuid = 0;
@@ -44,10 +51,18 @@ namespace OvCore::UI
         std::vector<uint32_t> indices;
         std::shared_ptr<baregl::Texture> texture;
         std::string materialPath;
+        std::vector<MaterialSlot> materialSlots, popMaterialSlots;
+        ECS::Components::UIStencilState stencil;
+        bool pop = false;
+        OvMaths::FMatrix4 screenToCanvas = OvMaths::FMatrix4::Identity;
+        OvMaths::FVector2 localOrigin{};
+        float coordinateScale = 1;
+        OvMaths::FVector3 cameraPosition{};
         std::array<OvMaths::FVector2, 4> screenCorners{};
         bool hasScreenCorners = false;
         bool raycastTarget = true, interactable = true;
     };
+    struct GraphicHit { OvMaths::FVector2 localPoint; OvMaths::FVector3 worldPoint, worldNormal; float distance = 0; int depth = -1, sortingOrder = 0; bool reversed = false; };
     struct Hit
     {
         uint64_t actorGuid;
@@ -62,6 +77,7 @@ namespace OvCore::UI
         std::vector<Image> images; // painter order, shared by rendering and raycasts
         std::vector<Mesh> meshes;
         std::optional<Hit> HitTest(OvMaths::FVector2 bottomLeftPosition) const;
+        std::optional<GraphicHit> RaycastGraphic(uint64_t actorGuid, OvMaths::FVector2 bottomLeftPosition) const;
         // Input coordinates relative to the game viewport, not the whole editor window.
         std::optional<Hit> HitTestTopLeft(OvMaths::FVector2 position) const;
     };

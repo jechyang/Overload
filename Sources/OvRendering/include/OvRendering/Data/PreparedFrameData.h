@@ -56,6 +56,8 @@ namespace OvRendering::Data
         RenderStage stage = RenderStage::Opaque;
         RenderStage sourceStage = RenderStage::Opaque;
         StateMask state;
+        // Immutable UI stencil/color state. UI producers supply all reset defaults.
+        std::optional<PipelineState> uiPipelineState;
         uint32_t instances = 1;
         bool transparent = false;
         std::shared_ptr<const Resources::IMesh> geometry;

@@ -97,6 +97,48 @@ namespace OvCore::UI
         }
     }
 
+    std::optional<GraphicHit> Frame::RaycastGraphic(uint64_t actorGuid, OvMaths::FVector2 screen) const
+    {
+        if (!Rect{{0,0},size}.Contains(screen)) return std::nullopt;
+        uint8_t stencil=0;
+        std::optional<GraphicHit> hit;
+        for (const auto& mesh : meshes) {
+            OvMaths::FVector2 point=screen;
+            if (mesh.renderMode != RenderMode::ScreenSpaceOverlay) {
+                const float x=screen.x/size.x*2-1,y=screen.y/size.y*2-1;
+                auto a=mesh.screenToCanvas*OvMaths::FVector4{x,y,-1,1}, b=mesh.screenToCanvas*OvMaths::FVector4{x,y,1,1};
+                if(std::abs(a.w)<1e-8f||std::abs(b.w)<1e-8f)continue;
+                a=a*(1/a.w);b=b*(1/b.w);const float dz=b.z-a.z;
+                if(std::abs(dz)<1e-8f)continue;
+                const float t=-a.z/dz; if(t<0||t>1)continue;
+                point={a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t};
+            }
+            if(!mesh.clip.Contains(point))continue;
+            bool inside=false;
+            for(size_t i=0;i+2<mesh.indices.size();i+=3) {
+                const auto a=mesh.vertices[mesh.indices[i]].position,b=mesh.vertices[mesh.indices[i+1]].position,c=mesh.vertices[mesh.indices[i+2]].position;
+                auto cross=[&](const auto& u,const auto& v){return (v.x-u.x)*(point.y-u.y)-(v.y-u.y)*(point.x-u.x);};
+                const float ab=cross(a,b),bc=cross(b,c),ca=cross(c,a);
+                const float area=(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
+                if(std::abs(area)>1e-8f && ((ab>=0&&bc>=0&&ca>=0)||(ab<=0&&bc<=0&&ca<=0))) {inside=true;break;}
+            }
+            const auto& state=mesh.stencil;
+            const bool passes=!state.enabled || (stencil&state.readMask)==(state.reference&state.readMask);
+            if(inside && passes && state.enabled && state.replace)stencil=uint8_t((stencil&~state.writeMask)|(state.reference&state.writeMask));
+            if(mesh.actorGuid!=actorGuid||mesh.pop||!mesh.raycastTarget||!passes||!mesh.hasScreenCorners||!ContainsQuad(mesh.screenCorners,screen))continue;
+            GraphicHit value;
+            value.localPoint=point/mesh.coordinateScale-mesh.localOrigin;
+            const auto world=mesh.canvasToWorld*OvMaths::FVector4{point.x,point.y,0,1};
+            const auto normal=mesh.canvasToWorld*OvMaths::FVector4{0,0,-1,0};
+            value.worldPoint={world.x,world.y,world.z};value.worldNormal={normal.x,normal.y,normal.z};
+            value.distance=mesh.renderMode==RenderMode::ScreenSpaceOverlay?0:OvMaths::FVector3::Distance(value.worldPoint,mesh.cameraPosition);
+            value.depth=static_cast<int>(mesh.sequence);value.sortingOrder=mesh.sortingOrder;
+            value.reversed=mesh.renderMode!=RenderMode::ScreenSpaceOverlay && OvMaths::FVector3::Dot(value.worldNormal,value.worldPoint-mesh.cameraPosition)>0;
+            hit=value;
+        }
+        return hit;
+    }
+
     std::optional<Hit> Frame::HitTest(OvMaths::FVector2 point) const
     {
         if (!Rect{{0, 0}, size}.Contains(point)) return std::nullopt;
@@ -113,7 +155,7 @@ namespace OvCore::UI
             consider(image.raycastTarget, image.hasScreenCorners ? ContainsQuad(image.screenCorners, point) : image.visibleRect.Contains(point),
                 image.renderMode, image.sortingOrder, image.sequence, image.actorGuid, image.interactable);
         for (const auto& mesh : meshes)
-            consider(mesh.raycastTarget, mesh.hasScreenCorners && ContainsQuad(mesh.screenCorners, point),
+            consider(mesh.raycastTarget && !mesh.pop, RaycastGraphic(mesh.actorGuid,point).has_value(),
                 mesh.renderMode, mesh.sortingOrder, mesh.sequence, mesh.actorGuid, mesh.interactable);
         return best ? std::optional<Hit>{best->hit} : std::nullopt;
     }
@@ -155,8 +197,8 @@ namespace OvCore::UI
             camera.GetSize() * 2.0f : 2.0f * canvas.GetPlaneDistance() * std::tan(camera.GetFov() * 0.5f * 3.14159265359f / 180.0f);
         const float width = height * aspect;
         const auto cameraMatrix = OvMaths::FMatrix4::Translation(camera.GetPosition()) * OvMaths::FMatrix4::Rotation(camera.GetRotation());
-        const auto matrix = cameraMatrix * OvMaths::FMatrix4::Translation({-width * 0.5f, -height * 0.5f, canvas.GetPlaneDistance()}) *
-            OvMaths::FMatrix4::Scaling({width / logical.size.x, height / logical.size.y, 1});
+        const auto matrix = cameraMatrix * OvMaths::FMatrix4::Translation({width * 0.5f, -height * 0.5f, canvas.GetPlaneDistance()}) *
+            OvMaths::FMatrix4::Scaling({-width / logical.size.x, height / logical.size.y, 1});
         return CanvasGeometry{logical, matrix};
     }
 
@@ -202,18 +244,23 @@ namespace OvCore::UI
         UpdateRectContexts(scene, size);
         if (auto* scripts = Global::ServiceLocator::TryGet<Scripting::ScriptEngine>()) scripts->RebuildUI(scene, size);
         Frame frame{generation, size, {}};
+        for (auto* actor : scene.GetActors()) if(auto* renderer=actor->GetComponent<CCanvasRenderer>()) {
+            renderer->SetHitFrame(nullptr);renderer->SetAbsoluteDepth(-1);
+        }
         uint64_t sequence = 0;
         struct State
         {
             ECS::Actor* actor;
             bool hasCanvas = false;
             Rect parent, clip;
+            Rect canvasClip;
             RenderMode mode = RenderMode::ScreenSpaceOverlay;
             OvMaths::FMatrix4 canvasToWorld = OvMaths::FMatrix4::Identity;
             bool drawable = true;
             float scale = 1, alpha = 1;
             int order = 0;
             bool blocks = true, interactable = true;
+            std::shared_ptr<Mesh> popDraw;
         };
         std::vector<State> stack;
         const auto& actors = scene.GetActors();
@@ -225,6 +272,11 @@ namespace OvCore::UI
         {
             auto state = stack.back(); stack.pop_back();
             auto& actor = *state.actor;
+            if (state.popDraw) {
+                state.popDraw->sequence = sequence++;
+                frame.meshes.push_back(std::move(*state.popDraw)); continue;
+            }
+            std::shared_ptr<Mesh> popDraw;
             if (!visited.insert(&actor).second) throw std::logic_error("UI actor hierarchy is not a tree");
             if (!actor.IsActive()) continue;
             const auto* canvas = actor.GetComponent<CCanvas>();
@@ -242,13 +294,16 @@ namespace OvCore::UI
                     {
                         state.parent = geometry->rect;
                         state.clip = state.mode == RenderMode::ScreenSpaceOverlay ? Rect{{0, 0}, size} : geometry->rect;
+                        state.canvasClip = state.clip;
                         state.canvasToWorld = geometry->localToWorld;
                     }
                 }
+                if (canvas->OverridesSorting()) state.clip=state.canvasClip;
                 if (rootCanvas || canvas->OverridesSorting()) state.order = canvas->GetSortingOrder();
             }
-            if (const auto* group = actor.GetComponent<CCanvasGroup>())
+            if (const auto* group = actor.GetComponent<CCanvasGroup>(); group && group->IsEnabled())
             {
+                if (group->IgnoresParentGroups()) { state.alpha=1;state.blocks=state.interactable=true; }
                 state.alpha *= group->GetAlpha();
                 state.blocks = state.blocks && group->BlocksRaycasts();
                 state.interactable = state.interactable && group->IsInteractable();
@@ -286,28 +341,40 @@ namespace OvCore::UI
                         frame.images.push_back(std::move(output));
                     }
                 }
-                if (const auto* renderer = actor.GetComponent<CCanvasRenderer>(); renderer && state.drawable &&
-                    !renderer->GetVertices().empty() && !renderer->GetIndices().empty())
+                if (auto* renderer = actor.GetComponent<CCanvasRenderer>(); renderer && state.drawable && !renderer->IsCulled() &&
+                    !renderer->GetMaterialSlots().empty() && !renderer->GetVertices().empty() && !renderer->GetIndices().empty())
                 {
-                    const auto visible = Rect::Intersect(local, state.clip);
+                    auto clip = renderer->UsesManagedRectClipping() ? state.canvasClip : state.clip;
+                    const auto pivot = transform->GetPivot();
+                    const auto origin = rect.min + OvMaths::FVector2{pivot.x * rect.size.x, pivot.y * rect.size.y};
+                    const float coordinateScale = state.mode == RenderMode::ScreenSpaceOverlay ? state.scale : 1.0f;
+                    if (renderer->HasRectClipping()) {
+                        const auto& r = renderer->GetClipRect();
+                        clip = Rect::Intersect(clip, {(origin+r.min)*coordinateScale,r.size*coordinateScale});
+                    }
+                    const auto visible = Rect::Intersect(local, clip);
                     if (!visible.Empty())
                     {
                         Mesh output;
+                        renderer->SetAbsoluteDepth(static_cast<int>(sequence));
                         output.actorGuid = actor.GetGUID(); output.sequence = sequence++; output.sourceGeneration = renderer->GetMeshGeneration();
-                        output.sortingOrder = state.order; output.renderMode = state.mode; output.clip = state.clip;
+                        output.sortingOrder = state.order; output.renderMode = state.mode; output.clip = clip;
+                        output.localOrigin=origin; output.coordinateScale=coordinateScale;
+                        if (state.mode != RenderMode::ScreenSpaceOverlay && renderCamera) {
+                            output.screenToCanvas=OvMaths::FMatrix4::Inverse(CameraProjection(*renderCamera,size)*CameraView(*renderCamera)*state.canvasToWorld);
+                            output.cameraPosition=renderCamera->GetPosition();
+                        }
                         output.canvasToWorld = state.canvasToWorld; output.indices = renderer->GetIndices();
-                        output.materialPath = renderer->GetMaterialPath();
+                        output.materialPath = renderer->GetMaterialPath(); output.stencil = renderer->GetStencil();
                         output.raycastTarget = state.blocks && renderer->IsRaycastTarget(); output.interactable = state.interactable;
                         output.vertices.reserve(renderer->GetVertices().size());
-                        const auto pivot = transform->GetPivot();
-                        const auto origin = rect.min + OvMaths::FVector2{pivot.x * rect.size.x, pivot.y * rect.size.y};
-                        const float coordinateScale = state.mode == RenderMode::ScreenSpaceOverlay ? state.scale : 1.0f;
+                        const auto tint = renderer->GetColor();
                         for (auto vertex : renderer->GetVertices())
                         {
                             vertex.position.x = (origin.x + vertex.position.x) * coordinateScale;
                             vertex.position.y = (origin.y + vertex.position.y) * coordinateScale;
                             vertex.position.z *= coordinateScale;
-                            vertex.color.w *= state.alpha;
+                            vertex.color.x *= tint.x; vertex.color.y *= tint.y; vertex.color.z *= tint.z; vertex.color.w *= state.alpha * tint.w;
                             output.vertices.push_back(vertex);
                         }
                         if (!renderer->GetTexturePath().empty())
@@ -322,11 +389,33 @@ namespace OvCore::UI
                         }
                         else if (const auto projected = ProjectRect(visible, state.canvasToWorld, renderCamera, size))
                         { output.screenCorners = *projected; output.hasScreenCorners = true; }
+                        auto slots = [&](const auto& source, auto& target) {
+                            for (const auto& slot : source) {
+                                MaterialSlot batch;
+                                batch.materialPath = slot.materialPath; batch.fontPage = slot.fontPage;
+                                batch.firstIndex = slot.explicitRange ? slot.firstIndex : 0;
+                                batch.indexCount = slot.explicitRange ? slot.indexCount : static_cast<uint32_t>(output.indices.size());
+                                if (batch.firstIndex > output.indices.size() || batch.indexCount > output.indices.size()-batch.firstIndex)
+                                    throw std::invalid_argument("Stale UI index range");
+                                if (!slot.texturePath.empty())
+                                    if (auto* manager = Global::ServiceLocator::TryGet<ResourceManagement::TextureManager>())
+                                        if (auto* texture = manager->GetResource(slot.texturePath,false)) batch.texture=texture->RetainTexture();
+                                target.push_back(std::move(batch));
+                            }
+                        };
+                        slots(renderer->GetMaterialSlots(), output.materialSlots);
+                        slots(renderer->GetPopMaterialSlots(), output.popMaterialSlots);
+                        if (renderer->GetPopStencil().enabled || !renderer->GetPopMaterialSlots().empty()) {
+                            popDraw=std::make_shared<Mesh>(output);popDraw->stencil=renderer->GetPopStencil();
+                            popDraw->pop=true;popDraw->raycastTarget=false;
+                            if(!output.popMaterialSlots.empty())popDraw->materialSlots=output.popMaterialSlots;
+                        }
                         frame.meshes.push_back(std::move(output));
                     }
                 }
                 state.parent = rect;
             }
+            if (popDraw) { auto exit=state;exit.popDraw=std::move(popDraw);stack.push_back(std::move(exit)); }
             const auto& children = actor.GetChildren();
             for (auto it = children.rbegin(); it != children.rend(); ++it)
             {
@@ -347,6 +436,10 @@ namespace OvCore::UI
             if (a.sortingOrder != b.sortingOrder) return a.sortingOrder < b.sortingOrder;
             return a.sequence < b.sequence;
         });
+        const auto hitFrame=std::make_shared<const Frame>(frame);
+        for (const auto& mesh : frame.meshes) if (!mesh.pop)
+            if (auto* actor=scene.FindActorByGUID(mesh.actorGuid))
+                if (auto* renderer=actor->GetComponent<CCanvasRenderer>())renderer->SetHitFrame(hitFrame);
         return frame;
     }
 }

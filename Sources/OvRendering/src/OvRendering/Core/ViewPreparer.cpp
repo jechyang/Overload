@@ -76,7 +76,10 @@ std::unique_ptr<Data::PreparedFrameData> Core::ViewPreparer::BuildDrawLists(
             if (cancel && cancel->load(std::memory_order_acquire)) throw std::runtime_error("View preparation cancelled");
             const auto index = candidate.sourceIndex;
             const auto& mesh = meshes[index];
-            const auto state = MeshFeatureProcessor::BuildState(baseState, mesh.state, mesh.stage);
+            if (mesh.uiPipelineState && mesh.stage != Data::RenderStage::OverlayUI && mesh.stage != Data::RenderStage::SceneUI)
+                throw std::invalid_argument("UI pipeline override requires a UI stage");
+            const auto state = mesh.uiPipelineState ? *mesh.uiPipelineState :
+                MeshFeatureProcessor::BuildState(baseState, mesh.state, mesh.stage);
             result->m_draws.push_back({index, state, OvMaths::FMatrix4::Transpose(mesh.model), mesh.user, {}});
         }
     }
