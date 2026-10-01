@@ -16,6 +16,7 @@
 #include <OvRendering/Utils/ResourceTracking.h>
 
 #include <OvTools/Profiling/TracyAllocators.h>
+#include <OvTools/Utils/PathParser.h>
 #include <OvTools/Utils/String.h>
 
 #include <OvDebug/Logger.h>
@@ -32,9 +33,9 @@ FORCE_DEDICATED_GPU
 namespace
 {
 	/**
-	* When Overload is launched from a project file, we should consider the executable path as
-	* the current working directory
-	* @param p_executablePath
+	* Resolve Data/Editor, Data/Engine and Config next to the executable regardless of
+	* the shell working directory. Debugger sessions keep the debugger's cwd.
+	* @param p_executablePath argv[0], used when the module path is unavailable
 	*/
 	void UpdateWorkingDirectory(const std::string& p_executablePath)
 	{
@@ -42,7 +43,14 @@ namespace
 		if (!IsDebuggerPresent())
 #endif
 		{
-			std::filesystem::current_path(OvTools::Utils::PathParser::GetContainingFolder(p_executablePath));
+			std::filesystem::path executable = p_executablePath;
+#ifdef _WIN32
+			std::wstring buffer(32768, L'\0');
+			const auto size = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+			if (size > 0 && size < buffer.size())
+				executable = std::filesystem::path(buffer.substr(0, size));
+#endif
+			std::filesystem::current_path(OvTools::Utils::PathParser::GetContainingFolder(executable.string()));
 		}
 	}
 
@@ -81,7 +89,7 @@ namespace
 
 int main(int argc, char** argv)
 {
-	// UpdateWorkingDirectory(argv[0]);
+	UpdateWorkingDirectory(argc > 0 ? argv[0] : "");
 
 	OvEditor::Settings::EditorSettings::Load();
 	OvRendering::Utils::ResourceTracking::TrackResources();
