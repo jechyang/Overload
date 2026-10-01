@@ -3,6 +3,7 @@
 #include <OvRendering/Core/PipelineRunner.h>
 #include <OvRendering/Core/DrawPacketBuilder.h>
 #include <OvRendering/Core/RenderTaskCoordinator.h>
+#include <OvRendering/Data/PortableCommands.h>
 #include <baregl/ResourceExecutor.h>
 #include <baregl/detail/glad/glad.h>
 #include <algorithm>
@@ -157,40 +158,25 @@ Data::RenderCommandList Core::MeshCommandRecorder::RecordRange(
             const auto matrices = std::span{p_frame->GetViewBindings().lights};
             if (lights->Allocate(matrices.size_bytes(), baregl::types::EAccessSpecifier::STREAM_DRAW)) lights->Upload(matrices.data());
         });
+        const Data::MeshDrawBuffers buffers{m_engine, m_lights, m_reflection, m_skinning, m_identity};
         for (size_t i = begin; i < end; ++i)
         {
             check();
             const auto& draw = p_frame->GetDraws()[i];
             if (!draw.material) throw std::invalid_argument("Missing published draw bindings");
             const auto& source = p_frame->GetScene().GetMeshes()[draw.sourceIndex];
-            const auto constants = DrawPacketBuilder::Engine(*p_frame, draw);
-            commands.Append([geometry = source.geometry, material = draw.material,
-                instances = source.instances, state = draw.pipelineState, constants, view, p_target,
-                palette = source.skinning, reflectionData = source.reflection,
-                engine = m_engine, lights = m_lights, reflection = m_reflection,
-                skinning = m_skinning, identity = m_identity](Context::Driver& driver) {
-                if (p_target) p_target->Bind(); else baregl::Framebuffer::BindDefault();
-                driver.SetViewport(0, 0, view.input.width, view.input.height);
-                engine->Upload(&constants);
-                engine->Bind(baregl::types::EBufferType::UNIFORM, 0);
-                lights->Bind(baregl::types::EBufferType::SHADER_STORAGE, 0);
-                reflection->Upload(&reflectionData);
-                reflection->Bind(baregl::types::EBufferType::UNIFORM, 1);
-                if (palette.enabled)
-                {
-                    const auto& matrices = palette.matrices;
-                    if (!matrices || matrices->empty()) identity->Bind(baregl::types::EBufferType::SHADER_STORAGE, 1);
-                    else
-                    {
-                        const auto bytes = matrices->size() * sizeof(OvMaths::FMatrix4);
-                        if (skinning->GetSize() < bytes) skinning->Allocate(bytes, baregl::types::EAccessSpecifier::STREAM_DRAW);
-                        skinning->Upload(matrices->data(), baregl::data::BufferMemoryRange{.offset = 0, .size = bytes});
-                        skinning->Bind(baregl::types::EBufferType::SHADER_STORAGE, 1);
-                    }
-                }
-                material->Execute();
-                driver.Draw(state, *geometry, baregl::types::EPrimitiveMode::TRIANGLES, instances);
-            });
+            Data::MeshDrawCommand command;
+            command.geometry = source.geometry;
+            command.material = draw.material;
+            command.state = draw.pipelineState;
+            command.instances = source.instances;
+            command.constants = DrawPacketBuilder::Engine(*p_frame, draw);
+            command.palette = source.skinning;
+            command.reflection = source.reflection;
+            command.width = view.input.width;
+            command.height = view.input.height;
+            command.target = p_target;
+            commands.Append(Data::MakeMeshDraw(std::move(command), buffers));
         }
         check();
         commands.Seal(); // No deferred factories or nested Worker scheduling.
@@ -202,11 +188,15 @@ Data::RenderCommandList Core::MeshCommandRecorder::RecordRange(
 void Core::MeshCommandRecorder::BeginView(Data::RenderCommandList& commands, const Data::RenderView& view,
     std::optional<baregl::Framebuffer::Snapshot> target) const
 {
-    commands.Append([view, target](Context::Driver& driver) {
-        if (target) target->Bind(); else baregl::Framebuffer::BindDefault();
-        driver.SetViewport(0, 0, view.input.width, view.input.height);
-        driver.Clear(view.input.clearColor, view.input.clearDepth, view.input.clearStencil, view.input.clearValue);
-    });
+    Data::BeginViewCommand command;
+    command.width = view.input.width;
+    command.height = view.input.height;
+    command.clearColor = view.input.clearColor;
+    command.clearDepth = view.input.clearDepth;
+    command.clearStencil = view.input.clearStencil;
+    command.clearValue = view.input.clearValue;
+    command.target = std::move(target);
+    commands.Append(Data::MakeBeginView(std::move(command)));
 }
 void Core::MeshCommandRecorder::EndView(Data::RenderCommandList& commands, bool hasDraws) const
 {

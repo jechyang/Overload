@@ -50,6 +50,27 @@ namespace OvCore::Rendering
             OvRendering::Data::Material::PreparedSnapshot snapshot;
             // Frame-shared palettes keyed by (skinned component, pose version).
             std::map<std::pair<const void*, uint64_t>, std::shared_ptr<const std::vector<OvMaths::FMatrix4>>> palettes;
+            // View-invariant object bases captured once per frame; later views
+            // reuse them and only apply stage/material/probe selection.
+            struct MeshBase
+            {
+                uint64_t actorId = 0, collectionIndex = 0, actorNumericId = 0;
+                OvMaths::FVector3 position;
+                OvMaths::FMatrix4 model, user;
+                std::shared_ptr<const OvRendering::Resources::IMesh> geometry;
+                // Pre-palette-scale world bounds; apply meshBoundsScale per view.
+                std::optional<OvRendering::Geometry::BoundingSphere> worldBounds;
+                float meshBoundsScale = 1.0f;
+                std::shared_ptr<const std::vector<OvMaths::FMatrix4>> palette;
+                uint64_t poseVersion = 0;
+                bool hasSkin = false, originalSkinning = false, meshHasSkinningData = false;
+                const OvRendering::Resources::IMesh* mesh = nullptr;
+                OvRendering::Data::Material* sourceMaterial = nullptr;
+                uintptr_t sortingIdentity = 0;
+                bool visibleShadow = false, visibleReflection = false, visibleGeometry = false;
+            };
+            std::vector<MeshBase> meshBases;
+            bool meshBasesBuilt = false;
         };
         static OvRendering::Data::RenderViewInput CaptureView(const SceneViewRequest& p_request);
         static std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> ExtractImpl(

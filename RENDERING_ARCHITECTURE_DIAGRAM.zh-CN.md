@@ -207,9 +207,9 @@ flowchart LR
 | 顺序 | 已确认的现状与代码依据 | 影响与建议 |
 | --- | --- | --- |
 | 1：补齐计划可见性（已完成） | MainView/SceneUI/CanvasUI/OverlayUI 已把可写颜色附件登记为 `writes`；后处理有显式 `postProcessReads/Writes`；AView 声明 Overlay/Picking 为 `trailing` 合成 | `RenderPlan::Validate` 覆盖整帧资源契约（含 trailing）。仍不是自动调度的 Render Graph；深度/stencil renderbuffer 仍归 framebuffer owner |
-| 2：减少提取重复工作（部分完成） | 蒙皮 palette 按 actor/poseVersion 跨 mesh/View 共享；无 single-use 属性时跳过有序 resolve。`addView` 仍按 View 调用 `ExtractImpl` | 后续可再拆帧内共享对象/材质基础快照与 View 专属数据。保持 single-use 可观察顺序 |
-| 3：改进产品任务组织（部分完成） | `PrepareViews`/`RecordViews` 已把多 View 的 mesh/binding/record range 扁平提交；`AView::RecordRenderCommands` 仍同步 Extract → Prepare → Record | 后续可把 owner 侧 Extract 与跨视口批量 Prepare/Record 再拆开。不要直接让 Worker 并行调用会触碰 ECS/资源 owner 的 `AView` 方法 |
-| 4：明确后端边界（进行中） | 产品最终 blit/clear 已走 `Framebuffer::Snapshot::BlitToBackBuffer` 与 `PortableCommands`；`RenderPlan`、Material 与 Recorder 接口仍含 baregl 类型，命令仍以 `std::function<void(Driver&)>` 为主 | 对当前 OpenGL 后端可用。接 Vulkan/D3D 前还需资源句柄包装、typed draw/bind/upload 命令流与可替换执行接口；仅新增 Driver 子类不够 |
+| 2：减少提取重复工作（已完成） | 帧内 `meshBases` 一次捕获 transform/geometry/palette/bounds；各 View 只做可见性与材质/阶段选择。palette 跨 mesh/View 共享；无 single-use 时跳过有序 resolve | 保持 single-use 可观察顺序与 shadow 的 palette bounds 语义 |
+| 3：改进产品任务组织（已完成） | `PrepareViews`/`RecordViews` 扁平 range 调度；`AView` 拆成 ExtractView/PrepareView/RecordView，Editor 先批量 Extract 再 Prepare/Record | 不让 Worker 调用触碰 ECS/资源 owner 的 `AView` 方法 |
+| 4：明确后端边界（进行中） | 产品 present/clear 走 `PortableCommands`；Mesh 命令为 typed `MeshDrawCommand`/`BeginViewCommand`，执行经 `ExecuteMeshDraw`。接口仍含 baregl 类型 | 接 Vulkan/D3D 前还需资源句柄包装与可替换执行接口；仅新增 Driver 子类不够 |
 | 5：同步模块名称与实际调用（已完成） | 概览已改为 `RenderPipeline`/`PostProcessPipeline`/`CReflectionProbe` 状态/`RenderCommandList::History`；`PipelineRunner::Run` 为薄切片助手，产品合并在 Frontend/RecordFrame | 当前支持组合已有 Stage，不等于已提供可任意注册功能的 SRP SDK |
 
 这些是静态审查确认的组织边界和潜在成本，不是本次复现的渲染错误或测出的瓶颈。建议保留现有快照、固定 owner 和失败协议，围绕以上边界逐步改进。

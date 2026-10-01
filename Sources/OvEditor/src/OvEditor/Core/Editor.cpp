@@ -465,32 +465,36 @@ OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p
 	}
 
     OvTools::Jobs::JobSystem* recordingJobs = nullptr;
-    const auto recordView = [&](Panels::AView& view) {
-        if (auto* jobs = view.GetCommandRecordingJobs())
-        {
-            frame.AppendRecording(view.RecordRenderCommands(true));
-            recordingJobs = jobs;
-        }
-        else frame.Append(view.RecordRenderCommands());
+    // Extract all visible viewports first (stable Main read), then Prepare/Record.
+    // Avoids interleaving ECS extraction with per-view job waits.
+    struct PendingView { Panels::AView* view; Panels::AView::ViewFrame frame; };
+    std::vector<PendingView> pending;
+    const auto collectView = [&](Panels::AView& view) {
+        if (auto* jobs = view.GetCommandRecordingJobs()) recordingJobs = jobs;
+        pending.push_back({&view, view.ExtractView()});
     };
 	if (assetView.IsOpened() && assetView.IsVisible())
 	{
 		ZoneScopedN("Asset View Rendering");
-		recordView(assetView);
+		collectView(assetView);
 	}
 
 	if (gameView.IsOpened() && gameView.IsVisible())
 	{
 		ZoneScopedN("Game View Rendering");
-		recordView(gameView);
+		collectView(gameView);
 	}
 
 	if (sceneView.IsOpened() && sceneView.IsVisible())
 	{
 		ZoneScopedN("Scene View Rendering");
-		recordView(sceneView);
-        m_recordedInteraction = sceneView.GetRecordedInteraction();
+		collectView(sceneView);
 	}
+    for (auto& item : pending) item.view->PrepareView(item.frame);
+    for (auto& item : pending)
+        frame.AppendRecording(item.view->RecordView(item.frame, true));
+    if (sceneView.IsOpened() && sceneView.IsVisible())
+        m_recordedInteraction = sceneView.GetRecordedInteraction();
     UpdateEditorPanels(p_deltaTime);
     frame.Append(m_context.uiManager->RecordRenderCommands());
     frame.Seal(recordingJobs);

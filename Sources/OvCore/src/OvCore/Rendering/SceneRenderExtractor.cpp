@@ -89,75 +89,48 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     auto& programCache=programs?*programs:localPrograms;
     MaterialCache localMaterialCache;
     auto& materialCache = p_cache ? *p_cache : localMaterialCache;
-    for (const auto* renderer : components.modelRenderers)
+    using MeshBase = MaterialCache::MeshBase;
+    if (!materialCache.meshBasesBuilt)
     {
-        const auto& owner = renderer->owner;
-        if (!owner.IsActive() || !renderer->GetModel()) continue;
-        const auto* materials = owner.GetComponent<ECS::Components::CMaterialRenderer>();
-        if (!materials || !Rendering::SatisfiesVisibility(materials->GetVisibilityFlags(), shadow ? Rendering::EVisibilityFlags::SHADOW : capture ? Rendering::EVisibilityFlags::REFLECTION : Rendering::EVisibilityFlags::GEOMETRY)) continue;
-        const auto* skin = owner.GetComponent<ECS::Components::CSkinnedMeshRenderer>();
-        const bool hasSkin = Rendering::SkinningUtils::IsSkinningActive(skin);
-        const auto& transform = owner.transform.GetFTransform();
-        // One shared palette per actor/pose; all meshes and later views reuse it.
-        std::shared_ptr<const std::vector<OvMaths::FMatrix4>> sharedPalette;
-        for (const auto* mesh : renderer->GetModel()->GetMeshes())
+        // Frame-invariant object capture. Collection ordinals stay per-view because
+        // renderer visibility can differ between shadow/reflection/geometry.
+        materialCache.meshBases.clear();
+        for (const auto* renderer : components.modelRenderers)
         {
-            const auto collection = ordinal++;
-            auto* sourceMaterial = mesh->GetMaterialIndex() < kMaxMaterialCount ?
-                materials->GetMaterials().at(mesh->GetMaterialIndex()) : nullptr;
-            auto* material = p_request.overrideMaterial ? p_request.overrideMaterial :
-                (sourceMaterial ? sourceMaterial : p_request.fallbackMaterial);
-            if (!material || !material->IsValid()) continue;
-            const bool originalSkinning = material->SupportsFeature("SKINNING");
-            if (shadow)
+            const auto& owner = renderer->owner;
+            if (!owner.IsActive() || !renderer->GetModel()) continue;
+            const auto* materials = owner.GetComponent<ECS::Components::CMaterialRenderer>();
+            if (!materials) continue;
+            const auto* skin = owner.GetComponent<ECS::Components::CSkinnedMeshRenderer>();
+            const bool hasSkin = Rendering::SkinningUtils::IsSkinningActive(skin);
+            const auto& transform = owner.transform.GetFTransform();
+            std::shared_ptr<const std::vector<OvMaths::FMatrix4>> sharedPalette;
+            for (const auto* mesh : renderer->GetModel()->GetMeshes())
             {
-                if (!sourceMaterial || !sourceMaterial->IsValid() || !sourceMaterial->IsShadowCaster()) continue;
-                material = sourceMaterial->HasPass("SHADOW_PASS") ? sourceMaterial : p_request.shadowFallback;
-                if (!material || !material->IsValid()) throw std::invalid_argument("Missing shadow fallback material");
-            }
-            if (capture && (material->IsUserInterface() || !material->IsCapturedByReflectionProbes())) continue;
-            const auto category = material->IsUserInterface() ? Data::RenderStage::SceneUI :
-                material->IsBlendable() ? Data::RenderStage::Transparent : Data::RenderStage::Opaque;
-            auto* sortingMaterial = material;
-            const auto stage = picking ? Data::RenderStage::Picking : shadow ? Data::RenderStage::ShadowCaster : capture ? Data::RenderStage::ReflectionCapture : category;
-            if (!shadow && material != p_request.fallbackMaterial &&
-                ((category == Data::RenderStage::SceneUI && !p_request.includeUI) ||
-                 (category == Data::RenderStage::Transparent && !p_request.includeTransparent) ||
-                 (category == Data::RenderStage::Opaque && !p_request.includeOpaque))) continue;
-            if (std::find(p_request.pipeline.stages.begin(), p_request.pipeline.stages.end(), stage) == p_request.pipeline.stages.end()) continue;
-            const auto description = Data::DescribeStage(stage);
-            if ((!shadow && !material->SupportsProjectionMode(view.projectionMode)) || material->GetGPUInstances() <= 0) continue;
-            const bool pickingSkinned = picking && hasSkin && mesh->HasSkinningData() && originalSkinning;
-            if (picking)
-            {
-                material = !pickingSkinned && material->HasPass("PICKING_PASS") ? material : p_request.pickingFallback;
-                if (!material || !material->IsValid()) throw std::invalid_argument("Picking requires its fallback material");
-                if (!material->SupportsProjectionMode(view.projectionMode) || material->GetGPUInstances() <= 0) continue;
-            }
-            if (typeid(*mesh) != typeid(OvRendering::Resources::Mesh))
-                throw std::invalid_argument("Scene requires standard retained geometry");
-            for (const auto& [name, property] : material->GetProperties())
-                if (property.singleUse)
+                MeshBase base;
+                base.mesh = mesh;
+                base.actorId = owner.GetGUID();
+                base.actorNumericId = owner.GetID();
+                base.position = transform.GetWorldPosition();
+                base.model = transform.GetWorldMatrix();
+                base.user = materials->GetUserMatrix();
+                base.geometry = mesh->RetainGeometry();
+                base.hasSkin = hasSkin;
+                base.visibleShadow = Rendering::SatisfiesVisibility(materials->GetVisibilityFlags(), Rendering::EVisibilityFlags::SHADOW);
+                base.visibleReflection = Rendering::SatisfiesVisibility(materials->GetVisibilityFlags(), Rendering::EVisibilityFlags::REFLECTION);
+                base.visibleGeometry = Rendering::SatisfiesVisibility(materials->GetVisibilityFlags(), Rendering::EVisibilityFlags::GEOMETRY);
+                base.sourceMaterial = mesh->GetMaterialIndex() < kMaxMaterialCount ?
+                    materials->GetMaterials().at(mesh->GetMaterialIndex()) : nullptr;
+                const bool hasPalette = hasSkin && mesh->HasSkinningData();
+                base.hasSkin = hasSkin;
+                base.meshHasSkinningData = mesh->HasSkinningData();
+                if (hasSkin && skin) base.meshBoundsScale = skin->GetMeshBoundsScale();
+                // Share palette whenever the actor is skinned; shadow may use it even
+                // when this mesh has no skinning data.
+                if (hasSkin && skin)
                 {
-                    resolveSingleUse = true;
-                }
-            std::optional<Data::FeatureSet> features;
-            const bool hasPalette = hasSkin && (shadow || mesh->HasSkinningData());
-            if (hasPalette && (!picking || pickingSkinned) && (!shadow || originalSkinning) && material->SupportsFeature("SKINNING"))
-                features = Rendering::SkinningUtils::BuildFeatureSet(&material->GetFeatures());
-            const auto featureRef = features ? OvTools::Utils::OptRef<const Data::FeatureSet>(*features) : std::nullopt;
-            const auto program=material->GetShader()->RetainVariant(description.technique,features?*features:material->GetFeatures());
-            const bool programSkinning=programCache.Validate(program);
-            Data::MeshInput item;
-            item.stage = stage; item.sourceStage = category;
-            item.transparent = material->IsBlendable();
-            item.skinning.enabled = programSkinning || (features && features->contains("SKINNING")) || material->HasFeature("SKINNING");
-            if (item.skinning.enabled && hasPalette)
-            {
-                item.skinning.poseVersion = skin->GetPoseVersion();
-                if (!sharedPalette)
-                {
-                    const auto key = std::pair{static_cast<const void*>(skin), item.skinning.poseVersion};
+                    base.poseVersion = skin->GetPoseVersion();
+                    const auto key = std::pair{static_cast<const void*>(skin), base.poseVersion};
                     const auto found = materialCache.palettes.find(key);
                     if (found != materialCache.palettes.end()) sharedPalette = found->second;
                     else
@@ -166,96 +139,154 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
                         sharedPalette = std::make_shared<const std::vector<OvMaths::FMatrix4>>(matrices.begin(), matrices.end());
                         materialCache.palettes.emplace(key, sharedPalette);
                     }
+                    base.palette = sharedPalette;
                 }
-                item.skinning.matrices = sharedPalette;
-            }
-            auto reflection = p_request.reflection;
-            item.actorId = owner.GetGUID(); item.collectionIndex = collection;
-            item.drawOrder = sortingMaterial->GetDrawOrder(); item.position = transform.GetWorldPosition();
-            item.model = transform.GetWorldMatrix(); item.user = materials->GetUserMatrix();
-            if (description.reflectionReceiver && material->IsReflectionReceiver())
-            {
-                const Data::ReflectionProbeInput* bestLocal = nullptr;
-                const Data::ReflectionProbeInput* bestGlobal = nullptr;
-                float localDistance = std::numeric_limits<float>::max(), globalDistance = localDistance;
-                const auto bounds = mesh->GetBoundingSphere();
-                const auto center = item.model * OvMaths::FVector4(bounds.position, 1.0f);
-                const auto scale = std::max({
-                    OvMaths::FVector3::Length({item.model.data[0],item.model.data[1],item.model.data[2]}),
-                    OvMaths::FVector3::Length({item.model.data[4],item.model.data[5],item.model.data[6]}),
-                    OvMaths::FVector3::Length({item.model.data[8],item.model.data[9],item.model.data[10]})});
-                for (const auto& probe : p_probes)
+                using Behaviour = ECS::Components::CModelRenderer::EFrustumBehaviour;
+                std::optional<Geometry::BoundingSphere> bounds;
+                switch (renderer->GetFrustumBehaviour())
                 {
-                    const auto distance = OvMaths::FVector3::Distance(item.position, probe.position);
-                    auto& best = probe.local ? bestLocal : bestGlobal;
-                    auto& bestDistance = probe.local ? localDistance : globalDistance;
-                    if ((!probe.local && bestLocal) || distance > bestDistance) continue;
-                    if (probe.local)
-                    {
-                        const auto local = probe.inverseRotation * (OvMaths::FVector3{center.x,center.y,center.z} - probe.position);
-                        const auto extent = probe.halfExtents;
-                        const auto closest = OvMaths::FVector3{std::max(-extent.x,std::min(extent.x,local.x)), std::max(-extent.y,std::min(extent.y,local.y)), std::max(-extent.z,std::min(extent.z,local.z))};
-                        const auto d = local - closest;
-                        const auto radius = bounds.radius * scale;
-                        if (d.x*d.x+d.y*d.y+d.z*d.z > radius*radius) continue;
-                    }
-                    best = &probe; bestDistance = distance;
+                case Behaviour::MESH_BOUNDS: bounds = mesh->GetBoundingSphere(); break;
+                case Behaviour::DEPRECATED_MODEL_BOUNDS: bounds = renderer->GetModel()->GetBoundingSphere(); break;
+                case Behaviour::CUSTOM_BOUNDS: bounds = renderer->GetCustomBoundingSphere(); break;
+                default: break;
                 }
-                if (const auto* probe = bestLocal ? bestLocal : bestGlobal) reflection = probe->receiver;
-                item.reflection = reflection.constants;
+                if (bounds)
+                {
+                    const auto scale = transform.GetWorldScale();
+                    const float maximum = std::max(std::max(std::max(scale.x, scale.y), scale.z), 0.0f);
+                    bounds->position = base.position + OvMaths::FQuaternion::RotatePoint(bounds->position, transform.GetWorldRotation()) * maximum;
+                    // Palette radius scale is applied per view; see hasPalette below.
+                    bounds->radius *= maximum;
+                    base.worldBounds = bounds;
+                }
+                materialCache.meshBases.push_back(std::move(base));
             }
-            item.state = material->GenerateStateMask(); item.instances = static_cast<uint32_t>(material->GetGPUInstances());
-            if (picking) item.state.frontfaceCulling = item.state.backfaceCulling = false;
-            if (shadow)
-            {
-                item.state.blendable = false; item.state.depthTest = true;
-                item.state.colorWriting = false; item.state.depthWriting = true;
-                item.state.frontfaceCulling = false; item.state.backfaceCulling = false;
-            }
-            using Behaviour = ECS::Components::CModelRenderer::EFrustumBehaviour;
-            std::optional<Geometry::BoundingSphere> bounds;
-            switch (renderer->GetFrustumBehaviour())
-            {
-            case Behaviour::MESH_BOUNDS: bounds = mesh->GetBoundingSphere(); break;
-            case Behaviour::DEPRECATED_MODEL_BOUNDS: bounds = renderer->GetModel()->GetBoundingSphere(); break;
-            case Behaviour::CUSTOM_BOUNDS: bounds = renderer->GetCustomBoundingSphere(); break;
-            default: break;
-            }
-            if (bounds)
-            {
-                // Preserve the existing max(non-absolute scale, 0) rule, including
-                // negative scales and the legacy rotated/scaled sphere offset.
-                const auto scale = transform.GetWorldScale();
-                const float maximum = std::max(std::max(std::max(scale.x, scale.y), scale.z), 0.0f);
-                bounds->position = item.position + OvMaths::FQuaternion::RotatePoint(bounds->position, transform.GetWorldRotation()) * maximum;
-                if (hasPalette) bounds->radius *= skin->GetMeshBoundsScale();
-                bounds->radius *= maximum;
-                item.worldBounds = bounds;
-            }
-            item.geometry = mesh->RetainGeometry();
-            // Capture without consumption; the ordered compatibility boundary below
-            // alone owns source singleUse consumption. Overrides are separate owned values.
-            Data::Material::PropertyOverrides overrides;
-            if (picking && material->HasProperty("_PickingColor"))
-            {
-                const auto id = static_cast<uint32_t>(owner.GetID());
-                overrides["_PickingColor"] = OvMaths::FVector4{float(id & 255)/255.0f,float((id>>8)&255)/255.0f,float((id>>16)&255)/255.0f,1};
-            }
-            if (description.shadowReceiver && material->IsShadowReceiver() && p_request.shadow.map &&
-                material->HasProperty("_ShadowMap") && material->HasProperty("_LightSpaceMatrix"))
-            {
-                overrides.emplace("_ShadowMap", p_request.shadow.map.get());
-                overrides.emplace("_LightSpaceMatrix", p_request.shadow.lightSpace);
-            }
-            if (description.reflectionReceiver && material->IsReflectionReceiver() && material->HasProperty("_EnvironmentMap"))
-                overrides.emplace("_EnvironmentMap", reflection.map.get());
-            item.material = material->PrepareSnapshot(description.technique, featureRef, p_white, p_black, receiverTextures, {}, true, true, false, overrides);
-            overridesToResolve.push_back(std::move(overrides));
-            materialsToResolve.push_back(material);
-            featuresToResolve.push_back(std::move(features));
-            identities.push_back(reinterpret_cast<uintptr_t>(sortingMaterial));
-            builder->m_meshes.push_back(std::move(item));
         }
+        materialCache.meshBasesBuilt = true;
+    }
+    for (const auto& base : materialCache.meshBases)
+    {
+        const bool rendererVisible = shadow ? base.visibleShadow : capture ? base.visibleReflection : base.visibleGeometry;
+        if (!rendererVisible) continue;
+        const auto collection = ordinal++;
+        auto* sourceMaterial = base.sourceMaterial;
+        auto* material = p_request.overrideMaterial ? p_request.overrideMaterial :
+            (sourceMaterial ? sourceMaterial : p_request.fallbackMaterial);
+        if (!material || !material->IsValid()) continue;
+        const bool originalSkinning = material->SupportsFeature("SKINNING");
+        const bool hasSkin = base.hasSkin;
+        const auto* mesh = base.mesh;
+        if (shadow)
+        {
+            if (!sourceMaterial || !sourceMaterial->IsValid() || !sourceMaterial->IsShadowCaster()) continue;
+            material = sourceMaterial->HasPass("SHADOW_PASS") ? sourceMaterial : p_request.shadowFallback;
+            if (!material || !material->IsValid()) throw std::invalid_argument("Missing shadow fallback material");
+        }
+        if (capture && (material->IsUserInterface() || !material->IsCapturedByReflectionProbes())) continue;
+        const auto category = material->IsUserInterface() ? Data::RenderStage::SceneUI :
+            material->IsBlendable() ? Data::RenderStage::Transparent : Data::RenderStage::Opaque;
+        auto* sortingMaterial = material;
+        const auto stage = picking ? Data::RenderStage::Picking : shadow ? Data::RenderStage::ShadowCaster : capture ? Data::RenderStage::ReflectionCapture : category;
+        if (!shadow && material != p_request.fallbackMaterial &&
+            ((category == Data::RenderStage::SceneUI && !p_request.includeUI) ||
+             (category == Data::RenderStage::Transparent && !p_request.includeTransparent) ||
+             (category == Data::RenderStage::Opaque && !p_request.includeOpaque))) continue;
+        if (std::find(p_request.pipeline.stages.begin(), p_request.pipeline.stages.end(), stage) == p_request.pipeline.stages.end()) continue;
+        const auto description = Data::DescribeStage(stage);
+        if ((!shadow && !material->SupportsProjectionMode(view.projectionMode)) || material->GetGPUInstances() <= 0) continue;
+        const bool pickingSkinned = picking && hasSkin && base.meshHasSkinningData && originalSkinning;
+        if (picking)
+        {
+            material = !pickingSkinned && material->HasPass("PICKING_PASS") ? material : p_request.pickingFallback;
+            if (!material || !material->IsValid()) throw std::invalid_argument("Picking requires its fallback material");
+            if (!material->SupportsProjectionMode(view.projectionMode) || material->GetGPUInstances() <= 0) continue;
+        }
+        if (typeid(*mesh) != typeid(OvRendering::Resources::Mesh))
+            throw std::invalid_argument("Scene requires standard retained geometry");
+        for (const auto& [name, property] : material->GetProperties())
+            if (property.singleUse) resolveSingleUse = true;
+        std::optional<Data::FeatureSet> features;
+        const bool hasPalette = base.hasSkin && (shadow || base.meshHasSkinningData);
+        if (hasPalette && (!picking || pickingSkinned) && (!shadow || originalSkinning) && material->SupportsFeature("SKINNING"))
+            features = Rendering::SkinningUtils::BuildFeatureSet(&material->GetFeatures());
+        const auto featureRef = features ? OvTools::Utils::OptRef<const Data::FeatureSet>(*features) : std::nullopt;
+        const auto program=material->GetShader()->RetainVariant(description.technique,features?*features:material->GetFeatures());
+        const bool programSkinning=programCache.Validate(program);
+        Data::MeshInput item;
+        item.stage = stage; item.sourceStage = category;
+        item.transparent = material->IsBlendable();
+        item.skinning.enabled = programSkinning || (features && features->contains("SKINNING")) || material->HasFeature("SKINNING");
+        if (item.skinning.enabled && hasPalette)
+        {
+            item.skinning.poseVersion = base.poseVersion;
+            item.skinning.matrices = base.palette;
+        }
+        auto reflection = p_request.reflection;
+        item.actorId = base.actorId; item.collectionIndex = collection;
+        item.drawOrder = sortingMaterial->GetDrawOrder(); item.position = base.position;
+        item.model = base.model; item.user = base.user;
+        if (description.reflectionReceiver && material->IsReflectionReceiver())
+        {
+            const Data::ReflectionProbeInput* bestLocal = nullptr;
+            const Data::ReflectionProbeInput* bestGlobal = nullptr;
+            float localDistance = std::numeric_limits<float>::max(), globalDistance = localDistance;
+            const auto bounds = mesh->GetBoundingSphere();
+            const auto center = item.model * OvMaths::FVector4(bounds.position, 1.0f);
+            const auto scale = std::max({
+                OvMaths::FVector3::Length({item.model.data[0],item.model.data[1],item.model.data[2]}),
+                OvMaths::FVector3::Length({item.model.data[4],item.model.data[5],item.model.data[6]}),
+                OvMaths::FVector3::Length({item.model.data[8],item.model.data[9],item.model.data[10]})});
+            for (const auto& probe : p_probes)
+            {
+                const auto distance = OvMaths::FVector3::Distance(item.position, probe.position);
+                auto& best = probe.local ? bestLocal : bestGlobal;
+                auto& bestDistance = probe.local ? localDistance : globalDistance;
+                if ((!probe.local && bestLocal) || distance > bestDistance) continue;
+                if (probe.local)
+                {
+                    const auto local = probe.inverseRotation * (OvMaths::FVector3{center.x,center.y,center.z} - probe.position);
+                    const auto extent = probe.halfExtents;
+                    const auto closest = OvMaths::FVector3{std::max(-extent.x,std::min(extent.x,local.x)), std::max(-extent.y,std::min(extent.y,local.y)), std::max(-extent.z,std::min(extent.z,local.z))};
+                    const auto d = local - closest;
+                    const auto radius = bounds.radius * scale;
+                    if (d.x*d.x+d.y*d.y+d.z*d.z > radius*radius) continue;
+                }
+                best = &probe; bestDistance = distance;
+            }
+            if (const auto* probe = bestLocal ? bestLocal : bestGlobal) reflection = probe->receiver;
+            item.reflection = reflection.constants;
+        }
+        item.state = material->GenerateStateMask(); item.instances = static_cast<uint32_t>(material->GetGPUInstances());
+        if (picking) item.state.frontfaceCulling = item.state.backfaceCulling = false;
+        if (shadow)
+        {
+            item.state.blendable = false; item.state.depthTest = true;
+            item.state.colorWriting = false; item.state.depthWriting = true;
+            item.state.frontfaceCulling = false; item.state.backfaceCulling = false;
+        }
+        item.worldBounds = base.worldBounds;
+        if (item.worldBounds && hasPalette) item.worldBounds->radius *= base.meshBoundsScale;
+        item.geometry = base.geometry;
+        Data::Material::PropertyOverrides overrides;
+        if (picking && material->HasProperty("_PickingColor"))
+        {
+            const auto id = static_cast<uint32_t>(base.actorNumericId);
+            overrides["_PickingColor"] = OvMaths::FVector4{float(id & 255)/255.0f,float((id>>8)&255)/255.0f,float((id>>16)&255)/255.0f,1};
+        }
+        if (description.shadowReceiver && material->IsShadowReceiver() && p_request.shadow.map &&
+            material->HasProperty("_ShadowMap") && material->HasProperty("_LightSpaceMatrix"))
+        {
+            overrides.emplace("_ShadowMap", p_request.shadow.map.get());
+            overrides.emplace("_LightSpaceMatrix", p_request.shadow.lightSpace);
+        }
+        if (description.reflectionReceiver && material->IsReflectionReceiver() && material->HasProperty("_EnvironmentMap"))
+            overrides.emplace("_EnvironmentMap", reflection.map.get());
+        item.material = material->PrepareSnapshot(description.technique, featureRef, p_white, p_black, receiverTextures, {}, true, true, false, overrides);
+        overridesToResolve.push_back(std::move(overrides));
+        materialsToResolve.push_back(material);
+        featuresToResolve.push_back(std::move(features));
+        identities.push_back(reinterpret_cast<uintptr_t>(sortingMaterial));
+        builder->m_meshes.push_back(std::move(item));
     }
     auto groups = identities;
     std::sort(groups.begin(), groups.end()); groups.erase(std::unique(groups.begin(), groups.end()), groups.end());

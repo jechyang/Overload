@@ -18,6 +18,18 @@ namespace OvEditor::Panels
         virtual void InitFrame();
         void Render();
         virtual OvRendering::Data::RenderCommandList RecordRenderCommands(bool deferEncoding=false);
+        // Phase split for batched product recording: Extract on Main first, then
+        // Prepare/Record. RecordRenderCommands calls these in order.
+        struct ViewFrame
+        {
+            std::unique_ptr<OvCore::Rendering::SceneFrame> frame;
+            OvRendering::Data::PipelineState state;
+            std::unique_ptr<OvCore::Rendering::SceneRenderRequest> request;
+            bool active = false;
+        };
+        ViewFrame ExtractView();
+        void PrepareView(ViewFrame& view);
+        OvRendering::Data::RenderCommandList RecordView(ViewFrame& view, bool deferEncoding=false);
         void SetCommandRecordingEnabled(bool enabled,OvTools::Jobs::JobSystem* jobs=nullptr) { m_jobs=enabled?jobs:nullptr; }
         OvTools::Jobs::JobSystem* GetCommandRecordingJobs() const { return m_jobs; }
         virtual void CompleteRender() {}
