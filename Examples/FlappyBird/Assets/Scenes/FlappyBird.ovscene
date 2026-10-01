@@ -79,6 +79,11 @@
                         <data/>
                     </behaviour>
                     <behaviour>
+                        <type>Flappy.FlappyInputBootstrap</type>
+                        <script_identity backend="csharp" assembly="GameScripts" type="Flappy.FlappyInputBootstrap" id=""/>
+                        <data/>
+                    </behaviour>
+                    <behaviour>
                         <type>Flappy.FlappyBirdGame</type>
                         <script_identity backend="csharp" assembly="GameScripts" type="Flappy.FlappyBirdGame" id=""/>
                         <data/>

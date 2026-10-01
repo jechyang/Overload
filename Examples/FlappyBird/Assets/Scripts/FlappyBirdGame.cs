@@ -17,10 +17,35 @@ public class FlappyCanvas : CanvasScaler
     }
 }
 
+/// <summary>Creates EventSystem/input so Play-mode flaps work without manual wiring.</summary>
+public class FlappyInputBootstrap : Overload.EventSystems.UIBehaviour
+{
+    private bool ready;
+    protected override void OnRectTransformDimensionsChange()
+    {
+        base.OnRectTransformDimensionsChange();
+        EnsureInput();
+    }
+    public override void OnEnable()
+    {
+        base.OnEnable();
+        EnsureInput();
+    }
+    private void EnsureInput()
+    {
+        if (ready) return;
+        if (EventSystem.GetCurrent(Owner) != null) { ready = true; return; }
+        var es = Owner.Create("EventSystem");
+        es.AddBehaviour<BaseInput>();
+        es.AddBehaviour<StandaloneInputModule>();
+        es.AddBehaviour<EventSystem>();
+        ready = true;
+    }
+}
+
 /// <summary>
-/// Flappy Bird drawn as one project Graphic (same edit-mode path as ManagedUI's
-/// RedTriangle). OnPopulateMesh builds sky/ground/pipes/bird; OnUpdate runs the
-/// simulation only during Play. Edit mode shows the initial frame immediately.
+/// Flappy Bird as one project Graphic (edit-mode visible like ManagedUI RedTriangle).
+/// All geometry is in rectTransform local space: rect.min .. rect.max.
 /// </summary>
 public class FlappyBirdGame : Graphic
 {
@@ -30,8 +55,7 @@ public class FlappyBirdGame : Graphic
     private const float PipeGap = 150f;
     private const float PipeWidth = 64f;
     private const float PipeSpacing = 210f;
-    private const float BirdX = -70f;
-    private const float GroundY = -265f;
+    private const float GroundHeight = 80f;
     private const int PipeCount = 5;
 
     private enum State { Ready, Playing, Dead }
@@ -46,27 +70,35 @@ public class FlappyBirdGame : Graphic
     protected override void OnPopulateMesh(VertexHelper helper)
     {
         helper.Clear();
-        if (!started) ResetPipes();
         var r = rectTransform.rect;
-        // Full-canvas sky.
+        if (!started) ResetPipes(r);
+
+        // Sky fills the whole rect.
         AddQuad(helper, r.min.x, r.min.y, r.max.x, r.max.y, new Color(0.45f, 0.78f, 0.95f, 1f));
-        // Ground band.
-        AddQuad(helper, r.min.x, r.min.y, r.max.x, r.min.y + 80f, new Color(0.86f, 0.74f, 0.42f, 1f));
-        // Pipes.
+        // Ground band along the bottom of the rect.
+        AddQuad(helper, r.min.x, r.min.y, r.max.x, r.min.y + GroundHeight, new Color(0.86f, 0.74f, 0.42f, 1f));
+
+        float birdX = r.min.x + 100f;
         foreach (var (x, gapY, _) in pipes) {
             float top = gapY + PipeGap * 0.5f, bottom = gapY - PipeGap * 0.5f;
             AddQuad(helper, x - PipeWidth * 0.5f, top, x + PipeWidth * 0.5f, r.max.y, new Color(0.22f, 0.72f, 0.28f, 1f));
-            AddQuad(helper, x - PipeWidth * 0.5f, r.min.y + 80f, x + PipeWidth * 0.5f, bottom, new Color(0.16f, 0.55f, 0.22f, 1f));
+            AddQuad(helper, x - PipeWidth * 0.5f, r.min.y + GroundHeight, x + PipeWidth * 0.5f, bottom, new Color(0.16f, 0.55f, 0.22f, 1f));
         }
-        // Bird (circle-ish diamond so it reads without textures).
-        float bx = BirdX, by = birdY, s = 18f;
-        AddQuad(helper, bx - s, by - s, bx + s, by + s, new Color(1f, 0.86f, 0.18f, 1f));
-        AddQuad(helper, bx + s - 6f, by - 4f, bx + s + 10f, by + 4f, new Color(0.95f, 0.45f, 0.15f, 1f)); // beak
-        // Score pips along the top so the number is visible without Text.
-        for (int i = 0; i < Math.Min(m_Score, 12); i++)
-            AddQuad(helper, r.min.x + 16f + i * 14f, r.max.y - 36f, r.min.x + 26f + i * 14f, r.max.y - 20f, Color.white);
-        if (state == State.Dead)
-            AddQuad(helper, -120f, -40f, 120f, 60f, new Color(0.08f, 0.08f, 0.12f, 0.85f));
+
+        // Bird.
+        float s = 18f, by = birdY;
+        AddQuad(helper, birdX - s, by - s, birdX + s, by + s, new Color(1f, 0.86f, 0.18f, 1f));
+        AddQuad(helper, birdX + s - 2f, by - 5f, birdX + s + 12f, by + 5f, new Color(0.95f, 0.45f, 0.15f, 1f));
+
+        // Score marks along the top.
+        for (int i = 0; i < Math.Min(m_Score, 12); i++) {
+            float x0 = r.min.x + 20f + i * 16f;
+            AddQuad(helper, x0, r.max.y - 40f, x0 + 12f, r.max.y - 22f, Color.white);
+        }
+        if (state == State.Dead) {
+            float cx = (r.min.x + r.max.x) * 0.5f, cy = (r.min.y + r.max.y) * 0.5f;
+            AddQuad(helper, cx - 110f, cy - 50f, cx + 110f, cy + 50f, new Color(0.08f, 0.08f, 0.12f, 0.85f));
+        }
     }
 
     private static void AddQuad(VertexHelper helper, float x0, float y0, float x1, float y1, Color color)
@@ -81,30 +113,40 @@ public class FlappyBirdGame : Graphic
         helper.AddTriangle(i + 2, i + 3, i);
     }
 
-    private void ResetPipes()
+    private void ResetPipes(Rect r)
     {
         started = true;
         pipes.Clear();
-        for (int i = 0; i < PipeCount; i++)
-            pipes.Add((380f + i * PipeSpacing, (i % 3) * 40f - 40f, false));
+        for (int i = 0; i < PipeCount; i++) {
+            float x = r.max.x + 80f + i * PipeSpacing;
+            float gapY = (r.min.y + r.max.y) * 0.5f + ((i % 3) - 1) * 40f;
+            pipes.Add((x, gapY, false));
+        }
+        birdY = (r.min.y + r.max.y) * 0.5f;
     }
 
     public override void OnUpdate(float dt)
     {
         if (dt <= 0 || dt > 0.1f) dt = 1f / 60f;
         idleTime += dt;
-        if (!started) ResetPipes();
+        var r = rectTransform.rect;
+        if (!started) ResetPipes(r);
+
+        float groundTop = r.min.y + GroundHeight;
+        float birdX = r.min.x + 100f;
+        float minY = groundTop + 20f, maxY = r.max.y - 20f;
 
         bool flap = FlapPressed();
         switch (state) {
             case State.Ready:
-                birdY = 40f + MathF.Sin(idleTime * 4f) * 12f;
+                birdY = (r.min.y + r.max.y) * 0.5f + MathF.Sin(idleTime * 4f) * 16f;
                 velocity = 0;
                 if (flap) {
                     state = State.Playing;
                     m_Score = 0;
                     velocity = FlapVelocity;
-                    ResetPipes();
+                    ResetPipes(r);
+                    birdY = (r.min.y + r.max.y) * 0.5f;
                 }
                 break;
             case State.Playing:
@@ -114,17 +156,17 @@ public class FlappyBirdGame : Graphic
                 for (int i = 0; i < pipes.Count; i++) {
                     var (x, gapY, scored) = pipes[i];
                     x -= PipeSpeed * dt;
-                    if (!scored && x < BirdX) { m_Score++; scored = true; }
-                    if (x < -240f) {
-                        float right = 360f;
+                    if (!scored && x < birdX) { m_Score++; scored = true; }
+                    if (x < r.min.x - 80f) {
+                        float right = r.max.x;
                         foreach (var p in pipes) if (p.x > right) right = p.x;
                         x = right + PipeSpacing;
-                        gapY = ((m_Score + i) % 5) * 48f - 96f;
+                        gapY = (r.min.y + r.max.y) * 0.5f + (((m_Score + i) % 5) - 2) * 36f;
                         scored = false;
                     }
                     pipes[i] = (x, gapY, scored);
                 }
-                if (birdY < GroundY + 20f || HitsPipe()) {
+                if (birdY < minY || birdY > maxY || HitsPipe(birdX, groundTop, r)) {
                     state = State.Dead;
                     if (m_Score > m_Best) m_Best = m_Score;
                 }
@@ -132,26 +174,26 @@ public class FlappyBirdGame : Graphic
             case State.Dead:
                 velocity += Gravity * dt;
                 birdY += velocity * dt;
-                if (birdY < GroundY + 20f) { birdY = GroundY + 20f; velocity = 0; }
+                if (birdY < minY) { birdY = minY; velocity = 0; }
                 if (flap) {
                     state = State.Ready;
-                    birdY = 40f;
-                    velocity = 0;
                     idleTime = 0;
-                    ResetPipes();
+                    ResetPipes(r);
                 }
                 break;
         }
         SetVerticesDirty();
     }
 
-    private bool HitsPipe()
+    private bool HitsPipe(float birdX, float groundTop, Rect r)
     {
         const float birdR = 16f;
         foreach (var (x, gapY, _) in pipes) {
-            if (MathF.Abs(x - BirdX) > PipeWidth * 0.5f + birdR) continue;
+            if (MathF.Abs(x - birdX) > PipeWidth * 0.5f + birdR) continue;
             if (birdY + birdR > gapY + PipeGap * 0.5f || birdY - birdR < gapY - PipeGap * 0.5f)
                 return true;
+            if (birdY - birdR < groundTop) return true;
+            if (birdY + birdR > r.max.y) return true;
         }
         return false;
     }
