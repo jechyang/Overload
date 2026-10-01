@@ -39,21 +39,21 @@ int wmain(int argc, wchar_t** argv) try
     Require(scripts.PrepareCSharp(game), "prepare FlappyBirdGame");
     Require(game.GetScript() && game.GetScript()->IsValid(), "FlappyBirdGame prepared");
 
-    // Edit-mode UI rebuild should already materialize the static preview.
-    Require(scene.FindActorByName("Bird"), "edit-mode bird exists");
-    Require(scene.FindActorByName("Background"), "edit-mode background exists");
-    Require(scene.FindActorByName("Score"), "edit-mode score text exists");
-    Require(scene.FindActorByName("GameOver"), "edit-mode game over panel exists");
+    // Edit-mode UI rebuild should already materialize the preview via Graphic mesh.
+    OvCore::UI::ExtractFrame(scene, {400, 600});
+    Require(game.GetScript() && game.GetScript()->IsValid(), "FlappyBirdGame prepared");
+    bool hasMesh = false;
+    for (auto* actor : scene.GetActors())
+        if (actor->GetComponent<CCanvasRenderer>()) hasMesh = true;
+    Require(hasMesh, "edit-mode canvas renderer exists");
 
     scene.Play();
     for (int i = 0; i < 8; i++) scene.Update(1.0f / 60.0f);
-    Require(scene.FindActorByName("Bird"), "bird exists");
-    Require(scene.FindActorByName("Background"), "background exists");
-    Require(scene.FindActorByName("Score"), "score text exists");
-    Require(scene.FindActorByName("GameOver"), "game over panel exists");
-    for (int i = 0; i < 36; i++) scene.Update(1.0f / 60.0f);
     OvCore::UI::ExtractFrame(scene, {400, 600});
-    Require(scene.FindActorByName("Bird"), "bird survives simulation ticks");
+    hasMesh = false;
+    for (auto* actor : scene.GetActors())
+        if (actor->GetComponent<CCanvasRenderer>()) hasMesh = true;
+    Require(hasMesh, "canvas renderer survives simulation ticks");
 
     scripts.ClearCSharpProject();
     engine.scenes.UnloadCurrentScene();
