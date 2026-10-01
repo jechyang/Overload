@@ -1,0 +1,15 @@
+executable_name=FlappyBird
+gravity=0
+x_resolution=420
+y_resolution=640
+start_scene=Assets/Scenes/FlappyBird.ovscene
+fullscreen=false
+vsync=true
+samples=1
+multisampling=false
+window_icon=
+build_type=0
+csharp_enabled=true
+csharp_assembly_name=GameScripts
+render_commands=true
+render_thread=false
