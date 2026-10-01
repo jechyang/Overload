@@ -41,9 +41,13 @@ try {
         throw Error('--matrix-only cannot be combined with runtime validation options');
     for(const stage of stages.filter(s=>s.requested)) {
         stage.status='running';
-        if(stage.id!=='U0') { stage.status='unavailable'; throw Error(`${stage.flag} is reserved; ${stage.id} acceptance is not implemented yet`); }
+        const implemented=new Set(['U0','U3','U8','U9','U10','U11','U12']);
+        if(!implemented.has(stage.id)) { stage.status='unavailable'; throw Error(`${stage.flag} is reserved; ${stage.id} acceptance is not implemented yet`); }
         run('U0-reference',process.execPath,[path.join(root,'Tools/UI/reference-ugui.mjs'),'--check']);
         run('U0-matrix',process.execPath,[path.join(root,'Tests/UI/runtime-matrix.test.mjs')]);
+        if(stage.id==='U3') run('U3-image',process.execPath,[path.join(root,'Tests/UI/run-image-validation.mjs')]);
+        if(stage.id==='U8'||stage.id==='U9'||stage.id==='U10') run('U8-controls',process.execPath,[path.join(root,'Tests/UI/run-controls-validation.mjs')]);
+        if(stage.id==='U11'||stage.id==='U12') run('U11-input-controls',process.execPath,[path.join(root,'Tests/UI/run-input-controls-validation.mjs')]);
         stage.status='passed';
     }
     if(process.argv.includes('--matrix-only')) {

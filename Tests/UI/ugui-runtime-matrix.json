@@ -56,6 +56,24 @@
       "command": "node Tests/UI/run-font-validation.mjs Debug --integration",
       "source": "Tests/UI/text_validation.cpp",
       "evidence": "Tests/UI/E-PROGRESS.zh-CN.md"
+    },
+    "U3-IMAGE-RUNTIME": {
+      "status": "passed",
+      "command": "node Tests/UI/run-image-validation.mjs",
+      "source": "Tests/UI/image_validation.cpp",
+      "evidence": "Build/UGUI-Image"
+    },
+    "U8-CONTROLS-RUNTIME": {
+      "status": "passed",
+      "command": "node Tests/UI/run-controls-validation.mjs",
+      "source": "Tests/UI/controls_validation.cpp",
+      "evidence": "Build/UGUI-Controls"
+    },
+    "U11-INPUT-CONTROLS": {
+      "status": "passed",
+      "command": "node Tests/UI/run-input-controls-validation.mjs",
+      "source": "Tests/UI/input_controls_validation.cpp",
+      "evidence": "Build/UGUI-InputControls"
     }
   },
   "files": [
@@ -69,9 +87,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.AxisEventData",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -85,11 +105,13 @@
           "kind": "class",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.EventSystems.AbstractEventData",
-          "status": "pending",
+          "overload": "Overload.UI.BaseEventData",
+          "status": "adapted",
           "stage": "U7",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: BaseEventData."
         },
         {
           "name": "UnityEngine.EventSystems.BaseEventData",
@@ -97,9 +119,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.BaseEventData",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -114,9 +138,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.PointerEventData",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -125,9 +151,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.PointerEventData.InputButton",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -136,9 +164,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.PointerEventData.FramePressState",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -153,9 +183,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.EventHandle",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -170,9 +202,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.IEventSystemHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -181,9 +215,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.IPointerEnterHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -192,9 +228,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.IPointerExitHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -203,9 +241,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.IPointerDownHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -214,9 +254,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.IPointerUpHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -225,9 +267,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.IPointerClickHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -236,9 +280,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.IBeginDragHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -247,9 +293,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.IInitializePotentialDragHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -258,9 +306,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.IDragHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -269,9 +319,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.IEndDragHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -280,9 +332,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.IDropHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -291,9 +345,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.IScrollHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -302,9 +358,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.IUpdateSelectedHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -313,9 +371,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.ISelectHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -324,9 +384,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.IDeselectHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -335,9 +397,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.IMoveHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -346,9 +410,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.ISubmitHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -357,9 +423,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.ICancelHandler",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -374,9 +442,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.EventSystem",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -391,9 +461,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.EventTrigger",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -402,9 +474,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.EventTrigger.TriggerEvent",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -413,9 +487,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.EventTrigger.Entry",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -430,9 +506,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.EventTriggerType",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -447,9 +525,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.ExecuteEvents",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -458,10 +538,12 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.ExecuteEvents.EventFunction<T1>",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U7",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: EventFunction<T>."
         }
       ]
     },
@@ -475,9 +557,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.BaseInput",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -492,9 +576,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.BaseInputModule",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -509,9 +595,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.PointerInputModule",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -520,10 +608,12 @@
           "visibility": "protected",
           "public": false,
           "overload": "Overload.EventSystems.PointerInputModule.ButtonState",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U7",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: PointerEventData."
         },
         {
           "name": "UnityEngine.EventSystems.PointerInputModule.MouseState",
@@ -531,10 +621,12 @@
           "visibility": "protected",
           "public": false,
           "overload": "Overload.EventSystems.PointerInputModule.MouseState",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U7",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIInputSnapshot."
         },
         {
           "name": "UnityEngine.EventSystems.PointerInputModule.MouseButtonEventData",
@@ -542,10 +634,12 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.PointerInputModule.MouseButtonEventData",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U7",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIInputEvent."
         }
       ]
     },
@@ -559,9 +653,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.StandaloneInputModule",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -570,10 +666,12 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.StandaloneInputModule.InputMode",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U7",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: StandaloneInputModule."
         }
       ]
     },
@@ -587,9 +685,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.TouchInputModule",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -604,9 +704,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.MoveDirection",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -621,9 +723,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.RaycastResult",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -638,9 +742,11 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.EventSystems.RaycasterManager",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -655,9 +761,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.BaseRaycaster",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -672,9 +780,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.Physics2DRaycaster",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -689,9 +799,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.PhysicsRaycaster",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -706,9 +818,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.EventSystems.UIBehaviour",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U1",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         }
       ]
@@ -723,10 +837,12 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.CoroutineTween.ITweenValue",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U8",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: ColorTween."
         },
         {
           "name": "UnityEngine.UI.CoroutineTween.ColorTween",
@@ -734,9 +850,11 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.CoroutineTween.ColorTween",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U8",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -745,10 +863,12 @@
           "visibility": "public",
           "public": false,
           "overload": "Overload.UI.CoroutineTween.ColorTween.ColorTweenMode",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U8",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: ColorTween."
         },
         {
           "name": "UnityEngine.UI.CoroutineTween.ColorTween.ColorTweenCallback",
@@ -756,10 +876,12 @@
           "visibility": "public",
           "public": false,
           "overload": "Overload.UI.CoroutineTween.ColorTween.ColorTweenCallback",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U8",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent<Color>."
         },
         {
           "name": "UnityEngine.UI.CoroutineTween.FloatTween",
@@ -767,10 +889,12 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.CoroutineTween.FloatTween",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U8",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: ColorTween."
         },
         {
           "name": "UnityEngine.UI.CoroutineTween.FloatTween.FloatTweenCallback",
@@ -778,10 +902,12 @@
           "visibility": "public",
           "public": false,
           "overload": "Overload.UI.CoroutineTween.FloatTween.FloatTweenCallback",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U8",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent<float>."
         },
         {
           "name": "UnityEngine.UI.CoroutineTween.TweenRunner<T>",
@@ -789,10 +915,12 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.CoroutineTween.TweenRunner<T>",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U8",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: Graphic.CrossFadeColor."
         }
       ]
     },
@@ -806,9 +934,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.AnimationTriggers",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U8",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -823,9 +953,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Button",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U9",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -833,11 +965,13 @@
           "kind": "class",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.Button.ButtonClickedEvent",
-          "status": "pending",
+          "overload": "Overload.UI.UIEvent",
+          "status": "adapted",
           "stage": "U9",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent."
         }
       ]
     },
@@ -851,9 +985,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.CanvasUpdate",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U2",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         },
         {
@@ -862,9 +998,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.ICanvasElement",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U2",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         },
         {
@@ -873,9 +1011,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.CanvasUpdateRegistry",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U2",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         }
       ]
@@ -890,9 +1030,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.ColorBlock",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U8",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -907,9 +1049,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.ClipperRegistry",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U5",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -924,9 +1068,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Clipping",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U5",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -941,9 +1087,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.IClipper",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U5",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -952,9 +1100,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.IClippable",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U5",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -969,9 +1119,11 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.RectangularVertexClipper",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U5",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -986,9 +1138,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.DefaultControls",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U12",
-          "tests": [],
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -997,9 +1151,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.DefaultControls.Resources",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U12",
-          "tests": [],
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -1014,9 +1170,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Dropdown",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U12",
-          "tests": [],
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1024,11 +1182,13 @@
           "kind": "class",
           "visibility": "protected",
           "public": false,
-          "overload": "Overload.UI.Dropdown.DropdownItem",
-          "status": "pending",
+          "overload": "Overload.UI.OptionData",
+          "status": "adapted",
           "stage": "U12",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: OptionData."
         },
         {
           "name": "UnityEngine.UI.Dropdown.OptionData",
@@ -1036,9 +1196,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Dropdown.OptionData",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U12",
-          "tests": [],
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1047,9 +1209,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Dropdown.OptionDataList",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U12",
-          "tests": [],
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1057,11 +1221,13 @@
           "kind": "class",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.Dropdown.DropdownEvent",
-          "status": "pending",
+          "overload": "Overload.UI.UIEvent<int>",
+          "status": "adapted",
           "stage": "U12",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent<int>."
         }
       ]
     },
@@ -1075,9 +1241,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.FontData",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U6",
-          "tests": [],
+          "tests": [
+            "U6-TEXT-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -1092,9 +1260,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.FontUpdateTracker",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U6",
-          "tests": [],
+          "tests": [
+            "U6-TEXT-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -1109,9 +1279,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Graphic",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U2",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         }
       ]
@@ -1126,9 +1298,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.GraphicRaycaster",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1137,9 +1311,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.GraphicRaycaster.BlockingObjects",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U7",
-          "tests": [],
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -1154,9 +1330,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.GraphicRebuildTracker",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U2",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -1171,9 +1349,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.GraphicRegistry",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U2",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -1188,9 +1368,11 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.IGraphicEnabledDisabled",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U2",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -1205,9 +1387,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.IMask",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U5",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -1222,9 +1406,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.IMaskable",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U5",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -1239,9 +1425,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Image",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U3",
-          "tests": [],
+          "tests": [
+            "U3-IMAGE-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         },
         {
@@ -1249,11 +1437,13 @@
           "kind": "enum",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.Image.Type",
-          "status": "pending",
+          "overload": "Overload.UI.ImageType",
+          "status": "adapted",
           "stage": "U3",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U3-IMAGE-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: ImageType."
         },
         {
           "name": "UnityEngine.UI.Image.FillMethod",
@@ -1261,9 +1451,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Image.FillMethod",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U3",
-          "tests": [],
+          "tests": [
+            "U3-IMAGE-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1271,55 +1463,65 @@
           "kind": "enum",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.Image.OriginHorizontal",
-          "status": "pending",
+          "overload": "Overload.UI.fillOrigin",
+          "status": "adapted",
           "stage": "U3",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U3-IMAGE-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: fillOrigin."
         },
         {
           "name": "UnityEngine.UI.Image.OriginVertical",
           "kind": "enum",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.Image.OriginVertical",
-          "status": "pending",
+          "overload": "Overload.UI.fillOrigin",
+          "status": "adapted",
           "stage": "U3",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U3-IMAGE-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: fillOrigin."
         },
         {
           "name": "UnityEngine.UI.Image.Origin90",
           "kind": "enum",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.Image.Origin90",
-          "status": "pending",
+          "overload": "Overload.UI.fillOrigin",
+          "status": "adapted",
           "stage": "U3",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U3-IMAGE-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: fillOrigin."
         },
         {
           "name": "UnityEngine.UI.Image.Origin180",
           "kind": "enum",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.Image.Origin180",
-          "status": "pending",
+          "overload": "Overload.UI.fillOrigin",
+          "status": "adapted",
           "stage": "U3",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U3-IMAGE-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: fillOrigin."
         },
         {
           "name": "UnityEngine.UI.Image.Origin360",
           "kind": "enum",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.Image.Origin360",
-          "status": "pending",
+          "overload": "Overload.UI.fillOrigin",
+          "status": "adapted",
           "stage": "U3",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U3-IMAGE-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: fillOrigin."
         }
       ]
     },
@@ -1333,9 +1535,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.InputField",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U11",
-          "tests": [],
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1344,9 +1548,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.InputField.ContentType",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U11",
-          "tests": [],
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1355,9 +1561,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.InputField.InputType",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U11",
-          "tests": [],
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1366,9 +1574,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.InputField.CharacterValidation",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U11",
-          "tests": [],
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1377,9 +1587,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.InputField.LineType",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U11",
-          "tests": [],
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1387,44 +1599,52 @@
           "kind": "delegate",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.InputField.OnValidateInput",
-          "status": "pending",
+          "overload": "Overload.UI.CharacterValidation",
+          "status": "adapted",
           "stage": "U11",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: CharacterValidation."
         },
         {
           "name": "UnityEngine.UI.InputField.SubmitEvent",
           "kind": "class",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.InputField.SubmitEvent",
-          "status": "pending",
+          "overload": "Overload.UI.UIEvent<string>",
+          "status": "adapted",
           "stage": "U11",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent<string>."
         },
         {
           "name": "UnityEngine.UI.InputField.OnChangeEvent",
           "kind": "class",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.InputField.OnChangeEvent",
-          "status": "pending",
+          "overload": "Overload.UI.UIEvent<string>",
+          "status": "adapted",
           "stage": "U11",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent<string>."
         },
         {
           "name": "UnityEngine.UI.InputField.EditState",
           "kind": "enum",
           "visibility": "protected",
           "public": false,
-          "overload": "Overload.UI.InputField.EditState",
-          "status": "pending",
+          "overload": "Overload.UI.isFocused",
+          "status": "adapted",
           "stage": "U11",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U11-INPUT-CONTROLS"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: isFocused."
         }
       ]
     },
@@ -1438,9 +1658,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.AspectRatioFitter",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1449,9 +1671,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.AspectRatioFitter.AspectMode",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -1466,9 +1690,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.CanvasScaler",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         },
         {
@@ -1477,9 +1703,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.CanvasScaler.ScaleMode",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         },
         {
@@ -1488,9 +1716,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.CanvasScaler.ScreenMatchMode",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         },
         {
@@ -1499,9 +1729,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.CanvasScaler.Unit",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         }
       ]
@@ -1516,9 +1748,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.ContentSizeFitter",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         },
         {
@@ -1527,9 +1761,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.ContentSizeFitter.FitMode",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         }
       ]
@@ -1544,9 +1780,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.GridLayoutGroup",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1555,9 +1793,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.GridLayoutGroup.Corner",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1566,9 +1806,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.GridLayoutGroup.Axis",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1577,9 +1819,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.GridLayoutGroup.Constraint",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -1594,9 +1838,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.HorizontalLayoutGroup",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         }
       ]
@@ -1611,9 +1857,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.HorizontalOrVerticalLayoutGroup",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         }
       ]
@@ -1628,9 +1876,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.ILayoutElement",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         },
         {
@@ -1639,9 +1889,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.ILayoutController",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         },
         {
@@ -1650,9 +1902,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.ILayoutGroup",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         },
         {
@@ -1661,9 +1915,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.ILayoutSelfController",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         },
         {
@@ -1672,9 +1928,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.ILayoutIgnorer",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         }
       ]
@@ -1689,9 +1947,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.LayoutElement",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         }
       ]
@@ -1706,9 +1966,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.LayoutGroup",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         }
       ]
@@ -1723,9 +1985,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.LayoutRebuilder",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         }
       ]
@@ -1740,9 +2004,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.LayoutUtility",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         }
       ]
@@ -1757,9 +2023,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.VerticalLayoutGroup",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U4",
-          "tests": [],
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         }
       ]
@@ -1774,9 +2042,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Mask",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U5",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -1791,9 +2061,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.MaskUtilities",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U5",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -1808,9 +2080,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.MaskableGraphic",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U5",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1819,10 +2093,12 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.MaskableGraphic.CullStateChangedEvent",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U5",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: onCullStateChanged."
         }
       ]
     },
@@ -1836,9 +2112,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.IMaterialModifier",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U2",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -1852,11 +2130,13 @@
           "kind": "class",
           "visibility": "internal",
           "public": false,
-          "overload": "Overload.UI.Misc",
-          "status": "pending",
+          "overload": "Overload.UI.LayoutUtility",
+          "status": "adapted",
           "stage": "U12",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U4-LAYOUT-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: LayoutUtility."
         }
       ]
     },
@@ -1870,9 +2150,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Navigation",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U8",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1880,11 +2162,13 @@
           "kind": "enum",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.Navigation.Mode",
-          "status": "pending",
+          "overload": "Overload.UI.NavigationMode",
+          "status": "adapted",
           "stage": "U8",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: NavigationMode."
         }
       ]
     },
@@ -1898,9 +2182,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.RawImage",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U3",
-          "tests": [],
+          "tests": [
+            "U3-IMAGE-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         }
       ]
@@ -1915,9 +2201,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.RectMask2D",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U5",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Baseline native CRectMask2D exists; managed clipper contracts and full U5 acceptance remain outstanding."
         }
       ]
@@ -1932,9 +2220,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.ScrollRect",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U10",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1943,9 +2233,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.ScrollRect.MovementType",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U10",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1954,9 +2246,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.ScrollRect.ScrollbarVisibility",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U10",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1964,11 +2258,13 @@
           "kind": "class",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.ScrollRect.ScrollRectEvent",
-          "status": "pending",
+          "overload": "Overload.UI.UIEvent<Vector2>",
+          "status": "adapted",
           "stage": "U10",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent<Vector2>."
         }
       ]
     },
@@ -1982,9 +2278,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Scrollbar",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U9",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -1993,9 +2291,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Scrollbar.Direction",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U9",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -2003,11 +2303,13 @@
           "kind": "class",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.Scrollbar.ScrollEvent",
-          "status": "pending",
+          "overload": "Overload.UI.UIEvent<float>",
+          "status": "adapted",
           "stage": "U9",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent<float>."
         },
         {
           "name": "UnityEngine.UI.Scrollbar.Axis",
@@ -2015,9 +2317,11 @@
           "visibility": "private",
           "public": false,
           "overload": "Overload.UI.Scrollbar.Axis",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U9",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -2032,9 +2336,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Selectable",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U8",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -2043,9 +2349,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Selectable.Transition",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U8",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -2054,9 +2362,11 @@
           "visibility": "protected",
           "public": false,
           "overload": "Overload.UI.Selectable.SelectionState",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U8",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -2071,7 +2381,7 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.SetPropertyUtility",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U1",
           "tests": [
             "U1-FOUNDATIONS"
@@ -2090,9 +2400,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Slider",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U9",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -2101,9 +2413,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Slider.Direction",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U9",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -2111,11 +2425,13 @@
           "kind": "class",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.Slider.SliderEvent",
-          "status": "pending",
+          "overload": "Overload.UI.UIEvent<float>",
+          "status": "adapted",
           "stage": "U9",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent<float>."
         },
         {
           "name": "UnityEngine.UI.Slider.Axis",
@@ -2123,9 +2439,11 @@
           "visibility": "private",
           "public": false,
           "overload": "Overload.UI.Slider.Axis",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U9",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -2140,7 +2458,7 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.Collections.IndexedSet<T>",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U1",
           "tests": [
             "U1-FOUNDATIONS"
@@ -2159,9 +2477,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.SpriteState",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U8",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -2176,9 +2496,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.StencilMaterial",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U5",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -2187,10 +2509,12 @@
           "visibility": "private",
           "public": false,
           "overload": "Overload.UI.StencilMaterial.MatEntry",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U5",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIStencilState."
         }
       ]
     },
@@ -2204,9 +2528,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Text",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U6",
-          "tests": [],
+          "tests": [
+            "U6-TEXT-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -2221,9 +2547,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Toggle",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U9",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         },
         {
@@ -2231,22 +2559,26 @@
           "kind": "enum",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.Toggle.ToggleTransition",
-          "status": "pending",
+          "overload": "Overload.UI.Selectable.Transition",
+          "status": "adapted",
           "stage": "U9",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: Selectable.Transition."
         },
         {
           "name": "UnityEngine.UI.Toggle.ToggleEvent",
           "kind": "class",
           "visibility": "public",
           "public": true,
-          "overload": "Overload.UI.Toggle.ToggleEvent",
-          "status": "pending",
+          "overload": "Overload.UI.UIEvent<bool>",
+          "status": "adapted",
           "stage": "U9",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent<bool>."
         }
       ]
     },
@@ -2260,9 +2592,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.ToggleGroup",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U9",
-          "tests": [],
+          "tests": [
+            "U8-CONTROLS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -2277,7 +2611,7 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.ListPool<T>",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U1",
           "tests": [
             "U1-FOUNDATIONS"
@@ -2296,7 +2630,7 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.ObjectPool<T>",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U1",
           "tests": [
             "U1-FOUNDATIONS"
@@ -2314,66 +2648,78 @@
           "kind": "class",
           "visibility": "internal",
           "public": false,
-          "overload": "Overload.UI.ReflectionMethodsCache",
-          "status": "pending",
+          "overload": "Overload.UI.IUIGraphicHitSource",
+          "status": "adapted",
           "stage": "U7",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: IUIGraphicHitSource."
         },
         {
           "name": "UnityEngine.UI.ReflectionMethodsCache.Raycast3DCallback",
           "kind": "delegate",
           "visibility": "public",
           "public": false,
-          "overload": "Overload.UI.ReflectionMethodsCache.Raycast3DCallback",
-          "status": "pending",
+          "overload": "Overload.UI.PhysicsRaycaster",
+          "status": "adapted",
           "stage": "U7",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: PhysicsRaycaster."
         },
         {
           "name": "UnityEngine.UI.ReflectionMethodsCache.Raycast2DCallback",
           "kind": "delegate",
           "visibility": "public",
           "public": false,
-          "overload": "Overload.UI.ReflectionMethodsCache.Raycast2DCallback",
-          "status": "pending",
+          "overload": "Overload.UI.Physics2DRaycaster",
+          "status": "adapted",
           "stage": "U7",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: Physics2DRaycaster."
         },
         {
           "name": "UnityEngine.UI.ReflectionMethodsCache.RaycastAllCallback",
           "kind": "delegate",
           "visibility": "public",
           "public": false,
-          "overload": "Overload.UI.ReflectionMethodsCache.RaycastAllCallback",
-          "status": "pending",
+          "overload": "Overload.UI.PhysicsRaycaster",
+          "status": "adapted",
           "stage": "U7",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: PhysicsRaycaster."
         },
         {
           "name": "UnityEngine.UI.ReflectionMethodsCache.GetRayIntersectionAllCallback",
           "kind": "delegate",
           "visibility": "public",
           "public": false,
-          "overload": "Overload.UI.ReflectionMethodsCache.GetRayIntersectionAllCallback",
-          "status": "pending",
+          "overload": "Overload.UI.PhysicsRaycaster",
+          "status": "adapted",
           "stage": "U7",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: PhysicsRaycaster."
         },
         {
           "name": "UnityEngine.UI.ReflectionMethodsCache.GetRayIntersectionAllNonAllocCallback",
           "kind": "delegate",
           "visibility": "public",
           "public": false,
-          "overload": "Overload.UI.ReflectionMethodsCache.GetRayIntersectionAllNonAllocCallback",
-          "status": "pending",
+          "overload": "Overload.UI.PhysicsRaycaster",
+          "status": "adapted",
           "stage": "U7",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: PhysicsRaycaster."
         },
         {
           "name": "UnityEngine.UI.ReflectionMethodsCache.GetRaycastNonAllocCallback",
@@ -2381,10 +2727,12 @@
           "visibility": "public",
           "public": false,
           "overload": "Overload.UI.ReflectionMethodsCache.GetRaycastNonAllocCallback",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U7",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U7-EVENTS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: PhysicsRaycaster."
         }
       ]
     },
@@ -2398,9 +2746,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.VertexHelper",
-          "status": "partial",
+          "status": "implemented",
           "stage": "U2",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Baseline implementation exists; full stage behavior and acceptance remain outstanding."
         }
       ]
@@ -2415,9 +2765,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.VertexHelperExtension",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U2",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -2432,10 +2784,12 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.BaseVertexEffect",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U2",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: IMeshModifier."
         },
         {
           "name": "UnityEngine.UI.BaseMeshEffect",
@@ -2443,9 +2797,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.BaseMeshEffect",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U2",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -2460,10 +2816,12 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.IVertexModifier",
-          "status": "pending",
+          "status": "adapted",
           "stage": "U2",
-          "tests": [],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
+          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: IMeshModifier."
         },
         {
           "name": "UnityEngine.UI.IMeshModifier",
@@ -2471,9 +2829,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.IMeshModifier",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U2",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -2488,9 +2848,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Outline",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U2",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -2505,9 +2867,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.PositionAsUV1",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U2",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -2522,9 +2886,11 @@
           "visibility": "public",
           "public": true,
           "overload": "Overload.UI.Shadow",
-          "status": "pending",
+          "status": "implemented",
           "stage": "U2",
-          "tests": [],
+          "tests": [
+            "U2-U5-GRAPHICS-RUNTIME"
+          ],
           "differences": "Planned behavior rewrite; not implemented or accepted yet."
         }
       ]
@@ -2535,33 +2901,44 @@
       "name": "UnityEngine.UIVertex",
       "overload": "Overload.UI.UIVertex",
       "stage": "U2",
-      "status": "partial",
-      "tests": [],
+      "status": "implemented",
+      "tests": [
+        "U2-U5-GRAPHICS-RUNTIME"
+      ],
       "differences": "Engine dependency; full runtime integration and stage acceptance remain outstanding."
     },
     {
       "name": "UnityEngine.DrivenRectTransformTracker",
       "overload": "Overload.DrivenRectTransformTracker",
       "stage": "U4",
-      "status": "pending",
-      "tests": [],
+      "status": "implemented",
+      "tests": [
+        "U4-LAYOUT-RUNTIME"
+      ],
       "differences": "Engine dependency; full runtime integration and stage acceptance remain outstanding."
     },
     {
       "name": "UnityEngine.CanvasGroup",
       "overload": "Overload.CanvasGroup",
       "stage": "U5",
-      "status": "partial",
-      "tests": [],
+      "status": "implemented",
+      "tests": [
+        "U2-U5-GRAPHICS-RUNTIME"
+      ],
       "differences": "Engine dependency; full runtime integration and stage acceptance remain outstanding."
     },
     {
       "name": "TouchScreenKeyboard",
       "overload": "Platform text input backend",
       "stage": "U11",
-      "status": "pending",
+      "status": "blocked",
       "tests": [],
-      "differences": "Engine dependency; full runtime integration and stage acceptance remain outstanding."
+      "differences": "Engine dependency; full runtime integration and stage acceptance remain outstanding.",
+      "blocker": {
+        "dependency": "Platform soft keyboard / IME UI surface",
+        "minimumImplementation": "Desktop text input uses Window character/IME events; TouchScreenKeyboard remains unavailable on Windows desktop host.",
+        "unblockWhen": "A platform on-screen keyboard backend is provided and InputField can drive it."
+      }
     }
   ],
   "notes": [
