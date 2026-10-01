@@ -117,8 +117,10 @@ public class FlappyBirdGame : Graphic
     {
         started = true;
         pipes.Clear();
+        // Keep pipes inside the rect so the edit-mode preview shows the board.
+        // Local X is relative to the canvas pivot; visible range is roughly r.min.x .. r.max.x.
         for (int i = 0; i < PipeCount; i++) {
-            float x = r.max.x + 80f + i * PipeSpacing;
+            float x = r.min.x + 90f + i * 130f;
             float gapY = (r.min.y + r.max.y) * 0.5f + ((i % 3) - 1) * 40f;
             pipes.Add((x, gapY, false));
         }
@@ -160,7 +162,7 @@ public class FlappyBirdGame : Graphic
                     if (x < r.min.x - 80f) {
                         float right = r.max.x;
                         foreach (var p in pipes) if (p.x > right) right = p.x;
-                        x = right + PipeSpacing;
+                        x = right + 130f;
                         gapY = (r.min.y + r.max.y) * 0.5f + (((m_Score + i) % 5) - 2) * 36f;
                         scored = false;
                     }

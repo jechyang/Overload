@@ -59,9 +59,11 @@ try {
   run('link',path.join(msvc,'bin/Hostx64/x64/link.exe'),['/nologo','/OPT:REF','/OPT:ICF','/OUT:'+exe,obj,
     ...libraries.map(x=>path.join(root,'Bin/Debug',x,x+'.lib')),
     ...['opengl32','dbghelp','ws2_32','winmm','imm32','version','user32','gdi32','shell32','ole32','oleaut32','advapi32','comdlg32','uuid'].map(x=>x+'.lib')],nativeEnv);
-  run('smoke',exe,[runtime,hostDir,gameDll],nativeEnv);
-  fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({success:true,scope:'FlappyBird uGUI smoke',checks},null,2));
+  run('smoke',exe,[runtime,hostDir,gameDll,path.join(output,'flappy.tga')],nativeEnv);
+  fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({success:true,scope:'FlappyBird uGUI render capture',
+    preview:path.join(output,'flappy.tga'),checks},null,2));
   console.log('Evidence: '+output);
+  console.log('Preview: '+path.join(output,'flappy.tga'));
 } catch(error) {
   fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({success:false,checks,error:String(error)},null,2));
   console.error(String(error)); process.exitCode=1;
