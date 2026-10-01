@@ -34,19 +34,17 @@ baseline implementations remain `partial`; `pending` denotes unimplemented work.
 Neither status is a compatibility claim.
 
     node Tools/UI/reference-ugui.mjs --check
+    node Tools/UI/reference-ugui.mjs --check --complete
     node Tests/UI/run-validation.mjs Debug --matrix-only
     node Tests/UI/run-validation.mjs Debug --u0 --managed --scripting-regression
 
 `--matrix-only` checks the pinned inventory and negative schema tests without a
 native compiler or GPU; its evidence explicitly says `scope: matrix-only` and
 cannot substitute for runtime acceptance. `--u0` adds these checks to the native
-and optional managed regression. Flags `--u1` through `--u13` are reserved and
-fail explicitly until their acceptance suites are implemented. Unknown flags
-also fail. Each result records the command, commit, available compiler/runtime,
-requested stages, checks and exit codes in a unique evidence directory.
-`node Tools/UI/reference-ugui.mjs --check --complete` additionally rejects any
-pending, partial or blocked type or engine dependency; use it for the final U13
-completion gate.
+and optional managed regression. `node Tools/UI/reference-ugui.mjs --check --complete`
+is the U13 completion gate: it rejects any pending, partial or blocked type or
+engine dependency. TouchScreenKeyboard is `adapted` to the desktop character/IME
+backend and is accepted by U11 input-controls.
 
 U1 utility and lifetime work in progress can be checked with:
 

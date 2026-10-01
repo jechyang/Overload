@@ -7,6 +7,25 @@ import {fileURLToPath} from 'node:url';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const config=process.argv[2]||'Debug';
 if(!['Debug','Release'].includes(config))throw Error('Expected Debug or Release');
+// Desktop CLR/NuGet restore needs a complete Windows profile environment.
+const userProfile=process.env.USERPROFILE||'C:\\Users\\Administrator';
+Object.assign(process.env,{
+  USERPROFILE:userProfile,
+  USERNAME:process.env.USERNAME==='SYSTEM'?'Administrator':(process.env.USERNAME||'Administrator'),
+  APPDATA:process.env.APPDATA||path.join(userProfile,'AppData','Roaming'),
+  LOCALAPPDATA:process.env.LOCALAPPDATA||path.join(userProfile,'AppData','Local'),
+  HOMEDRIVE:process.env.HOMEDRIVE||'C:',
+  HOMEPATH:process.env.HOMEPATH||'\\Users\\Administrator',
+  HOME:process.env.HOME||userProfile,
+  PROGRAMDATA:process.env.PROGRAMDATA||'C:\\ProgramData',
+  ProgramFiles:process.env.ProgramFiles||'C:\\Program Files',
+  'ProgramFiles(x86)':process.env['ProgramFiles(x86)']||'C:\\Program Files (x86)',
+  CommonProgramFiles:process.env.CommonProgramFiles||'C:\\Program Files\\Common Files',
+  CommonProgramW6432:process.env.CommonProgramW6432||'C:\\Program Files\\Common Files',
+  SystemRoot:process.env.SystemRoot||'C:\\Windows',
+  SYSTEMDRIVE:process.env.SYSTEMDRIVE||'C:',
+});
+fs.mkdirSync('C:\\ProgramData\\NuGet\\Config',{recursive:true});
 const parent=path.join(root,'Build/UIValidation'); fs.mkdirSync(parent,{recursive:true});
 const output=fs.mkdtempSync(path.join(parent,config+'-'));
 // Keep compiler temporaries and collectible CLR copies beside this run on the workspace drive.

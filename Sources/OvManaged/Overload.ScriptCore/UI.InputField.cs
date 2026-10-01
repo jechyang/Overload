@@ -24,6 +24,9 @@ public class InputField : Selectable, IUpdateSelectedHandler, IPointerClickHandl
     [SerializeField] private string m_Text = "";
     [SerializeField] private int m_CaretPosition, m_SelectionAnchorPosition, m_SelectionFocusPosition;
     [SerializeField] private bool m_SelectionExists;
+    [SerializeField] private TouchScreenKeyboardType m_KeyboardType = TouchScreenKeyboardType.Default;
+    [SerializeField] private bool m_ShouldHideMobileInput;
+    private TouchScreenKeyboard? m_Keyboard;
 
     private readonly UIEvent<string> m_OnValueChanged = new(), m_OnEndEdit = new();
 
@@ -91,6 +94,7 @@ public class InputField : Selectable, IUpdateSelectedHandler, IPointerClickHandl
             m_CaretPosition = Math.Min(m_CaretPosition, m_Text.Length);
             m_SelectionAnchorPosition = Math.Min(m_SelectionAnchorPosition, m_Text.Length);
             m_SelectionFocusPosition = Math.Min(m_SelectionFocusPosition, m_Text.Length);
+            SyncSoftKeyboard();
             UpdateLabel();
             m_OnValueChanged.Invoke(m_Text);
         }
@@ -122,12 +126,41 @@ public class InputField : Selectable, IUpdateSelectedHandler, IPointerClickHandl
     public bool multiLine => m_LineType != LineType.SingleLine;
     public int selectionStart => Math.Min(m_SelectionAnchorPosition, m_SelectionFocusPosition);
     public int selectionEnd => Math.Max(m_SelectionAnchorPosition, m_SelectionFocusPosition);
+    public TouchScreenKeyboard? touchScreenKeyboard => m_Keyboard;
+    public TouchScreenKeyboardType keyboardType {
+        get => m_KeyboardType;
+        set { if (m_KeyboardType == value) return; m_KeyboardType = value; SetToCustom(); }
+    }
+    public bool shouldHideMobileInput {
+        get => m_ShouldHideMobileInput;
+        set => m_ShouldHideMobileInput = value;
+    }
 
-    public void ActivateInputField() { isFocused = true; }
+    public void ActivateInputField() {
+        isFocused = true;
+        OpenSoftKeyboard();
+    }
     public void DeactivateInputField() {
         if (!isFocused) return;
         isFocused = false;
+        CloseSoftKeyboard(completed: true);
         m_OnEndEdit.Invoke(m_Text);
+    }
+    private void OpenSoftKeyboard() {
+        if (!TouchScreenKeyboard.isSupported || m_Keyboard is { active: true }) return;
+        TouchScreenKeyboard.hideInput = m_ShouldHideMobileInput;
+        m_Keyboard = TouchScreenKeyboard.Open(m_Text, m_KeyboardType, false, multiLine,
+            m_InputType == InputType.Password || m_InputType == InputType.Pin, false, "", m_CharacterLimit);
+    }
+    private void CloseSoftKeyboard(bool completed) {
+        if (m_Keyboard == null) return;
+        if (m_Keyboard.active) { if (completed) m_Keyboard.Done(); else m_Keyboard.Cancel(); }
+        m_Keyboard = null;
+    }
+    private void SyncSoftKeyboard() {
+        if (m_Keyboard == null) return;
+        m_Keyboard.text = m_Text;
+        m_Keyboard.selection = new Overload.Maths.RangeInt(m_CaretPosition, selectionEnd - selectionStart);
     }
     public void SelectAll() {
         m_SelectionAnchorPosition = 0;
@@ -232,6 +265,7 @@ public class InputField : Selectable, IUpdateSelectedHandler, IPointerClickHandl
         m_CaretPosition += insert.Length;
         m_SelectionAnchorPosition = m_SelectionFocusPosition = m_CaretPosition;
         m_SelectionExists = false;
+        SyncSoftKeyboard();
         UpdateLabel();
         m_OnValueChanged.Invoke(m_Text);
     }
@@ -242,6 +276,7 @@ public class InputField : Selectable, IUpdateSelectedHandler, IPointerClickHandl
         m_Text = m_Text.Remove(m_CaretPosition - 1, 1);
         --m_CaretPosition;
         SanitizeCaret();
+        SyncSoftKeyboard();
         UpdateLabel();
         m_OnValueChanged.Invoke(m_Text);
     }
@@ -251,6 +286,7 @@ public class InputField : Selectable, IUpdateSelectedHandler, IPointerClickHandl
         m_Text = m_Text.Remove(start, end - start);
         m_CaretPosition = start;
         SanitizeCaret();
+        SyncSoftKeyboard();
         UpdateLabel();
         m_OnValueChanged.Invoke(m_Text);
     }

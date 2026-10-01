@@ -21,4 +21,7 @@
 
 `extraGap` 和框架可序列化字段可通过 Behaviour Inspector 编辑。编辑态 override 会保存；Play 期间的改值按引擎原规则不自动写回场景。
 
-ScriptCore 中的 UI 框架变更需要重建托管宿主并重启；项目中的 Graphic/布局子类支持热重载。当前 Image/RawImage 是基础版本，Text、完整 Sprite 模式、输入事件和控件尚未实现。完整架构边界见 `Tests/UI/UGUI-COMPATIBILITY.zh-CN.md`。
+ScriptCore 中的 UI 框架变更需要重建托管宿主并重启；项目中的 Graphic/布局子类支持热重载。
+Image/RawImage/Text、InputField、Dropdown 与 DefaultControls 已在 ScriptCore 实现；
+`TouchScreenKeyboard` 为桌面 character/IME 会话适配。完整架构边界见
+`Tests/UI/UGUI-COMPATIBILITY.zh-CN.md`。

@@ -71,12 +71,14 @@ UnityEngine 外部依赖（如 UIVertex、DrivenRectTransformTracker 和移动�
 U3 Image 四种 Type/FillMethod、U8–U10 Selectable/Button/Toggle/Slider/Scrollbar/ScrollRect、
 U11–U12 InputField/Dropdown/DefaultControls 已在 ScriptCore 实现，并由
 `run-image-validation.mjs`、`run-controls-validation.mjs`、`run-input-controls-validation.mjs`
-做生产像素与默认/RenderThread 一致验收。矩阵中 135/178 类型已标 `implemented`；
-剩余 43 项 pending 与 4 项外部依赖使 U13 `--complete` 闸门尚未放行。
+做生产像素与默认/RenderThread 一致验收。矩阵 178 个类型全部为 `implemented`（141）或
+`adapted`（37）；4 项引擎依赖中 TouchScreenKeyboard 已按桌面 character/IME 后端 `adapted`
+并通过 U11 验收，U13 `--complete` 闸门已放行。
 
 - 不是 `UnityEngine.UI` 的二进制或源码兼容层，使用 Overload 的 Actor/Behaviour 生命周期及命名空间。
 - `Image` 支持 Simple/Sliced/Tiled/Filled 与 sprite border/pivot 元数据（C# 生成网格）。
-- InputField 覆盖插入/删除/选择/密码/校验；软键盘后端仍按矩阵 blocked/pending 处理。
+- InputField 覆盖插入/删除/选择/密码/校验；`TouchScreenKeyboard` 为桌面 character/IME
+  会话适配（`Overload.TouchScreenKeyboard`），无移动端屏幕键盘 UI 面。
 
 ## 验证与示例
 

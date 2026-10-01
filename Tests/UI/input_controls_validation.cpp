@@ -172,6 +172,8 @@ int wmain(int argc, wchar_t** argv) try
     Require(Str(fieldScript, "m_Text") == "HelloHello", "password keeps real text");
     // Asterisk display is applied to the label Text; raw m_Text must stay unmasked.
 
+    // Soft keyboard adaptation after seed restore; OnUpdate runs the probe once.
+    SetInt(fieldScript, "keyboardProbeRequest", 1);
     // Dropdown options and value
     Require(Int(dropScript, "m_Value") == 0, "dropdown starts at 0");
     SetInt(dropScript, "m_Value", 2);
@@ -181,6 +183,11 @@ int wmain(int argc, wchar_t** argv) try
     // DefaultControls factory: OnUpdate after Play creates the standard roots.
     scene.Play();
     scene.Update(1);
+    Require(Int(fieldScript, "keyboardProbeRan") == 1, "soft keyboard probe ran");
+    Require(Int(fieldScript, "keyboardSupported") == 1, "TouchScreenKeyboard.isSupported desktop backend");
+    Require(Int(fieldScript, "keyboardStatus") == 1, "TouchScreenKeyboard Done status");
+    Require(Str(fieldScript, "keyboardText") == "HelloHello!", "TouchScreenKeyboard inject/limit text");
+    Require(Str(fieldScript, "m_Text") == "HelloHello!", "InputField syncs from soft keyboard");
     std::fprintf(stderr, "factory created=%d\n", Int(factoryScript, "created"));
     Require(Int(factoryScript, "created") == 5, "DefaultControls created five roots");
     Require(scene.FindActorByName("Button") && scene.FindActorByName("InputField") &&
