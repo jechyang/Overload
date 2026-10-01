@@ -139,7 +139,10 @@ function run(file, args, cwd, log, timeout = 120000) {
     for (const name of ['Core/Application.h', 'Core/Editor.h', 'Core/PanelsManager.h', 'Panels/SceneView.h', 'Core/GizmoBehaviour.h', 'Panels/TextureDebugger.h', 'Panels/Console.h', 'Panels/AView.h', 'Rendering/PickingReadback.h']) {
       const dest = path.join(overlay, 'OvEditor', name);
       fs.mkdirSync(path.dirname(dest), { recursive: true });
-      fs.writeFileSync(dest, fs.readFileSync(path.join(root, 'Sources/OvEditor/include/OvEditor', name), 'utf8').replaceAll('private:', 'public:').replaceAll('protected:', 'public:'));
+      const text=fs.readFileSync(path.join(root, 'Sources/OvEditor/include/OvEditor', name), 'utf8');
+      // The camera fixture derives from SceneView. MSVC encodes virtual member
+      // access in symbol names, so retain its production access qualifiers.
+      fs.writeFileSync(dest, editorCamera && name==='Panels/SceneView.h' ? text : text.replaceAll('private:', 'public:').replaceAll('protected:', 'public:'));
     }
     const panelHeader = path.join(overlay, 'OvUI/Panels/PanelWindow.h');
     fs.mkdirSync(path.dirname(panelHeader), { recursive: true });
@@ -267,9 +270,9 @@ function run(file, args, cwd, log, timeout = 120000) {
   if (auxiliary) {
     let source=fs.readFileSync(path.join(root,'Sources/OvRendering/src/OvRendering/Core/RenderTaskCoordinator.cpp'),'utf8');
     source='#include <cstddef>\nextern void AuxiliaryEntry(int,size_t);\nextern void AuxiliaryExit(int,size_t);\nextern void AuxiliaryBeforeSubmit(size_t);\n'+source;
-    for(const [phase,entry] of [[1,'return Prepare(scenes[i],baseState,nullptr,cancel);'],[2,'return Record(frames[i],recorder,targets[i],nullptr,cancel);']]) {
+    for(const [phase,entry] of [[1,'value = MeshFeatureProcessor::PrepareRange(*scenes[view], views[view], begin, end, cancel);'],[2,'value.emplace(recorder->RecordRange(frames[view], targets[view], begin, end, cancel));']]) {
       if(!source.includes(entry))throw Error('Auxiliary task boundary changed');
-      source=source.replace(entry,'struct Exit {size_t i;~Exit(){AuxiliaryExit('+phase+',i);}} exit{i}; AuxiliaryEntry('+phase+',i); '+entry);
+      source=source.replace(entry,'struct Exit {size_t slot;~Exit(){AuxiliaryExit('+phase+',slot);}} exit{slot}; AuxiliaryEntry('+phase+',slot); '+entry);
     }
     const submit='if (jobs) handles.push_back(jobs->Submit(std::move(task))); else task();';
     if(!source.includes(submit))throw Error('Auxiliary submit boundary changed');
@@ -280,9 +283,9 @@ function run(file, args, cwd, log, timeout = 120000) {
   if ((editorThread || gameThread) && !productBenchmark) {
     let source=fs.readFileSync(path.join(root,'Sources/OvRendering/src/OvRendering/Core/RenderTaskCoordinator.cpp'),'utf8');
     source='#include <cstddef>\nextern void ProductTaskEntry(int,size_t,size_t);\n'+source;
-    for(const [phase,entry] of [[1,'return Prepare(scenes[i],baseState,nullptr,cancel);'],[2,'return Record(frames[i],recorder,targets[i],nullptr,cancel);']]) {
+    for(const [phase,entry,count] of [[1,'value = MeshFeatureProcessor::PrepareRange(*scenes[view], views[view], begin, end, cancel);','meshTasks.size()'],[2,'value.emplace(recorder->RecordRange(frames[view], targets[view], begin, end, cancel));','tasks.size()']]) {
       if(!source.includes(entry))throw Error('Product task boundary changed');
-      source=source.replace(entry,'ProductTaskEntry('+phase+',i,'+(phase===1?'scenes':'frames')+'.size()); '+entry);
+      source=source.replace(entry,'ProductTaskEntry('+phase+',slot,'+count+'); '+entry);
     }
     const copy=path.join(dir,'RenderTaskCoordinator.cpp');fs.writeFileSync(copy,source);
     extraSources.push(copy,path.join(root,'Tests/RenderingCommands/product_concurrency_probe.cpp'));
