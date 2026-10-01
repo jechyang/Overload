@@ -1,12 +1,13 @@
 #include <OvRendering/Data/RenderPlan.h>
 #include <algorithm>
 #include <stdexcept>
+#include <string_view>
 #include <unordered_set>
 using namespace OvRendering::Data;
 void RenderPlan::Validate(std::span<const std::shared_ptr<const RenderSceneSnapshot>> views) const
 {
     std::string scope="RenderPlan";
-    const auto require = [&](bool value, const char* message) { if (!value) throw std::invalid_argument(scope+": "+message); };
+    const auto require = [&](bool value, std::string_view message) { if (!value) throw std::invalid_argument(scope+": "+std::string(message)); };
     std::vector<uint8_t> available;
     std::unordered_set<uint64_t> identities;
     std::unordered_set<uint32_t> storages;
@@ -24,6 +25,12 @@ void RenderPlan::Validate(std::span<const std::shared_ptr<const RenderSceneSnaps
     std::unordered_set<uint64_t> viewIds;
     for (const auto& view : views)
         require(view && viewIds.insert(view->GetView().id).second, "Missing or duplicate view identity");
+    const auto checkResource = [&](const ResourceUse& use) -> const PlanResource& {
+        require(use.resource < resources.size(), "Unknown pass resource");
+        const auto& resource = resources[use.resource];
+        require(use.subresources && !(use.subresources & ~resource.subresources), "Invalid resource face");
+        return resource;
+    };
     std::vector<bool> used(views.size());
     for (const auto& pass : passes)
     {
@@ -39,9 +46,7 @@ void RenderPlan::Validate(std::span<const std::shared_ptr<const RenderSceneSnaps
             attachments = pass.target->GetTextureAttachments();
         }
         const auto checkUse = [&](const ResourceUse& use) -> const PlanResource& {
-            require(use.resource < resources.size(), "Unknown pass resource");
-            const auto& resource = resources[use.resource];
-            require(use.subresources && !(use.subresources & ~resource.subresources), "Invalid resource face");
+            const auto& resource = checkResource(use);
             require(resource.sceneGeneration == view.GetView().sceneGeneration, "Resource belongs to another scene generation");
             return resource;
         };
@@ -67,7 +72,24 @@ void RenderPlan::Validate(std::span<const std::shared_ptr<const RenderSceneSnaps
             available[use.resource] |= use.subresources;
         }
         if (pass.postProcessAfter)
+        {
             require(pass.target.has_value() && std::find(pass.stages.begin(),pass.stages.end(),RenderStage::SceneUI)==pass.stages.end(), "Post-process output must precede SceneUI");
+            require(!pass.postProcessReads.empty() && !pass.postProcessWrites.empty(), "Post-process requires declared input/output resources");
+            // Sequential blit through private ping-pong: a resource may be read then written.
+            for (const auto& use : pass.postProcessReads)
+            {
+                const auto& resource = checkUse(use);
+                require((available[use.resource] & use.subresources) == use.subresources, "Post-process input has no producer");
+            }
+            for (const auto& use : pass.postProcessWrites)
+            {
+                const auto& resource = checkUse(use);
+                require(resource.width == view.GetView().width && resource.height == view.GetView().height, "Post-process output dimensions differ from view");
+                available[use.resource] |= use.subresources;
+            }
+        }
+        else
+            require(pass.postProcessReads.empty() && pass.postProcessWrites.empty(), "Post-process resources without postProcessAfter");
         if (pass.generateMipmaps)
         {
             const auto id = pass.generateMipmaps->RetainStorage().GetID();
@@ -76,4 +98,19 @@ void RenderPlan::Validate(std::span<const std::shared_ptr<const RenderSceneSnaps
         }
     }
     require(std::all_of(used.begin(), used.end(), [](bool value) { return value; }), "Prepared view has no pass");
+    for (const auto& step : trailing)
+    {
+        scope="RenderPlan trailing "+step.name;
+        require(!step.name.empty(), "Trailing composition needs a name");
+        for (const auto& use : step.reads)
+        {
+            checkResource(use);
+            require((available[use.resource] & use.subresources) == use.subresources, "Trailing composition input has no producer");
+        }
+        for (const auto& use : step.writes)
+        {
+            checkResource(use);
+            available[use.resource] |= use.subresources;
+        }
+    }
 }

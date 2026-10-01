@@ -29,6 +29,18 @@ namespace OvRendering::Data
         std::shared_ptr<baregl::Texture> generateMipmaps;
         // Fixed full-screen sequence after this view, before the following SceneUI view.
         bool postProcessAfter = false;
+        // Explicit post-process I/O when postProcessAfter is set. The sequence blits
+        // through private ping-pong buffers, so the same resource may appear in both
+        // lists as sequential read-then-write rather than simultaneous feedback.
+        std::vector<ResourceUse> postProcessReads, postProcessWrites;
+    };
+    // External commands appended after the plan's last pass (editor overlay, picking,
+    // final UI). Declared so Validate can cover the full frame resource contract;
+    // the command lists themselves remain owned by the caller.
+    struct ExternalComposition
+    {
+        std::string name;
+        std::vector<ResourceUse> reads, writes;
     };
     // Fixed GPU order, independent of the order in which CPU view jobs finish.
     // Imported/history availability is supplied only at the owner planning boundary.
@@ -36,6 +48,7 @@ namespace OvRendering::Data
     {
         std::vector<PlanResource> resources;
         std::vector<RenderPlanPass> passes;
+        std::vector<ExternalComposition> trailing;
         void Validate(std::span<const std::shared_ptr<const RenderSceneSnapshot>> views) const;
     };
 }

@@ -21,14 +21,32 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
     const auto generation = main.sceneGeneration;
     uint64_t nextView = main.viewId;
     const auto viewId = [&] { if (nextView == std::numeric_limits<uint64_t>::max()) throw std::invalid_argument("View identity overflow"); return ++nextView; };
-    const auto addResource = [&](const std::shared_ptr<baregl::Texture>& texture, uint16_t width, uint16_t height,
+    const auto addStorage = [&](const baregl::Texture::Snapshot& storage, uint16_t width, uint16_t height,
         uint8_t mask, uint8_t available, Data::ResourceOrigin origin) {
-        const auto storage = texture->RetainStorage();
         auto& resources = frame->m_plan.resources;
         const auto found = std::find_if(resources.begin(), resources.end(), [&](const auto& r) { return r.storage.GetID() == storage.GetID(); });
         if (found != resources.end()) return size_t(found - resources.begin());
         resources.push_back({resources.size()+1, generation, storage, width, height, mask, available, origin});
         return resources.size()-1;
+    };
+    const auto addResource = [&](const std::shared_ptr<baregl::Texture>& texture, uint16_t width, uint16_t height,
+        uint8_t mask, uint8_t available, Data::ResourceOrigin origin) {
+        return addStorage(texture->RetainStorage(), width, height, mask, available, origin);
+    };
+    // Writable texture attachments of a viewport target are explicit pass outputs.
+    // Depth/stencil renderbuffers stay under the framebuffer owner and are not plan textures.
+    const auto addTargetWrites = [&](const std::optional<baregl::Framebuffer::Snapshot>& target,
+        uint16_t width, uint16_t height) {
+        std::vector<Data::ResourceUse> writes;
+        if (!target) return writes;
+        for (const auto& attachment : target->GetTextureAttachments())
+        {
+            if (!attachment.writable) continue;
+            const auto resource = addStorage(attachment.storage, width, height, 1, 0, Data::ResourceOrigin::CurrentFrame);
+            if (std::none_of(writes.begin(), writes.end(), [&](const auto& use) { return use.resource == resource; }))
+                writes.push_back({resource, 1});
+        }
+        return writes;
     };
     SceneRenderExtractor::MaterialCache materialCache;
     const auto addView = [&](const SceneRenderRequest& input, std::optional<baregl::Framebuffer::Snapshot> target,
@@ -143,8 +161,13 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
         auto geometry = main;
         geometry.includeUI = false;
         std::erase(geometry.pipeline.stages,Data::RenderStage::SceneUI);
-        addView(geometry,request.target,"MainView",mainReads,{},probes);
-        frame->m_plan.passes.back().postProcessAfter = true;
+        auto mainWrites = addTargetWrites(request.target, main.width, main.height);
+        addView(geometry,request.target,"MainView",mainReads,mainWrites,probes);
+        auto& mainPass = frame->m_plan.passes.back();
+        mainPass.postProcessAfter = true;
+        // Post-process blits through private ping-pong: sequential read then write.
+        mainPass.postProcessReads = mainWrites;
+        mainPass.postProcessWrites = mainWrites;
         frame->m_postProcessAfterView = frame->m_views.size()-1;
         frame->m_postProcessCommands = std::make_unique<Data::RenderCommandList>(request.postProcess->Record(*settings,*request.postProcessTarget,request.postProcessState));
         frame->m_info=request.postProcess->GetFrameInfo();
@@ -153,10 +176,10 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
             auto ui = main; ui.viewId = viewId(); ui.includeOpaque = ui.includeTransparent = false;
             ui.pipeline.stages = {Data::RenderStage::SceneUI}; ui.preserveOutput = true;
             materialCache = {}; // Final blit changes the material binding before UI.
-            addView(ui,request.target,"SceneUI",mainReads,{},probes);
+            addView(ui,request.target,"SceneUI",mainReads,addTargetWrites(request.target, ui.width, ui.height),probes);
         }
     }
-    else addView(main,request.target,"MainView",std::move(mainReads),{},probes);
+    else addView(main,request.target,"MainView",std::move(mainReads),addTargetWrites(request.target, main.width, main.height),probes);
     if (main.includeUI && std::find(main.pipeline.stages.begin(), main.pipeline.stages.end(), Data::RenderStage::SceneUI) != main.pipeline.stages.end())
     {
         const auto ui = UI::ExtractFrame(main.scene, {float(main.width), float(main.height)}, generation, &main.camera);
@@ -192,18 +215,33 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
             {
                 auto sceneUI = resources.Extract(ui, viewId(), white, black, Data::RenderStage::SceneUI, &lightingView);
                 frame->m_plan.passes.push_back({"CanvasUI", frame->m_views.size(), sceneUI->GetView().id,
-                    {Data::RenderStage::SceneUI}, request.target, reads, {}, {}});
+                    {Data::RenderStage::SceneUI}, request.target, reads, addTargetWrites(request.target, main.width, main.height), {}});
                 frame->m_views.push_back(std::move(sceneUI));
             }
             if (hasOverlay)
             {
                 auto overlay = resources.Extract(ui, viewId(), white, black);
                 frame->m_plan.passes.push_back({"OverlayUI", frame->m_views.size(), overlay->GetView().id,
-                    {Data::RenderStage::OverlayUI}, request.target, std::move(reads), {}, {}});
+                    {Data::RenderStage::OverlayUI}, request.target, std::move(reads), addTargetWrites(request.target, main.width, main.height), {}});
                 frame->m_views.push_back(std::move(overlay));
             }
         }
     }
     frame->m_plan.Validate(frame->m_views);
     return frame;
+}
+
+void SceneFrame::DeclareTrailingComposition(std::string name,
+    std::vector<Data::ResourceUse> reads, std::vector<Data::ResourceUse> writes)
+{
+    m_plan.trailing.push_back({std::move(name), std::move(reads), std::move(writes)});
+    m_plan.Validate(m_views);
+}
+
+std::optional<size_t> SceneFrame::FindResource(const baregl::Texture::Snapshot& storage) const
+{
+    const auto id = storage.GetID();
+    for (size_t i = 0; i < m_plan.resources.size(); ++i)
+        if (m_plan.resources[i].storage.GetID() == id) return i;
+    return std::nullopt;
 }

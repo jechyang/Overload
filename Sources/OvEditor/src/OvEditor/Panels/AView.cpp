@@ -70,8 +70,16 @@ OvRendering::Data::RenderCommandList OvEditor::Panels::AView::RecordRenderComman
         if(mainView==preparedViews.end())throw std::logic_error("Viewport main camera view is missing");
         const auto view=(*mainView)->GetView();
         m_frameInfo=frame->GetFrameInfo();
-        commands.Append(m_frontend.RecordFrame(std::move(frame),m_jobs));
+        // Editor overlay and picking append after RecordFrame; declare their contracts.
+        const auto colorIndex=frame->FindResource(m_surface.GetColor()->RetainStorage());
         m_overlayRequest=CreateOverlayRequest();
+        std::vector<OvRendering::Data::ResourceUse> overlayWrites;
+        if(colorIndex) overlayWrites.push_back({*colorIndex,1});
+        if(m_overlayRequest.grid||m_overlayRequest.debugObjects)
+            frame->DeclareTrailingComposition("EditorOverlay",{},std::move(overlayWrites));
+        if(m_overlayRequest.picking)
+            frame->DeclareTrailingComposition("Picking",{},{});
+        commands.Append(m_frontend.RecordFrame(std::move(frame),m_jobs));
         if(m_overlayRequest.grid||m_overlayRequest.debugObjects)
         {
             if(!m_overlays)m_overlays=std::make_unique<Rendering::EditorOverlayCollector>();

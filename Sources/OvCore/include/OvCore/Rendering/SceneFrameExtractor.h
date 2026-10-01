@@ -2,6 +2,7 @@
 #include <OvCore/Rendering/SceneRenderExtractor.h>
 #include <OvRendering/Data/RenderPlan.h>
 #include <OvCore/Rendering/PostProcess/PostProcessPipeline.h>
+#include <optional>
 namespace OvCore::UI { class RenderResources; }
 namespace OvCore::Rendering
 {
@@ -25,6 +26,13 @@ namespace OvCore::Rendering
         const OvRendering::Data::RenderPlan& GetPlan() const { return m_plan; }
         std::span<const std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot>> GetViews() const { return m_views; }
         std::span<const std::shared_ptr<const OvRendering::Data::PreparedFrameData>> GetPreparedViews() const { return m_prepared; }
+        // Declare external commands that append after the plan (editor overlay, picking).
+        // Resource contracts become part of Validate; commands stay with the caller.
+        void DeclareTrailingComposition(std::string name,
+            std::vector<OvRendering::Data::ResourceUse> reads,
+            std::vector<OvRendering::Data::ResourceUse> writes);
+        // Find a planned resource by storage generation (e.g. the viewport color).
+        std::optional<size_t> FindResource(const baregl::Texture::Snapshot& storage) const;
         SceneFrame(const SceneFrame&) = delete;
     private:
         SceneFrame() = default;

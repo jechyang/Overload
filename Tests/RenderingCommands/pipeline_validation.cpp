@@ -65,7 +65,12 @@ void PipelineValidation(const std::filesystem::path& dir)
                 if(fault==2)invalid.passes[0].stages={OvRendering::Data::RenderStage::Picking};
                 if(fault==3)invalid.passes[0].target=b;
                 if(fault==4)invalid.passes[0].writes={{invalid.resources.size(),1}};
-                if(fault==5)invalid.passes[0].postProcessAfter=true;
+                if(fault==5)
+                {
+                    invalid.passes[0].postProcessAfter=true;
+                    invalid.passes[0].postProcessReads=invalid.passes[0].writes;
+                    invalid.passes[0].postProcessWrites=invalid.passes[0].writes;
+                }
                 if(fault==6)invalid.resources[0].origin=OvRendering::Data::ResourceOrigin::History;
                 bool rejected=false;try{frontend.ComposeFrame(frozenViews,std::move(invalid));}catch(const std::invalid_argument& e){const std::string_view message=e.what();rejected=message.find(diagnostics[fault])!=message.npos && message.find(fault<5?"RenderPlan pass":"ComposeFrame")!=message.npos;}
                 Require(rejected,"invalid custom pipeline was accepted without a diagnostic");
