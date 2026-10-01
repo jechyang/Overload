@@ -74,6 +74,12 @@
       "command": "node Tests/UI/run-input-controls-validation.mjs",
       "source": "Tests/UI/input_controls_validation.cpp",
       "evidence": "Build/UGUI-InputControls"
+    },
+    "U-TWEEN-RUNTIME": {
+      "status": "passed",
+      "command": "node Tests/UI/run-tween-validation.mjs",
+      "source": "Tests/UI/tween_validation.cpp",
+      "evidence": "Build/UGUI-Tween"
     }
   },
   "files": [
@@ -837,12 +843,12 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.CoroutineTween.ITweenValue",
-          "status": "adapted",
+          "status": "implemented",
           "stage": "U8",
           "tests": [
-            "U8-CONTROLS-RUNTIME"
+            "U-TWEEN-RUNTIME"
           ],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: ColorTween."
+          "differences": "Session-safe CoroutineTween rewrite; TweenRunner advances via UI tick instead of MonoBehaviour coroutines."
         },
         {
           "name": "UnityEngine.UI.CoroutineTween.ColorTween",
@@ -853,9 +859,9 @@
           "status": "implemented",
           "stage": "U8",
           "tests": [
-            "U8-CONTROLS-RUNTIME"
+            "U-TWEEN-RUNTIME"
           ],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet."
+          "differences": "Session-safe CoroutineTween rewrite; TweenRunner advances via UI tick instead of MonoBehaviour coroutines."
         },
         {
           "name": "UnityEngine.UI.CoroutineTween.ColorTween.ColorTweenMode",
@@ -863,12 +869,12 @@
           "visibility": "public",
           "public": false,
           "overload": "Overload.UI.CoroutineTween.ColorTween.ColorTweenMode",
-          "status": "adapted",
+          "status": "implemented",
           "stage": "U8",
           "tests": [
-            "U8-CONTROLS-RUNTIME"
+            "U-TWEEN-RUNTIME"
           ],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: ColorTween."
+          "differences": "Session-safe CoroutineTween rewrite; TweenRunner advances via UI tick instead of MonoBehaviour coroutines."
         },
         {
           "name": "UnityEngine.UI.CoroutineTween.ColorTween.ColorTweenCallback",
@@ -876,12 +882,12 @@
           "visibility": "public",
           "public": false,
           "overload": "Overload.UI.CoroutineTween.ColorTween.ColorTweenCallback",
-          "status": "adapted",
+          "status": "implemented",
           "stage": "U8",
           "tests": [
-            "U8-CONTROLS-RUNTIME"
+            "U-TWEEN-RUNTIME"
           ],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent<Color>."
+          "differences": "Session-safe CoroutineTween rewrite; TweenRunner advances via UI tick instead of MonoBehaviour coroutines."
         },
         {
           "name": "UnityEngine.UI.CoroutineTween.FloatTween",
@@ -889,12 +895,12 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.CoroutineTween.FloatTween",
-          "status": "adapted",
+          "status": "implemented",
           "stage": "U8",
           "tests": [
-            "U8-CONTROLS-RUNTIME"
+            "U-TWEEN-RUNTIME"
           ],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: ColorTween."
+          "differences": "Session-safe CoroutineTween rewrite; TweenRunner advances via UI tick instead of MonoBehaviour coroutines."
         },
         {
           "name": "UnityEngine.UI.CoroutineTween.FloatTween.FloatTweenCallback",
@@ -902,12 +908,12 @@
           "visibility": "public",
           "public": false,
           "overload": "Overload.UI.CoroutineTween.FloatTween.FloatTweenCallback",
-          "status": "adapted",
+          "status": "implemented",
           "stage": "U8",
           "tests": [
-            "U8-CONTROLS-RUNTIME"
+            "U-TWEEN-RUNTIME"
           ],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent<float>."
+          "differences": "Session-safe CoroutineTween rewrite; TweenRunner advances via UI tick instead of MonoBehaviour coroutines."
         },
         {
           "name": "UnityEngine.UI.CoroutineTween.TweenRunner<T>",
@@ -915,12 +921,12 @@
           "visibility": "internal",
           "public": false,
           "overload": "Overload.UI.CoroutineTween.TweenRunner<T>",
-          "status": "adapted",
+          "status": "implemented",
           "stage": "U8",
           "tests": [
-            "U8-CONTROLS-RUNTIME"
+            "U-TWEEN-RUNTIME"
           ],
-          "differences": "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: Graphic.CrossFadeColor."
+          "differences": "Session-safe CoroutineTween rewrite; TweenRunner advances via UI tick instead of MonoBehaviour coroutines."
         }
       ]
     },
