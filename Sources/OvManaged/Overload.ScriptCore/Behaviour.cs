@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Runtime.CompilerServices;
 using Vector3 = Overload.Maths.Vector3;
 
@@ -10,6 +11,7 @@ public abstract class Behaviour
 {
     internal Actor? owner;
     private readonly System.Collections.Generic.List<IDisposable> subscriptions = new();
+    private readonly System.Collections.Generic.List<Coroutine> coroutines = new();
     private bool subscriptionsClosed;
     protected T TrackSubscription<T>(T subscription) where T : IDisposable {
         if (subscriptionsClosed) { subscription.Dispose(); throw new InvalidOperationException("Behaviour subscription scope closed"); }
@@ -19,11 +21,28 @@ public abstract class Behaviour
     internal void DisownSubscription(IDisposable subscription) => subscriptions.Remove(subscription);
     internal void ReleaseSubscriptions(Action<string> log) {
         subscriptionsClosed = true;
+        StopAllCoroutines();
         IDisposable[] pending = subscriptions.ToArray(); subscriptions.Clear();
         foreach (IDisposable subscription in pending) try { subscription.Dispose(); } catch (Exception ex) { log("Subscription cleanup: " + ex); }
     }
     public Actor Owner => owner ?? throw new InvalidOperationException("Owner is unavailable during construction");
     public Transform Transform => Owner.Transform;
+    /// <summary>Start a session-safe IEnumerator coroutine advanced by the UI/game tick.</summary>
+    public Coroutine StartCoroutine(IEnumerator routine) {
+        ArgumentNullException.ThrowIfNull(routine);
+        var coroutine = CoroutineScheduler.Start(routine, this);
+        coroutines.Add(coroutine);
+        return coroutine;
+    }
+    public void StopCoroutine(Coroutine routine) {
+        if (routine == null) return;
+        routine.Stop();
+        coroutines.Remove(routine);
+    }
+    public void StopAllCoroutines() {
+        foreach (var routine in coroutines.ToArray()) routine.Stop();
+        coroutines.Clear();
+    }
     public virtual void OnAwake() { }
     public virtual void OnEnable() { }
     public virtual void OnStart() { }

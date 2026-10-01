@@ -19,6 +19,7 @@ public static class GraphicRebuildTracker
     public static void Update(Actor anchor, float deltaTime, float unscaledDeltaTime) {
         if(!float.IsFinite(deltaTime)||!float.IsFinite(unscaledDeltaTime)||deltaTime<0||unscaledDeltaTime<0)throw new ArgumentOutOfRangeException(nameof(deltaTime));
         CoroutineTween.TweenRunnerRegistry.Tick(deltaTime, unscaledDeltaTime);
+        CoroutineScheduler.Tick(deltaTime, unscaledDeltaTime);
         foreach(var graphic in UISessionRegistry<Graphic>.For(anchor).Snapshot()) if(graphic.IsActive() && anchor.Access.Query(anchor.Handle,19,graphic.Owner.Handle)!=0)graphic.AdvanceTween(deltaTime,unscaledDeltaTime);
     }
     public static void RequestRebuild(Actor anchor) {
