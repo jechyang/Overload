@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Overload.UI;
 
 namespace Overload.UI.CoroutineTween;
@@ -146,4 +147,112 @@ public struct FloatTween : ITweenValue
     public bool GetIgnoreTimescale() => m_IgnoreTimeScale;
     public float GetDuration() => m_Duration;
     public bool ValidTarget() => m_Target != null;
+}
+
+/// <summary>
+/// Session-safe tween runner (uGUI TweenRunner without coroutines).
+/// Call <see cref="Tick"/> from the UI tick; Init binds lifetime to a Behaviour.
+/// </summary>
+public class TweenRunner<T> where T : struct, ITweenValue
+{
+    private T m_Tween;
+    private float m_Elapsed;
+    private bool m_Running;
+    private Behaviour? m_Container;
+    private WeakReference<Behaviour>? m_ContainerRef;
+
+    public bool isRunning => m_Running;
+
+    public void Init(Behaviour coroutineContainer)
+    {
+        ArgumentNullException.ThrowIfNull(coroutineContainer);
+        m_Container = coroutineContainer;
+        m_ContainerRef = new WeakReference<Behaviour>(coroutineContainer);
+    }
+
+    public void StartTween(T info)
+    {
+        if (!info.ValidTarget()) return;
+        StopTween();
+        if (m_Container != null && !(m_Container.Owner.IsAlive && m_Container.Owner.ActiveInHierarchy)) {
+            info.TweenValue(1.0f);
+            return;
+        }
+        m_Tween = info;
+        m_Elapsed = 0;
+        m_Running = true;
+        if (info.duration <= 0) {
+            m_Tween.TweenValue(1.0f);
+            m_Running = false;
+        }
+    }
+
+    public void StopTween()
+    {
+        m_Running = false;
+        m_Elapsed = 0;
+    }
+
+    /// <summary>Advance active tweens. unscaledDelta is used when ignoreTimeScale is set.</summary>
+    public void Tick(float deltaTime, float unscaledDeltaTime)
+    {
+        if (!m_Running) return;
+        if (m_ContainerRef != null && (!m_ContainerRef.TryGetTarget(out var owner) || owner == null || !(owner.Owner.IsAlive && owner.Owner.ActiveInHierarchy))) {
+            StopTween();
+            return;
+        }
+        float step = m_Tween.ignoreTimeScale ? unscaledDeltaTime : deltaTime;
+        if (!float.IsFinite(step) || step < 0) step = 0;
+        m_Elapsed += step;
+        if (m_Elapsed >= m_Tween.duration) {
+            m_Tween.TweenValue(1.0f);
+            m_Running = false;
+            return;
+        }
+        m_Tween.TweenValue(m_Elapsed / m_Tween.duration);
+    }
+}
+
+/// <summary>Session-owned registry of active runners advanced by UI.TickUI.</summary>
+public static class TweenRunnerRegistry
+{
+    private static readonly List<ITweenTicker> s_Running = new();
+    private static readonly List<ITweenTicker> s_Pending = new();
+
+    public interface ITweenTicker
+    {
+        void Tick(float deltaTime, float unscaledDeltaTime);
+        bool IsRunning { get; }
+    }
+
+    private sealed class Adapter<T> : ITweenTicker where T : struct, ITweenValue
+    {
+        private readonly TweenRunner<T> runner;
+        public Adapter(TweenRunner<T> runner) { this.runner = runner; }
+        public bool IsRunning => runner.isRunning;
+        public void Tick(float deltaTime, float unscaledDeltaTime) => runner.Tick(deltaTime, unscaledDeltaTime);
+    }
+
+    public static void Track<T>(TweenRunner<T> runner) where T : struct, ITweenValue
+    {
+        ArgumentNullException.ThrowIfNull(runner);
+        s_Pending.Add(new Adapter<T>(runner));
+    }
+
+    public static void Tick(float deltaTime, float unscaledDeltaTime)
+    {
+        for (int i = 0; i < s_Pending.Count; ++i) s_Running.Add(s_Pending[i]);
+        s_Pending.Clear();
+        for (int i = s_Running.Count - 1; i >= 0; --i) {
+            var item = s_Running[i];
+            item.Tick(deltaTime, unscaledDeltaTime);
+            if (!item.IsRunning) s_Running.RemoveAt(i);
+        }
+    }
+
+    public static void Clear()
+    {
+        s_Running.Clear();
+        s_Pending.Clear();
+    }
 }

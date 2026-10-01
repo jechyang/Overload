@@ -47,8 +47,10 @@ int wmain(int argc, wchar_t** argv) try
     actor.AddComponent<CRectTransform>();
     auto& probe = actor.AddBehaviour(ScriptIdentity::CSharp("TweenFixture", "TweenFixture.ColorTweenProbe"));
     auto& floatProbe = actor.AddBehaviour(ScriptIdentity::CSharp("TweenFixture", "TweenFixture.FloatTweenProbe"));
+    auto& runnerProbe = actor.AddBehaviour(ScriptIdentity::CSharp("TweenFixture", "TweenFixture.TweenRunnerProbe"));
     Require(scripts.PrepareCSharp(probe), "prepare ColorTweenProbe");
     Require(scripts.PrepareCSharp(floatProbe), "prepare FloatTweenProbe");
+    Require(scripts.PrepareCSharp(runnerProbe), "prepare TweenRunnerProbe");
     scene.Play();
     scene.Update(1);
     int passed = Int(probe, "passed");
@@ -63,10 +65,16 @@ int wmain(int argc, wchar_t** argv) try
         std::fprintf(stderr, "FloatTween probe failed passed=%d err=%s\n", fpassed, ferr.c_str());
         return 1;
     }
+    int rpassed = Int(runnerProbe, "passed");
+    std::string rerr = Str(runnerProbe, "lastError");
+    if (rpassed != 1) {
+        std::fprintf(stderr, "TweenRunner probe failed passed=%d err=%s\n", rpassed, rerr.c_str());
+        return 1;
+    }
     scripts.ClearCSharpProject();
     engine.scenes.UnloadCurrentScene();
     host.Shutdown();
-    std::puts("PASS ITweenValue + ColorTween + FloatTween");
+    std::puts("PASS ITweenValue + ColorTween + FloatTween + TweenRunner");
     return 0;
 }
 catch (const std::exception& error)
