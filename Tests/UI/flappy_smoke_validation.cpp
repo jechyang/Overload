@@ -39,6 +39,12 @@ int wmain(int argc, wchar_t** argv) try
     Require(scripts.PrepareCSharp(game), "prepare FlappyBirdGame");
     Require(game.GetScript() && game.GetScript()->IsValid(), "FlappyBirdGame prepared");
 
+    // Edit-mode UI rebuild should already materialize the static preview.
+    Require(scene.FindActorByName("Bird"), "edit-mode bird exists");
+    Require(scene.FindActorByName("Background"), "edit-mode background exists");
+    Require(scene.FindActorByName("Score"), "edit-mode score text exists");
+    Require(scene.FindActorByName("GameOver"), "edit-mode game over panel exists");
+
     scene.Play();
     for (int i = 0; i < 8; i++) scene.Update(1.0f / 60.0f);
     Require(scene.FindActorByName("Bird"), "bird exists");

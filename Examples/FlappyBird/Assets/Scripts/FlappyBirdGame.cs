@@ -41,9 +41,10 @@ public class FlappyCanvas : CanvasScaler
 
 /// <summary>
 /// Flappy Bird on the uGUI runtime: Image/CircleGraphic/Text, EventSystem input,
-/// and Behaviour.OnUpdate for simulation. Build happens once from OnEnable.
+/// and OnUpdate for simulation. Extends UIBehaviour so edit-mode UI rebuild
+/// prepares the instance and shows a static preview before Play.
 /// </summary>
-public class FlappyBirdGame : Behaviour
+public class FlappyBirdGame : Overload.EventSystems.UIBehaviour
 {
     private const float Gravity = -1100f;
     private const float FlapVelocity = 360f;
@@ -63,6 +64,14 @@ public class FlappyBirdGame : Behaviour
     private bool built;
     private Actor? bird, scoreText, messageText, gameOverPanel, gameOverScore, bestScoreText;
     private readonly List<(Actor top, Actor bottom, bool scored)> pipes = new();
+
+    // First UI rebuild notifies size (edit mode included) so the preview exists
+    // without entering Play. Simulation still starts on Play via OnUpdate.
+    protected override void OnRectTransformDimensionsChange()
+    {
+        base.OnRectTransformDimensionsChange();
+        if (!built) Build();
+    }
 
     public override void OnEnable()
     {
