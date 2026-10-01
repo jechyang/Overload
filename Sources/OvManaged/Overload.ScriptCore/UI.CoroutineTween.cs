@@ -88,3 +88,62 @@ public struct ColorTween : ITweenValue
         a.b + (b.b - a.b) * t,
         a.a + (b.a - a.a) * t);
 }
+
+/// <summary>Float tween, receives TweenValue and sets the value on the target callback.</summary>
+public struct FloatTween : ITweenValue
+{
+    /// <summary>Overload stand-in for UnityEvent&lt;float&gt;.</summary>
+    public sealed class FloatTweenCallback : UIEvent<float>
+    {
+    }
+
+    private FloatTweenCallback? m_Target;
+    private float m_StartValue;
+    private float m_TargetValue;
+    private float m_Duration;
+    private bool m_IgnoreTimeScale;
+
+    public float startValue {
+        get => m_StartValue;
+        set {
+            if (!float.IsFinite(value)) throw new ArgumentException("startValue must be finite");
+            m_StartValue = value;
+        }
+    }
+    public float targetValue {
+        get => m_TargetValue;
+        set {
+            if (!float.IsFinite(value)) throw new ArgumentException("targetValue must be finite");
+            m_TargetValue = value;
+        }
+    }
+    public float duration {
+        get => m_Duration;
+        set {
+            if (!float.IsFinite(value) || value < 0) throw new ArgumentOutOfRangeException(nameof(value));
+            m_Duration = value;
+        }
+    }
+    public bool ignoreTimeScale {
+        get => m_IgnoreTimeScale;
+        set => m_IgnoreTimeScale = value;
+    }
+
+    public void TweenValue(float floatPercentage)
+    {
+        if (!ValidTarget()) return;
+        float t = Math.Clamp(floatPercentage, 0, 1);
+        m_Target!.Invoke(m_StartValue + (m_TargetValue - m_StartValue) * t);
+    }
+
+    public void AddOnChangedCallback(Action<float> callback)
+    {
+        ArgumentNullException.ThrowIfNull(callback);
+        m_Target ??= new FloatTweenCallback();
+        m_Target.AddListener(callback);
+    }
+
+    public bool GetIgnoreTimescale() => m_IgnoreTimeScale;
+    public float GetDuration() => m_Duration;
+    public bool ValidTarget() => m_Target != null;
+}

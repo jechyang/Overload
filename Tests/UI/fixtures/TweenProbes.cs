@@ -76,3 +76,61 @@ public class ColorTweenProbe : Behaviour
         Need(seen != null && seen.Value.a == 0, "percentage clamped to 0");
     }
 }
+
+/// <summary>Self-checks FloatTween (step 2) after prepare.</summary>
+public class FloatTweenProbe : Behaviour
+{
+    [SerializeField] public int passed;
+    [SerializeField] public string lastError = "";
+
+    public override void OnUpdate(float dt)
+    {
+        if (passed != 0 || lastError.Length != 0) return;
+        try {
+            Check();
+            passed = 1;
+        } catch (Exception e) {
+            lastError = e.Message;
+            passed = -1;
+        }
+    }
+
+    private static void Check()
+    {
+        static void Need(bool ok, string message) { if (!ok) throw new Exception(message); }
+
+        var empty = new FloatTween();
+        Need(!empty.ValidTarget(), "empty FloatTween has no target");
+        Need(empty.GetDuration() == 0 && !empty.GetIgnoreTimescale(), "empty FloatTween defaults");
+
+        var tween = new FloatTween {
+            startValue = 10f,
+            targetValue = 20f,
+            duration = 1f,
+            ignoreTimeScale = false
+        };
+        Need(!tween.ValidTarget(), "no target before callback");
+        float? seen = null;
+        tween.AddOnChangedCallback(v => seen = v);
+        Need(tween.ValidTarget(), "callback registers a target");
+        Need(tween.GetDuration() == 1f && !tween.GetIgnoreTimescale(), "duration/ignoreTimeScale");
+
+        tween.TweenValue(0f);
+        Need(seen != null && seen.Value == 10f, "t=0 is startValue");
+        tween.TweenValue(0.25f);
+        Need(seen != null && Math.Abs(seen.Value - 12.5f) < 1e-4f, "t=0.25 lerps");
+        tween.TweenValue(1f);
+        Need(seen != null && seen.Value == 20f, "t=1 is targetValue");
+        tween.TweenValue(3f);
+        Need(seen != null && seen.Value == 20f, "percentage clamped high");
+        tween.TweenValue(-2f);
+        Need(seen != null && seen.Value == 10f, "percentage clamped low");
+
+        bool threw = false;
+        try { _ = tween.startValue = float.NaN; } catch (ArgumentException) { threw = true; }
+        Need(threw, "NaN startValue rejected");
+        threw = false;
+        try { _ = tween.duration = -0.1f; } catch (ArgumentOutOfRangeException) { threw = true; }
+        Need(threw, "negative duration rejected");
+    }
+}
