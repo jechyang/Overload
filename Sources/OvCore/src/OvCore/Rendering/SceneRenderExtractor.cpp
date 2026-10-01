@@ -78,7 +78,7 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     std::vector<uintptr_t> identities;
     std::vector<Data::Material*> materialsToResolve;
     std::vector<std::optional<Data::FeatureSet>> featuresToResolve;
-    bool resolveSingleUse = p_cache != nullptr;
+    bool resolveSingleUse = false;
     std::vector<Data::Material::PropertyOverrides> overridesToResolve;
     std::vector<std::shared_ptr<baregl::Texture>> receiverTextures;
     if (p_request.shadow.map) receiverTextures.push_back(p_request.shadow.map);
@@ -87,6 +87,8 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     uint64_t ordinal = 0;
     Core::MeshCommandRecorder::ProgramCache localPrograms;
     auto& programCache=programs?*programs:localPrograms;
+    MaterialCache localMaterialCache;
+    auto& materialCache = p_cache ? *p_cache : localMaterialCache;
     for (const auto* renderer : components.modelRenderers)
     {
         const auto& owner = renderer->owner;
@@ -96,6 +98,8 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
         const auto* skin = owner.GetComponent<ECS::Components::CSkinnedMeshRenderer>();
         const bool hasSkin = Rendering::SkinningUtils::IsSkinningActive(skin);
         const auto& transform = owner.transform.GetFTransform();
+        // One shared palette per actor/pose; all meshes and later views reuse it.
+        std::shared_ptr<const std::vector<OvMaths::FMatrix4>> sharedPalette;
         for (const auto* mesh : renderer->GetModel()->GetMeshes())
         {
             const auto collection = ordinal++;
@@ -151,8 +155,19 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
             if (item.skinning.enabled && hasPalette)
             {
                 item.skinning.poseVersion = skin->GetPoseVersion();
-                const auto& matrices = skin->GetBoneMatricesTransposed();
-                item.skinning.matrices.assign(matrices.begin(), matrices.end());
+                if (!sharedPalette)
+                {
+                    const auto key = std::pair{static_cast<const void*>(skin), item.skinning.poseVersion};
+                    const auto found = materialCache.palettes.find(key);
+                    if (found != materialCache.palettes.end()) sharedPalette = found->second;
+                    else
+                    {
+                        const auto& matrices = skin->GetBoneMatricesTransposed();
+                        sharedPalette = std::make_shared<const std::vector<OvMaths::FMatrix4>>(matrices.begin(), matrices.end());
+                        materialCache.palettes.emplace(key, sharedPalette);
+                    }
+                }
+                item.skinning.matrices = sharedPalette;
             }
             auto reflection = p_request.reflection;
             item.actorId = owner.GetGUID(); item.collectionIndex = collection;
@@ -250,11 +265,11 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     {
         // Compatibility only: source consumption is ordered on Main before workers.
         // Reuse the same culling and sorting rules as Prepare; no Material leaves Extract.
+        // Runs only when a single-use property was observed; otherwise the first
+        // non-consuming snapshots already hold the full values.
         const auto preparedView = OvRendering::Core::ViewPreparer::BuildView(view);
-        MaterialCache localCache;
-        auto& cache = p_cache ? *p_cache : localCache;
-        auto& previousSignature = cache.signature;
-        auto& previous = cache.snapshot;
+        auto& previousSignature = materialCache.signature;
+        auto& previous = materialCache.snapshot;
         for (const auto stage : builder->m_pipeline.stages)
         {
             std::vector<OvRendering::Core::VisibleStaticMesh> ordered;

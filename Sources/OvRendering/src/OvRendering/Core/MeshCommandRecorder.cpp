@@ -178,12 +178,13 @@ Data::RenderCommandList Core::MeshCommandRecorder::RecordRange(
                 reflection->Bind(baregl::types::EBufferType::UNIFORM, 1);
                 if (palette.enabled)
                 {
-                    if (palette.matrices.empty()) identity->Bind(baregl::types::EBufferType::SHADER_STORAGE, 1);
+                    const auto& matrices = palette.matrices;
+                    if (!matrices || matrices->empty()) identity->Bind(baregl::types::EBufferType::SHADER_STORAGE, 1);
                     else
                     {
-                        const auto bytes = palette.matrices.size() * sizeof(OvMaths::FMatrix4);
+                        const auto bytes = matrices->size() * sizeof(OvMaths::FMatrix4);
                         if (skinning->GetSize() < bytes) skinning->Allocate(bytes, baregl::types::EAccessSpecifier::STREAM_DRAW);
-                        skinning->Upload(palette.matrices.data(), baregl::data::BufferMemoryRange{.offset = 0, .size = bytes});
+                        skinning->Upload(matrices->data(), baregl::data::BufferMemoryRange{.offset = 0, .size = bytes});
                         skinning->Bind(baregl::types::EBufferType::SHADER_STORAGE, 1);
                     }
                 }

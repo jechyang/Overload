@@ -55,8 +55,9 @@ namespace OvRendering::Data
     {
         bool enabled = false;
         uint64_t poseVersion = 0;
-        // Already transposed by the existing pose publication boundary; empty means identity.
-        std::vector<OvMaths::FMatrix4> matrices;
+        // Shared per pose version across meshes/views; already transposed by the pose
+        // publication boundary. Empty pointer means identity.
+        std::shared_ptr<const std::vector<OvMaths::FMatrix4>> matrices;
     };
     struct EngineConstants
     {

@@ -4,6 +4,8 @@
 #include <OvCore/Rendering/ScenePipeline.h>
 #include <OvRendering/Data/PreparedFrameData.h>
 #include <OvRendering/Entities/Camera.h>
+#include <map>
+#include <utility>
 
 namespace OvCore::Rendering
 {
@@ -46,6 +48,8 @@ namespace OvCore::Rendering
         {
             std::optional<OvRendering::Data::MaterialSignatureSet> signature;
             OvRendering::Data::Material::PreparedSnapshot snapshot;
+            // Frame-shared palettes keyed by (skinned component, pose version).
+            std::map<std::pair<const void*, uint64_t>, std::shared_ptr<const std::vector<OvMaths::FMatrix4>>> palettes;
         };
         static OvRendering::Data::RenderViewInput CaptureView(const SceneViewRequest& p_request);
         static std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> ExtractImpl(
