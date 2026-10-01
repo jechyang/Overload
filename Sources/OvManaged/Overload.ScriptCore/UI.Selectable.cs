@@ -49,22 +49,6 @@ public interface IUIAnimationDriver
     void Stop();
 }
 
-public struct ColorTween
-{
-    public Color startColor, targetColor;
-    public float duration;
-    public Action<Color>? onTween;
-    public void TweenValue(float t) {
-        if (onTween == null) return;
-        if (duration <= 0) { onTween(targetColor); return; }
-        t = Math.Clamp(t, 0, 1);
-        Color L(Color a, Color b) => new(
-            a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t,
-            a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t);
-        onTween(L(startColor, targetColor));
-    }
-}
-
 public class Selectable : UIBehaviour,
     IMoveHandler, IPointerDownHandler, IPointerUpHandler,
     IPointerEnterHandler, IPointerExitHandler, ISelectHandler, IDeselectHandler
