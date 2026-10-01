@@ -6,10 +6,10 @@
 */
 
 #include <tracy/Tracy.hpp>
-#include <baregl/detail/glad/glad.h>
 
 #include <OvDebug/Logger.h>
 #include <OvGame/Core/Game.h>
+#include <OvRendering/Data/PortableCommands.h>
 #include <OvTools/Utils/PathParser.h>
 #include <OvUI/Widgets/Texts/Text.h>
 
@@ -196,11 +196,9 @@ OvRendering::Data::RenderCommandList OvGame::Core::Game::RecordSceneCommands()
             m_renderStats=frame->GetFrameInfo();
             commands.Append(m_frontend.RecordFrame(std::move(frame),m_renderJobs));
         }
-        else commands.Append([target=m_context.framebuffer->RecordTarget()](auto& driver){target.Bind();driver.Clear(true,true,true);});
-        commands.Append([target=m_context.framebuffer->RecordTarget(),width,height](auto&) {
-            const auto [sourceWidth,sourceHeight]=target.GetSize();
-            glBlitNamedFramebuffer(target.GetID(),0,0,0,sourceWidth,sourceHeight,0,0,width,height,GL_COLOR_BUFFER_BIT,GL_LINEAR);
-        });
+        else commands.Append(OvRendering::Data::ClearTarget(m_context.framebuffer->RecordTarget(),true,true,true));
+        commands.Append(OvRendering::Data::PresentColor(m_context.framebuffer->RecordTarget(),
+            static_cast<uint16_t>(width),static_cast<uint16_t>(height)));
     }
     commands.Seal();return commands;
 }

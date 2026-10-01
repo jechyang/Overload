@@ -283,7 +283,7 @@ function run(file, args, cwd, log, timeout = 120000) {
   if ((editorThread || gameThread) && !productBenchmark) {
     let source=fs.readFileSync(path.join(root,'Sources/OvRendering/src/OvRendering/Core/RenderTaskCoordinator.cpp'),'utf8');
     source='#include <cstddef>\nextern void ProductTaskEntry(int,size_t,size_t);\n'+source;
-    for(const [phase,entry,count] of [[1,'value = MeshFeatureProcessor::PrepareRange(*scenes[view], views[view], begin, end, cancel);','meshTasks.size()'],[2,'value.emplace(recorder->RecordRange(frames[view], targets[view], begin, end, cancel));','tasks.size()']]) {
+    for(const [phase,entry,count] of [[1,'value = MeshFeatureProcessor::PrepareRange(*scenes[view], views[view], begin, end, cancel);','total'],[2,'value.emplace(recorder->RecordRange(frames[view], targets[view], begin, end, cancel));','total']]) {
       if(!source.includes(entry))throw Error('Product task boundary changed');
       source=source.replace(entry,'ProductTaskEntry('+phase+',slot,'+count+'); '+entry);
     }

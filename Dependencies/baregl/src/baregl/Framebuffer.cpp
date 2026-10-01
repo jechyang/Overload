@@ -435,6 +435,20 @@ namespace baregl
 		});
 	}
 
+	void Framebuffer::Snapshot::BlitToBackBuffer(uint16_t p_backBufferWidth, uint16_t p_backBufferHeight) const
+	{
+		return ResourceExecutor::Invoke([&]() -> void {
+			if (!m_data) throw std::logic_error("Empty framebuffer snapshot");
+			const auto [width, height] = m_data->size;
+			glBlitNamedFramebuffer(
+				GetID(), 0,
+				0, 0, width, height,
+				0, 0, p_backBufferWidth, p_backBufferHeight,
+				GL_COLOR_BUFFER_BIT, GL_LINEAR
+			);
+		});
+	}
+
 	void Framebuffer::ReadPixels(
 		uint32_t p_x,
 		uint32_t p_y,

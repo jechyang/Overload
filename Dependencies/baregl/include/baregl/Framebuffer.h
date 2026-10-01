@@ -137,6 +137,9 @@ namespace baregl
 			std::vector<TextureAttachmentInfo> GetTextureAttachments() const;
 			// CPU-only selection for recorded passes; leaves the source FBO unchanged.
 			Snapshot WithDrawBuffer(std::optional<uint32_t> p_index) const;
+			// Color blit of this snapshot into the default back buffer. Execution stays
+			// on the GL owner / ResourceExecutor; no product code should call glBlit*.
+			void BlitToBackBuffer(uint16_t p_backBufferWidth, uint16_t p_backBufferHeight) const;
 		private:
 			explicit Snapshot(std::shared_ptr<SnapshotData> p_data) : m_data(std::move(p_data)) {}
 			std::shared_ptr<SnapshotData> m_data;

@@ -183,7 +183,7 @@ std::vector<std::shared_ptr<const Data::PreparedFrameData>> Core::RenderTaskCoor
     // with shadows/reflections instead of running as one serial view task.
     struct MeshTask
     {
-        size_t view = 0, begin = 0, end = 0, slot = 0;
+        size_t view = 0, begin = 0, end = 0, slot = 0, total = 0;
         MeshRangeResult value;
         std::exception_ptr error;
         std::span<const std::shared_ptr<const Data::RenderSceneSnapshot>> scenes;
@@ -197,8 +197,9 @@ std::vector<std::shared_ptr<const Data::PreparedFrameData>> Core::RenderTaskCoor
         const auto size = scenes[v]->GetMeshes().size();
         const size_t chunks = RangeChunks(size, jobs);
         for (size_t slot = 0; slot < chunks; ++slot)
-            meshTasks.push_back({v, size * slot / chunks, size * (slot + 1) / chunks, meshTasks.size(), {}, {}, scenes, views, cancel});
+            meshTasks.push_back({v, size * slot / chunks, size * (slot + 1) / chunks, meshTasks.size(), 0, {}, {}, scenes, views, cancel});
     }
+    for (auto& task : meshTasks) task.total = meshTasks.size();
     RunFlat(meshTasks, jobs, cancel);
     std::vector<std::vector<MeshRangeResult>> ranges(viewCount);
     for (auto& task : meshTasks) ranges[task.view].push_back(std::move(task.value));
@@ -253,7 +254,7 @@ std::vector<Data::RenderCommandList> Core::RenderTaskCoordinator::RecordViews(
     if (!viewCount) return commands;
     struct RecordTask
     {
-        size_t view = 0, begin = 0, end = 0, slot = 0;
+        size_t view = 0, begin = 0, end = 0, slot = 0, total = 0;
         std::optional<Data::RenderCommandList> value;
         std::exception_ptr error;
         std::span<const std::shared_ptr<const Data::PreparedFrameData>> frames;
@@ -269,8 +270,9 @@ std::vector<Data::RenderCommandList> Core::RenderTaskCoordinator::RecordViews(
         const auto size = frames[v]->GetDraws().size();
         const size_t chunks = RangeChunks(size, jobs);
         for (size_t slot = 0; slot < chunks; ++slot)
-            tasks.push_back({v, size * slot / chunks, size * (slot + 1) / chunks, tasks.size(), {}, {}, frames, targets, &recorder, cancel});
+            tasks.push_back({v, size * slot / chunks, size * (slot + 1) / chunks, tasks.size(), 0, {}, {}, frames, targets, &recorder, cancel});
     }
+    for (auto& task : tasks) task.total = tasks.size();
     RunFlat(tasks, jobs, cancel);
     std::vector<std::vector<Data::RenderCommandList>> blocks(viewCount);
     for (auto& task : tasks) blocks[task.view].push_back(std::move(*task.value));
