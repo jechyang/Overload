@@ -17,10 +17,15 @@
 #include <OvEditor/Core/EditorResources.h>
 #include <OvEditor/Helpers/PickerHelpers.h>
 #include <OvEditor/Panels/Inspector.h>
+#include <OvEditor/Panels/InspectorBindings.h>
+#include <OvCore/Resources/Material.h>
+#include <OvEditor/Panels/SceneView.h>
+#include <imgui.h>
 #include <OvTools/Utils/PathParser.h>
 #include <OvUI/Widgets/Buttons/Button.h>
 #include <OvUI/Widgets/Layout/Columns.h>
 #include <OvUI/Widgets/Layout/Spacing.h>
+#include <OvUI/Widgets/Texts/TextDisabled.h>
 #include <OvUI/Styling/Style.h>
 #include <OvWindowing/Dialogs/MessageBox.h>
 
@@ -38,14 +43,20 @@ OvEditor::Panels::Inspector::Inspector(
     if (!m_callbacks.defer) m_callbacks.defer = [](std::function<void()> action) { EDITOR_EXEC(DelayAction(std::move(action))); };
     if (!m_callbacks.selected) m_callbacks.selected = [](Actor& actor) { EDITOR_EVENT(ActorSelectedEvent).Invoke(actor); };
     if (!m_callbacks.unselected) m_callbacks.unselected = [](Actor& actor) { EDITOR_EVENT(ActorUnselectedEvent).Invoke(actor); };
+	m_emptyState = &CreateWidget<Layout::Group>();
+	m_emptyState->CreateWidget<Texts::Text>("No entity selected");
+	m_emptyState->CreateWidget<Texts::TextDisabled>("Select an entity in the Hierarchy or Scene View.");
+	m_emptyState->CreateWidget<Texts::TextDisabled>("Double-click a Hierarchy entry to frame it.");
 	m_content = &CreateWidget<Layout::Group>();
 
-	m_destroyedListener = Actor::DestroyedEvent += [this](Actor& p_destroyed) {
-		if (m_targetActor.has_value() &&  &m_targetActor.value() == &p_destroyed)
-		{
-			UnFocus();
-		}
-	};
+	m_destroyedListener = Actor::DestroyedEvent += [this](Actor& destroyed) {
+        if (std::find(m_targets.begin(), m_targets.end(), &destroyed) != m_targets.end())
+        {
+            auto remaining = m_targets;
+            std::erase(remaining, &destroyed);
+            FocusActors(remaining);
+        }
+    };
 }
 
 OvEditor::Panels::Inspector::~Inspector()
@@ -54,27 +65,45 @@ OvEditor::Panels::Inspector::~Inspector()
 	UnFocus();
 }
 
-void OvEditor::Panels::Inspector::FocusActor(Actor& p_target)
+void OvEditor::Panels::Inspector::FocusActor(Actor& target)
 {
-	if (m_targetActor)
-	{
-		UnFocus();
-	}
+    FocusActors({&target});
+}
 
-	m_targetActor = p_target;
+void OvEditor::Panels::Inspector::FocusActors(const std::vector<Actor*>& targets)
+{
+    std::vector<Actor*> unique;
+    for (auto* actor : targets)
+        if (actor && actor->IsAlive() && std::find(unique.begin(), unique.end(), actor) == unique.end()) unique.push_back(actor);
+    if (unique == m_targets) return;
+    UnFocus();
+    if (unique.empty()) return;
+    m_targets = std::move(unique);
+    m_targetActor = *m_targets.front();
+    for (auto* actor : m_targets)
+    {
+        m_targetListeners.push_back({actor,
+            actor->ComponentAddedEvent += [this](auto&) { _QueueRefresh(); },
+            actor->ComponentRemovedEvent += [this](auto&) { _QueueRefresh(); },
+            actor->BehaviourAddedEvent += [this](auto&) { _QueueRefresh(); },
+            actor->BehaviourRemovedEvent += [this](auto&) { _QueueRefresh(); }});
+    }
+    _Populate();
+    m_callbacks.selected(m_targetActor.value());
+}
 
-	m_componentAddedListener = m_targetActor->ComponentAddedEvent += [this] (auto&) { _QueueRefresh(); };
-	m_behaviourAddedListener = m_targetActor->BehaviourAddedEvent += [this](auto&) { _QueueRefresh(); };
-	m_componentRemovedListener = m_targetActor->ComponentRemovedEvent += [this](auto&) { _QueueRefresh(); };
-	m_behaviourRemovedListener = m_targetActor->BehaviourRemovedEvent += [this](auto&) { _QueueRefresh(); };
-
-	_Populate();
-
-	m_callbacks.selected(m_targetActor.value());
+void OvEditor::Panels::Inspector::_Draw_Impl()
+{
+    // Capture before any custom property control/button can mutate the scene.
+    // Idle frames do not serialize; CommitSceneEdit discards no-op gestures.
+    if (ImGui::IsMouseClicked(0) && !EDITOR_PANEL(SceneView, "Scene View").IsTransformEditing()) EDITOR_EXEC(CommitSceneEdit(true));
+    if (ImGui::IsMouseDown(0) || ImGui::GetIO().WantTextInput) EDITOR_EXEC(BeginSceneEdit());
+    PanelWindow::_Draw_Impl();
 }
 
 void OvEditor::Panels::Inspector::UnFocus()
 {
+    m_emptyState->enabled = true;
     m_focusCallbacks.Invalidate();
     _InvalidateView();
     m_refreshPending = false;
@@ -83,10 +112,16 @@ void OvEditor::Panels::Inspector::UnFocus()
 		return;
 	}
 
-	m_targetActor->ComponentAddedEvent -= m_componentAddedListener;
-	m_targetActor->ComponentRemovedEvent -= m_componentRemovedListener;
-	m_targetActor->BehaviourAddedEvent -= m_behaviourAddedListener;
-	m_targetActor->BehaviourRemovedEvent -= m_behaviourRemovedListener;
+    for (const auto& listeners : m_targetListeners)
+    {
+        listeners.actor->ComponentAddedEvent -= listeners.added;
+        listeners.actor->ComponentRemovedEvent -= listeners.removed;
+        listeners.actor->BehaviourAddedEvent -= listeners.behaviourAdded;
+        listeners.actor->BehaviourRemovedEvent -= listeners.behaviourRemoved;
+    }
+    m_targetListeners.clear();
+    m_targets.clear();
+    m_batchControls.clear();
 
 	m_content->RemoveAllWidgets();
 
@@ -102,8 +137,14 @@ OvTools::Utils::OptRef<Actor> OvEditor::Panels::Inspector::GetTargetActor() cons
 
 void OvEditor::Panels::Inspector::_Populate()
 {
+    m_emptyState->enabled = false;
     m_content->enabled = true;
 	OVASSERT(m_targetActor.has_value(), "Cannot populate inspector without a target actor");
+    if (m_targets.size() > 1)
+    {
+        m_content->CreateWidget<Texts::Text>(std::to_string(m_targets.size()) + " entities selected");
+        m_content->CreateWidget<Texts::TextDisabled>("Common components only. (Mixed) indicates different values.");
+    }
 	_PopulateActorInfo();
 	m_content->CreateWidget<Visual::Separator>();
 	_PopulateActorComponents();
@@ -115,37 +156,46 @@ void OvEditor::Panels::Inspector::_Populate()
 void OvEditor::Panels::Inspector::_PopulateActorInfo()
 {
     auto ticket = m_viewCallbacks.Ticket();
-	auto& headerColumns = m_content->CreateWidget<Layout::Columns<2>>();
+    auto populate = [ticket](OvUI::Internal::WidgetContainer& columns, Actor& actor)
+    {
+        OvCore::Helpers::GUIDrawer::DrawString(columns, "Name",
+            [&actor, ticket] { return ticket.expired() ? std::string{} : actor.GetName(); },
+            [&actor, ticket](const std::string& value) { if (!ticket.expired()) actor.SetName(value); });
+        OvCore::Helpers::GUIDrawer::DrawString(columns, "Tag",
+            [&actor, ticket] { return ticket.expired() ? std::string{} : actor.GetTag(); },
+            [&actor, ticket](const std::string& value) { if (!ticket.expired()) actor.SetTag(value); });
+        OvCore::Helpers::GUIDrawer::DrawBoolean(columns, "Active",
+            [&actor, ticket] { return !ticket.expired() && actor.IsSelfActive(); },
+            [&actor, ticket](bool value) { if (!ticket.expired()) actor.SetActive(value); });
+    };
+    auto& headerColumns = m_content->CreateWidget<Layout::Columns<2>>();
+    headerColumns.SetID("inspector_actor_header");
+    headerColumns.widths[0] = 140 * OVUI_SCALE;
+    populate(headerColumns, m_targetActor.value());
+    std::vector<OvUI::Internal::WidgetContainer*> roots{&headerColumns};
+    for (size_t i = 1; i < m_targets.size(); ++i)
+    {
+        auto controls = std::make_unique<OvUI::Internal::WidgetContainer>();
+        populate(*controls, *m_targets[i]);
+        roots.push_back(controls.get()); m_batchControls.push_back(std::move(controls));
+    }
+    InspectorBindings::Connect(roots, ticket);
+    if (m_targets.size() > 1) return;
 
-	OvCore::Helpers::GUIDrawer::DrawString(
-		headerColumns,
-		"Name",
-		[this, ticket] { return ticket.expired() ? std::string{} : m_targetActor->GetName(); },
-		[this, ticket](const std::string& p_newName) { if (!ticket.expired()) m_targetActor->SetName(p_newName); }
-	);
-
-	OvCore::Helpers::GUIDrawer::DrawString(
-		headerColumns,
-		"Tag",
-		[this, ticket] { return ticket.expired() ? std::string{} : m_targetActor->GetTag(); },
-		[this, ticket](const std::string& p_newName) { if (!ticket.expired()) m_targetActor->SetTag(p_newName); }
-	);
-
-	OvCore::Helpers::GUIDrawer::DrawBoolean(
-		headerColumns,
-		"Active",
-		[this, ticket]{ return !ticket.expired() && m_targetActor->IsSelfActive(); },
-		[this, ticket](bool p_active) { if (!ticket.expired()) m_targetActor->SetActive(p_active); }
-	);
-
+	auto& identity = m_content->CreateWidget<Layout::GroupCollapsable>("Identity & Prefab");
+	identity.SetID("inspector_identity");
+	identity.defaultExpanded = false;
+	auto& identityColumns = identity.CreateWidget<Layout::Columns<2>>();
+	identityColumns.SetID("inspector_identity_columns");
+	identityColumns.widths[0] = 100 * OVUI_SCALE;
 	OvCore::Helpers::GUIDrawer::DrawReadOnlyString(
-		headerColumns,
+		identityColumns,
 		"GUID",
 		[this, ticket] { return ticket.expired() ? std::string{} : std::format("{:016X}", m_targetActor->GetGUID()); }
 	);
 
 	auto& prefabSourceField = OvCore::Helpers::GUIDrawer::DrawAsset(
-		headerColumns,
+		identityColumns,
 		"Prefab Source",
 		[this, ticket] { return ticket.expired() ? std::string{} : m_targetActor->GetPrefabSource(); },
 		[](const std::string&) {},
@@ -160,7 +210,11 @@ void OvEditor::Panels::Inspector::_PopulateActorComponents()
 	const int total = static_cast<int>(components.size());
 	for (int i = 0; i < total; ++i)
 	{
-		_DrawComponent(*components[i], i, total);
+        const auto type = components[i]->GetTypeName();
+        const bool common = std::all_of(m_targets.begin(), m_targets.end(), [&type](auto* actor) {
+            return std::any_of(actor->GetComponents().begin(), actor->GetComponents().end(), [&type](const auto& c) { return c->GetTypeName() == type; });
+        });
+        if (common) _DrawComponent(*components[i], i, total);
 	}
 }
 
@@ -172,7 +226,7 @@ void OvEditor::Panels::Inspector::_PopulateActorBehaviours()
 	for (int i = 0; i < total; ++i)
 	{
 		auto it = behaviours.find(order[i]);
-		if (it != behaviours.end())
+		if (it != behaviours.end() && std::all_of(m_targets.begin(), m_targets.end(), [&](auto* actor) { return actor->GetBehaviours().contains(order[i]); }))
 			_DrawBehaviour(it->second, i, total);
 	}
 }
@@ -192,8 +246,7 @@ void OvEditor::Panels::Inspector::_DrawAddSection()
 
 		for (const auto& info : GetComponentRegistry().Components())
 		{
-			if (!info.IsAddable(m_targetActor.value()))
-				continue;
+            if (!std::all_of(m_targets.begin(), m_targets.end(), [&info](auto* actor) { return info.IsAddable(*actor); })) continue;
 
 			const std::string name = std::string(info.GetName());
 			items.Add({
@@ -217,20 +270,24 @@ void OvEditor::Panels::Inspector::_DrawAddSection()
 						return;
 					}
 
-					info.AddComponent(m_targetActor.value());
+                    EDITOR_EXEC(BeginSceneEdit("Add component"));
+                    for (auto* actor : m_targets) if (info.IsAddable(*actor)) info.AddComponent(*actor);
 				}
 			});
 		}
 
         for (const auto& identity : EDITOR_CONTEXT(scriptEngine)->CSharpTypes())
         {
-            if (m_targetActor->GetBehaviour(identity)) continue;
+            if (std::any_of(m_targets.begin(), m_targets.end(), [&](auto* actor) { return actor->GetBehaviour(identity) != nullptr; })) continue;
             const auto label = "C# / " + identity.type + " [" + identity.assembly + "]";
             items.Add({identity.Key(), label, label, addScriptIconID, [this, ticket, identity] {
                 if (ticket.expired() || !m_targetActor.has_value()) return;
                 auto& engine = *EDITOR_CONTEXT(scriptEngine);
-                if (engine.Status(identity) == OvCore::Scripting::ScriptStatus::TypeReady && !m_targetActor->GetBehaviour(identity))
-                    m_targetActor->AddBehaviour(identity);
+                if (engine.Status(identity) == OvCore::Scripting::ScriptStatus::TypeReady)
+                {
+                    EDITOR_EXEC(BeginSceneEdit("Add script"));
+                    for (auto* actor : m_targets) if (!actor->GetBehaviour(identity)) actor->AddBehaviour(identity);
+                }
             }});
         }
 		OvEditor::Helpers::PickerHelpers::AddFileItems(
@@ -255,7 +312,8 @@ void OvEditor::Panels::Inspector::_DrawAddSection()
 					return;
 				}
 
-				m_targetActor->AddBehaviour(scriptPath);
+                EDITOR_EXEC(BeginSceneEdit("Add script"));
+                for (auto* actor : m_targets) if (!actor->GetBehaviour(scriptPath)) actor->AddBehaviour(scriptPath);
 			},
 			true, false,
 			[this, ticket](const std::string& p_resourcePath) {
@@ -263,7 +321,7 @@ void OvEditor::Panels::Inspector::_DrawAddSection()
                 std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
                 if (ticket.expired() || extension == ".cs") return false;
 				const std::string scriptPath = EDITOR_EXEC(GetScriptPath(p_resourcePath));
-				return !m_targetActor->GetBehaviour(scriptPath);
+				return std::none_of(m_targets.begin(), m_targets.end(), [&](auto* actor) { return actor->GetBehaviour(scriptPath) != nullptr; });
 			}
 		);
 
@@ -298,7 +356,8 @@ void OvEditor::Panels::Inspector::_DrawAddSection()
 					return;
 				}
 
-				m_targetActor->AddBehaviour(scriptPath);
+                EDITOR_EXEC(BeginSceneEdit("Add script"));
+                for (auto* actor : m_targets) if (!actor->GetBehaviour(scriptPath)) actor->AddBehaviour(scriptPath);
 			},
 			true  /* alwaysVisible */
 		});
@@ -310,21 +369,27 @@ void OvEditor::Panels::Inspector::_DrawAddSection()
 void OvEditor::Panels::Inspector::_DrawComponent(AComponent& p_component, int p_index, int p_total)
 {
 	auto& header = m_content->CreateWidget<Layout::GroupCollapsable>(p_component.GetName());
+	header.SetID("inspector_component_" + p_component.GetName());
 	const bool isTransform = dynamic_cast<CTransform*>(&p_component) != nullptr;
 	header.closable = !isTransform;
 	header.CloseEvent += [this, &p_component, ticket = m_viewCallbacks.Ticket()] {
         if (ticket.expired()) return;
-		p_component.owner.RemoveComponent(p_component);
+        EDITOR_EXEC(BeginSceneEdit("Remove component"));
+        const auto type = p_component.GetTypeName();
+        for (auto* actor : m_targets)
+            for (const auto& component : actor->GetComponents())
+                if (component->GetTypeName() == type) { actor->RemoveComponent(*component); break; }
 	};
 
 	if (!isTransform)
 	{
-		header.reorderable = true;
+		header.reorderable = m_targets.size() == 1;
 		header.canMoveUp = (p_index > 1);
 		header.canMoveDown = (p_index < p_total - 1);
 
 		auto move = [this, &p_component, ticket = m_viewCallbacks.Ticket()](bool up) {
             if (ticket.expired()) return;
+            EDITOR_EXEC(BeginSceneEdit("Reorder component"));
 			auto& comps = p_component.owner.GetComponents();
 			auto it = std::find_if(comps.begin(), comps.end(), [&](const auto& c) { return c.get() == &p_component; });
 			if (it == comps.end()) return;
@@ -343,26 +408,44 @@ void OvEditor::Panels::Inspector::_DrawComponent(AComponent& p_component, int p_
 
 	auto& columns = header.CreateWidget<Layout::Columns<2>>();
 	columns.SetID("comp_" + p_component.GetName());
-	columns.widths[0] = 200 * OVUI_SCALE;
+	columns.widths[0] = 140 * OVUI_SCALE;
 	p_component.OnInspector(columns);
+    std::vector<OvUI::Internal::WidgetContainer*> roots{&columns};
+    for (size_t i = 1; i < m_targets.size(); ++i)
+        for (const auto& component : m_targets[i]->GetComponents())
+            if (component->GetTypeName() == p_component.GetTypeName())
+            {
+                auto controls = std::make_unique<OvUI::Internal::WidgetContainer>();
+                component->OnInspector(*controls); roots.push_back(controls.get());
+                m_batchControls.push_back(std::move(controls)); break;
+            }
+    InspectorBindings::Connect(roots, m_viewCallbacks.Ticket());
 }
 
 void OvEditor::Panels::Inspector::_DrawBehaviour(Behaviour& p_behaviour, int p_index, int p_total)
 {
+	const auto identity = p_behaviour.CurrentIdentity();
+	const auto simpleName = identity.type.substr(identity.type.find_last_of(".+") + 1);
 	auto& header = m_content->CreateWidget<Layout::GroupCollapsable>(p_behaviour.Identity().backend == "lua" ?
-		std::filesystem::path(p_behaviour.name).replace_extension().string() : p_behaviour.CurrentIdentity().type);
+		std::filesystem::path(p_behaviour.name).replace_extension().string() : simpleName + " (Script)");
+	header.SetID("inspector_behaviour_" + identity.Key());
+	if (identity.backend == "csharp") header.tooltip = identity.type + "\n" + identity.assembly;
 	header.closable = true;
-	header.CloseEvent += [&p_behaviour, ticket = m_viewCallbacks.Ticket()] {
+	header.CloseEvent += [this, &p_behaviour, ticket = m_viewCallbacks.Ticket()] {
         if (ticket.expired()) return;
-		p_behaviour.owner.RemoveBehaviour(p_behaviour);
+        EDITOR_EXEC(BeginSceneEdit("Remove script"));
+        const auto identity = p_behaviour.Identity();
+        for (auto* actor : m_targets)
+            if (auto* behaviour = actor->GetBehaviour(identity)) actor->RemoveBehaviour(*behaviour);
 	};
 
-	header.reorderable = true;
+	header.reorderable = m_targets.size() == 1;
 	header.canMoveUp = (p_index > 0);
 	header.canMoveDown = (p_index < p_total - 1);
 
 	auto move = [this, &p_behaviour, ticket = m_viewCallbacks.Ticket()](bool up) {
         if (ticket.expired()) return;
+        EDITOR_EXEC(BeginSceneEdit("Reorder script"));
 		auto& order = p_behaviour.owner.GetBehavioursOrder();
 		auto it = std::find(order.begin(), order.end(), p_behaviour.Identity().Key());
         if (it == order.end()) return;
@@ -385,9 +468,17 @@ void OvEditor::Panels::Inspector::_DrawBehaviour(Behaviour& p_behaviour, int p_i
 	}});
 
 	auto& columns = header.CreateWidget<Layout::Columns<2>>();
-	columns.SetID("bhv_" + p_behaviour.name);
-	columns.widths[0] = 200 * OVUI_SCALE;
+	columns.SetID("bhv_" + identity.Key());
+	columns.widths[0] = 140 * OVUI_SCALE;
 	p_behaviour.OnInspector(columns);
+    std::vector<OvUI::Internal::WidgetContainer*> roots{&columns};
+    for (size_t i = 1; i < m_targets.size(); ++i)
+    {
+        auto controls = std::make_unique<OvUI::Internal::WidgetContainer>();
+        m_targets[i]->GetBehaviour(p_behaviour.Identity())->OnInspector(*controls);
+        roots.push_back(controls.get()); m_batchControls.push_back(std::move(controls));
+    }
+    InspectorBindings::Connect(roots, m_viewCallbacks.Ticket());
 }
 
 void OvEditor::Panels::Inspector::Refresh()
@@ -397,6 +488,7 @@ void OvEditor::Panels::Inspector::Refresh()
 	if (m_targetActor)
 	{
 		m_content->RemoveAllWidgets();
+        m_batchControls.clear();
 		_Populate();
 	}
 }

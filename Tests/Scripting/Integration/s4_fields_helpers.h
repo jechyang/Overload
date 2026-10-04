@@ -2,6 +2,7 @@
 #pragma warning(push)
 #pragma warning(disable: 4100 4201)
 #include <OvCore/ECS/Components/Behaviour.h>
+#include <OvCore/Helpers/ManagedFieldInput.h>
 #include <OvUI/Widgets/InputFields/InputText.h>
 #include <OvUI/Widgets/Selection/CheckBox.h>
 #include <OvUI/Widgets/Layout/Group.h>
@@ -27,26 +28,26 @@ static std::string SaveFieldRecord(FieldBehaviour& b) {
 }
 static void InspectorEdit(FieldBehaviour& b,const std::string& text) {
     OvUI::Widgets::Layout::Group root; b.OnInspector(root);
-    OvUI::Widgets::InputFields::InputText* input=nullptr;
-    OvUI::Widgets::Selection::CheckBox* toggle=nullptr;
+    OvCore::Helpers::ManagedFieldInput* input=nullptr;
     for(auto [widget,mode]:root.GetWidgets()) {
         (void)mode;
-        if(auto* w=dynamic_cast<OvUI::Widgets::InputFields::InputText*>(widget);w && w->label=="##speed") input=w;
-        if(auto* w=dynamic_cast<OvUI::Widgets::Selection::CheckBox*>(widget);w && w->label=="Speed") toggle=w;
+        if(auto* w=dynamic_cast<OvCore::Helpers::ManagedFieldInput*>(widget);w && w->fieldId=="speed") input=w;
     }
-    Require(input && toggle,"production Inspector created live field controls");
-    toggle->ValueChangedEvent.Invoke(true); Require(!input->disabled,"Inspector unlock enables input");
-    input->ContentChangedEvent.Invoke(text);
-    Require(Read(b,"speed").Display()==text,"real Inspector ContentChanged modifies CSharp field");
-    auto stale=input->ContentChangedEvent;
-    b.OnInspector(root); stale.Invoke("999");
+    Require(input && !input->disabled,"production Inspector field is editable without an override toggle");
+    const bool playing=b.owner.GetScene() && b.owner.GetScene()->IsPlaying();
+    const auto saved=SaveFieldRecord(b);
+    input->reset();
+    Require(Read(b,"speed").Display()=="2" && (playing ? SaveFieldRecord(b)==saved : !b.HasManagedFieldOverride("speed")),"Inspector reset restores default while preserving Play/edit separation");
+    input->ValueChangedEvent.Invoke(*FieldValue::Parse(10,0,text));
+    Require(Read(b,"speed").Display()==text && (playing || b.HasManagedFieldOverride("speed")),"typed Inspector edit reaches the field and persists in Edit mode");
+    auto stale=input->ValueChangedEvent;
+    b.OnInspector(root); stale.Invoke(*FieldValue::Parse(10,0,"999"));
     Require(Read(b,"speed").Display()==text,"refresh invalidates old Inspector callbacks");
     for(auto [widget,mode]:root.GetWidgets()) {
         (void)mode;
-        if(auto* w=dynamic_cast<OvUI::Widgets::InputFields::InputText*>(widget);w && w->label=="##speed") input=w;
-        if(auto* w=dynamic_cast<OvUI::Widgets::Selection::CheckBox*>(widget);w && w->label=="Speed") toggle=w;
+        if(auto* w=dynamic_cast<OvCore::Helpers::ManagedFieldInput*>(widget);w && w->fieldId=="speed") input=w;
     }
-    auto disposedInput=input->ContentChangedEvent;auto disposedToggle=toggle->ValueChangedEvent;
-    root.RemoveAllWidgets();disposedInput.Invoke("999");disposedToggle.Invoke(false);
-    Require(Read(b,"speed").Display()==text,"destroyed Inspector controls invalidate retained input and toggle callbacks");
+    auto disposedInput=input->ValueChangedEvent;auto disposedReset=input->reset;
+    root.RemoveAllWidgets();disposedInput.Invoke(*FieldValue::Parse(10,0,"999"));disposedReset();
+    Require(Read(b,"speed").Display()==text,"destroyed Inspector controls invalidate retained edit and reset callbacks");
 }

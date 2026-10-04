@@ -27,15 +27,19 @@
 #include <OvEditor/Core/EditorResources.h>
 #include <OvEditor/Rendering/GizmoCollector.h>
 #include <OvEditor/Rendering/OutlineCollector.h>
+#include <OvEditor/Core/GizmoMath.h>
+#include <unordered_map>
+#include <unordered_set>
 #include <OvEditor/Settings/EditorSettings.h>
 
 #include <OvRendering/Utils/Profiling.h>
+#include <OvUI/Styling/Style.h>
 
 using namespace OvMaths;
 using namespace OvRendering::Resources;
 using namespace OvCore::Resources;
 using namespace OvEditor::Rendering;
-struct CollectedSelection { OvEditor::Core::EGizmoOperation gizmoOperation; OvTools::Utils::OptRef<OvCore::ECS::Actor> highlightedActor, selectedActor; std::optional<OvEditor::Core::GizmoBehaviour::EDirection> highlightedGizmoDirection; };
+struct CollectedSelection { OvEditor::Core::EGizmoOperation gizmoOperation; OvTools::Utils::OptRef<OvCore::ECS::Actor> highlightedActor, selectedActor; std::optional<OvEditor::Core::GizmoBehaviour::EDirection> highlightedGizmoDirection; std::vector<OvCore::ECS::Actor*> actors; std::optional<OvEditor::Core::GizmoBehaviour::Frame> frame; };
 
 namespace
 {
@@ -242,7 +246,9 @@ public:
 		OV_GPU_ZONE(m_collector, "DebugLightsCollector");
 
 
-		m_lightMaterial.SetProperty("u_Scale", OvEditor::Settings::EditorSettings::LightBillboardScale * 0.1f);
+		if (OvEditor::Settings::EditorSettings::LightBillboardScale <= 0.001f) return;
+		m_lightMaterial.SetProperty("u_Scale", OvEditor::Settings::EditorSettings::LightBillboardScale * 48.0f * OVUI_SCALE);
+		m_lightMaterial.SetProperty("u_ViewportHeight", static_cast<float>(m_collector.GetView().input.height));
 
 		for (auto light : scene.GetFastAccessComponents().lights)
 		{
@@ -297,37 +303,53 @@ public:
 		m_collector.Clear(false, false, true);
 
 
-		if (debugSceneDescriptor.selectedActor)
-		{
-			auto& selectedActor = debugSceneDescriptor.selectedActor.value();
-			const bool isActorHovered = debugSceneDescriptor.highlightedActor && debugSceneDescriptor.highlightedActor->GetID() == selectedActor.GetID();
 
-			DrawActorDebugElements(selectedActor);
-			if (auto* canvas = FindRootCanvas(selectedActor)) DrawCanvasRect(*canvas);
-			m_outline.DrawOutline(
-				selectedActor,
-				isActorHovered ?
-				kHoveredOutlineColor :
-				kSelectedOutlineColor,
-				kSelectedOutlineWidth
-			);
-			m_collector.Clear(false, true, false);
-			if (HasEditableTransformGizmo(selectedActor))
-				m_gizmo.DrawGizmo(
-					selectedActor.transform.GetWorldPosition(),
-					selectedActor.transform.GetWorldRotation(),
-					debugSceneDescriptor.gizmoOperation,
-					false,
-					debugSceneDescriptor.highlightedGizmoDirection
-				);
-		}
+        std::unordered_set<OvCore::ECS::Actor*> explicitSelection(debugSceneDescriptor.actors.begin(),debugSceneDescriptor.actors.end());
+        if (debugSceneDescriptor.selectedActor) explicitSelection.insert(&debugSceneDescriptor.selectedActor.value());
+        std::unordered_set<OvCore::ECS::Actor*> drawn;
+        auto roots = debugSceneDescriptor.actors;
+        if (roots.empty() && debugSceneDescriptor.selectedActor) roots.push_back(&debugSceneDescriptor.selectedActor.value());
+        for (auto* root : roots)
+        {
+            std::vector<OvCore::ECS::Actor*> pending{root};
+            while (!pending.empty())
+            {
+                auto* actor = pending.back(); pending.pop_back();
+                if (!actor->IsAlive() || !actor->IsActive() || !drawn.insert(actor).second) continue;
+                auto* owner = actor;
+                while (owner && !explicitSelection.contains(owner)) owner = owner->GetParent();
+                const bool primary = debugSceneDescriptor.selectedActor && owner == &debugSceneDescriptor.selectedActor.value();
+                const OvMaths::FVector4 color = primary ? kSelectedOutlineColor : OvMaths::FVector4{.25f,.65f,1.f,1.f};
+                m_collector.Clear(false,false,true);
+                m_outline.DrawOutline(*actor,color,primary ? kSelectedOutlineWidth : 3.f,false);
+                if (!actor->GetComponent<OvCore::ECS::Components::CModelRenderer>() && !actor->GetComponent<OvCore::ECS::Components::CCamera>())
+                {
+                    const auto& view = m_collector.GetView();
+                    const auto position = actor->transform.GetWorldPosition();
+                    const float radius = OvEditor::Core::GizmoMath::WorldSize(position,view.view,view.projection,float(view.input.height),8.f * OVUI_SCALE);
+                    m_debugShapeFeature.DrawSphere(m_collector.CreatePipelineState(),position,OvMaths::FQuaternion::Identity,radius,{color.x,color.y,color.z},2.f,false);
+                }
+                for (auto* child : actor->GetChildren()) pending.push_back(child);
+            }
+        }
+        if (debugSceneDescriptor.selectedActor)
+        {
+            auto& selectedActor = debugSceneDescriptor.selectedActor.value();
+            DrawActorDebugElements(selectedActor);
+            if (auto* canvas = FindRootCanvas(selectedActor)) DrawCanvasRect(*canvas);
+            m_collector.Clear(false,true,false);
+            if (HasEditableTransformGizmo(selectedActor))
+                m_gizmo.DrawGizmo(debugSceneDescriptor.frame ? debugSceneDescriptor.frame->position : selectedActor.transform.GetWorldPosition(),
+                    debugSceneDescriptor.frame ? debugSceneDescriptor.frame->rotation : selectedActor.transform.GetWorldRotation(),
+                    debugSceneDescriptor.gizmoOperation,false,debugSceneDescriptor.highlightedGizmoDirection);
+        }
 
 		if (debugSceneDescriptor.highlightedActor)
 		{
 			auto& highlightedActor = debugSceneDescriptor.highlightedActor.value();
 
 			// Render the outline only if the actor is not already selected (as its outline render should have been handled already).
-			if (!debugSceneDescriptor.selectedActor || highlightedActor.GetID() != debugSceneDescriptor.selectedActor->GetID())
+			if (!drawn.contains(&highlightedActor))
 			{
 				m_outline.DrawOutline(highlightedActor, kHoveredOutlineColor, kHoveredOutlineWidth);
 			}
@@ -802,6 +824,8 @@ OvRendering::Data::RenderCommandList OvEditor::Rendering::EditorOverlayCollector
         CollectedSelection selection{request.operation,std::nullopt,std::nullopt,request.highlightedDirection};
         if(auto* actor=scene.FindActorByGUID(request.highlighted))selection.highlightedActor=*actor;
         if(auto* actor=scene.FindActorByGUID(request.selected))selection.selectedActor=*actor;
+        for (auto guid : request.selection) if (auto* actor = scene.FindActorByGUID(guid)) selection.actors.push_back(actor);
+        selection.frame = request.gizmoFrame;
         impl.actor.Draw(state,selection,request.gameViewSize);
     }
     return impl.tools.Finish();

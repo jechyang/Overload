@@ -39,8 +39,10 @@ void OvEditor::Settings::EditorSettings::Save()
 	iniFile.Add("editor_frustum_geometry_culling", EditorFrustumGeometryCulling.Get());
 	iniFile.Add("editor_frustum_light_culling", EditorFrustumLightCulling.Get());
 	iniFile.Add("light_billboard_scale", LightBillboardScale.Get());
+	iniFile.Add("gizmo_size", GizmoSize.Get());
 	iniFile.Add("reflection_probe_scale", ReflectionProbeScale.Get());
 	iniFile.Add("translation_snap_unit", TranslationSnapUnit.Get());
+    iniFile.Add("snap_enabled", SnapEnabled.Get());
 	iniFile.Add("rotation_snap_unit", RotationSnapUnit.Get());
 	iniFile.Add("scaling_snap_unit", ScalingSnapUnit.Get());
 	iniFile.Add("color_theme", ColorTheme.Get());
@@ -61,8 +63,10 @@ void OvEditor::Settings::EditorSettings::Load()
 	LoadIniEntry<bool>(iniFile, "show_geometry_frustum_culling_in_scene_view", EditorFrustumGeometryCulling);
 	LoadIniEntry<bool>(iniFile, "show_light_frustum_culling_in_scene_view", EditorFrustumLightCulling);
 	LoadIniEntry<float>(iniFile, "light_billboard_scale", LightBillboardScale);
+	LoadIniEntry<float>(iniFile, "gizmo_size", GizmoSize);
 	LoadIniEntry<float>(iniFile, "reflection_probe_scale", ReflectionProbeScale);
 	LoadIniEntry<float>(iniFile, "translation_snap_unit", TranslationSnapUnit);
+    LoadIniEntry<bool>(iniFile, "snap_enabled", SnapEnabled);
 	LoadIniEntry<float>(iniFile, "rotation_snap_unit", RotationSnapUnit);
 	LoadIniEntry<float>(iniFile, "scaling_snap_unit", ScalingSnapUnit);
 	LoadIniEntry<int>(iniFile, "color_theme", ColorTheme);

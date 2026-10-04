@@ -23,6 +23,7 @@ namespace OvEditor::Rendering
             uint64_t GetGizmoActorGUID() const { return gizmoActorGUID; }
             OvEditor::Core::EGizmoOperation GetGizmoOperation() const { return gizmoOperation; }
             PickingResult Resolve(const OvCore::SceneSystem::Scene& p_scene, uint32_t p_x, uint32_t p_y) const;
+            std::vector<OvCore::ECS::Actor*> ResolveRegion(const OvCore::SceneSystem::Scene& scene, int left, int bottom, int right, int top) const;
         private:
             OvRendering::Data::RenderCommandList::Completion completion;
             OvCore::SceneSystem::Scene::LifetimeToken scene;

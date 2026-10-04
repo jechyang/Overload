@@ -23,6 +23,14 @@ namespace OvUI::Plugins
 	class DataDispatcher : public IPlugin
 	{
 	public:
+        bool IsWritable() const { return m_dataPointer || static_cast<bool>(m_provider); }
+        void ReplaceBinding(std::function<T()> gatherer, std::function<void(T)> provider)
+        {
+            m_dataPointer = nullptr;
+            m_gatherer = std::move(gatherer);
+            m_provider = std::move(provider);
+            m_valueChanged = false;
+        }
 		/**
 		* Register a reference
 		* @param p_reference

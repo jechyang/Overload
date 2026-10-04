@@ -64,6 +64,10 @@ void OvCore::ECS::Components::CLight::OnInspector(OvUI::Internal::WidgetContaine
 {
 	using namespace OvCore::Helpers;
 
-	GUIDrawer::DrawColor(p_root, "Color", reinterpret_cast<OvUI::Types::Color&>(m_data.color));
+    // Light colors have three channels; binding a four-channel Color reference
+    // aliases the following intensity field as alpha.
+    GUIDrawer::DrawColor(p_root, "Color",
+        [this] { return OvUI::Types::Color(m_data.color); },
+        [this](OvUI::Types::Color color) { SetColor({color.r, color.g, color.b}); });
 	GUIDrawer::DrawScalar<float>(p_root, "Intensity", m_data.intensity, 0.005f, GUIDrawer::_MIN_FLOAT, GUIDrawer::_MAX_FLOAT);
 }

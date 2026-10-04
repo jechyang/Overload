@@ -34,7 +34,7 @@ OvEditor::Panels::Toolbar::Toolbar
 	using namespace OvUI::Widgets;
 	using namespace OvUI::Widgets::Buttons;
 
-	const auto iconSize = OvMaths::FVector2{ 20, 20 };
+	const auto iconSize = OvMaths::FVector2{ 18 * OVUI_SCALE, 18 * OVUI_SCALE };
 	auto& textureManager = OvCore::Global::ServiceLocator::Get<OvCore::ResourceManagement::TextureManager>();
 	auto& editorResources = EDITOR_CONTEXT(editorResources);
 
@@ -105,7 +105,7 @@ OvEditor::Panels::Toolbar::Toolbar
 
 void OvEditor::Panels::Toolbar::_Draw_Impl()
 {
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8 * OVUI_SCALE, 4 * OVUI_SCALE));
 
 	OvUI::Panels::PanelWindow::_Draw_Impl();
 

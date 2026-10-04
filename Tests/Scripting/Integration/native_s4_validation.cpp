@@ -1,3 +1,6 @@
+#pragma warning(push)
+// Prepared render data deliberately embeds aligned GPU constants.
+#pragma warning(disable: 4324)
 #define wmain S1ValidationMain
 #include "native_host_validation.cpp"
 #undef wmain
@@ -9,6 +12,7 @@
 #pragma warning(pop)
 #include <fstream>
 #include "s4_fields_helpers.h"
+#pragma warning(pop)
 using OvCore::Scripting::ScriptIdentity;
 static std::string PathUtf8(const std::filesystem::path& p) { const auto s=p.u8string();return {reinterpret_cast<const char*>(s.data()),s.size()}; }
 static const auto identity=ScriptIdentity::CSharp("","","s4-matrix");
@@ -26,6 +30,8 @@ static void AbiFields(RuntimeHost& host,const std::filesystem::path& project,Eng
     for(uint32_t n=0;n<type.field_count;++n) {
         OvCsFieldInfo f{};host.Check(api.get_field_info(session,token,n,&f),"field ABI info",session);
         const std::string name(reinterpret_cast<const char*>(f.managed_name.data),static_cast<size_t>(f.managed_name.length));
+        if(name=="Speed") Require(std::string(reinterpret_cast<const char*>(f.display_name.data),static_cast<size_t>(f.display_name.length))=="Movement Speed","InspectorName changes presentation without changing serialized identity");
+        if(n==0) Require(name=="Bool","Inspector metadata follows field declaration order");
         if(name=="U64")wide=f.field_token;if(name=="SignedEnum")narrowEnum=f.field_token;
         if(name=="Text")textToken=f.field_token;if(name=="NullText")nullToken=f.field_token;
         Require(name!="Property" && name!="Readonly" && name!="Static" && name!="Unsupported" && name!="Excluded","field eligibility excludes properties/static/readonly/nonserialized/unsupported");
@@ -132,16 +138,16 @@ int wmain(int argc,wchar_t** argv) {
         Require(Read(unknown,"speed").scalar.float32_value==6 && Read(unknown,"I8").scalar.int8_value==0,"invalid range rejected while old-name field restores");
         auto preserved=SaveFieldRecord(unknown);Require(preserved.find("999")!=std::string::npos && preserved.find("nested")!=std::string::npos && preserved.find("extra")!=std::string::npos && preserved.find("keep")!=std::string::npos && preserved.find(">1<")!=std::string::npos && preserved.find(">2<")!=std::string::npos,"unknown XML extensions and ambiguous records survive save");
         OvUI::Widgets::Layout::Group inspector;unknown.OnInspector(inspector);
-        OvTools::Eventing::Event<std::string> staleEdit;
+        OvTools::Eventing::Event<FieldValue> staleEdit;
         for(auto [widget,mode]:inspector.GetWidgets()) {
-            (void)mode;auto* input=dynamic_cast<OvUI::Widgets::InputFields::InputText*>(widget);
-            if(input && input->label=="##speed")staleEdit=input->ContentChangedEvent;
+            (void)mode;auto* input=dynamic_cast<OvCore::Helpers::ManagedFieldInput*>(widget);
+            if(input && input->fieldId=="speed")staleEdit=input->ValueChangedEvent;
         }
         Require(staleEdit.GetListenerCount()==1,"retained real Inspector edit callback");
         const auto uiSaved=SaveFieldRecord(unknown);
-        scripts.ClearCSharpProject();staleEdit.Invoke("999");
+        scripts.ClearCSharpProject();staleEdit.Invoke(*FieldValue::Parse(10,0,"999"));
         Require(SaveFieldRecord(unknown)==uiSaved,"project removal invalidates field UI callbacks");
-        auto& doomed=unknown.owner;scenes.GetCurrentScene()->DestroyActor(doomed);staleEdit.Invoke("999");
+        auto& doomed=unknown.owner;scenes.GetCurrentScene()->DestroyActor(doomed);staleEdit.Invoke(*FieldValue::Parse(10,0,"999"));
         Require(true,"deleted Behaviour Inspector callback returns through expired lifetime");
         scenes.UnloadCurrentScene();scripts.ClearCSharpProject();host.Shutdown();return 0;
     }catch(const std::exception& e){std::fprintf(stderr,"S4 FAIL: %s\n",e.what());return 1;}

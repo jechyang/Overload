@@ -83,9 +83,10 @@ OvEditor::Rendering::OutlineCollector::OutlineCollector(
 void OvEditor::Rendering::OutlineCollector::DrawOutline(
 	OvCore::ECS::Actor& p_actor,
 	const OvMaths::FVector4& p_color,
-	float p_thickness
+	float p_thickness, bool recursive
 )
 {
+    m_recursive = recursive;
 	DrawStencilPass(p_actor);
 	DrawOutlinePass(p_actor, p_color, p_thickness);
 }
@@ -166,7 +167,7 @@ void OvEditor::Rendering::OutlineCollector::DrawActorToStencil(OvRendering::Data
 			DrawModelToStencil(p_pso, model, *EDITOR_CONTEXT(editorResources)->GetModel("Sphere"));
 		}
 
-		for (auto& child : p_actor.GetChildren())
+		if (m_recursive) for (auto& child : p_actor.GetChildren())
 		{
 			DrawActorToStencil(p_pso, *child);
 		}
@@ -219,7 +220,7 @@ void OvEditor::Rendering::OutlineCollector::DrawActorOutline(
 			DrawModelOutline(p_pso, model, *EDITOR_CONTEXT(editorResources)->GetModel("Sphere"), p_color);
 		}
 
-		for (auto& child : p_actor.GetChildren())
+		if (m_recursive) for (auto& child : p_actor.GetChildren())
 		{
 			DrawActorOutline(p_pso, *child, p_color);
 		}

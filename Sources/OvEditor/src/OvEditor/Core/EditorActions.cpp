@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include "OvDebug/Assertion.h"
 #include "OvTools/Utils/OptRef.h"
 #include <filesystem>
@@ -17,6 +18,7 @@
 #include <unordered_set>
 #include <vector>
 #include <tinyxml2.h>
+#include <imgui.h>
 
 #include <OvDebug/Logger.h>
 
@@ -421,6 +423,7 @@ OvEditor::Core::EditorActions::EditorActions(Context& p_context, PanelsManager& 
 	m_panelsManager(p_panelsManager)
 {
 	OvCore::Global::ServiceLocator::Provide<OvEditor::Core::EditorActions>(*this);
+    m_historyUnloadListener = m_context.sceneManager.SceneUnloadEvent += [this] { if (!m_restoringHistory) ClearHistory(); };
 
 	OvCore::Helpers::GUIHelpers::SetFileItemBuilder(
 		[](OvTools::Utils::PathParser::EFileType p_type, std::function<void(std::string)> p_callback, bool p_searchProject, bool p_searchEngine) {
@@ -439,6 +442,244 @@ OvEditor::Core::EditorActions::EditorActions(Context& p_context, PanelsManager& 
 
 OvEditor::Core::EditorActions::~EditorActions()
 {
+    m_context.sceneManager.SceneUnloadEvent -= m_historyUnloadListener;
+}
+
+OvEditor::Core::EditorActions::SceneSnapshot OvEditor::Core::EditorActions::CaptureScene() const
+{
+    SceneSnapshot result;
+    auto* scene = m_context.sceneManager.GetCurrentScene();
+    if (!scene) return result;
+    tinyxml2::XMLDocument doc;
+    auto* root = doc.NewElement("root"); doc.InsertEndChild(root);
+    auto* sceneNode = doc.NewElement("scene"); root->InsertEndChild(sceneNode);
+    auto* actors = doc.NewElement("actors"); sceneNode->InsertEndChild(actors);
+    for (auto* actor : scene->GetActors()) if (actor->IsAlive()) actor->OnSerialize(doc, actors);
+    tinyxml2::XMLPrinter printer(nullptr, true); doc.Print(&printer);
+    result.xml = printer.CStr();
+    for (auto* actor : GetSelectedActors()) result.selection.push_back(actor->GetGUID());
+    return result;
+}
+
+void OvEditor::Core::EditorActions::BeginSceneEdit(const std::string& label)
+{
+    if (m_editorMode != EEditorMode::EDIT || m_restoringHistory || !m_context.sceneManager.GetCurrentScene()) return;
+    if (!m_pendingEdit) m_pendingEdit = HistoryEntry{label, CaptureScene(), {}};
+    else if (m_pendingEdit->label == "Edit properties") m_pendingEdit->label = label;
+}
+
+void OvEditor::Core::EditorActions::CommitSceneEdit(bool force)
+{
+    if (!m_pendingEdit || m_restoringHistory) return;
+    if (m_editorMode != EEditorMode::EDIT) { m_pendingEdit.reset(); return; }
+    if (!force && ImGui::GetCurrentContext() &&
+        (ImGui::IsAnyItemActive() || ImGui::IsMouseDown(0) ||
+         m_panelsManager.GetPanelAs<Panels::SceneView>("Scene View").IsTransformEditing())) return;
+    auto edit = std::move(*m_pendingEdit); m_pendingEdit.reset();
+    edit.after = CaptureScene();
+    if (edit.before.xml == edit.after.xml) return;
+    m_redo.clear();
+    m_undo.push_back(std::move(edit));
+    size_t bytes = 0;
+    for (const auto& entry : m_undo) bytes += entry.before.xml.size() + entry.after.xml.size();
+    // Keep the newest operation even when a single large scene exceeds the budget.
+    while (m_undo.size() > 1 && (m_undo.size() > 100 || bytes > 64 * 1024 * 1024))
+    {
+        bytes -= m_undo.front().before.xml.size() + m_undo.front().after.xml.size();
+        m_undo.erase(m_undo.begin());
+    }
+}
+
+void OvEditor::Core::EditorActions::ClearHistory()
+{
+    m_pendingEdit.reset(); m_undo.clear(); m_redo.clear(); m_transformOriginals.clear();
+}
+
+bool OvEditor::Core::EditorActions::CanUndo() const { return m_editorMode == EEditorMode::EDIT && !m_undo.empty(); }
+bool OvEditor::Core::EditorActions::CanRedo() const { return m_editorMode == EEditorMode::EDIT && !m_redo.empty(); }
+std::string OvEditor::Core::EditorActions::UndoLabel() const { return CanUndo() ? m_undo.back().label : ""; }
+std::string OvEditor::Core::EditorActions::RedoLabel() const { return CanRedo() ? m_redo.back().label : ""; }
+
+bool OvEditor::Core::EditorActions::RestoreScene(const SceneSnapshot& snapshot)
+{
+    tinyxml2::XMLDocument doc;
+    if (doc.Parse(snapshot.xml.c_str()) != tinyxml2::XML_SUCCESS || !doc.RootElement() || !doc.RootElement()->FirstChildElement("scene")) return false;
+    const auto source = m_context.sceneManager.GetCurrentSceneSourcePath();
+    m_restoringHistory = true;
+    bool restored = false;
+    try
+    {
+        // Drop all property bindings once before reconstructing a large selection.
+        // Otherwise each destructor would rebuild the remaining selection.
+        UnselectActor();
+        restored = m_context.sceneManager.LoadSceneFromMemory(doc);
+        if (!source.empty()) m_context.sceneManager.StoreCurrentSceneSourcePath(source);
+        if (restored) RestoreSelection(snapshot.selection);
+    }
+    catch (...) { m_restoringHistory = false; throw; }
+    m_restoringHistory = false;
+    return restored;
+}
+
+bool OvEditor::Core::EditorActions::Undo()
+{
+    if (m_editorMode != EEditorMode::EDIT) return false;
+    CommitSceneEdit(true);
+    if (!CanUndo() || !RestoreScene(m_undo.back().before)) return false;
+    m_redo.push_back(std::move(m_undo.back())); m_undo.pop_back();
+    return true;
+}
+
+bool OvEditor::Core::EditorActions::Redo()
+{
+    if (m_editorMode != EEditorMode::EDIT) return false;
+    CommitSceneEdit(true);
+    if (!CanRedo() || !RestoreScene(m_redo.back().after)) return false;
+    m_undo.push_back(std::move(m_redo.back())); m_redo.pop_back();
+    return true;
+}
+
+std::vector<OvCore::ECS::Actor*> OvEditor::Core::EditorActions::GetSelectedActors() const
+{
+    auto targets = m_panelsManager.GetPanelAs<Panels::Inspector>("Inspector").GetTargetActors();
+    std::erase_if(targets, [](auto* actor) { return !actor->IsAlive(); });
+    return targets;
+}
+
+void OvEditor::Core::EditorActions::SetSelection(const std::vector<OvCore::ECS::Actor*>& actors)
+{
+    m_panelsManager.GetPanelAs<Panels::Inspector>("Inspector").FocusActors(actors);
+}
+
+void OvEditor::Core::EditorActions::RestoreSelection(const std::vector<uint64_t>& selection)
+{
+    std::vector<OvCore::ECS::Actor*> actors;
+    if (auto* scene = m_context.sceneManager.GetCurrentScene())
+        for (auto guid : selection) if (auto* actor = scene->FindActorByGUID(guid)) actors.push_back(actor);
+    SetSelection(actors);
+}
+
+bool OvEditor::Core::EditorActions::IsActorSelected(const OvCore::ECS::Actor& actor) const
+{
+    const auto actors = GetSelectedActors();
+    return std::find(actors.begin(), actors.end(), &actor) != actors.end();
+}
+
+void OvEditor::Core::EditorActions::ToggleActorSelection(OvCore::ECS::Actor& actor)
+{
+    auto actors = GetSelectedActors();
+    if (std::find(actors.begin(), actors.end(), &actor) != actors.end()) std::erase(actors, &actor);
+    else actors.insert(actors.begin(), &actor);
+    SetSelection(actors);
+}
+
+void OvEditor::Core::EditorActions::DestroySelectedActors()
+{
+    const auto actors = GetSelectedActors();
+    if (actors.empty()) return;
+    BeginSceneEdit("Delete selection");
+    for (auto* actor : actors) actor->MarkAsDestroy();
+    UnselectActor();
+}
+
+void OvEditor::Core::EditorActions::DuplicateSelectedActors()
+{
+    const auto actors = GetSelectedActors();
+    if (actors.empty()) return;
+    BeginSceneEdit("Duplicate selection");
+    std::vector<OvCore::ECS::Actor*> duplicates;
+    for (auto* actor : actors)
+    {
+        if (std::any_of(actors.begin(), actors.end(), [actor](auto* other) { return actor->IsDescendantOf(other); })) continue;
+        DuplicateActor(*actor);
+        if (IsAnyActorSelected()) duplicates.push_back(&GetSelectedActor());
+    }
+    SetSelection(duplicates);
+}
+
+void OvEditor::Core::EditorActions::ReparentSelection(OvCore::ECS::Actor& dragged, OvCore::ECS::Actor* parent)
+{
+    auto actors = IsActorSelected(dragged) ? GetSelectedActors() : std::vector<OvCore::ECS::Actor*>{&dragged};
+    for (auto* actor : actors) if (parent && (parent == actor || parent->IsDescendantOf(actor))) return;
+    BeginSceneEdit("Reparent selection");
+    for (auto* actor : actors)
+    {
+        if (std::any_of(actors.begin(), actors.end(), [actor](auto* other) { return actor->IsDescendantOf(other); })) continue;
+        const auto position = actor->transform.GetWorldPosition();
+        const auto rotation = actor->transform.GetWorldRotation();
+        const auto scale = actor->transform.GetWorldScale();
+        if (parent) actor->SetParent(*parent); else actor->DetachFromParent();
+        actor->transform.SetWorldPosition(position);
+        actor->transform.SetWorldRotation(rotation);
+        actor->transform.SetWorldScale(scale);
+    }
+}
+
+void OvEditor::Core::EditorActions::BeginTransformEdit()
+{
+    BeginSceneEdit("Transform selection");
+    m_transformOriginals.clear();
+    for (auto* actor : GetSelectedActors())
+        m_transformOriginals.push_back({actor->GetGUID(), actor->transform.GetLocalPosition(), actor->transform.GetLocalScale(), actor->transform.GetLocalRotation()});
+}
+
+void OvEditor::Core::EditorActions::TransformSelection(const std::function<void()>& applyPrimary, std::optional<OvMaths::FVector3> framePivot, OvMaths::FQuaternion basis)
+{
+    const auto actors = GetSelectedActors();
+    if (actors.empty()) return;
+    auto& primary = *actors.front();
+    const auto primaryPosition = primary.transform.GetWorldPosition();
+    const auto pivot = framePivot.value_or(primaryPosition);
+    const auto rotation = primary.transform.GetWorldRotation();
+    const auto scale = primary.transform.GetWorldScale();
+    const auto localPosition = primary.transform.GetLocalPosition();
+    const auto localRotation = primary.transform.GetLocalRotation();
+    const auto localScale = primary.transform.GetLocalScale();
+    applyPrimary();
+    const auto rotationDelta = primary.transform.GetWorldRotation() * OvMaths::FQuaternion::Inverse(rotation);
+    const auto newScale = primary.transform.GetWorldScale();
+    const OvMaths::FVector3 scaleDelta{
+        std::abs(scale.x) > 1e-6f ? newScale.x / scale.x : 1.f,
+        std::abs(scale.y) > 1e-6f ? newScale.y / scale.y : 1.f,
+        std::abs(scale.z) > 1e-6f ? newScale.z / scale.z : 1.f};
+    auto scaleOffset = [&](OvMaths::FVector3 offset) {
+        offset = OvMaths::FQuaternion::Inverse(basis) * offset;
+        return basis * OvMaths::FVector3{offset.x * scaleDelta.x,offset.y * scaleDelta.y,offset.z * scaleDelta.z};
+    };
+    const auto translation = primary.transform.GetWorldPosition() - (pivot + rotationDelta * scaleOffset(primaryPosition - pivot));
+    const bool parentSelected = std::any_of(actors.begin(), actors.end(), [&](auto* actor) { return primary.IsDescendantOf(actor); });
+    if (parentSelected)
+    {
+        // Move the selected ancestor once; the primary child follows naturally.
+        primary.transform.SetLocalPosition(localPosition);
+        primary.transform.SetLocalRotation(localRotation);
+        primary.transform.SetLocalScale(localScale);
+    }
+    for (auto* actor : actors)
+    {
+        if (actor == &primary && !parentSelected) continue;
+        if (std::any_of(actors.begin(), actors.end(), [actor](auto* other) { return actor->IsDescendantOf(other); })) continue;
+        const auto offset = actor->transform.GetWorldPosition() - pivot;
+        const auto scaled = scaleOffset(offset);
+        const auto oldScale = actor->transform.GetWorldScale();
+        actor->transform.SetWorldPosition(pivot + translation + rotationDelta * scaled);
+        actor->transform.SetWorldRotation(rotationDelta * actor->transform.GetWorldRotation());
+        actor->transform.SetWorldScale({oldScale.x * scaleDelta.x, oldScale.y * scaleDelta.y, oldScale.z * scaleDelta.z});
+    }
+}
+
+void OvEditor::Core::EditorActions::EndTransformEdit(bool cancel)
+{
+    if (cancel)
+        if (auto* scene = m_context.sceneManager.GetCurrentScene())
+            for (const auto& original : m_transformOriginals)
+                if (auto* actor = scene->FindActorByGUID(original.guid))
+                {
+                    actor->transform.SetLocalPosition(original.position);
+                    actor->transform.SetLocalRotation(original.rotation);
+                    actor->transform.SetLocalScale(original.scale);
+                }
+    m_transformOriginals.clear();
 }
 
 void OvEditor::Core::EditorActions::LoadEmptyScene()
@@ -867,18 +1108,13 @@ void OvEditor::Core::EditorActions::DelayAction(std::function<void()> p_action, 
 
 void OvEditor::Core::EditorActions::ExecuteDelayedActions()
 {
-	std::for_each(m_delayedActions.begin(), m_delayedActions.end(), [](std::pair<uint32_t, std::function<void()>> & p_element)
-	{
-		--p_element.first;
-
-		if (p_element.first == 0)
-			p_element.second();
-	});
-
-	m_delayedActions.erase(std::remove_if(m_delayedActions.begin(), m_delayedActions.end(), [](std::pair<uint32_t, std::function<void()>> & p_element)
-	{
-		return p_element.first == 0;
-	}), m_delayedActions.end());
+    std::vector<std::function<void()>> ready;
+    for (auto& [frames, action] : m_delayedActions) if (--frames == 0) ready.push_back(std::move(action));
+    std::erase_if(m_delayedActions, [](const auto& entry) { return entry.first == 0; });
+    // A callback can enqueue Inspector rebuilds. Do not mutate the queue while
+    // iterating it, and keep newly queued work for the next frame.
+    for (auto& action : ready) action();
+    CommitSceneEdit();
 }
 
 OvEditor::Core::Context& OvEditor::Core::EditorActions::GetContext()
@@ -958,6 +1194,9 @@ void OvEditor::Core::EditorActions::StartPlaying()
 {
 	if (m_editorMode == EEditorMode::EDIT)
 	{
+        CommitSceneEdit(true);
+        m_playSelection.clear();
+        for (auto* actor : GetSelectedActors()) m_playSelection.push_back(actor->GetGUID());
 		m_context.scriptEngine->Reload();
 		EDITOR_PANEL(Panels::Inspector, "Inspector").Refresh();
 
@@ -995,20 +1234,19 @@ void OvEditor::Core::EditorActions::StopPlaying()
 		bool loadedFromDisk = m_context.sceneManager.IsCurrentSceneLoadedFromDisk();
 		std::string sceneSourcePath = m_context.sceneManager.GetCurrentSceneSourcePath();
 
-		int64_t focusedActorID = -1;
-
-		if (auto targetActor = EDITOR_PANEL(Panels::Inspector, "Inspector").GetTargetActor())
-			focusedActorID = targetActor->GetID();
 
 		OVASSERT(m_sceneBackup.operator bool(), "No scene backup to restore");
 
-		m_context.sceneManager.LoadSceneFromMemory(*m_sceneBackup);
+		m_restoringHistory = true;
+        try { UnselectActor(); m_context.sceneManager.LoadSceneFromMemory(*m_sceneBackup); }
+        catch (...) { m_restoringHistory = false; throw; }
+        m_restoringHistory = false;
 		if (loadedFromDisk)
 			m_context.sceneManager.StoreCurrentSceneSourcePath(sceneSourcePath); // To bo able to save or reload the scene whereas the scene is loaded from memory (Supposed to have no path)
 		m_sceneBackup.reset();
 		EDITOR_PANEL(Panels::SceneView, "Scene View").Focus();
-		if (auto actorInstance = m_context.sceneManager.GetCurrentScene()->FindActorByID(focusedActorID))
-			EDITOR_PANEL(Panels::Inspector, "Inspector").FocusActor(*actorInstance);
+        RestoreSelection(m_playSelection);
+        m_playSelection.clear();
 	}
 }
 
@@ -1044,6 +1282,7 @@ OvMaths::FVector3 OvEditor::Core::EditorActions::CalculateActorSpawnPoint(float 
 
 OvCore::ECS::Actor & OvEditor::Core::EditorActions::CreateEmptyActor(bool p_focusOnCreation, OvCore::ECS::Actor* p_parent, const std::string& p_name)
 {
+    BeginSceneEdit("Create entity");
     const auto currentScene = m_context.sceneManager.GetCurrentScene();
 	auto& instance = p_name.empty() ? currentScene->CreateActor() : currentScene->CreateActor(p_name);
 
@@ -1090,6 +1329,7 @@ OvCore::ECS::Actor & OvEditor::Core::EditorActions::CreateActorWithModel(const s
 
 bool OvEditor::Core::EditorActions::DestroyActor(OvCore::ECS::Actor & p_actor)
 {
+    BeginSceneEdit("Delete entity");
 	p_actor.MarkAsDestroy();
 	return true;
 }
@@ -1172,6 +1412,7 @@ void OvEditor::Core::EditorActions::SaveActorAsPrefab(OvCore::ECS::Actor& p_acto
 
 OvCore::ECS::Actor* OvEditor::Core::EditorActions::InstantiatePrefab(const std::string& p_path)
 {
+    BeginSceneEdit("Instantiate prefab");
 	auto* currentScene = m_context.sceneManager.GetCurrentScene();
 	if (!currentScene)
 		return nullptr;
@@ -1203,6 +1444,7 @@ bool OvEditor::Core::EditorActions::ApplyActorToPrefab(OvCore::ECS::Actor& p_act
 
 bool OvEditor::Core::EditorActions::RevertActorToPrefab(OvCore::ECS::Actor& p_actor)
 {
+    BeginSceneEdit("Revert prefab");
 	auto* prefabInstanceRoot = ResolvePrefabInstanceRoot(p_actor);
 	if (!prefabInstanceRoot)
 	{

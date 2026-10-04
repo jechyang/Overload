@@ -41,6 +41,7 @@ namespace OvEditor::Panels
 
 	private:
 		void CreateFileMenu();
+        void CreateEditMenu();
 		void CreateBuildMenu();
 		void CreateWindowMenu();
 		void CreateActorsMenu();
@@ -55,6 +56,8 @@ namespace OvEditor::Panels
 
 	private:
 		PanelMap m_panels;
+        OvUI::Widgets::Menu::MenuItem* m_undoItem = nullptr;
+        OvUI::Widgets::Menu::MenuItem* m_redoItem = nullptr;
 		OvUI::Widgets::Menu::MenuList* m_settingsMenu = nullptr;
 		OvUI::Widgets::Menu::MenuList* m_windowMenu = nullptr;
 	};

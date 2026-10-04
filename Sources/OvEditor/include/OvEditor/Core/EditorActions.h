@@ -60,6 +60,29 @@ namespace OvEditor::Core
 		*/
 		virtual ~EditorActions();
 
+        // Scene edits are coalesced until the active UI/gizmo gesture finishes.
+        void BeginSceneEdit(const std::string& label = "Edit properties");
+        void CommitSceneEdit(bool force = false);
+        void ClearHistory();
+        bool Undo();
+        bool Redo();
+        bool CanUndo() const;
+        bool CanRedo() const;
+        std::string UndoLabel() const;
+        std::string RedoLabel() const;
+        size_t UndoCount() const { return m_undo.size(); }
+
+        std::vector<OvCore::ECS::Actor*> GetSelectedActors() const;
+        void SetSelection(const std::vector<OvCore::ECS::Actor*>& actors);
+        void ToggleActorSelection(OvCore::ECS::Actor& actor);
+        bool IsActorSelected(const OvCore::ECS::Actor& actor) const;
+        void DestroySelectedActors();
+        void DuplicateSelectedActors();
+        void ReparentSelection(OvCore::ECS::Actor& dragged, OvCore::ECS::Actor* parent);
+        void BeginTransformEdit();
+        void TransformSelection(const std::function<void()>& applyPrimary, std::optional<OvMaths::FVector3> pivot = std::nullopt, OvMaths::FQuaternion basis = OvMaths::FQuaternion::Identity);
+        void EndTransformEdit(bool cancel = false);
+
 		#pragma region TOOLS
 		/**
 		* Returns the context
@@ -514,6 +537,19 @@ namespace OvEditor::Core
 		OvTools::Eventing::Event<> PlayEvent;
 
 	private:
+        struct SceneSnapshot { std::string xml; std::vector<uint64_t> selection; };
+        struct HistoryEntry { std::string label; SceneSnapshot before, after; };
+        SceneSnapshot CaptureScene() const;
+        bool RestoreScene(const SceneSnapshot& snapshot);
+        void RestoreSelection(const std::vector<uint64_t>& selection);
+        std::vector<HistoryEntry> m_undo, m_redo;
+        std::optional<HistoryEntry> m_pendingEdit;
+        bool m_restoringHistory = false;
+        uint64_t m_historyUnloadListener = 0;
+        struct TransformState { uint64_t guid; OvMaths::FVector3 position, scale; OvMaths::FQuaternion rotation; };
+        std::vector<TransformState> m_transformOriginals;
+        std::vector<uint64_t> m_playSelection;
+
 		Context& m_context;
 		PanelsManager& m_panelsManager;
 

@@ -45,6 +45,7 @@ using namespace OvCore::ECS::Components;
 OvEditor::Panels::MenuBar::MenuBar()
 {
 	CreateFileMenu();
+	CreateEditMenu();
 	CreateBuildMenu();
 	CreateWindowMenu();
 	CreateActorsMenu();
@@ -57,6 +58,10 @@ OvEditor::Panels::MenuBar::MenuBar()
 
 void OvEditor::Panels::MenuBar::HandleShortcuts(float p_deltaTime)
 {
+    m_undoItem->name = "Undo " + EDITOR_EXEC(UndoLabel());
+    m_redoItem->name = "Redo " + EDITOR_EXEC(RedoLabel());
+    m_undoItem->disabled = !EDITOR_EXEC(CanUndo());
+    m_redoItem->disabled = !EDITOR_EXEC(CanRedo());
 	auto& inputManager = *EDITOR_CONTEXT(inputManager);
 
 	if (inputManager.GetKeyState(OvWindowing::Inputs::EKey::KEY_LEFT_CONTROL) == OvWindowing::Inputs::EKeyState::KEY_DOWN)
@@ -72,6 +77,18 @@ void OvEditor::Panels::MenuBar::HandleShortcuts(float p_deltaTime)
 				EDITOR_EXEC(SaveAs());
 		}
 	}
+}
+
+void OvEditor::Panels::MenuBar::CreateEditMenu()
+{
+    auto& menu = CreateWidget<MenuList>("Edit");
+    m_undoItem = &menu.CreateWidget<MenuItem>("Undo", "Ctrl+Z");
+    m_redoItem = &menu.CreateWidget<MenuItem>("Redo", "Ctrl+Y / Ctrl+Shift+Z");
+    m_undoItem->ClickedEvent += [] { EDITOR_EXEC(DelayAction([] { EDITOR_EXEC(Undo()); }, 0)); };
+    m_redoItem->ClickedEvent += [] { EDITOR_EXEC(DelayAction([] { EDITOR_EXEC(Redo()); }, 0)); };
+    menu.CreateWidget<Visual::Separator>();
+    menu.CreateWidget<MenuItem>("Duplicate Selection", "Ctrl+D").ClickedEvent += [] { EDITOR_EXEC(DelayAction([] { EDITOR_EXEC(DuplicateSelectedActors()); }, 0)); };
+    menu.CreateWidget<MenuItem>("Delete Selection", "Delete").ClickedEvent += [] { EDITOR_EXEC(DelayAction([] { EDITOR_EXEC(DestroySelectedActors()); }, 0)); };
 }
 
 void OvEditor::Panels::MenuBar::InitializeSettingsMenu()
@@ -167,7 +184,8 @@ void OvEditor::Panels::MenuBar::InitializeSettingsMenu()
 		assetViewGridPicker.color = assetView.GetGridColor();
 	};
 
-	auto& sceneViewBillboardScaleMenu = m_settingsMenu->CreateWidget<MenuList>("3D Icons Scales");
+	auto& sceneViewBillboardScaleMenu = m_settingsMenu->CreateWidget<MenuList>("Gizmos and Scene Icons");
+	sceneViewBillboardScaleMenu.CreateWidget<Drags::DragFloat>(40.0f, 180.0f, Settings::EditorSettings::GizmoSize, 1.0f, "Handle Size (px)").ValueChangedEvent += [](float value) { Settings::EditorSettings::GizmoSize = value; };
 	auto& lightBillboardScaleSlider = sceneViewBillboardScaleMenu.CreateWidget<Sliders::SliderInt>(0, 100, static_cast<int>(Settings::EditorSettings::LightBillboardScale * 100.0f), OvUI::Widgets::Sliders::ESliderOrientation::HORIZONTAL, "Lights");
 	lightBillboardScaleSlider.ValueChangedEvent += [this](int p_value) { Settings::EditorSettings::LightBillboardScale = p_value / 100.0f; };
 	lightBillboardScaleSlider.format = "%d %%";

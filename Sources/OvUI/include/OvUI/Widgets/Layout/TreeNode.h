@@ -46,6 +46,8 @@ namespace OvUI::Widgets::Layout
 		*/
 		bool IsOpened() const;
 
+		void ScrollIntoView() { m_scrollIntoView = true; }
+
 	protected:
 		virtual void _Draw_Impl() override;
 
@@ -68,5 +70,6 @@ namespace OvUI::Widgets::Layout
 		bool m_shouldOpen = false;
 		bool m_shouldClose = false;
 		bool m_opened = false;
+		bool m_scrollIntoView = false;
 	};
 }

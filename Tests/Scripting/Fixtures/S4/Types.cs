@@ -4,7 +4,7 @@ using Overload.Maths;
 
 namespace S4;
 public enum Signed : sbyte { Min = sbyte.MinValue, Max = sbyte.MaxValue }
-public enum Unsigned : ulong { Max = ulong.MaxValue }
+public enum Unsigned : ulong { Min = 0, Max = ulong.MaxValue }
 public abstract class BaseFields : Behaviour { [SerializeField] private int inherited = 31; public int CheckInherited() => inherited; }
 [ScriptId("s4-matrix")]
 public class Matrix : BaseFields
@@ -18,13 +18,13 @@ public class Matrix : BaseFields
     public Vector3 Vector = new(1,2,3); public Quaternion Rotation = new(0,0,0,1);
     public ActorRef Target; public ActorRef External;
     public AssetRef Asset = new(AssetKind.Prefab, "");
-    [FieldId("speed"), FormerlySerializedAs("OldSpeed")] public float Speed = 2;
+    [FieldId("speed"), FormerlySerializedAs("OldSpeed"), InspectorName("Movement Speed")] public float Speed = 2;
     [SerializeField] private int secret = 17;
     [NonSerialized] public int Excluded = 4;
     public readonly int Readonly = 8;
     public static int Static;
     public int Property => throw new Exception("Property getter must never run");
-    public int[] Unsupported = new[] { 1,2 };
+    public System.Collections.Generic.Dictionary<int,int> Unsupported = new();
     public string? NullText;
 #if RENAMED
     [FormerlySerializedAs("RenameMe")] public int Renamed = 3;

@@ -92,10 +92,12 @@ namespace OvEditor::Settings
 		inline static Property<bool> EditorFrustumLightCulling = { true };
 		inline static Property<bool> DebugFrustumCulling = { false };
 		inline static Property<float> LightBillboardScale = { 0.5f };
+		inline static Property<float> GizmoSize = { 90.0f };
 		inline static Property<float> ReflectionProbeScale = { 0.5f };
 		inline static Property<float> TranslationSnapUnit = { 1.0f };
+        inline static Property<bool> SnapEnabled = { false };
 		inline static Property<float> RotationSnapUnit = { 15.0f };
-		inline static Property<float> ScalingSnapUnit = { 1.0f };
+		inline static Property<float> ScalingSnapUnit = { 0.1f };
 		inline static Property<int> ColorTheme = { static_cast<int>(OvUI::Styling::EStyle::DEFAULT_DARK) };
 		inline static Property<int> ConsoleMaxLogs = { 500 };
 		inline static Property<int> UIScale = { 100 };

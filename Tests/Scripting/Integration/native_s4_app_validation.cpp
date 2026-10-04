@@ -15,20 +15,36 @@
 #define NOMINMAX
 #undef APIENTRY
 #include <Windows.h>
+#include <crtdbg.h>
 static void Require(bool test,const char* text) {if(!test)throw std::runtime_error(text);std::printf("PASS: %s\n",text);}
 #include "s4_fields_helpers.h"
+#if defined(S3_EDITOR)
+#include "editor_gizmo_checks.h"
+#include "editor_navigation_checks.h"
+#include "editor_inspector_checks.h"
+#endif
 using OvCore::Scripting::ScriptIdentity;
 static const auto identity=ScriptIdentity::CSharp("","","s4-matrix");
 int wmain(int argc,wchar_t** argv) {
     SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX);
+#ifdef _DEBUG
+    _CrtSetReportMode(_CRT_ASSERT,_CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT,_CRTDBG_FILE_STDERR);
+#endif
     try {
         Require(argc==2,"S4 application isolated project");std::setvbuf(stdout,nullptr,_IONBF,0);
         OvRendering::Utils::ResourceTracking::TrackResources();
 #if defined(S3_EDITOR)
-        OvEditor::Core::Context context(argv[1]);context.window->Hide();OvEditor::Core::Editor editor(context);
+        OvEditor::Core::Context context(argv[1]);context.window->Hide();
+        std::puts("PASS: editor context initialized");
+        OvEditor::Core::Editor editor(context);
+        std::puts("PASS: editor panels initialized");
         context.sceneManager.LoadEmptyScene();
+        EditorGizmoChecks(*context.sceneManager.GetCurrentScene());
+        EditorNavigationChecks(context);
         auto& actor=context.sceneManager.GetCurrentScene()->CreateActor("s4-editor");const auto guid=actor.GetGUID();auto& b=actor.AddBehaviour(identity);actor.AddBehaviour("s3.lua");
         InspectorEdit(b,"7");Set(b,"U64","18446744073709551615");const auto edit=SaveFieldRecord(b);
+        EditorInspectorChecks(context,b);
         const auto editOrdinal=Read(b,"ConstructorOrdinal").scalar.int32_value;
         auto& actions=OvCore::Global::ServiceLocator::Get<OvEditor::Core::EditorActions>();
         auto current=[&]() -> FieldBehaviour& {return *context.sceneManager.GetCurrentScene()->FindActorByGUID(guid)->GetBehaviour(identity);};

@@ -19,7 +19,10 @@ void OvUI::Widgets::Layout::GroupCollapsable::_Draw_Impl()
 {
 	bool previouslyOpened = opened;
 
-	bool isOpen = ImGui::CollapsingHeader(name.c_str(), closable ? &opened : nullptr, ImGuiTreeNodeFlags_DefaultOpen);
+	// Stable explicit IDs preserve expansion across Inspector rebuilds and keep
+	// equally named script/component sections independent.
+	bool isOpen = ImGui::CollapsingHeader((name + "###" + m_widgetID).c_str(), closable ? &opened : nullptr,
+		defaultExpanded ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None);
 
 	EndDisableOverride(); // Early end disable override group so that children are not affected
 

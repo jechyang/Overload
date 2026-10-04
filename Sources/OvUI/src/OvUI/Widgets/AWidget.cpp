@@ -85,15 +85,12 @@ void OvUI::Widgets::AWidget::Draw()
 			}
 		}
 
-		EndDisableOverride();
-
-		if (disabled)
-		{
-			ImGui::EndDisabled();
-		}
-
 		if (m_autoExecutePlugins)
 			ExecutePlugins(Plugins::EPluginExecutionContext::WIDGET);
+
+        // Drag/drop plugins must observe the same disabled scope as the control.
+        EndDisableOverride();
+        if (disabled) ImGui::EndDisabled();
 
 		if (!lineBreak)
 		{

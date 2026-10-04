@@ -43,7 +43,7 @@ namespace OvEditor::Rendering
 		* @param p_color
 		* @param p_thickness
 		*/
-		virtual void DrawOutline(OvCore::ECS::Actor& p_actor, const OvMaths::FVector4& p_color, float p_thickness);
+		virtual void DrawOutline(OvCore::ECS::Actor& p_actor, const OvMaths::FVector4& p_color, float p_thickness, bool recursive = true);
 
 	private:
         OvCore::Rendering::ToolDrawCollector& m_collector;
@@ -71,5 +71,6 @@ namespace OvEditor::Rendering
 	private:
 		OvCore::Resources::Material m_stencilFillMaterial;
 		OvCore::Resources::Material m_outlineMaterial;
+        bool m_recursive = true;
 	};
 }

@@ -39,6 +39,12 @@ namespace OvEditor::Core
 		*/
 		void HandleInputs(float p_deltaTime);
 
+        void SetInputBlocked(bool blocked) { m_inputBlocked = blocked; }
+        void SetProjectionMode(OvRendering::Settings::EProjectionMode mode);
+        // Outward direction from the focus point toward the camera.
+        void SetViewDirection(const OvMaths::FVector3& direction);
+        void Zoom(float scroll);
+
 		/**
 		* Asks the camera to move to the target actor
 		* @param p_target
@@ -99,8 +105,11 @@ namespace OvEditor::Core
 		* Removes any locked actor
 		*/
 		void UnlockTargetActor();
+        void FrameSelection(const std::vector<OvCore::ECS::Actor*>& actors);
 
 	private:
+		OvMaths::FVector3 GetFocusPoint() const;
+		void StopMotion();
 		std::optional<std::reference_wrapper<OvCore::ECS::Actor>> GetTargetActor() const;
 		void HandleCameraPanning(const OvMaths::FVector2& p_mouseOffset, bool p_firstMouse);
 		void HandleCameraOrbit(OvCore::ECS::Actor& p_target, const OvMaths::FVector2& p_mouseOffset, bool p_firstMouse);
@@ -120,6 +129,7 @@ namespace OvEditor::Core
 		std::queue<std::tuple<OvMaths::FVector3, OvMaths::FQuaternion>> m_cameraDestinations;
 
 		bool m_leftMousePressed = false;
+		bool m_inputBlocked = false;
 		bool m_middleMousePressed = false;
 		bool m_rightMousePressed = false;
 

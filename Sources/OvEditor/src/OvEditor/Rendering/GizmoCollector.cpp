@@ -21,6 +21,8 @@
 #include "OvEditor/Core/GizmoBehaviour.h"
 #include "OvEditor/Core/EditorActions.h"
 #include "OvEditor/Rendering/GizmoCollector.h"
+#include <OvUI/Styling/Style.h>
+#include <algorithm>
 
 OvEditor::Rendering::GizmoCollector::GizmoCollector(
 	OvCore::Rendering::ToolDrawCollector& collector
@@ -66,6 +68,12 @@ void OvEditor::Rendering::GizmoCollector::DrawGizmo(
 )
 {
 	auto pso = m_collector.CreatePipelineState();
+	const float height = static_cast<float>(m_collector.GetView().input.height);
+	const float pixels = std::clamp(Settings::EditorSettings::GizmoSize.Get(), 40.0f, 180.0f) * OVUI_SCALE;
+	m_gizmoArrowMaterial.SetProperty("u_ScreenSize", pixels);
+	m_gizmoArrowMaterial.SetProperty("u_ViewportHeight", height);
+	m_gizmoBallMaterial.SetProperty("u_ScreenSize", pixels);
+	m_gizmoBallMaterial.SetProperty("u_ViewportHeight", height);
 
 	auto modelMatrix =
 		OvMaths::FMatrix4::Translation(p_position) *

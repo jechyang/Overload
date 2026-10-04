@@ -26,6 +26,7 @@ namespace OvEditor::Core
 	{
 	public:
         struct SnapSettings { bool enabled; float translation, rotation, scale; };
+        struct Frame { OvMaths::FVector3 position; OvMaths::FQuaternion rotation; };
 		enum class EDirection
 		{
 			X,
@@ -45,12 +46,19 @@ namespace OvEditor::Core
 		* @param p_operation
 		* @param p_direction
 		*/
-		void StartPicking(OvCore::ECS::Actor& p_target, const OvMaths::FVector3& p_cameraPosition, EGizmoOperation p_operation, EDirection p_direction);
+		void StartPicking(OvCore::ECS::Actor& p_target, const OvMaths::FVector3& p_cameraPosition, EGizmoOperation p_operation, EDirection p_direction, std::optional<Frame> frame = std::nullopt);
+        Frame GetFrame() const {
+            auto frame = m_frame;
+            if (m_target && m_currentOperation == EGizmoOperation::TRANSLATE)
+                frame.position += m_target->transform.GetWorldPosition() - m_originalTransform.GetWorldPosition();
+            return frame;
+        }
 
 		/**
 		* Stops the gizmo picking behaviour
 		*/
 		void StopPicking();
+		void CancelPicking();
 
 		/**
 		* Handle the current behaviour
@@ -106,10 +114,6 @@ namespace OvEditor::Core
 		*/
 		OvMaths::FVector2 GetScreenDirection(const OvMaths::FMatrix4& p_viewMatrix, const OvMaths::FMatrix4& p_projectionMatrix, const OvMaths::FVector2& p_viewSize) const;
 
-		OvMaths::FVector3 IntersectRayWithAxis(const OvMaths::FVector3& rayOrigin, const OvMaths::FVector3& rayDirection, const OvMaths::FVector3& axisOrigin, const OvMaths::FVector3& axisDirection) const;
-		OvMaths::FVector3 RaycastToAxis(const OvMaths::FMatrix4& viewMatrix,
-			const OvMaths::FMatrix4& projectionMatrix, const OvMaths::FVector2& viewSize,
-			const OvMaths::FVector3& axisDirection, const OvMaths::FVector2& mousePosition) const;
 		/**
 		* Handle the translation behaviour
 		* @param p_viewMatrix
@@ -125,7 +129,7 @@ namespace OvEditor::Core
 		* @param p_projectionMatrix
 		* @param p_viewSize
 		*/
-		void ApplyRotation(const OvMaths::FMatrix4& p_viewMatrix, const OvMaths::FMatrix4& p_projectionMatrix, const OvMaths::FVector2& p_viewSize) const;
+		void ApplyRotation(const OvMaths::FMatrix4& p_viewMatrix, const OvMaths::FMatrix4& p_projectionMatrix, const OvMaths::FVector2& p_viewSize);
 
 		/**
 		* Handle the scale behaviour
@@ -138,9 +142,13 @@ namespace OvEditor::Core
 
 	private:
         std::optional<SnapSettings> m_snapSettings;
+        Frame m_frame;
 		bool m_firstMouse = true;
 		bool m_firstPick = true;
-		float m_distanceToActor = 0.0f;
+        bool m_screenDrag = false;
+        OvMaths::FVector2 m_dragDirection;
+        OvMaths::FVector3 m_dragPlaneNormal;
+		float m_rotationAngle = 0.0f;
 		OvCore::ECS::Actor* m_target = nullptr;
 		EGizmoOperation m_currentOperation;
 		EDirection m_direction;
@@ -148,6 +156,5 @@ namespace OvEditor::Core
 		OvMaths::FVector3 m_initialOffset;
 		OvMaths::FVector2 m_originMouse;
 		OvMaths::FVector2 m_currentMouse;
-		OvMaths::FVector2 m_screenDirection;
 	};
 }

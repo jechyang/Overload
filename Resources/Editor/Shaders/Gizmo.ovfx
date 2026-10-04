@@ -22,6 +22,8 @@ out VS_OUT
 uniform bool u_IsBall;
 uniform bool u_IsPickable;
 uniform int u_HighlightedAxis;
+uniform float u_ScreenSize = 90.0;
+uniform float u_ViewportHeight = 720.0;
 
 mat4 rotationMatrix(vec3 axis, float angle)
 {
@@ -48,11 +50,13 @@ void main()
     else if (gl_InstanceID == 2) 
         instanceModel *= rotationMatrix(vec3(1, 0, 0), radians(90)); /* Y axis */
 
-    float distanceToCamera = distance(ubo_ViewPos, instanceModel[3].xyz);
+    vec4 pivotClip = ubo_Projection * ubo_View * instanceModel[3];
+    float worldSize = 2.0 * abs(pivotClip.w) * u_ScreenSize /
+        max(abs(ubo_Projection[1][1]) * u_ViewportHeight, 0.0001);
 
 	vec3 pos = geo_Pos;
 
-    vec3 fragPos = vec3(instanceModel * vec4(pos * distanceToCamera * 0.1f, 1.0));
+    vec3 fragPos = vec3(instanceModel * vec4(pos * worldSize, 1.0));
 
 	if (u_IsPickable)
 	{

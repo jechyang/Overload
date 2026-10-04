@@ -40,10 +40,15 @@ namespace OvEditor::Panels
             OvMaths::FVector3 cameraPosition;
             OvMaths::FMatrix4 view, projection;
             uint64_t selectedGUID = 0;
+            uint64_t navigationRevision = 0;
+            std::vector<uint64_t> selection;
+            Core::GizmoBehaviour::Frame gizmoFrame;
             Core::EGizmoOperation operation = Core::EGizmoOperation::TRANSLATE;
             bool pickingAvailable = false, hovered = false, resizing = false, rightPressed = false, pressed = false, released = false;
             Core::GizmoBehaviour::SnapSettings snapping{};
             bool consumed = false;
+            bool cancelled = false;
+            bool additiveSelection = false;
             std::optional<std::string> materialDrop;
         };
         ~SceneView() override;
@@ -74,11 +79,35 @@ namespace OvEditor::Panels
 		*/
 		Core::EGizmoOperation GetGizmoOperation() const;
 
+        void ToggleProjection();
+        void SetViewDirection(const OvMaths::FVector3& direction);
+        bool IsNavigationHovered() const;
+        bool IsTransformEditing() const { return m_gizmoOperations.IsPicking(); }
+        bool IsSelecting() const { return m_boxPending; }
+        void FrameSelection();
+        void SetLocalSpace(bool local);
+        bool IsLocalSpace() const { return m_localSpace; }
+        void SetCenterPivot(bool center);
+        bool IsCenterPivot() const { return m_centerPivot; }
+        Core::GizmoBehaviour::Frame GetGizmoFrame() const;
+
 	protected:
 		OvCore::Rendering::SceneRenderRequest CreateSceneRequest() override;
         Rendering::EditorOverlayRequest CreateOverlayRequest() override;
 
 	private:
+        void DrawNavigationOverlay();
+        void DrawViewportTools();
+        void InvalidateNavigationPicking();
+        uint64_t m_navigationRevision = 0;
+        bool m_navigationPopupOpen = false;
+        bool m_toolsPopupOpen = false;
+        bool m_localSpace = true, m_centerPivot = false;
+        bool m_boxPending = false, m_boxAdditive = false;
+        OvMaths::FVector2 m_boxStart{}, m_boxEnd{}, m_boxSize{};
+        OvCore::SceneSystem::Scene::LifetimeToken m_boxScene;
+        std::vector<uint64_t> m_boxSelection;
+        float m_toolsWidth = 0, m_toolsHeight = 0;
 		void OnViewRecorded() override;
         std::shared_ptr<Interaction> CaptureInteraction();
         void ApplyInteraction(const Interaction& input, Rendering::PickingResult result);
@@ -93,6 +122,7 @@ namespace OvEditor::Panels
 	private:
         std::shared_ptr<Interaction> m_recordedInteraction;
         uint64_t m_destroyedListener = 0, m_gizmoTargetGUID = 0;
+        uint64_t m_focusLostListener = 0;
 		OvCore::SceneSystem::SceneManager& m_sceneManager;
 		OvEditor::Core::GizmoBehaviour m_gizmoOperations;
 		OvEditor::Core::EGizmoOperation m_currentOperation = OvEditor::Core::EGizmoOperation::TRANSLATE;

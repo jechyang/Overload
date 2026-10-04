@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export function verifyApps({ root, output, run, env, compiler, nativeOptions, libraries, gen, dotnetRoot, production, project, stage = 's3' }) {
+export function verifyApps({ root, output, run, env, compiler, nativeOptions, libraries, gen, dotnetRoot, production, project, stage = 's3', apps = ['OvEditor','OvGame'] }) {
   const work = path.join(output, stage === 's3' ? 'apps' : 'apps-s4'); fs.mkdirSync(work, { recursive:true });
   fs.mkdirSync(path.join(work, 'Data'), { recursive:true });
   for (const name of ['Engine','Editor']) if (!fs.existsSync(path.join(work,'Data',name))) fs.symlinkSync(path.join(root,'Resources',name), path.join(work,'Data',name), 'junction');
@@ -24,7 +24,7 @@ export function verifyApps({ root, output, run, env, compiler, nativeOptions, li
     '/I'+path.join(root,'Sources/OvEditor/include'), '/I'+path.join(root,'Sources/OvGame/include'), ...nativeOptions];
   const callsObj = path.join(work,'SystemCalls.obj');
   run(stage+'-app-profile-compile',path.join(compiler,'cl.exe'),['/nologo','/std:c++20','/EHsc','/MDd','/c',...includes,'/UUNICODE','/U_UNICODE',calls,'/Fo'+callsObj]);
-  for (const app of ['OvEditor','OvGame']) {
+  for (const app of apps) {
     const object=path.join(work,app+'.obj'), executable=path.join(work,app+'-'+stage+'.exe');
     run(stage+'-'+app+'-compile',path.join(compiler,'cl.exe'),['/nologo','/std:c++20','/EHsc','/MDd','/c',...includes,
       ...(app==='OvEditor'?['/DS3_EDITOR']:[]),path.join(root,'Tests/Scripting/Integration/native_'+stage+'_app_validation.cpp'),'/Fo'+object]);

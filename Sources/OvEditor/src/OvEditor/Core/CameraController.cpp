@@ -5,6 +5,8 @@
 */
 
 #include <imgui.h>
+#include <algorithm>
+#include <cmath>
 
 #include <OvCore/ECS/Components/CAmbientBoxLight.h>
 #include <OvCore/ECS/Components/CAmbientSphereLight.h>
@@ -14,6 +16,7 @@
 
 #include <OvEditor/Core/CameraController.h>
 #include <OvEditor/Core/EditorActions.h>
+#include <OvEditor/Core/SelectionBounds.h>
 
 OvEditor::Core::CameraController::CameraController(
 	OvEditor::Panels::AView& p_view,
@@ -97,30 +100,25 @@ void OvEditor::Core::CameraController::HandleInputs(float p_deltaTime)
 	// This is to prevent the camera to be stuck in orbitting or panning mode when a mouse button
 	// is released outside the view.
 	HandleMouseReleased();
+	if (m_inputBlocked) return;
 
 	if (m_view.IsHovered())
 	{
 		HandleMousePressed();
 
-		if (!ImGui::IsAnyItemActive())
+		if (!ImGui::IsAnyItemActive() && !ImGui::GetIO().WantTextInput && !IsOperating())
 		{
 			if (auto target = GetTargetActor())
 			{
-				auto targetPos = target.value().get().transform.GetWorldPosition();
-
-				float dist = GetActorFocusDist(target.value().get());
-
 				if (m_inputManager.IsKeyPressed(OvWindowing::Inputs::EKey::KEY_F))
 				{
-					MoveToTarget(target.value().get());
+                    if (m_lockedActor) MoveToTarget(target.value().get());
+                    else FrameSelection(EDITOR_EXEC(GetSelectedActors()));
 				}
 
-				auto focusObjectFromAngle = [this, &targetPos, &dist]( const OvMaths::FVector3& offset)
+				auto focusObjectFromAngle = [this]( const OvMaths::FVector3& offset)
 				{
-					auto camPos = targetPos + offset * dist;
-					auto direction = OvMaths::FVector3::Normalize(targetPos - camPos);
-					m_camera.SetRotation(OvMaths::FQuaternion::LookAt(direction, std::abs(direction.y) == 1.0f ? OvMaths::FVector3::Right : OvMaths::FVector3::Up));
-					m_cameraDestinations.push({ camPos, m_camera.GetRotation() });
+					SetViewDirection(offset);
 				};
 
 				if (m_inputManager.IsKeyPressed(OvWindowing::Inputs::EKey::KEY_UP))			focusObjectFromAngle(OvMaths::FVector3::Up);
@@ -215,6 +213,9 @@ void OvEditor::Core::CameraController::HandleInputs(float p_deltaTime)
 
 void OvEditor::Core::CameraController::MoveToTarget(OvCore::ECS::Actor& p_target)
 {
+    m_focusDistance = GetActorFocusDist(p_target);
+    if (m_camera.GetProjectionMode() == OvRendering::Settings::EProjectionMode::ORTHOGRAPHIC)
+        m_camera.SetSize(m_focusDistance * std::tan(m_camera.GetFov() * 0.00872664626f));
 	m_cameraDestinations.push({
 		p_target.transform.GetWorldPosition() -
 		m_camera.GetRotation() *
@@ -290,7 +291,9 @@ std::optional<std::reference_wrapper<OvCore::ECS::Actor>> OvEditor::Core::Camera
 
 void OvEditor::Core::CameraController::HandleCameraPanning(const OvMaths::FVector2& p_mouseOffset, bool p_firstMouset)
 {
-	auto mouseOffset = p_mouseOffset * m_cameraDragSpeed;
+    const float speed = m_camera.GetProjectionMode() == OvRendering::Settings::EProjectionMode::ORTHOGRAPHIC
+        ? 2.0f * m_camera.GetSize() / std::max(1.0f, float(m_view.GetSafeSize().second)) : m_cameraDragSpeed;
+	auto mouseOffset = p_mouseOffset * speed;
 
 	m_camera.SetPosition(m_camera.GetPosition() + m_camera.transform->GetWorldRight() * mouseOffset.x);
 	m_camera.SetPosition(m_camera.GetPosition() - m_camera.transform->GetWorldUp() * mouseOffset.y);
@@ -344,16 +347,84 @@ void OvEditor::Core::CameraController::HandleCameraOrbit(
 
 void OvEditor::Core::CameraController::HandleCameraZoom()
 {
-	constexpr float kUnitsPerScroll = 1.0f;
+    Zoom(static_cast<float>(m_inputManager.GetMouseScroll().second));
+}
 
-	const auto verticalScroll = static_cast<float>(
-		m_inputManager.GetMouseScroll().second
-	);
+void OvEditor::Core::CameraController::FrameSelection(const std::vector<OvCore::ECS::Actor*>& actors)
+{
+    const auto bounds = SelectionBounds::From(actors);
+    if (!bounds.valid) return;
+    const auto [width,height] = m_view.GetSafeSize();
+    const float aspect = height ? float(width) / height : 1.f;
+    const float tangent = std::tan(m_camera.GetFov() * .00872664626f) * std::min(1.f,std::max(.01f,aspect));
+    const float radius = std::max(.5f,bounds.Radius()) * 1.15f;
+    m_focusDistance = std::max(radius / std::sin(std::atan(tangent)),radius + m_camera.GetNear() * 2);
+    if (m_camera.GetProjectionMode() == OvRendering::Settings::EProjectionMode::ORTHOGRAPHIC)
+        m_camera.SetSize(radius / std::min(1.f,std::max(.01f,aspect)));
+    if (m_focusDistance + radius > m_camera.GetFar()) m_camera.SetFar((m_focusDistance + radius) * 1.2f);
+    StopMotion();
+    m_cameraDestinations.push({bounds.Center() - m_camera.GetRotation() * OvMaths::FVector3::Forward * m_focusDistance,m_camera.GetRotation()});
+}
 
-	m_camera.SetPosition(
-		m_camera.GetPosition() +
-		m_camera.transform->GetWorldForward() * kUnitsPerScroll * verticalScroll
-	);
+void OvEditor::Core::CameraController::StopMotion()
+{
+    m_cameraDestinations = {};
+    m_currentMovementSpeed = m_targetSpeed = OvMaths::FVector3::Zero;
+    m_firstMouse = true;
+}
+
+OvMaths::FVector3 OvEditor::Core::CameraController::GetFocusPoint() const
+{
+    if (!m_lockedActor)
+    {
+        const auto actors = EDITOR_EXEC(GetSelectedActors());
+        if (actors.size() > 1) { const auto bounds = SelectionBounds::From(actors); if (bounds.valid) return bounds.Center(); }
+    }
+    if (auto target = GetTargetActor()) return target->get().transform.GetWorldPosition();
+    return m_camera.GetPosition() + m_camera.transform->GetWorldForward() * m_focusDistance;
+}
+
+void OvEditor::Core::CameraController::SetProjectionMode(OvRendering::Settings::EProjectionMode mode)
+{
+    using namespace OvMaths;
+    if (m_camera.GetProjectionMode() == mode) return;
+    StopMotion();
+    const auto forward = m_camera.transform->GetWorldForward();
+    const auto focus = GetFocusPoint();
+    const float depth = FVector3::Dot(focus-m_camera.GetPosition(),forward);
+    const float tangent = std::tan(std::clamp(m_camera.GetFov(),1.0f,179.0f) * 0.00872664626f);
+    if (mode == OvRendering::Settings::EProjectionMode::ORTHOGRAPHIC) {
+        m_focusDistance = std::max(depth, std::max(1.0f,m_camera.GetNear()*2));
+        m_camera.SetSize(std::clamp(m_focusDistance*tangent,0.01f,10000.0f));
+    } else {
+        m_focusDistance = std::max(m_camera.GetSize()/tangent,m_camera.GetNear()*2);
+        // Keep the focus point at the same screen position, including off-centre selections.
+        m_camera.SetPosition(m_camera.GetPosition()+forward*(depth-m_focusDistance));
+    }
+    m_camera.SetProjectionMode(mode);
+}
+
+void OvEditor::Core::CameraController::SetViewDirection(const OvMaths::FVector3& direction)
+{
+    using namespace OvMaths;
+    if (FVector3::Length(direction) < 0.0001f) return;
+    const auto focus = GetFocusPoint();
+    const auto outward = FVector3::Normalize(direction);
+    const float depth = FVector3::Dot(focus-m_camera.GetPosition(),m_camera.transform->GetWorldForward());
+    SetProjectionMode(OvRendering::Settings::EProjectionMode::ORTHOGRAPHIC);
+    StopMotion();
+    m_focusDistance = std::max(depth,std::max(1.0f,m_camera.GetNear()*2));
+    m_camera.SetPosition(focus+outward*m_focusDistance);
+    m_camera.SetRotation(FQuaternion::LookAt(-outward,std::abs(outward.y) > 0.99f ? FVector3::Forward : FVector3::Up));
+}
+
+void OvEditor::Core::CameraController::Zoom(float scroll)
+{
+    if (!std::isfinite(scroll) || scroll == 0) return;
+    if (m_camera.GetProjectionMode() == OvRendering::Settings::EProjectionMode::ORTHOGRAPHIC)
+        m_camera.SetSize(std::clamp(m_camera.GetSize()*std::exp(-std::clamp(scroll,-50.0f,50.0f)*0.12f),0.01f,10000.0f));
+    else
+        m_camera.SetPosition(m_camera.GetPosition()+m_camera.transform->GetWorldForward()*scroll);
 }
 
 void OvEditor::Core::CameraController::HandleCameraFPSMouse(const OvMaths::FVector2& p_mouseOffset, bool p_firstMouse)

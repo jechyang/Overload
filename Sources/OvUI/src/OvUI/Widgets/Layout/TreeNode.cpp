@@ -31,7 +31,7 @@ void OvUI::Widgets::Layout::TreeNode::Close()
 
 bool OvUI::Widgets::Layout::TreeNode::IsOpened() const
 {
-	return m_opened;
+	return m_shouldOpen || (m_opened && !m_shouldClose);
 }
 
 void OvUI::Widgets::Layout::TreeNode::_Draw_Impl()
@@ -49,7 +49,7 @@ void OvUI::Widgets::Layout::TreeNode::_Draw_Impl()
 		m_shouldClose = false;
 	}
 
-	ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_None;
+	ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth;
 	if (m_arrowClickToOpen) flags |= ImGuiTreeNodeFlags_OpenOnArrow;
 	if (selected)			flags |= ImGuiTreeNodeFlags_Selected;
 	if (leaf)				flags |= ImGuiTreeNodeFlags_Leaf;
@@ -81,7 +81,13 @@ void OvUI::Widgets::Layout::TreeNode::_Draw_Impl()
 	}
 	else
 	{
-		opened = ImGui::TreeNodeEx((name + m_widgetID).c_str(), flags);
+		opened = ImGui::TreeNodeEx((name + "###" + m_widgetID).c_str(), flags);
+	}
+
+	if (m_scrollIntoView)
+	{
+		if (!ImGui::IsItemVisible()) ImGui::SetScrollHereY(0.5f);
+		m_scrollIntoView = false;
 	}
 
 	const bool inLabelArea = (ImGui::GetMousePos().x - ImGui::GetItemRectMin().x) > ImGui::GetTreeNodeToLabelSpacing();

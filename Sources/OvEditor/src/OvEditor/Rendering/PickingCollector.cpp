@@ -7,6 +7,8 @@
 #include <OvCore/ECS/Components/CUI.h>
 #include <OvCore/Rendering/FramebufferUtil.h>
 #include <OvCore/Rendering/SkinningUtils.h>
+#include <OvUI/Styling/Style.h>
+#include <algorithm>
 namespace
 {
 	const std::string kPickingPassName = "PICKING_PASS";
@@ -132,7 +134,8 @@ void OvEditor::Rendering::PickingCollector::DrawPickableLights(
 	{
 		m_collector.Clear(false, true, false);
 
-		m_lightMaterial.SetProperty("u_Scale", Settings::EditorSettings::LightBillboardScale * 0.1f);
+		m_lightMaterial.SetProperty("u_Scale", Settings::EditorSettings::LightBillboardScale * 48.0f * OVUI_SCALE);
+		m_lightMaterial.SetProperty("u_ViewportHeight", static_cast<float>(m_collector.GetView().input.height));
 
 		for (auto light : p_scene.GetFastAccessComponents().lights)
 		{
@@ -162,7 +165,11 @@ void OvEditor::Rendering::PickingCollector::DrawPickableGizmo(
 		OvMaths::FMatrix4::Translation(p_position) *
 		OvMaths::FQuaternion::ToMatrix4(OvMaths::FQuaternion::Normalize(p_rotation));
 
-	auto arrowModel = EDITOR_CONTEXT(editorResources)->GetModel("Arrow_Picking");
+	const auto modelName = p_operation == Core::EGizmoOperation::ROTATE ? "Arrow_Rotate" :
+		p_operation == Core::EGizmoOperation::SCALE ? "Arrow_Scale" : "Arrow_Picking";
+	auto arrowModel = EDITOR_CONTEXT(editorResources)->GetModel(modelName);
+	m_gizmoPickingMaterial.SetProperty("u_ScreenSize", std::clamp(Settings::EditorSettings::GizmoSize.Get(), 40.0f, 180.0f) * OVUI_SCALE);
+	m_gizmoPickingMaterial.SetProperty("u_ViewportHeight", static_cast<float>(m_collector.GetView().input.height));
 
 	m_collector
 		.CollectModel(p_pso, *arrowModel, m_gizmoPickingMaterial, modelMatrix);
@@ -186,7 +193,8 @@ OvRendering::Data::RenderCommandList OvEditor::Rendering::PickingCollector::Extr
     m_collector.Clear(false,true,false);
     auto* selected=request.scene.FindActorByGUID(overlay.selected);
     const bool hasGizmo=selected&&HasEditableTransformGizmo(*selected);
-    if(hasGizmo)DrawPickableGizmo(state,selected->transform.GetWorldPosition(),selected->transform.GetWorldRotation(),overlay.operation);
+    if(hasGizmo)DrawPickableGizmo(state,overlay.gizmoFrame ? overlay.gizmoFrame->position : selected->transform.GetWorldPosition(),
+        overlay.gizmoFrame ? overlay.gizmoFrame->rotation : selected->transform.GetWorldRotation(),overlay.operation);
     auto readback=std::make_shared<PickingReadback>();readback->completion=commands.GetCompletion();
     readback->scene=request.scene.GetLifetimeToken();readback->width=request.width;readback->height=request.height;
     readback->gizmoActorGUID=hasGizmo?selected->GetGUID():0;readback->gizmoOperation=overlay.operation;

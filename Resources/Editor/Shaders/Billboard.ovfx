@@ -20,13 +20,16 @@ out VS_OUT
 } vs_out;
 
 uniform float u_Scale = 1.0f;
+uniform float u_ViewportHeight = 720.0;
 
 void main()
 {
     vs_out.TexCoords = geo_TexCoords;
 
     mat4 model = ubo_Model;
-	float distanceToCamera = distance(ubo_ViewPos, model[3].xyz);
+	vec4 pivotClip = ubo_Projection * ubo_View * model[3];
+	float worldSize = 2.0 * abs(pivotClip.w) * u_Scale /
+        max(abs(ubo_Projection[1][1]) * u_ViewportHeight, 0.0001);
 
     mat4 modelView = ubo_View * model;
 
@@ -45,7 +48,7 @@ void main()
     modelView[2][1] = 0;
     modelView[2][2] = 1;
 
-    gl_Position = ubo_Projection * modelView * vec4(geo_Pos * distanceToCamera * u_Scale, 1.0);
+    gl_Position = ubo_Projection * modelView * vec4(geo_Pos * worldSize, 1.0);
 }
 
 #shader fragment

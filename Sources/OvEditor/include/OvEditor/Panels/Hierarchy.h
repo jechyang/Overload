@@ -14,6 +14,8 @@
 #include <OvUI/Panels/PanelWindow.h>
 #include <OvUI/Widgets/Layout/Group.h>
 #include <OvUI/Widgets/Layout/TreeNode.h>
+#include <OvUI/Widgets/InputFields/InputText.h>
+#include <OvUI/Widgets/Texts/Text.h>
 
 namespace OvEditor::Panels
 {
@@ -49,6 +51,7 @@ namespace OvEditor::Panels
 		* @param p_actor
 		*/
 		void SelectActorByInstance(OvCore::ECS::Actor& p_actor);
+        void SelectActorFromClick(OvCore::ECS::Actor& actor, bool toggle, bool range);
 
 		/**
 		* Select the widget
@@ -57,16 +60,14 @@ namespace OvEditor::Panels
 		void SelectActorByWidget(OvUI::Widgets::Layout::TreeNode& p_widget);
 
 		/**
-		* Attach the given actor linked widget to its parent widget
-		* @param p_actor
+		* Reconcile committed scene entities before drawing, preserving existing nodes.
 		*/
-		void AttachActorToParent(OvCore::ECS::Actor& p_actor);
+		void Synchronize();
 
 		/**
-		* Detach the given actor linked widget from its parent widget
-		* @param p_actor
+		* Filter by entity name or tag (case insensitive for ASCII).
 		*/
-		void DetachFromParent(OvCore::ECS::Actor& p_actor);
+		void SetSearchFilter(const std::string& p_filter);
 
 		/**
 		* Delete the widget referencing the given actor
@@ -85,8 +86,17 @@ namespace OvEditor::Panels
 		OvTools::Eventing::Event<OvCore::ECS::Actor&> ActorUnselectedEvent;
 
 	private:
+        void _Draw_Impl() override;
+        void ApplyFilter();
+        void RemoveActorWidget(OvCore::ECS::Actor* p_actor);
         OvCore::SceneSystem::SceneManager& m_sceneManager;
-        uint64_t m_createdListener = 0, m_destroyedListener = 0, m_attachListener = 0, m_detachListener = 0, m_unloadListener = 0;
+        uint64_t m_destroyedListener = 0, m_unloadListener = 0;
+        OvCore::ECS::Actor* m_selectedActor = nullptr;
+        bool m_revealSelection = false;
+        uint64_t m_selectionAnchor = 0;
+        std::string m_filter;
+        OvUI::Widgets::InputFields::InputText* m_searchBar = nullptr;
+        OvUI::Widgets::Texts::Text* m_status = nullptr;
         std::vector<OvUI::Widgets::Layout::TreeNode*> m_nodesToCollapse;
 		std::unordered_map<OvCore::ECS::Actor*, OvUI::Widgets::Layout::TreeNode*> m_widgetActorLink;
 		OvUI::Internal::WidgetContainer& m_actions;

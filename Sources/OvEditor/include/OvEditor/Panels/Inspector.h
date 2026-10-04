@@ -53,6 +53,8 @@ namespace OvEditor::Panels
 		* @param p_target
 		*/
 		void FocusActor(OvCore::ECS::Actor& p_target);
+        void FocusActors(const std::vector<OvCore::ECS::Actor*>& targets);
+        const std::vector<OvCore::ECS::Actor*>& GetTargetActors() const { return m_targets; }
 
 		/**
 		* Unfocus the currently targeted actor
@@ -70,6 +72,7 @@ namespace OvEditor::Panels
 		void Refresh();
 
 	private:
+		void _Draw_Impl() override;
 		void _Populate();
         void _QueueRefresh();
         void _InvalidateView();
@@ -82,7 +85,12 @@ namespace OvEditor::Panels
 
 	private:
 		OvTools::Utils::OptRef<OvCore::ECS::Actor> m_targetActor = std::nullopt;
+        std::vector<OvCore::ECS::Actor*> m_targets;
+        struct Listeners { OvCore::ECS::Actor* actor; uint64_t added, removed, behaviourAdded, behaviourRemoved; };
+        std::vector<Listeners> m_targetListeners;
+        std::vector<std::unique_ptr<OvUI::Internal::WidgetContainer>> m_batchControls;
 		OvUI::Widgets::Layout::Group* m_content;
+		OvUI::Widgets::Layout::Group* m_emptyState;
 
         Callbacks m_callbacks;
         OvTools::Utils::CallbackScope m_focusCallbacks;

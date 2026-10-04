@@ -265,6 +265,15 @@ void OvEditor::Core::Editor::Update(float p_deltaTime)
 
 void OvEditor::Core::Editor::HandleGlobalShortcuts()
 {
+    // Let text fields own their native editing shortcuts and never delete an
+    // entity while a field or transform gesture is active.
+    if (ImGui::GetIO().WantTextInput || ImGui::IsAnyItemActive() || EDITOR_PANEL(SceneView, "Scene View").IsTransformEditing() || EDITOR_PANEL(SceneView, "Scene View").IsSelecting()) return;
+    auto& input = *m_context.inputManager;
+    using namespace OvWindowing::Inputs;
+    const bool ctrl = input.GetKeyState(EKey::KEY_LEFT_CONTROL) == EKeyState::KEY_DOWN || input.GetKeyState(EKey::KEY_RIGHT_CONTROL) == EKeyState::KEY_DOWN;
+    const bool shift = input.GetKeyState(EKey::KEY_LEFT_SHIFT) == EKeyState::KEY_DOWN || input.GetKeyState(EKey::KEY_RIGHT_SHIFT) == EKeyState::KEY_DOWN;
+    if (ctrl && input.IsKeyPressed(EKey::KEY_Z)) { if (shift) m_editorActions.Redo(); else m_editorActions.Undo(); return; }
+    if (ctrl && input.IsKeyPressed(EKey::KEY_Y)) { m_editorActions.Redo(); return; }
 	auto& sceneView = EDITOR_PANEL(SceneView, "Scene View");
 	auto& hierarchy = EDITOR_PANEL(Hierarchy, "Hierarchy");
 	const bool isSceneViewFocused = sceneView.IsFocused();
@@ -273,7 +282,7 @@ void OvEditor::Core::Editor::HandleGlobalShortcuts()
 	// If the [Del] key is pressed while an actor is selected and the Scene View or Hierarchy is focused
 	if (m_context.inputManager->IsKeyPressed(OvWindowing::Inputs::EKey::KEY_DELETE) && EDITOR_EXEC(IsAnyActorSelected()) && (isSceneViewFocused || isHierarchyFocused))
 	{
-		EDITOR_EXEC(DestroyActor(EDITOR_EXEC(GetSelectedActor())));
+		EDITOR_EXEC(DestroySelectedActors());
 	}
 
 	const bool isControlPressed =
@@ -282,6 +291,9 @@ void OvEditor::Core::Editor::HandleGlobalShortcuts()
 
 	if (isControlPressed && (isSceneViewFocused || isHierarchyFocused))
 	{
+        if (input.IsKeyPressed(EKey::KEY_D)) EDITOR_EXEC(DuplicateSelectedActors());
+        if (input.IsKeyPressed(EKey::KEY_A))
+            if (auto* scene = m_context.sceneManager.GetCurrentScene()) EDITOR_EXEC(SetSelection(scene->GetActors()));
 		if (m_context.inputManager->IsKeyPressed(OvWindowing::Inputs::EKey::KEY_C) && EDITOR_EXEC(IsAnyActorSelected()))
 		{
 			EDITOR_EXEC(CopyActor(EDITOR_EXEC(GetSelectedActor())));
