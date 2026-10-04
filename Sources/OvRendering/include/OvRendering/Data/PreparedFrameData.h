@@ -60,6 +60,7 @@ namespace OvRendering::Data
         std::optional<PipelineState> uiPipelineState;
         uint32_t instances = 1;
         bool transparent = false;
+        bool wireframe = false;
         std::shared_ptr<const Resources::IMesh> geometry;
         Material::PreparedSnapshot material;
         SkinningBindings skinning;

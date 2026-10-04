@@ -47,6 +47,13 @@ void OvEditor::Settings::EditorSettings::Save()
     iniFile.Add("game_preview_width", GamePreviewWidth.Get());
     iniFile.Add("game_preview_height", GamePreviewHeight.Get());
     iniFile.Add("camera_preview_enabled", CameraPreviewEnabled.Get());
+    iniFile.Add("scene_display_mode", SceneDisplayMode.Get());
+    iniFile.Add("scene_show_grid", SceneShowGrid.Get());
+    iniFile.Add("scene_show_light_icons", SceneShowLightIcons.Get());
+    iniFile.Add("scene_show_camera_icons", SceneShowCameraIcons.Get());
+    iniFile.Add("scene_show_reflection_icons", SceneShowReflectionIcons.Get());
+    iniFile.Add("scene_show_colliders", SceneShowColliders.Get());
+    iniFile.Add("scene_show_camera_frustums", SceneShowCameraFrustums.Get());
 	iniFile.Add("rotation_snap_unit", RotationSnapUnit.Get());
 	iniFile.Add("scaling_snap_unit", ScalingSnapUnit.Get());
 	iniFile.Add("color_theme", ColorTheme.Get());
@@ -75,6 +82,13 @@ void OvEditor::Settings::EditorSettings::Load()
     LoadIniEntry<int>(iniFile, "game_preview_width", GamePreviewWidth);
     LoadIniEntry<int>(iniFile, "game_preview_height", GamePreviewHeight);
     LoadIniEntry<bool>(iniFile, "camera_preview_enabled", CameraPreviewEnabled);
+    LoadIniEntry<int>(iniFile, "scene_display_mode", SceneDisplayMode);
+    LoadIniEntry<bool>(iniFile, "scene_show_grid", SceneShowGrid);
+    LoadIniEntry<bool>(iniFile, "scene_show_light_icons", SceneShowLightIcons);
+    LoadIniEntry<bool>(iniFile, "scene_show_camera_icons", SceneShowCameraIcons);
+    LoadIniEntry<bool>(iniFile, "scene_show_reflection_icons", SceneShowReflectionIcons);
+    LoadIniEntry<bool>(iniFile, "scene_show_colliders", SceneShowColliders);
+    LoadIniEntry<bool>(iniFile, "scene_show_camera_frustums", SceneShowCameraFrustums);
 	LoadIniEntry<float>(iniFile, "rotation_snap_unit", RotationSnapUnit);
 	LoadIniEntry<float>(iniFile, "scaling_snap_unit", ScalingSnapUnit);
 	LoadIniEntry<int>(iniFile, "color_theme", ColorTheme);

@@ -293,9 +293,9 @@ public:
     GizmoCollector& m_gizmo;
     std::pair<uint16_t,uint16_t> m_gameViewSize{16,9};
 
-	void Draw(OvRendering::Data::PipelineState p_pso, const CollectedSelection& debugSceneDescriptor, std::pair<uint16_t,uint16_t> gameViewSize)
+	void Draw(OvRendering::Data::PipelineState p_pso, const CollectedSelection& debugSceneDescriptor, const OvEditor::Rendering::EditorOverlayRequest& request)
 	{
-		m_gameViewSize = gameViewSize;
+		m_gameViewSize = request.gameViewSize;
         ZoneScoped;
 		OV_GPU_ZONE(m_collector, "DebugActorCollector");
 
@@ -329,13 +329,13 @@ public:
                     const float radius = OvEditor::Core::GizmoMath::WorldSize(position,view.view,view.projection,float(view.input.height),8.f * OVUI_SCALE);
                     m_debugShapeFeature.DrawSphere(m_collector.CreatePipelineState(),position,OvMaths::FQuaternion::Identity,radius,{color.x,color.y,color.z},2.f,false);
                 }
+                DrawActorDebugElements(*actor,request);
                 for (auto* child : actor->GetChildren()) pending.push_back(child);
             }
         }
         if (debugSceneDescriptor.selectedActor)
         {
             auto& selectedActor = debugSceneDescriptor.selectedActor.value();
-            DrawActorDebugElements(selectedActor);
             if (auto* canvas = FindRootCanvas(selectedActor)) DrawCanvasRect(*canvas);
             m_collector.Clear(false,true,false);
             if (HasEditableTransformGizmo(selectedActor))
@@ -356,12 +356,12 @@ public:
 		}
 	}
 
-	void DrawActorDebugElements(OvCore::ECS::Actor& p_actor)
+	void DrawActorDebugElements(OvCore::ECS::Actor& p_actor, const OvEditor::Rendering::EditorOverlayRequest& request)
 	{
 		if (p_actor.IsActive())
 		{
 			/* Render static mesh outline and bounding spheres */
-			if (OvEditor::Settings::EditorSettings::ShowGeometryBounds)
+			if (request.geometryBounds)
 			{
 				auto modelRenderer = p_actor.GetComponent<OvCore::ECS::Components::CModelRenderer>();
 
@@ -372,13 +372,13 @@ public:
 			}
 
 			/* Render camera component frustum */
-			if (auto cameraComponent = p_actor.GetComponent<OvCore::ECS::Components::CCamera>(); cameraComponent)
+			if (auto cameraComponent = p_actor.GetComponent<OvCore::ECS::Components::CCamera>(); cameraComponent && request.cameraFrustums)
 			{
 				DrawCameraFrustum(*cameraComponent);
 			}
 
 			/* Render camera component frustum */
-			if (auto reflectionProbeComponent = p_actor.GetComponent<OvCore::ECS::Components::CReflectionProbe>(); reflectionProbeComponent)
+			if (auto reflectionProbeComponent = p_actor.GetComponent<OvCore::ECS::Components::CReflectionProbe>(); reflectionProbeComponent && request.reflectionIcons)
 			{
 				if (reflectionProbeComponent->GetInfluencePolicy() == OvCore::ECS::Components::CReflectionProbe::EInfluencePolicy::LOCAL)
 				{
@@ -387,23 +387,23 @@ public:
 			}
 
 			/* Render the actor collider */
-			if (p_actor.GetComponent<OvCore::ECS::Components::CPhysicalObject>())
+			if (request.colliders && p_actor.GetComponent<OvCore::ECS::Components::CPhysicalObject>())
 			{
 				DrawActorCollider(p_actor);
 			}
 
 			/* Render the actor ambient light */
-			if (auto ambientBoxComp = p_actor.GetComponent<OvCore::ECS::Components::CAmbientBoxLight>())
+			if (auto ambientBoxComp = p_actor.GetComponent<OvCore::ECS::Components::CAmbientBoxLight>(); ambientBoxComp && request.lightBounds)
 			{
 				DrawAmbientBoxVolume(*ambientBoxComp);
 			}
 
-			if (auto ambientSphereComp = p_actor.GetComponent<OvCore::ECS::Components::CAmbientSphereLight>())
+			if (auto ambientSphereComp = p_actor.GetComponent<OvCore::ECS::Components::CAmbientSphereLight>(); ambientSphereComp && request.lightBounds)
 			{
 				DrawAmbientSphereVolume(*ambientSphereComp);
 			}
 
-			if (OvEditor::Settings::EditorSettings::ShowLightBounds)
+			if (request.lightBounds)
 			{
 				if (auto light = p_actor.GetComponent<OvCore::ECS::Components::CLight>())
 				{
@@ -411,10 +411,6 @@ public:
 				}
 			}
 
-			for (auto& child : p_actor.GetChildren())
-			{
-				DrawActorDebugElements(*child);
-			}
 		}
 	}
 
@@ -820,13 +816,15 @@ OvRendering::Data::RenderCommandList OvEditor::Rendering::EditorOverlayCollector
     if(request.grid)impl.Grid(request,view);
     if(request.debugObjects)
     {
-        impl.cameras.Draw(state,scene);impl.probes.Draw(state,scene);impl.lights.Draw(state,scene);
+        if (request.cameraIcons) impl.cameras.Draw(state,scene);
+        if (request.reflectionIcons) impl.probes.Draw(state,scene);
+        if (request.lightIcons) impl.lights.Draw(state,scene);
         CollectedSelection selection{request.operation,std::nullopt,std::nullopt,request.highlightedDirection};
         if(auto* actor=scene.FindActorByGUID(request.highlighted))selection.highlightedActor=*actor;
         if(auto* actor=scene.FindActorByGUID(request.selected))selection.selectedActor=*actor;
         for (auto guid : request.selection) if (auto* actor = scene.FindActorByGUID(guid)) selection.actors.push_back(actor);
         selection.frame = request.gizmoFrame;
-        impl.actor.Draw(state,selection,request.gameViewSize);
+        impl.actor.Draw(state,selection,request);
     }
     return impl.tools.Finish();
 }

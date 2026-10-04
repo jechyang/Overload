@@ -78,8 +78,10 @@ std::unique_ptr<Data::PreparedFrameData> Core::ViewPreparer::BuildDrawLists(
             const auto& mesh = meshes[index];
             if (mesh.uiPipelineState && mesh.stage != Data::RenderStage::OverlayUI && mesh.stage != Data::RenderStage::SceneUI)
                 throw std::invalid_argument("UI pipeline override requires a UI stage");
-            const auto state = mesh.uiPipelineState ? *mesh.uiPipelineState :
+            auto state = mesh.uiPipelineState ? *mesh.uiPipelineState :
                 MeshFeatureProcessor::BuildState(baseState, mesh.state, mesh.stage);
+            if (mesh.wireframe && (mesh.stage == Data::RenderStage::Opaque || mesh.stage == Data::RenderStage::Transparent))
+                state.rasterizationMode = baregl::types::ERasterizationMode::LINE;
             result->m_draws.push_back({index, state, OvMaths::FMatrix4::Transpose(mesh.model), mesh.user, {}});
         }
     }

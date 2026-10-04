@@ -1,4 +1,6 @@
 #pass SHADOW_PASS
+#pass UNLIT_PASS
+#pass WIREFRAME_PASS
 
 #feature ALPHA_CLIPPING
 #engine_feature SKINNING
@@ -74,6 +76,10 @@ void main()
         discard;
     }
 #endif
+#if defined(WIREFRAME_PASS)
+    FRAGMENT_COLOR = vec4(0.72, 0.80, 0.92, diffuseColor.a);
+#else
     FRAGMENT_COLOR = diffuseColor;
+#endif
 #endif
 }

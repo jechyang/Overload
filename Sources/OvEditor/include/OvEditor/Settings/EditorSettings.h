@@ -100,6 +100,13 @@ namespace OvEditor::Settings
         inline static Property<int> GamePreviewWidth = { 1280 };
         inline static Property<int> GamePreviewHeight = { 720 };
         inline static Property<bool> CameraPreviewEnabled = { true };
+        inline static Property<int> SceneDisplayMode = { 0 };
+        inline static Property<bool> SceneShowGrid = { true };
+        inline static Property<bool> SceneShowLightIcons = { true };
+        inline static Property<bool> SceneShowCameraIcons = { true };
+        inline static Property<bool> SceneShowReflectionIcons = { true };
+        inline static Property<bool> SceneShowColliders = { true };
+        inline static Property<bool> SceneShowCameraFrustums = { true };
 		inline static Property<float> RotationSnapUnit = { 15.0f };
 		inline static Property<float> ScalingSnapUnit = { 0.1f };
 		inline static Property<int> ColorTheme = { static_cast<int>(OvUI::Styling::EStyle::DEFAULT_DARK) };

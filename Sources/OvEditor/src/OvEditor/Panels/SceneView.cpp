@@ -69,6 +69,9 @@ OvEditor::Panels::SceneView::SceneView
 	m_fallbackMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Unlit.ovfx"]);
 	m_fallbackMaterial.SetProperty("u_Diffuse", OvMaths::FVector4{ 1.f, 0.f, 1.f, 1.0f });
 	m_fallbackMaterial.SetProperty("u_DiffuseMap", static_cast<OvRendering::Resources::Texture*>(nullptr));
+    m_displayFallbackMaterial.SetShader(EDITOR_CONTEXT(shaderManager)[":Shaders\\Unlit.ovfx"]);
+    m_displayFallbackMaterial.SetFeatures({"ALPHA_CLIPPING"});
+    m_displayFallbackMaterial.SetProperty("u_AlphaClippingThreshold",0.f);
 
 	m_image->AddPlugin<OvUI::Plugins::DDTarget<std::pair<std::string, OvUI::Widgets::Layout::Group*>>>("File").DataReceivedEvent += [this](auto p_data)
 	{
@@ -151,6 +154,15 @@ void OvEditor::Panels::SceneView::InitFrame() { AViewControllable::InitFrame(); 
 OvEditor::Rendering::EditorOverlayRequest OvEditor::Panels::SceneView::CreateOverlayRequest()
 {
     auto request=AViewControllable::CreateOverlayRequest();request.debugObjects=true;
+    using Settings::EditorSettings;
+    request.grid = EditorSettings::SceneShowGrid.Get();
+    request.lightIcons = EditorSettings::SceneShowLightIcons.Get();
+    request.cameraIcons = EditorSettings::SceneShowCameraIcons.Get();
+    request.reflectionIcons = EditorSettings::SceneShowReflectionIcons.Get();
+    request.colliders = EditorSettings::SceneShowColliders.Get();
+    request.cameraFrustums = EditorSettings::SceneShowCameraFrustums.Get();
+    request.geometryBounds = EditorSettings::ShowGeometryBounds.Get();
+    request.lightBounds = EditorSettings::ShowLightBounds.Get();
     request.picking=(m_boxPending || (IsHovered()&&!IsNavigationHovered()))&&!m_gizmoOperations.IsPicking()&&!m_cameraController.IsOperating();
     request.operation=m_currentOperation;request.highlightedDirection=m_highlightedGizmoDirection;
     if(EDITOR_EXEC(IsAnyActorSelected()))request.selected=EDITOR_EXEC(GetSelectedActor()).GetGUID();
@@ -183,6 +195,14 @@ OvCore::Rendering::SceneRenderRequest OvEditor::Panels::SceneView::CreateSceneRe
 {
 	auto descriptor = AViewControllable::CreateSceneRequest();
 	descriptor.fallbackMaterial = &m_fallbackMaterial;
+    const auto mode = GetDisplayMode();
+    if (mode != DisplayMode::LIT)
+    {
+        descriptor.meshTechnique = mode == DisplayMode::UNLIT ? "UNLIT_PASS" : "WIREFRAME_PASS";
+        descriptor.meshTechniqueFallback = &m_displayFallbackMaterial;
+        descriptor.wireframe = mode == DisplayMode::WIREFRAME;
+        descriptor.applyPostProcess = false;
+    }
 
 	if (Settings::EditorSettings::DebugFrustumCulling)
 	{
@@ -198,6 +218,18 @@ OvCore::Rendering::SceneRenderRequest OvEditor::Panels::SceneView::CreateSceneRe
 	}
 
 	return descriptor;
+}
+
+OvEditor::Panels::SceneView::DisplayMode OvEditor::Panels::SceneView::GetDisplayMode() const
+{
+    return DisplayMode(std::clamp(Settings::EditorSettings::SceneDisplayMode.Get(),0,2));
+}
+
+void OvEditor::Panels::SceneView::SetDisplayMode(DisplayMode mode)
+{
+    if (m_gizmoOperations.IsPicking() || m_boxPending || m_cameraController.IsOperating() || mode == GetDisplayMode()) return;
+    Settings::EditorSettings::SceneDisplayMode = std::clamp(int(mode),0,2);
+    InvalidateNavigationPicking();
 }
 
 void OvEditor::Panels::SceneView::OnViewRecorded() { m_recordedInteraction = CaptureInteraction(); }
@@ -590,9 +622,9 @@ void OvEditor::Panels::SceneView::DrawViewportTools()
     }
     m_toolsPopupOpen = false;
     m_toolsWidth = m_toolsHeight = 0;
-    if (GetSize().x < 330*scale || GetSafeSize().second < 100*scale) return;
+    if (GetSize().x < 330*scale || GetSafeSize().second < 125*scale) return;
     m_toolsWidth = std::min(356*scale,GetSize().x-16*scale);
-    m_toolsHeight = 2*ImGui::GetFrameHeight()+20*scale;
+    m_toolsHeight = 3*ImGui::GetFrameHeight()+26*scale;
     const ImVec2 origin{content.x+8*scale,content.y+8*scale};
     draw->AddRectFilled(origin,{origin.x+m_toolsWidth,origin.y+m_toolsHeight},IM_COL32(24,25,29,230),6*scale);
     ImGui::PushID(this); ImGui::PushID("ViewportTools");
@@ -650,6 +682,51 @@ void OvEditor::Panels::SceneView::DrawViewportTools()
         ImGui::EndPopup();
     }
     m_toolsPopupOpen = ImGui::IsPopupOpen("ViewportHelp");
+    ImGui::SetCursorScreenPos({origin.x+6*scale,origin.y+2*ImGui::GetFrameHeight()+18*scale});
+    const char* modes[] = {"Lit", "Unlit", "Wireframe"};
+    ImGui::SetNextItemWidth(118*scale);
+    if (ImGui::BeginCombo("##DisplayMode",modes[int(GetDisplayMode())]))
+    {
+        m_toolsPopupOpen = true;
+        for (int i=0;i<3;++i)
+            if (ImGui::Selectable(modes[i],int(GetDisplayMode()) == i)) SetDisplayMode(DisplayMode(i));
+        ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Scene display mode. Unlit shows base color; Wireframe shows mesh triangles.");
+    ImGui::SameLine(0,6*scale);
+    if (ImGui::Button("Overlays",{85*scale,0})) ImGui::OpenPopup("SceneOverlays");
+    if (ImGui::BeginPopup("SceneOverlays"))
+    {
+        auto toggle = [&](const char* label, auto& setting) {
+            bool enabled = setting.Get();
+            if (ImGui::MenuItem(label,nullptr,&enabled)) { setting = enabled; InvalidateNavigationPicking(); }
+        };
+        toggle("Grid",EditorSettings::SceneShowGrid);
+        toggle("Light icons",EditorSettings::SceneShowLightIcons);
+        toggle("Camera icons",EditorSettings::SceneShowCameraIcons);
+        toggle("Reflection probe icons",EditorSettings::SceneShowReflectionIcons);
+        ImGui::Separator();
+        toggle("Colliders (selection)",EditorSettings::SceneShowColliders);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Colliders on selected entities and their children");
+        toggle("Camera frustums (selection)",EditorSettings::SceneShowCameraFrustums);
+        toggle("Geometry bounds (selection)",EditorSettings::ShowGeometryBounds);
+        toggle("Light volumes (selection)",EditorSettings::ShowLightBounds);
+        ImGui::Separator();
+        toggle("Selected camera preview",EditorSettings::CameraPreviewEnabled);
+        ImGui::Separator();
+        if (ImGui::MenuItem("Reset scene display"))
+        {
+            SetDisplayMode(DisplayMode::LIT);
+            EditorSettings::SceneShowGrid = EditorSettings::SceneShowLightIcons = true;
+            EditorSettings::SceneShowCameraIcons = EditorSettings::SceneShowReflectionIcons = true;
+            EditorSettings::SceneShowColliders = EditorSettings::SceneShowCameraFrustums = true;
+            EditorSettings::ShowGeometryBounds = EditorSettings::ShowLightBounds = false;
+            EditorSettings::CameraPreviewEnabled = true;
+            InvalidateNavigationPicking();
+        }
+        ImGui::EndPopup();
+    }
+    m_toolsPopupOpen |= ImGui::IsPopupOpen("SceneOverlays");
     ImGui::EndDisabled(); ImGui::PopID(); ImGui::PopID();
     const auto count = EDITOR_EXEC(GetSelectedActors()).size();
     if (count && GetSafeSize().second > 160*scale)

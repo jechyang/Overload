@@ -189,7 +189,9 @@ OvRendering::Data::RenderCommandList OvEditor::Rendering::PickingCollector::Extr
     OvRendering::Data::RenderCommandList commands;
     commands.Append(m_frontend.Record(frame,m_actorPickingFramebuffer.RecordTarget(),jobs));
     m_collector.Begin(frame->GetView(),state,m_actorPickingFramebuffer.RecordTarget());
-    DrawPickableCameras(state,request.scene);DrawPickableReflectionProbes(state,request.scene);DrawPickableLights(state,request.scene);
+    if (overlay.cameraIcons) DrawPickableCameras(state,request.scene);
+    if (overlay.reflectionIcons) DrawPickableReflectionProbes(state,request.scene);
+    if (overlay.lightIcons) DrawPickableLights(state,request.scene);
     m_collector.Clear(false,true,false);
     auto* selected=request.scene.FindActorByGUID(overlay.selected);
     const bool hasGizmo=selected&&HasEditableTransformGizmo(*selected);

@@ -199,8 +199,14 @@ void OvEditor::Panels::MenuBar::InitializeSettingsMenu()
 	snappingMenu.CreateWidget<Drags::DragFloat>(0.001f, 999999.0f, Settings::EditorSettings::ScalingSnapUnit, 0.05f, "Scaling Unit").ValueChangedEvent += [this](float p_value) { Settings::EditorSettings::ScalingSnapUnit = p_value; };
 
 	auto& debuggingMenu = m_settingsMenu->CreateWidget<MenuList>("Debugging");
-	debuggingMenu.CreateWidget<MenuItem>("Show geometry bounds", "", true, Settings::EditorSettings::ShowGeometryBounds).ValueChangedEvent += [this](bool p_value) { Settings::EditorSettings::ShowGeometryBounds = p_value; };
-	debuggingMenu.CreateWidget<MenuItem>("Show lights bounds", "", true, Settings::EditorSettings::ShowLightBounds).ValueChangedEvent += [this](bool p_value) { Settings::EditorSettings::ShowLightBounds = p_value; };
+    auto& geometryBounds = debuggingMenu.CreateWidget<MenuItem>("Show geometry bounds", "", true, Settings::EditorSettings::ShowGeometryBounds);
+    geometryBounds.ValueChangedEvent += [](bool value) { Settings::EditorSettings::ShowGeometryBounds = value; };
+    auto& lightBounds = debuggingMenu.CreateWidget<MenuItem>("Show lights bounds", "", true, Settings::EditorSettings::ShowLightBounds);
+    lightBounds.ValueChangedEvent += [](bool value) { Settings::EditorSettings::ShowLightBounds = value; };
+    debuggingMenu.ClickedEvent += [geometry = &geometryBounds, lights = &lightBounds] {
+        geometry->checked = Settings::EditorSettings::ShowGeometryBounds.Get();
+        lights->checked = Settings::EditorSettings::ShowLightBounds.Get();
+    };
 	debuggingMenu.CreateWidget<MenuItem>("Debug Frustum Culling", "", true, Settings::EditorSettings::DebugFrustumCulling).ValueChangedEvent += [this](bool p_value) { Settings::EditorSettings::DebugFrustumCulling = p_value; };
 	debuggingMenu.CreateWidget<MenuItem>("Editor Frustum Geometry Culling", "", true, Settings::EditorSettings::EditorFrustumGeometryCulling).ValueChangedEvent += [this](bool p_value) { Settings::EditorSettings::EditorFrustumGeometryCulling = p_value; };
 	debuggingMenu.CreateWidget<MenuItem>("Editor Frustum Light Culling", "", true, Settings::EditorSettings::EditorFrustumLightCulling).ValueChangedEvent += [this](bool p_value) { Settings::EditorSettings::EditorFrustumLightCulling = p_value; };

@@ -5,6 +5,7 @@
 #include <OvRendering/Data/PreparedFrameData.h>
 #include <OvRendering/Entities/Camera.h>
 #include <map>
+#include <string>
 #include <utility>
 
 namespace OvCore::Rendering
@@ -31,6 +32,11 @@ namespace OvCore::Rendering
         OvRendering::Data::ReflectionReceiverBindings reflection;
         OvRendering::Data::Material* shadowFallback = nullptr;
         OvRendering::Data::Material* pickingFallback = nullptr;
+        // Optional display technique for ordinary 3D geometry. Auxiliary passes,
+        // UI, and picking retain their authored techniques and filled surfaces.
+        std::string meshTechnique;
+        OvRendering::Data::Material* meshTechniqueFallback = nullptr;
+        bool wireframe = false, applyPostProcess = true;
     };
 
     class SceneFrameExtractor;

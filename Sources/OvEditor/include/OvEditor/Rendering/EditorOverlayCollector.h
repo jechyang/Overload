@@ -7,6 +7,9 @@ namespace OvEditor::Rendering
     struct EditorOverlayRequest
     {
         bool grid = false, debugObjects = false, picking = false;
+        bool lightIcons = true, cameraIcons = true, reflectionIcons = true;
+        bool colliders = true, cameraFrustums = true;
+        bool geometryBounds = false, lightBounds = false;
         uint64_t selected = 0, highlighted = 0;
         std::vector<uint64_t> selection;
         std::optional<Core::GizmoBehaviour::Frame> gizmoFrame;

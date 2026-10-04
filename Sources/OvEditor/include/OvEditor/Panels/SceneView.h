@@ -81,6 +81,9 @@ namespace OvEditor::Panels
 		Core::EGizmoOperation GetGizmoOperation() const;
 
         void ToggleProjection();
+        enum class DisplayMode { LIT, UNLIT, WIREFRAME };
+        void SetDisplayMode(DisplayMode mode);
+        DisplayMode GetDisplayMode() const;
         void SetViewDirection(const OvMaths::FVector3& direction);
         bool IsNavigationHovered() const;
         bool IsTransformEditing() const { return m_gizmoOperations.IsPicking(); }
@@ -135,6 +138,7 @@ namespace OvEditor::Panels
 		OvEditor::Core::GizmoBehaviour m_gizmoOperations;
 		OvEditor::Core::EGizmoOperation m_currentOperation = OvEditor::Core::EGizmoOperation::TRANSLATE;
 		OvCore::Resources::Material m_fallbackMaterial;
+        OvCore::Resources::Material m_displayFallbackMaterial;
 
 		OvTools::Utils::OptRef<OvCore::ECS::Actor> m_highlightedActor;
 		std::optional<OvEditor::Core::GizmoBehaviour::EDirection> m_highlightedGizmoDirection;

@@ -150,7 +150,7 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
         mainReads.push_back({addResource(main.reflection.map,static_cast<uint16_t>(desc.width),static_cast<uint16_t>(desc.height),63,63,Data::ResourceOrigin::Imported),63});
     }
     std::optional<PostProcess::PostProcessSnapshot> settings;
-    for (const auto* stack : main.scene.GetFastAccessComponents().postProcessStacks)
+    if (main.applyPostProcess) for (const auto* stack : main.scene.GetFastAccessComponents().postProcessStacks)
         if (stack && stack->owner.IsActive()) { settings = PostProcess::PostProcessSnapshot::Capture(stack->GetStack()); break; }
     if (settings)
     {

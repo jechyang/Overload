@@ -51,6 +51,7 @@ template<class T> static std::vector<T*> Widgets(OvUI::Internal::WidgetContainer
 #include "history_validation.h"
 #include "viewport_validation.h"
 #include "game_preview_validation.h"
+#include "display_validation.h"
 
 int wmain(int argc, wchar_t** argv)
 {
@@ -201,6 +202,7 @@ int wmain(int argc, wchar_t** argv)
         ValidateEditorInput(context, editor, actions, inspector, draw);
         ValidateViewport(context, actions);
         ValidateGamePreview(context, editor, actions);
+        ValidateSceneDisplay(context, editor, actions);
         ui.SetCanvas(canvas);
         auto& demo = actions.CreateEmptyActor(true, nullptr, "Player");
         demo.SetTag("Gameplay"); demo.AddComponent<OvCore::ECS::Components::CPointLight>();

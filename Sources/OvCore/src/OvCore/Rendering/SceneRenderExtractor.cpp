@@ -78,6 +78,7 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     std::vector<uintptr_t> identities;
     std::vector<Data::Material*> materialsToResolve;
     std::vector<std::optional<Data::FeatureSet>> featuresToResolve;
+    std::vector<std::string> techniquesToResolve;
     bool resolveSingleUse = false;
     std::vector<Data::Material::PropertyOverrides> overridesToResolve;
     std::vector<std::shared_ptr<baregl::Texture>> receiverTextures;
@@ -203,18 +204,33 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
         }
         if (typeid(*mesh) != typeid(OvRendering::Resources::Mesh))
             throw std::invalid_argument("Scene requires standard retained geometry");
+        const bool previewGeometry = stage == Data::RenderStage::Opaque || stage == Data::RenderStage::Transparent;
+        std::string technique(description.technique);
+        bool previewFallback = false;
+        if (previewGeometry && !p_request.meshTechnique.empty())
+        {
+            if (!material->HasPass(p_request.meshTechnique) && p_request.meshTechniqueFallback)
+            {
+                material = p_request.meshTechniqueFallback;
+                previewFallback = true;
+            }
+            if (material->HasPass(p_request.meshTechnique)) technique = p_request.meshTechnique;
+        }
         for (const auto& [name, property] : material->GetProperties())
             if (property.singleUse) resolveSingleUse = true;
         std::optional<Data::FeatureSet> features;
         const bool hasPalette = base.hasSkin && (shadow || base.meshHasSkinningData);
-        if (hasPalette && (!picking || pickingSkinned) && (!shadow || originalSkinning) && material->SupportsFeature("SKINNING"))
+        if (hasPalette && (!picking || pickingSkinned) && (!shadow || originalSkinning) &&
+            (!previewFallback || originalSkinning) && material->SupportsFeature("SKINNING"))
             features = Rendering::SkinningUtils::BuildFeatureSet(&material->GetFeatures());
         const auto featureRef = features ? OvTools::Utils::OptRef<const Data::FeatureSet>(*features) : std::nullopt;
-        const auto program=material->GetShader()->RetainVariant(description.technique,features?*features:material->GetFeatures());
+        const auto program=material->GetShader()->RetainVariant(technique,features?*features:material->GetFeatures());
         const bool programSkinning=programCache.Validate(program);
         Data::MeshInput item;
         item.stage = stage; item.sourceStage = category;
         item.transparent = material->IsBlendable();
+        if (previewFallback) item.transparent = sortingMaterial->IsBlendable();
+        item.wireframe = previewGeometry && p_request.wireframe;
         item.skinning.enabled = programSkinning || (features && features->contains("SKINNING")) || material->HasFeature("SKINNING");
         if (item.skinning.enabled && hasPalette)
         {
@@ -256,7 +272,8 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
             if (const auto* probe = bestLocal ? bestLocal : bestGlobal) reflection = probe->receiver;
             item.reflection = reflection.constants;
         }
-        item.state = material->GenerateStateMask(); item.instances = static_cast<uint32_t>(material->GetGPUInstances());
+        item.state = (previewFallback ? sortingMaterial : material)->GenerateStateMask();
+        item.instances = static_cast<uint32_t>((previewFallback ? sortingMaterial : material)->GetGPUInstances());
         if (picking) item.state.frontfaceCulling = item.state.backfaceCulling = false;
         if (shadow)
         {
@@ -268,6 +285,25 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
         if (item.worldBounds && hasPalette) item.worldBounds->radius *= base.meshBoundsScale;
         item.geometry = base.geometry;
         Data::Material::PropertyOverrides overrides;
+        if (previewFallback)
+        {
+            // Capture common base-color semantics without editing the source
+            // asset. Other custom shader effects require an authored preview pass.
+            const auto copy = [&](const char* target, std::initializer_list<const char*> names) {
+                const auto expected = material->GetProperty(target);
+                for (auto name : names) if (auto property = sortingMaterial->GetProperty(name))
+                {
+                    const auto& value = property->value;
+                    if (expected && (value.index() == expected->value.index() ||
+                        ((std::holds_alternative<baregl::Texture*>(value) || std::holds_alternative<OvRendering::Resources::Texture*>(value)) &&
+                         (std::holds_alternative<baregl::Texture*>(expected->value) || std::holds_alternative<OvRendering::Resources::Texture*>(expected->value)))))
+                    { overrides[target] = value; return; }
+                }
+            };
+            copy("u_Diffuse",{"u_Albedo","u_Diffuse"}); copy("u_DiffuseMap",{"u_AlbedoMap","u_DiffuseMap"});
+            copy("u_TextureTiling",{"u_TextureTiling"}); copy("u_TextureOffset",{"u_TextureOffset"});
+            copy("u_AlphaClippingThreshold",{"u_AlphaClippingThreshold"});
+        }
         if (picking && material->HasProperty("_PickingColor"))
         {
             const auto id = static_cast<uint32_t>(base.actorNumericId);
@@ -281,7 +317,8 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
         }
         if (description.reflectionReceiver && material->IsReflectionReceiver() && material->HasProperty("_EnvironmentMap"))
             overrides.emplace("_EnvironmentMap", reflection.map.get());
-        item.material = material->PrepareSnapshot(description.technique, featureRef, p_white, p_black, receiverTextures, {}, true, true, false, overrides);
+        item.material = material->PrepareSnapshot(technique, featureRef, p_white, p_black, receiverTextures, {}, true, true, false, overrides);
+        techniquesToResolve.push_back(std::move(technique));
         overridesToResolve.push_back(std::move(overrides));
         materialsToResolve.push_back(material);
         featuresToResolve.push_back(std::move(features));
@@ -322,11 +359,11 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
                 auto* material = materialsToResolve[draw.sourceIndex];
                 const auto& features = featuresToResolve[draw.sourceIndex];
                 const auto featureRef = features ? OvTools::Utils::OptRef<const Data::FeatureSet>(*features) : std::nullopt;
-                const auto description = Data::DescribeStage(stage);
-                const auto binding = material->PrepareBinding(description.technique, featureRef, p_white.get(), p_black.get(), previousSignature);
+                const auto& technique = techniquesToResolve[draw.sourceIndex];
+                const auto binding = material->PrepareBinding(technique, featureRef, p_white.get(), p_black.get(), previousSignature);
                 const bool stable = !previousSignature || binding.signature.stablePropertySignature != previousSignature->stablePropertySignature;
                 const bool once = !overridesToResolve[draw.sourceIndex].empty() || !previousSignature || binding.signature.singleUsePropertySignature != previousSignature->singleUsePropertySignature;
-                mesh.material = material->PrepareSnapshot(description.technique, featureRef, p_white, p_black, receiverTextures, previous, stable, once, true, overridesToResolve[draw.sourceIndex]);
+                mesh.material = material->PrepareSnapshot(technique, featureRef, p_white, p_black, receiverTextures, previous, stable, once, true, overridesToResolve[draw.sourceIndex]);
                 previous = mesh.material;
                 previousSignature = binding.signature;
             }

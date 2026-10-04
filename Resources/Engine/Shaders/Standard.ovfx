@@ -1,5 +1,7 @@
 #pass SHADOW_PASS
 #pass REFLECTION_PASS
+#pass UNLIT_PASS
+#pass WIREFRAME_PASS
 
 #feature PARALLAX_MAPPING
 #feature NORMAL_MAPPING
@@ -188,6 +190,12 @@ void main()
         discard;
     }
 
+#if defined(UNLIT_PASS) || defined(WIREFRAME_PASS)
+    vec3 pbr = albedo.rgb;
+#if defined(WIREFRAME_PASS)
+    pbr = vec3(0.72, 0.80, 0.92);
+#endif
+#else
 #if defined(NORMAL_MAPPING)
     const vec3 normal = ComputeNormal(texCoords, fs_in.Normal, u_NormalMap, fs_in.TBN);
 #else
@@ -220,22 +228,27 @@ void main()
         u_Transmission,
         u_RefractionIndex
     );
+#endif
 
     // Simple built-in tonemapping (Reinhard) and gamma correction for elements
     // not affected by post-processing (e.g. debug, UI, etc.), but still aiming
     // to approximate the final PBR look.
+#if !defined(UNLIT_PASS) && !defined(WIREFRAME_PASS)
     if (u_BuiltInToneMapping)
     {
         pbr = pbr / (pbr + vec3(1.0));
     }
+#endif
 
     if (u_BuiltInGammaCorrection)
     {
         pbr = pow(pbr, vec3(1.0 / 2.2));
     }
 
+#if !defined(WIREFRAME_PASS)
     const vec3 emissive = texture(u_EmissiveMap, texCoords).rgb * u_EmissiveColor * u_EmissiveIntensity;
     pbr += emissive;
+#endif
 
     FRAGMENT_COLOR = vec4(pbr, albedo.a);
 #endif

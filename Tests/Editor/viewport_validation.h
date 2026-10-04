@@ -141,7 +141,7 @@ static void ValidateViewport(OvEditor::Core::Context& context, OvEditor::Core::E
     click(position.x+212,top+24);
     Require(view.IsLocalSpace(),"narrow viewport keeps transform controls clickable");
     const auto projectionBefore = camera.GetProjectionMode();
-    click(position.x+400-164+42,top+16+(2*ImGui::GetFrameHeight()+20)+131);
+    click(position.x+400-164+42,top+16+(3*ImGui::GetFrameHeight()+26)+131);
     Require(camera.GetProjectionMode() != projectionBefore,"narrow viewport moves orientation controls below the transform toolbar");
     camera.SetProjectionMode(projectionBefore); view.SetLocalSpace(false);
     view.SetSize({960,700}); io.AddMousePosEvent(-10000,-10000);
