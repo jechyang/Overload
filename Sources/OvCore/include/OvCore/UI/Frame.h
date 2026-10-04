@@ -77,6 +77,7 @@ namespace OvCore::UI
         std::vector<Image> images; // painter order, shared by rendering and raycasts
         std::vector<Mesh> meshes;
         std::optional<Hit> HitTest(OvMaths::FVector2 bottomLeftPosition) const;
+        std::optional<OvMaths::FVector2> ProjectGraphic(uint64_t actorGuid, OvMaths::FVector2 screen) const;
         std::optional<GraphicHit> RaycastGraphic(uint64_t actorGuid, OvMaths::FVector2 bottomLeftPosition) const;
         // Input coordinates relative to the game viewport, not the whole editor window.
         std::optional<Hit> HitTestTopLeft(OvMaths::FVector2 position) const;

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using Overload;
 using Overload.EventSystems;
 using Overload.Maths;
@@ -13,197 +12,206 @@ public class FlappyCanvas : CanvasScaler
     {
         uiScaleMode = ScaleMode.ScaleWithScreenSize;
         referenceResolution = new Vector2(400, 600);
-        matchWidthOrHeight = 0.5f;
+        screenMatchMode = ScreenMatchMode.Expand;
     }
 }
 
-/// <summary>Creates EventSystem/input so Play-mode flaps work without manual wiring.</summary>
+// Input belongs to the Play lifecycle. Rendering the edit-mode preview must
+// not create actors which then get serialized into the user's scene.
 public class FlappyInputBootstrap : Overload.EventSystems.UIBehaviour
 {
-    private bool ready;
-    protected override void OnRectTransformDimensionsChange()
-    {
-        base.OnRectTransformDimensionsChange();
-        EnsureInput();
-    }
-    public override void OnEnable()
-    {
-        base.OnEnable();
-        EnsureInput();
-    }
+    public override void OnStart() => EnsureInput();
+    public override void OnReloadRestore() => EnsureInput();
     private void EnsureInput()
     {
-        if (ready) return;
-        if (EventSystem.GetCurrent(Owner) != null) { ready = true; return; }
-        var es = Owner.Create("EventSystem");
-        es.AddBehaviour<BaseInput>();
-        es.AddBehaviour<StandaloneInputModule>();
-        es.AddBehaviour<EventSystem>();
-        ready = true;
+        if (EventSystem.GetCurrent(Owner) != null) return;
+        var events = Owner.Find("EventSystem") ?? Owner.Create("EventSystem");
+        events.AddBehaviour<BaseInput>();
+        events.AddBehaviour<StandaloneInputModule>();
+        events.AddBehaviour<EventSystem>();
     }
 }
 
-/// <summary>
-/// Flappy Bird as one project Graphic (edit-mode visible like ManagedUI RedTriangle).
-/// All geometry is in rectTransform local space: rect.min .. rect.max.
-/// </summary>
+/// <summary>A fixed 400x600 playfield in rect-local coordinates, independent of the viewport aspect ratio.</summary>
 public class FlappyBirdGame : Graphic
 {
-    private const float Gravity = -1100f;
-    private const float FlapVelocity = 360f;
-    private const float PipeSpeed = 150f;
-    private const float PipeGap = 150f;
-    private const float PipeWidth = 64f;
-    private const float PipeSpacing = 210f;
-    private const float GroundHeight = 80f;
-    private const int PipeCount = 5;
-
+    private const float Gravity = -1100, FlapVelocity = 360, PipeSpeed = 150;
+    private const float PipeGap = 170, PipeWidth = 64, PipeSpacing = 230;
+    private const float Left = -200, Right = 200, Bottom = -300, Top = 300;
+    private const float GroundTop = -220, BirdX = -100, BirdRadius = 16;
     private enum State { Ready, Playing, Dead }
-
-    [SerializeField] private int m_Score;
-    [SerializeField] private int m_Best;
-    private State state = State.Ready;
+    private struct Pipe { public float x, gapY; public bool scored; }
+    [SerializeField] private int m_Score, m_Best;
+    private State state;
     private float birdY, velocity, idleTime;
-    private bool started;
-    private readonly List<(float x, float gapY, bool scored)> pipes = new();
+    private bool initialized;
+    private ulong lastInput;
+    private readonly Pipe[] pipes = new Pipe[3];
 
-    protected override void OnPopulateMesh(VertexHelper helper)
+    public int Score => m_Score;
+    public int Best => m_Best;
+    public bool IsReady => state == State.Ready;
+    public bool IsGameOver => state == State.Dead;
+
+    public override void OnStart() => ResetRound();
+    public override void OnReloadRestore() { ResetRound(); SetAllDirty(); }
+    private void ResetRound()
     {
-        helper.Clear();
-        var r = rectTransform.rect;
-        if (!started) ResetPipes(r);
-
-        // Sky fills the whole rect.
-        AddQuad(helper, r.min.x, r.min.y, r.max.x, r.max.y, new Color(0.45f, 0.78f, 0.95f, 1f));
-        // Ground band along the bottom of the rect.
-        AddQuad(helper, r.min.x, r.min.y, r.max.x, r.min.y + GroundHeight, new Color(0.86f, 0.74f, 0.42f, 1f));
-
-        float birdX = r.min.x + 100f;
-        foreach (var (x, gapY, _) in pipes) {
-            float top = gapY + PipeGap * 0.5f, bottom = gapY - PipeGap * 0.5f;
-            AddQuad(helper, x - PipeWidth * 0.5f, top, x + PipeWidth * 0.5f, r.max.y, new Color(0.22f, 0.72f, 0.28f, 1f));
-            AddQuad(helper, x - PipeWidth * 0.5f, r.min.y + GroundHeight, x + PipeWidth * 0.5f, bottom, new Color(0.16f, 0.55f, 0.22f, 1f));
-        }
-
-        // Bird.
-        float s = 18f, by = birdY;
-        AddQuad(helper, birdX - s, by - s, birdX + s, by + s, new Color(1f, 0.86f, 0.18f, 1f));
-        AddQuad(helper, birdX + s - 2f, by - 5f, birdX + s + 12f, by + 5f, new Color(0.95f, 0.45f, 0.15f, 1f));
-
-        // Score marks along the top.
-        for (int i = 0; i < Math.Min(m_Score, 12); i++) {
-            float x0 = r.min.x + 20f + i * 16f;
-            AddQuad(helper, x0, r.max.y - 40f, x0 + 12f, r.max.y - 22f, Color.white);
-        }
-        if (state == State.Dead) {
-            float cx = (r.min.x + r.max.x) * 0.5f, cy = (r.min.y + r.max.y) * 0.5f;
-            AddQuad(helper, cx - 110f, cy - 50f, cx + 110f, cy + 50f, new Color(0.08f, 0.08f, 0.12f, 0.85f));
-        }
+        initialized = true;
+        state = State.Ready;
+        m_Score = 0;
+        birdY = velocity = idleTime = 0;
+        // First pipe is ahead of the bird, allowing more than a second to react.
+        for (int i = 0; i < pipes.Length; ++i)
+            pipes[i] = new Pipe { x = 170 + i * PipeSpacing, gapY = Gap(i) };
+        SetVerticesDirty();
     }
-
-    private static void AddQuad(VertexHelper helper, float x0, float y0, float x1, float y1, Color color)
-    {
-        Color32 tint = color;
-        int i = helper.currentVertCount;
-        helper.AddVert(new Vector3(x0, y0, 0), tint, new Vector2(0, 0));
-        helper.AddVert(new Vector3(x1, y0, 0), tint, new Vector2(1, 0));
-        helper.AddVert(new Vector3(x1, y1, 0), tint, new Vector2(1, 1));
-        helper.AddVert(new Vector3(x0, y1, 0), tint, new Vector2(0, 1));
-        helper.AddTriangle(i, i + 1, i + 2);
-        helper.AddTriangle(i + 2, i + 3, i);
-    }
-
-    private void ResetPipes(Rect r)
-    {
-        started = true;
-        pipes.Clear();
-        // Keep pipes inside the rect so the edit-mode preview shows the board.
-        // Local X is relative to the canvas pivot; visible range is roughly r.min.x .. r.max.x.
-        for (int i = 0; i < PipeCount; i++) {
-            float x = r.min.x + 90f + i * 130f;
-            float gapY = (r.min.y + r.max.y) * 0.5f + ((i % 3) - 1) * 40f;
-            pipes.Add((x, gapY, false));
-        }
-        birdY = (r.min.y + r.max.y) * 0.5f;
-    }
+    private static float Gap(int index) => ((index % 5) - 2) * 25;
 
     public override void OnUpdate(float dt)
     {
-        if (dt <= 0 || dt > 0.1f) dt = 1f / 60f;
-        idleTime += dt;
-        var r = rectTransform.rect;
-        if (!started) ResetPipes(r);
-
-        float groundTop = r.min.y + GroundHeight;
-        float birdX = r.min.x + 100f;
-        float minY = groundTop + 20f, maxY = r.max.y - 20f;
-
-        bool flap = FlapPressed();
-        switch (state) {
-            case State.Ready:
-                birdY = (r.min.y + r.max.y) * 0.5f + MathF.Sin(idleTime * 4f) * 16f;
-                velocity = 0;
-                if (flap) {
-                    state = State.Playing;
-                    m_Score = 0;
-                    velocity = FlapVelocity;
-                    ResetPipes(r);
-                    birdY = (r.min.y + r.max.y) * 0.5f;
+        if (!float.IsFinite(dt) || dt <= 0) return;
+        if (!initialized) ResetRound();
+        var system = EventSystem.GetCurrent(Owner);
+        var input = system?.currentInputModule?.input ?? system?.Owner.GetComponent<BaseInput>();
+        if (input == null) return;
+        // Capture the current native tick here; Actor iteration order must not
+        // delay gameplay input until EventSystem.OnUpdate in a later frame.
+        var frame = input.Capture();
+        bool fresh = frame.sequence != lastInput;
+        lastInput = frame.sequence;
+        if (!frame.focused) return;
+        bool flap = fresh && (input.GetKeyDown(32) || input.GetKeyDown(257) ||
+            input.GetKeyDown(335) || input.GetMouseButtonDown(0));
+        if (flap && state == State.Dead) { ResetRound(); return; }
+        if (state == State.Ready)
+        {
+            idleTime += Math.Min(dt, .1f);
+            birdY = MathF.Sin(idleTime * 4) * 12;
+            if (flap) { state = State.Playing; birdY = 0; velocity = FlapVelocity; }
+            SetVerticesDirty();
+            return;
+        }
+        if (flap) velocity = FlapVelocity;
+        if (state == State.Dead && birdY <= GroundTop + BirdRadius) return;
+        // Bound catch-up and subdivide slow frames to keep collision and gravity stable.
+        for (float remaining = Math.Min(dt, .1f); remaining > 0;)
+        {
+            float step = Math.Min(remaining, 1f / 120);
+            remaining -= step;
+            velocity += Gravity * step;
+            birdY += velocity * step;
+            if (state == State.Dead)
+            {
+                birdY = Math.Max(birdY, GroundTop + BirdRadius);
+                continue;
+            }
+            for (int i = 0; i < pipes.Length; ++i) pipes[i].x -= PipeSpeed * step;
+            if (birdY - BirdRadius <= GroundTop || birdY + BirdRadius >= Top || HitsPipe())
+            {
+                state = State.Dead;
+                m_Best = Math.Max(m_Best, m_Score);
+                continue;
+            }
+            for (int i = 0; i < pipes.Length; ++i)
+            {
+                ref var pipe = ref pipes[i];
+                // Award only after the whole bird clears the trailing edge.
+                if (!pipe.scored && pipe.x + PipeWidth * .5f < BirdX - BirdRadius)
+                { ++m_Score; pipe.scored = true; }
+                if (pipe.x + PipeWidth * .5f < Left)
+                {
+                    float rightmost = Right;
+                    foreach (var other in pipes) rightmost = Math.Max(rightmost, other.x);
+                    pipe.x = rightmost + PipeSpacing;
+                    pipe.gapY = Gap(m_Score + pipes.Length - 1);
+                    pipe.scored = false;
                 }
-                break;
-            case State.Playing:
-                if (flap) velocity = FlapVelocity;
-                velocity += Gravity * dt;
-                birdY += velocity * dt;
-                for (int i = 0; i < pipes.Count; i++) {
-                    var (x, gapY, scored) = pipes[i];
-                    x -= PipeSpeed * dt;
-                    if (!scored && x < birdX) { m_Score++; scored = true; }
-                    if (x < r.min.x - 80f) {
-                        float right = r.max.x;
-                        foreach (var p in pipes) if (p.x > right) right = p.x;
-                        x = right + 130f;
-                        gapY = (r.min.y + r.max.y) * 0.5f + (((m_Score + i) % 5) - 2) * 36f;
-                        scored = false;
-                    }
-                    pipes[i] = (x, gapY, scored);
-                }
-                if (birdY < minY || birdY > maxY || HitsPipe(birdX, groundTop, r)) {
-                    state = State.Dead;
-                    if (m_Score > m_Best) m_Best = m_Score;
-                }
-                break;
-            case State.Dead:
-                velocity += Gravity * dt;
-                birdY += velocity * dt;
-                if (birdY < minY) { birdY = minY; velocity = 0; }
-                if (flap) {
-                    state = State.Ready;
-                    idleTime = 0;
-                    ResetPipes(r);
-                }
-                break;
+            }
         }
         SetVerticesDirty();
     }
-
-    private bool HitsPipe(float birdX, float groundTop, Rect r)
+    private bool HitsPipe()
     {
-        const float birdR = 16f;
-        foreach (var (x, gapY, _) in pipes) {
-            if (MathF.Abs(x - birdX) > PipeWidth * 0.5f + birdR) continue;
-            if (birdY + birdR > gapY + PipeGap * 0.5f || birdY - birdR < gapY - PipeGap * 0.5f)
-                return true;
-            if (birdY - birdR < groundTop) return true;
-            if (birdY + birdR > r.max.y) return true;
-        }
+        foreach (var pipe in pipes)
+            if (MathF.Abs(pipe.x - BirdX) < PipeWidth * .5f + BirdRadius &&
+                (birdY + BirdRadius > pipe.gapY + PipeGap * .5f || birdY - BirdRadius < pipe.gapY - PipeGap * .5f)) return true;
         return false;
     }
-
-    private bool FlapPressed()
+    protected override void OnPopulateMesh(VertexHelper helper)
     {
-        var input = EventSystem.GetCurrent(Owner)?.currentInputModule?.input ?? Owner.GetComponent<BaseInput>();
-        if (input == null) return false;
-        return input.GetKeyDown(32) || input.GetKeyDown(335) || input.GetMouseButtonDown(0) || input.GetMouseButtonDown(1);
+        helper.Clear();
+        if (!initialized) ResetRound();
+        var r = rectTransform.rect;
+        AddQuad(helper, r.min.x, r.min.y, r.max.x, r.max.y, new Color(.10f, .18f, .25f, 1));
+        AddQuad(helper, Left, Bottom, Right, Top, new Color(.45f, .78f, .95f, 1));
+        // Small cloud bands and a distant skyline.
+        for (int i = 0; i < 4; ++i)
+        {
+            float x = Left + 25 + i * 105;
+            AddQuad(helper, x, 170 + i % 2 * 35, Math.Min(x + 65, Right), 182 + i % 2 * 35, new Color(.82f, .93f, 1, 1));
+            AddQuad(helper, x, GroundTop, Math.Min(x + 55, Right), GroundTop + 32 + i % 2 * 20, new Color(.36f, .66f, .73f, 1));
+        }
+        foreach (var pipe in pipes)
+        {
+            float x0 = Math.Max(Left, pipe.x - PipeWidth * .5f), x1 = Math.Min(Right, pipe.x + PipeWidth * .5f);
+            if (x1 <= x0) continue; // Do not upload off-screen pipe geometry.
+            float low = pipe.gapY - PipeGap * .5f, high = pipe.gapY + PipeGap * .5f;
+            AddQuad(helper, x0, high, x1, Top, new Color(.22f, .72f, .28f, 1));
+            AddQuad(helper, x0, GroundTop, x1, low, new Color(.16f, .55f, .22f, 1));
+            AddQuad(helper, x0, high, x1, high + 12, new Color(.12f, .43f, .19f, 1));
+            AddQuad(helper, x0, low - 12, x1, low, new Color(.12f, .43f, .19f, 1));
+        }
+        AddQuad(helper, Left, Bottom, Right, GroundTop, new Color(.86f, .74f, .42f, 1));
+        AddQuad(helper, Left, GroundTop - 8, Right, GroundTop, new Color(.52f, .72f, .30f, 1));
+        AddCircle(helper, BirdX, birdY, 18, new Color(1, .86f, .18f, 1));
+        AddCircle(helper, BirdX - 8, birdY - 3, 8, new Color(.96f, .64f, .12f, 1));
+        AddQuad(helper, BirdX + 12, birdY - 5, BirdX + 28, birdY + 3, new Color(.95f, .45f, .15f, 1));
+        AddCircle(helper, BirdX + 7, birdY + 7, 6, Color.white);
+        AddCircle(helper, BirdX + 9, birdY + 7, 2.5f, new Color(.08f, .12f, .18f, 1));
+        if (state == State.Dead)
+            AddQuad(helper, -155, -65, 155, 65, new Color(.08f, .12f, .18f, .94f));
     }
+    private static void AddCircle(VertexHelper helper, float x, float y, float radius, Color color)
+    {
+        int start = helper.currentVertCount;
+        helper.AddVert(new Vector3(x, y, 0), color, Vector2.zero);
+        const int segments = 20;
+        for (int n = 0; n <= segments; ++n)
+        {
+            float angle = n * (2 * MathF.PI / segments);
+            helper.AddVert(new Vector3(x + MathF.Cos(angle) * radius, y + MathF.Sin(angle) * radius, 0), color, Vector2.zero);
+            if (n > 0) helper.AddTriangle(start, start + n, start + n + 1);
+        }
+    }
+    private static void AddQuad(VertexHelper helper, float x0, float y0, float x1, float y1, Color color)
+    {
+        int i = helper.currentVertCount;
+        helper.AddVert(new Vector3(x0, y0, 0), color, new Vector2(0, 0));
+        helper.AddVert(new Vector3(x1, y0, 0), color, new Vector2(1, 0));
+        helper.AddVert(new Vector3(x1, y1, 0), color, new Vector2(1, 1));
+        helper.AddVert(new Vector3(x0, y1, 0), color, new Vector2(0, 1));
+        helper.AddTriangle(i, i + 1, i + 2);
+        helper.AddTriangle(i + 2, i + 3, i);
+    }
+}
+
+// Real uGUI Text components; unchanged strings do not rebuild their meshes.
+public class FlappyScore : Text
+{
+    public FlappyScore() { text = "0"; fontSize = 38; alignment = TextAnchor.MiddleCenter; raycastTarget = false; }
+    public override void OnUpdate(float dt)
+    { if (Owner.Parent?.GetComponent<FlappyBirdGame>() is { } game) text = game.Score.ToString(); }
+}
+public class FlappyHint : Text
+{
+    public FlappyHint() { text = "SPACE / CLICK TO START"; fontSize = 18; alignment = TextAnchor.MiddleCenter; raycastTarget = false; }
+    public override void OnUpdate(float dt)
+    { if (Owner.Parent?.GetComponent<FlappyBirdGame>() is { } game) text = game.IsReady ? "SPACE / CLICK TO START" : game.IsGameOver ? "SPACE / CLICK TO RESET" : "SPACE / CLICK TO FLAP"; }
+}
+public class FlappyResult : Text
+{
+    public FlappyResult() { fontSize = 26; alignment = TextAnchor.MiddleCenter; raycastTarget = false; }
+    public override void OnUpdate(float dt)
+    { if (Owner.Parent?.GetComponent<FlappyBirdGame>() is { } game) text = game.IsGameOver ? $"GAME OVER\nScore {game.Score}   Best {game.Best}" : ""; }
 }

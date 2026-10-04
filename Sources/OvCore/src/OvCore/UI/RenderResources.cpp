@@ -8,6 +8,7 @@
 #include <OvRendering/Resources/Mesh.h>
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <vector>
@@ -108,6 +109,7 @@ void main() {
             frame.size.x > std::numeric_limits<uint16_t>::max() || frame.size.y > std::numeric_limits<uint16_t>::max())
             throw std::invalid_argument("Invalid UI framebuffer extent");
         Initialize();
+        ++m_cacheTick;m_statistics={};
         std::erase_if(m_fontPages,[](const auto& entry){return entry.second.page.expired();});
         auto result = std::unique_ptr<Data::RenderSceneSnapshot>(new Data::RenderSceneSnapshot);
         result->m_pipeline.stages = {stage};
@@ -156,8 +158,17 @@ void main() {
                 if (!batch.indexCount) continue;
                 if (batch.firstIndex > graphic.indices.size() || batch.indexCount > graphic.indices.size()-batch.firstIndex)
                     throw std::invalid_argument("Invalid immutable UI batch");
-                const auto geometry = std::make_shared<Geometry>(graphic.vertices,
-                    std::span<const uint32_t>(graphic.indices).subspan(batch.firstIndex,batch.indexCount));
+                const GeometryKey key{frame.sceneGeneration,viewId,int(stage),graphic.actorGuid,graphic.pop,batch.firstIndex,batch.indexCount};
+                auto& cached=m_geometry[key];
+                const auto indices=std::span<const uint32_t>(graphic.indices).subspan(batch.firstIndex,batch.indexCount);
+                const bool same=cached.geometry && cached.vertices.size()==graphic.vertices.size() && cached.indices.size()==indices.size() &&
+                    std::memcmp(cached.vertices.data(),graphic.vertices.data(),graphic.vertices.size()*sizeof(ECS::Components::UIVertex))==0 &&
+                    std::memcmp(cached.indices.data(),indices.data(),indices.size_bytes())==0;
+                if(!same){cached.geometry=std::make_shared<Geometry>(graphic.vertices,indices);cached.vertices=graphic.vertices;cached.indices.assign(indices.begin(),indices.end());
+                    ++m_statistics.geometryUploads;m_statistics.uploadedBytes+=graphic.vertices.size()*sizeof(ECS::Components::UIVertex)+indices.size_bytes();
+                }else ++m_statistics.geometryReuses;
+                cached.lastUse=m_cacheTick;const auto geometry=cached.geometry;
+                m_statistics.vertices+=graphic.vertices.size();m_statistics.indices+=indices.size();++m_statistics.draws;
                 auto texture = batch.texture ? batch.texture : white;
                 if (batch.fontPage) {
                     const auto& page = *batch.fontPage;
@@ -241,6 +252,9 @@ void main() {
             mesh.material = m_material.PrepareSnapshot(std::nullopt, std::nullopt, white, black, textures, {}, true, true, false);
             result->m_meshes.push_back(std::move(mesh));
         }
+        std::erase_if(m_geometry,[&](const auto& entry){return (std::get<1>(entry.first)==viewId&&std::get<2>(entry.first)==int(stage)&&entry.second.lastUse!=m_cacheTick)||m_cacheTick-entry.second.lastUse>120;});
+        // Bound retained inactive view resources; in-flight snapshots hold their own leases.
+        if(m_geometry.size()>16384)m_geometry.clear();
         return std::shared_ptr<const Data::RenderSceneSnapshot>(std::move(result));
     }
 }

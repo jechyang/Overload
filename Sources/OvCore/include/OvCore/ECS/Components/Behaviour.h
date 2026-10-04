@@ -182,10 +182,11 @@ namespace OvCore::ECS::Components
 		virtual void OnInspector(OvUI::Internal::WidgetContainer & p_root) override;
 
 	public:
+		void SerializeLiveManagedFields(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node) { SerializeManagedFields(doc,node,true); }
 		const std::string name;
 
 	private:
-		void SerializeManagedFields(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node);
+		void SerializeManagedFields(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node, bool live = false);
 		void InspectManagedFields(OvUI::Internal::WidgetContainer& root);
 		std::map<std::string,Scripting::ManagedFieldValue> m_managedDefaults, m_managedOverrides;
 		std::set<std::string> m_managedLoaded;

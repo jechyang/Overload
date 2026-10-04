@@ -242,6 +242,16 @@ static void TextureChecks(OvRendering::Context::Driver& driver, OvTools::Jobs::J
         OvRendering::Core::MeshCommandRecorder fallback;
         RenderResources resources; Frontend frontend;
         auto scene=resources.Extract(ui,123,fallback.GetFallback2D(),fallback.GetFallbackCube());
+        Require(resources.GetStatistics().geometryUploads==1,"first UI geometry upload");
+        for(int tick=0;tick<120;++tick) {
+            resources.Extract(ui,123,fallback.GetFallback2D(),fallback.GetFallbackCube());
+            Require(resources.GetStatistics().geometryUploads==0 && resources.GetStatistics().geometryReuses==1,"static UI skips GPU geometry uploads");
+        }
+        ui.meshes[0].vertices[0].position.x+=1;
+        resources.Extract(ui,123,fallback.GetFallback2D(),fallback.GetFallbackCube());
+        Require(resources.GetStatistics().geometryUploads==1,"changed UI uploads a new immutable geometry");
+        ui.meshes.clear();resources.Extract(ui,123,fallback.GetFallback2D(),fallback.GetFallbackCube());
+        Require(resources.GeometryCacheSize()==0,"removed UI evicts cached geometry while captured frame survives");
         OvRendering::Data::PipelineState poisoned; poisoned.scissorTest=poisoned.stencilTest=true;
         auto prepared=frontend.Prepare(scene,poisoned,&jobs);
         commands.Append(frontend.Record(prepared,output,&jobs));

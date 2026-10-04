@@ -5,6 +5,8 @@
 */
 
 #include <fstream>
+#include <algorithm>
+#include <vector>
 
 #include <OvEditor/Core/Application.h>
 #include <OvEditor/Utils/ProjectManagement.h>
@@ -28,15 +30,19 @@ namespace
 
 	std::optional<std::filesystem::path> _FindProjectFileInDirectory(const std::filesystem::path& p_path)
 	{
-		for (const auto& entry : std::filesystem::directory_iterator(p_path))
-		{
-			if (entry.is_regular_file() && entry.path().extension() == ".ovproject")
-			{
-				return entry.path();
-			}
-		}
+		// Preserve explicit file selection, including machine-local configurations.
+		if (std::filesystem::is_regular_file(p_path))
+			return p_path.extension() == ".ovproject" ? std::make_optional(p_path) : std::nullopt;
+		if (!std::filesystem::is_directory(p_path)) return std::nullopt;
 
-		return std::nullopt;
+		std::vector<std::filesystem::path> projects;
+		for (const auto& entry : std::filesystem::directory_iterator(p_path))
+			if (entry.is_regular_file() && entry.path().extension() == ".ovproject") projects.push_back(entry.path());
+		std::sort(projects.begin(), projects.end());
+		// Prefer the generated local configuration when opening a project folder.
+		for (const auto& file : projects)
+			if (file.stem().extension() == ".local") return file;
+		return projects.empty() ? std::nullopt : std::make_optional(projects.front());
 	}
 }
 
@@ -191,20 +197,7 @@ namespace OvEditor::Utils::ProjectManagement
 
 	void OpenProject(const std::filesystem::path& p_projectPath)
 	{
-		// Find the project file (*.ovproject) in the given path.
-		// It can be named anything, but it should have the .ovproject extension.
-		auto findProjectFile = [](const std::filesystem::path& p_path) -> std::optional<std::filesystem::path> {
-			for (const auto& entry : std::filesystem::directory_iterator(p_path))
-			{
-				if (entry.is_regular_file() && entry.path().extension() == ".ovproject")
-				{
-					return entry.path();
-				}
-			}
-			return std::nullopt;
-		};
-
-		const auto projectFile = findProjectFile(p_projectPath);
+		const auto projectFile = _FindProjectFileInDirectory(p_projectPath);
 
 		if (projectFile)
 		{

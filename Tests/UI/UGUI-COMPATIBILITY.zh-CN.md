@@ -1,6 +1,6 @@
 # uGUI 分层与兼容范围
 
-实现方向是参考官方 uGUI，把布局、图形生成和控件策略放在可继承的 C# 类中，C++ 仅提供原生组件、资源解析、不可变帧快照、网格上传和渲染提交。当前完成了基础布局及 Graphic 网格链路，但不是完整 uGUI 兼容层。
+实现方向是参考官方 uGUI，把布局、图形生成和控件策略放在可继承的 C# 类中，C++ 仅提供原生组件、资源解析、不可变帧快照、网格上传和渲染提交。当前覆盖布局、图形、事件和常用交互控件，兼容边界与验收范围见下文。
 
 ## 源码基准
 
@@ -14,7 +14,7 @@
 `EventSystem` 下的全部 84 个运行时文件、178 个类型声明（其中 148 个公开可访问）。
 清单包含嵌套事件、枚举、委托、obsolete 接口和内部辅助类型；不将 Properties 下的
 程序集属性文件计为运行时类型文件。每项记录对应 Overload 类型、实施阶段、状态、
-测试编号及差异。现有基础能力保持 `partial`，尚未开始的实现使用 `pending`，均不计入完成。
+测试编号及差异。`partial`、`pending` 均不计入完成；`implemented`、`adapted` 分类还需要当前源码对应的运行时验收记录支持。
 
 `reference-ugui.mjs --check` 同时验证固定提交、工作区、文件 SHA-256 和声明覆盖率。
 `node Tests/UI/run-validation.mjs Debug --matrix-only` 验证漏项、重复项、未知状态、
@@ -27,7 +27,8 @@
 UnityEngine 外部依赖（如 UIVertex、DrivenRectTransformTracker 和移动软键盘）单列，
 后续仍须实现或明确适配，不能借文件范围排除完成条件。
 `node Tools/UI/reference-ugui.mjs --check --complete` 会拒绝任何仍为 pending、partial
-或 blocked 的类型及外部依赖，作为 U13 的最终完成闸门。
+或 blocked 的类型及外部依赖，并要求 `Build/UIValidation/completion.json` 中存在
+当前源码指纹对应的完整运行时回归记录。只修改矩阵状态不能通过完成闸门。
 
 ## 当前代码归属
 
@@ -71,12 +72,27 @@ UnityEngine 外部依赖（如 UIVertex、DrivenRectTransformTracker 和移动�
 U3 Image 四种 Type/FillMethod、U8–U10 Selectable/Button/Toggle/Slider/Scrollbar/ScrollRect、
 U11–U12 InputField/Dropdown/DefaultControls 已在 ScriptCore 实现，并由
 `run-image-validation.mjs`、`run-controls-validation.mjs`、`run-input-controls-validation.mjs`
-做生产像素与默认/RenderThread 一致验收。矩阵 178 个类型全部为 `implemented`（141）或
-`adapted`（37）；4 项引擎依赖中 TouchScreenKeyboard 已按桌面 character/IME 后端 `adapted`
-并通过 U11 验收，U13 `--complete` 闸门已放行。
+做生产像素与默认/RenderThread 一致验收。矩阵中的 `implemented` / `adapted` 是实现分类，
+不能单独证明行为验收通过。`TouchScreenKeyboard` 使用桌面 character/IME 后端，
+不提供移动操作系统的屏幕键盘。
+
+2026-10-04 补充了以下运行路径：
+
+- 控件引用使用 `ComponentRef<T>`；数组、列表、公开字段组成的 `[Serializable]` 记录及 `char`
+  接入宿主字段 ABI、Inspector 和 XML。记录深度、元素数及编码字节数有上限。
+- `Actor.AddUIBehaviour<T>()` 同步准备组件并返回实例；生命周期仍在原有安全点派发。
+  `DefaultControls` 创建实际父子层级、文字和控件引用。`Actor.Clone(parent)` 复制实时字段并重映射子树引用。
+- Selectable 导航、SpriteSwap、默认颜色动画驱动；Toggle 分组、Slider 反向填充、Scrollbar 分页及拖动；
+  ScrollRect 边界、弹性、惯性、滚动条联动和嵌套事件转发。
+- InputField 的 Unicode 删除、选择、密码/PIN、光标、高亮、文本滚动及焦点清理；
+  Enter 消费提交事件，避免结束编辑后立即重新激活。Dropdown 创建可选择列表和外部点击遮罩，并在关闭时释放。
+- Image 透明度命中采样及项目提供的 Sprite 网格；静态 UI 网格复用 GPU 几何资源，变化时生成新代际，
+  旧帧继续持有原资源。完全不透明的纹理不保留 CPU alpha 平面。
 
 - 不是 `UnityEngine.UI` 的二进制或源码兼容层，使用 Overload 的 Actor/Behaviour 生命周期及命名空间。
 - `Image` 支持 Simple/Sliced/Tiled/Filled 与 sprite border/pivot 元数据（C# 生成网格）。
+- 没有 Unity Sprite 导入器；项目通过 `SetSpriteMesh` 提供归一化顶点、纹理 UV 和索引，
+  包括自行处理图集旋转后的 UV。默认动画驱动是颜色过渡，项目可替换 `IUIAnimationDriver`。
 - InputField 覆盖插入/删除/选择/密码/校验；`TouchScreenKeyboard` 为桌面 character/IME
   会话适配（`Overload.TouchScreenKeyboard`），无移动端屏幕键盘 UI 面。
 
@@ -85,6 +101,15 @@ U11–U12 InputField/Dropdown/DefaultControls 已在 ScriptCore 实现，并由
 完整基础回归：
 
     node Tests/UI/run-validation.mjs Debug --managed --scripting-regression
+
+工程整体回归（先构建 Debug / Release 原生库）：
+
+    node Tests/UI/run-completion-validation.mjs
+    node Tools/UI/reference-ugui.mjs --check --complete
+
+整体回归调用独立的字段、协程、Tween、图形、布局、字体、输入、控件、Gallery、FlappyBird、
+Debug/Release 基础及脚本回归、编辑器相机测试，并保存每项命令和日志。源码变化会使旧记录失效。
+它证明仓库中列出的回归场景通过，不代表与 Unity 的所有成员行为、所有平台或所有视觉效果一致。
 
 验证使用真实 CLR、真实 OpenGL 和像素读回，覆盖：项目 C# 自定义 `Graphic` 三角形、逐顶点颜色、UV/纹理、基础 Image/RawImage、仅网格 UI pass、三种 Canvas 模式、裁剪、默认及独立 RenderThread 的一致像素、首帧编辑态初始化、脏重建、热重载、失效句柄、销毁/场景卸载和资源快照生命周期。
 

@@ -10,6 +10,9 @@
 #include <OvCore/Rendering/FramebufferUtil.h>
 #include <baregl/detail/glad/glad.h>
 #include <array>
+#include <tinyxml2.h>
+#include <OvWindowing/Inputs/InputManager.h>
+#include <baregl/ResourceExecutor.h>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -30,7 +33,7 @@ static void WriteTga(const std::filesystem::path& path)
     header[2] = 2;
     header[12] = uint8_t(kWidth & 255); header[13] = uint8_t(kWidth >> 8);
     header[14] = uint8_t(kHeight & 255); header[15] = uint8_t(kHeight >> 8);
-    header[16] = 32; header[17] = 8;
+    header[16] = 32; header[17] = 0x28;
     tga.write(reinterpret_cast<const char*>(header), 18);
     for (int y = kHeight - 1; y >= 0; y--) {
         for (int x = 0; x < kWidth; x++) {
@@ -93,9 +96,39 @@ static void RenderCapture(Engine& engine, OvCore::SceneSystem::Scene& scene, con
     rgba.write(reinterpret_cast<const char*>(g_pixels.data()), std::streamsize(g_pixels.size()));
 }
 
+static int Score(Behaviour& game, const char* name = "m_Score")
+{
+    for (const auto& field : game.GetScript()->ManagedFields())
+        if (field.name == name) return game.GetScript()->ReadManagedField(field.token)->scalar.int32_value;
+    throw std::runtime_error("missing score field");
+}
+static float BirdY(const CCanvasRenderer& renderer)
+{
+    for (const auto& v : renderer.GetVertices())
+        if (v.color.x > .99f && v.color.y > .8f && v.color.y < .9f && v.color.z < .25f) return v.position.y;
+    throw std::runtime_error("bird geometry missing");
+}
+static bool Dead(const CCanvasRenderer& renderer)
+{
+    const auto& color = renderer.GetVertices().back().color;
+    return color.w > .9f && color.w < .96f;
+}
+static std::pair<float, float> NextPipe(const CCanvasRenderer& renderer)
+{
+    float x = 10000, gap = 0;
+    for (const auto& v : renderer.GetVertices())
+        if (v.color.x > .20f && v.color.x < .24f && v.color.y > .70f && v.color.y < .74f && v.position.y < 299)
+        {
+            // The first vertex of each top pipe is its bottom-left corner.
+            float center = v.position.x + 32;
+            if (center >= -148 && center < x) { x = center; gap = v.position.y - 85; }
+        }
+    return {x, gap};
+}
+
 int wmain(int argc, wchar_t** argv) try
 {
-    Require(argc == 5, "flappy arguments: runtime, host, GameScripts.dll, out.tga");
+    Require(argc == 6, "flappy arguments: runtime, host, GameScripts.dll, out.tga");
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     OvReflection::MainThread authority;
     RuntimeHost host(authority);
@@ -106,23 +139,23 @@ int wmain(int argc, wchar_t** argv) try
         project, std::filesystem::current_path() / "Resources" / "Engine");
     OvCore::Scripting::ScriptEngine scripts(project, project);
     OvCore::Global::ServiceLocator::Provide(scripts);
-    Engine engine(false);
+    Engine engine(std::wstring(argv[5]) == L"render-thread");
+    OvWindowing::Inputs::InputManager input(engine.window);
+    OvCore::Global::ServiceLocator::Provide(input);
+    input.SetUIViewport({{0,0},{kWidth,kHeight},{1,1}});
+    std::unique_ptr<baregl::ResourceExecutor> executor;
+    if (engine.render) executor = std::make_unique<baregl::ResourceExecutor>([&](std::function<void()> fn) { engine.render->Invoke([&](auto&) { fn(); }); });
     OvCore::Global::ServiceLocator::Provide(engine.scenes);
     Require(scripts.LoadCSharpProject(host, project, assembly, "GameScripts"), "load GameScripts");
 
     auto& scene = *engine.scenes.GetCurrentScene();
-    auto& canvas = scene.CreateActor("Canvas");
-    canvas.AddComponent<CCanvas>();
-    auto& rect = canvas.AddComponent<CRectTransform>();
-    rect.SetAnchorMin({0, 0});
-    rect.SetAnchorMax({1, 1});
-    rect.SetPivot({0.5f, 0.5f});
-    rect.SetAnchoredPosition({0, 0});
-    rect.SetSizeDelta({0, 0});
-    auto& game = Add(canvas, "Flappy.FlappyBirdGame");
+    tinyxml2::XMLDocument doc;
+    Require(doc.LoadFile("Examples/FlappyBird/Assets/Scenes/FlappyBird.ovscene") == tinyxml2::XML_SUCCESS, "load shipped FlappyBird scene");
+    scene.OnDeserialize(doc, doc.RootElement()->FirstChildElement("scene"));
     OvCore::UI::ExtractFrame(scene, {float(kWidth), float(kHeight)});
-    Require(scripts.PrepareCSharp(game), "prepare FlappyBirdGame");
-    Require(game.GetScript() && game.GetScript()->IsValid(), "FlappyBirdGame prepared");
+    auto& canvas = *scene.FindActorByName("Canvas");
+    auto& game = canvas.GetBehaviours().at(ScriptIdentity::CSharp("GameScripts", "Flappy.FlappyBirdGame").Key());
+    Require(scene.FindActorByName("EventSystem") == nullptr, "edit-mode preview does not create gameplay actors");
 
     auto* renderer = canvas.GetComponent<CCanvasRenderer>();
     Require(renderer != nullptr, "CanvasRenderer exists after UI rebuild");
@@ -146,11 +179,73 @@ int wmain(int argc, wchar_t** argv) try
     Require(bird > 50, "bird pixels present");
 
     scene.Play();
-    for (int i = 0; i < 30; i++) scene.Update(1.0f / 60.0f);
+    for (int i = 0; i < 3; ++i) { scene.Update(1.f/60); scene.LateUpdate(1.f/60); input.ClearEvents(); }
+    auto* events = scene.FindActorByName("EventSystem");
+    Require(events != nullptr, "sample creates EventSystem");
+    for (auto& [key, behaviour] : events->GetBehaviours())
+        Require(behaviour.GetScript() && behaviour.GetScript()->IsValid(), "built-in input behaviour is registered and live");
+
+    using namespace OvWindowing::Inputs;
+    auto push = [&](UIInputKind kind, int key) { engine.window.UIInputEvent.Invoke({kind,key,{100,300}}); };
+    auto tick = [&](float dt = 1.f/60) {
+        scene.Update(dt); scene.LateUpdate(dt); input.ClearEvents();
+        OvCore::UI::ExtractFrame(scene, {float(kWidth),float(kHeight)});
+        if (!game.GetScript()->IsValid()) throw std::runtime_error("gameplay faulted");
+    };
+    auto flap = [&](bool mouse = false) {
+        push(mouse ? UIInputKind::PointerDown : UIInputKind::KeyDown, mouse ? 0 : 32);
+        push(mouse ? UIInputKind::PointerUp : UIInputKind::KeyUp, mouse ? 0 : 32);
+        tick();
+    };
+    push(UIInputKind::Focus,1); tick();
+    const float readyPipe = NextPipe(*renderer).first;
+    flap(); tick();
+    Require(NextPipe(*renderer).first < readyPipe && Score(game) == 0 && !Dead(*renderer), "Space starts a safe round, without awarding a phantom point");
+    float before = BirdY(*renderer);
+    flap(true);
+    Require(BirdY(*renderer) > before, "same-frame mouse click flaps through native InputManager");
+    before = BirdY(*renderer);
+    tick(0);
+    Require(std::abs(BirdY(*renderer) - before) < .001f, "zero delta does not advance gameplay");
+    push(UIInputKind::Focus,0); tick(); flap();
+    Require(std::abs(BirdY(*renderer) - before) < .001f, "unfocused game pauses and ignores gameplay input");
+    push(UIInputKind::Focus,1); tick();
+    float previousY = BirdY(*renderer);
+    for (int frame = 0; frame < 1600 && Score(game) < 6; ++frame)
+    {
+        float y = BirdY(*renderer), target = NextPipe(*renderer).second;
+        bool press = y < target - 20 && y <= previousY;
+        previousY = y;
+        if (press) {
+            push(UIInputKind::KeyDown,32); push(UIInputKind::KeyUp,32);
+        }
+        tick();
+        if (Dead(*renderer)) throw std::runtime_error("autopilot collided before six pipes");
+    }
+    Require(Score(game) >= 6, "six real pipe crossings including pool recycling score successfully");
     RenderCapture(engine, scene, outPath.string() + ".play.tga");
-    CountColors(sky, ground, pipe, bird, other);
-    std::printf("play colors sky=%d ground=%d pipe=%d bird=%d other=%d\n", sky, ground, pipe, bird, other);
-    Require(sky > 1000 && ground > 500 && pipe > 200 && bird > 50, "play frame still draws the board");
+    for (int i = 0; i < 240 && !Dead(*renderer); ++i) tick();
+    Require(Dead(*renderer) && Score(game,"m_Best") >= 6, "no input leads to collision and records best score");
+    for (int i = 0; i < 120; ++i) tick();
+    RenderCapture(engine, scene, outPath.string() + ".dead.tga");
+    const int best = Score(game,"m_Best");
+    flap(true);
+    Require(!Dead(*renderer) && Score(game) == 0 && Score(game,"m_Best") == best, "mouse reset clears score and retains best");
+    flap();
+    Require(!Dead(*renderer), "second round starts with Space");
+    // Portrait, landscape and HiDPI viewports keep a complete 400x600 board.
+    for (const auto viewport : {OvMaths::FVector2{960,540}, OvMaths::FVector2{420,640}, OvMaths::FVector2{800,1200}})
+    {
+        OvCore::UI::ExtractFrame(scene,viewport);
+        auto rect = canvas.GetComponent<CRectTransform>()->GetRect();
+        Require(rect.size.x >= 399.9f && rect.size.y >= 599.9f, "viewport resize preserves the logical playfield");
+    }
+    Require(scripts.LoadCSharpProject(host, project, assembly, "GameScripts", true), "reload the actual FlappyBird project");
+    tick(); flap(); tick();
+    Require(!Dead(*renderer) && Score(game) == 0, "hot reload restores a playable round");
+    int eventSystems = 0;
+    for (auto* actor : scene.GetActors()) if (actor->GetName() == "EventSystem") ++eventSystems;
+    Require(eventSystems == 1, "reload does not duplicate EventSystem actors");
 
     scripts.ClearCSharpProject();
     engine.scenes.UnloadCurrentScene();

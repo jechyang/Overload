@@ -1,4 +1,6 @@
 using System;
+using System.Globalization;
+using System.Linq;
 using Overload.Maths;
 
 namespace Overload;
@@ -38,7 +40,10 @@ public sealed class TouchScreenKeyboard
 
     public Status status { get; private set; } = Status.Visible;
     public bool active { get; private set; }
-    public string text { get; set; } = "";
+    private string value = "";
+    public string text { get => value; set { this.value = Normalize(value ?? "", characterLimit); selection = new RangeInt(Math.Clamp(selection.start, 0, this.value.Length), 0); } }
+    private static string Normalize(string input, int limit) => string.Concat(input.EnumerateRunes().Take(limit > 0 ? limit : int.MaxValue).Select(r => r.ToString()));
+    private int Boundary(int offset) { offset=Math.Clamp(offset,0,text.Length); if(offset==text.Length)return offset; return StringInfo.ParseCombiningCharacters(text).LastOrDefault(i=>i<=offset); }
     public int characterLimit { get; }
     public TouchScreenKeyboardType type { get; }
     public bool canGetSelection => true;
@@ -47,11 +52,9 @@ public sealed class TouchScreenKeyboard
 
     private TouchScreenKeyboard(string text, TouchScreenKeyboardType type, int characterLimit)
     {
-        this.text = text ?? "";
         this.type = type;
         this.characterLimit = Math.Max(0, characterLimit);
-        if (this.characterLimit > 0 && this.text.Length > this.characterLimit)
-            this.text = this.text[..this.characterLimit];
+        this.text = text ?? "";
         selection = new RangeInt(this.text.Length, 0);
         active = true;
     }
@@ -74,15 +77,12 @@ public sealed class TouchScreenKeyboard
     public void Insert(string value)
     {
         if (!active || status != Status.Visible || string.IsNullOrEmpty(value)) return;
-        if (characterLimit > 0)
-        {
-            var room = characterLimit - text.Length;
-            if (room <= 0) return;
-            if (value.Length > room) value = value[..room];
-        }
-        var start = Math.Clamp(selection.start, 0, text.Length);
-        var length = Math.Clamp(selection.length, 0, text.Length - start);
-        text = text.Remove(start, length).Insert(start, value);
+        var start = Boundary(selection.start);
+        var end = Boundary(selection.start + Math.Max(0, selection.length));
+        var remaining = text.Remove(start, end - start);
+        int room = characterLimit > 0 ? characterLimit - remaining.EnumerateRunes().Count() : int.MaxValue;
+        value = room <= 0 ? "" : Normalize(value, room);
+        text = remaining.Insert(start, value);
         selection = new RangeInt(start + value.Length, 0);
     }
 
@@ -91,16 +91,17 @@ public sealed class TouchScreenKeyboard
         if (!active || status != Status.Visible) return;
         if (selection.length > 0) { DeleteSelection(); return; }
         if (selection.start <= 0) return;
-        var caret = selection.start;
-        text = text.Remove(caret - 1, 1);
-        selection = new RangeInt(caret - 1, 0);
+        var caret = Boundary(selection.start);
+        var previous = StringInfo.ParseCombiningCharacters(text).LastOrDefault(i => i < caret);
+        text = text.Remove(previous, caret - previous);
+        selection = new RangeInt(previous, 0);
     }
 
     public void DeleteSelection()
     {
         if (!active || status != Status.Visible || selection.length <= 0) return;
-        var start = Math.Clamp(selection.start, 0, text.Length);
-        var length = Math.Clamp(selection.length, 0, text.Length - start);
+        var start = Boundary(selection.start);
+        var length = Boundary(selection.start + Math.Max(0, selection.length)) - start;
         text = text.Remove(start, length);
         selection = new RangeInt(start, 0);
     }

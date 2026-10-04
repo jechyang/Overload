@@ -11,6 +11,9 @@ namespace OvCore::UI
     class RenderResources final
     {
     public:
+        struct Statistics { uint64_t geometryUploads=0, geometryReuses=0, uploadedBytes=0, vertices=0, indices=0, draws=0; };
+        const Statistics& GetStatistics() const { return m_statistics; }
+        size_t GeometryCacheSize() const { return m_geometry.size(); }
         RenderResources() = default;
         ~RenderResources();
         RenderResources(const RenderResources&) = delete;
@@ -22,6 +25,16 @@ namespace OvCore::UI
             const OvRendering::Data::RenderViewInput* sceneView = nullptr);
     private:
         void Initialize();
+        using GeometryKey=std::tuple<uint64_t,uint64_t,int,uint64_t,bool,uint32_t,uint32_t>;
+        struct GeometryResource {
+            std::vector<ECS::Components::UIVertex> vertices;
+            std::vector<uint32_t> indices;
+            std::shared_ptr<const OvRendering::Resources::IMesh> geometry;
+            uint64_t lastUse=0;
+        };
+        std::map<GeometryKey,GeometryResource> m_geometry;
+        uint64_t m_cacheTick=0;
+        Statistics m_statistics;
         struct FontPageResource { std::weak_ptr<const Fonts::AtlasPage> page; std::shared_ptr<baregl::Texture> texture; };
         std::map<std::tuple<uint64_t,uint32_t,uint64_t>,FontPageResource> m_fontPages;
         OvRendering::Resources::Shader* m_shader = nullptr;

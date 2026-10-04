@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Xml;
+using System.Reflection;
 using System.Xml.Linq;
 
 namespace Overload.ManagedHost;
@@ -27,7 +28,43 @@ public static unsafe partial class Bootstrap
             var child = DescribeField(element, depth + 1);
             return child.Tag == 0 ? (0u, 0u) : (25u, child.Tag);
         }
-        return (Tag(type), 0);
+        uint tag = Tag(type);
+        if (tag != 0) return (tag, 0);
+        if (type.IsDefined(typeof(SerializableAttribute), false) && !type.IsAbstract &&
+            (type.IsValueType || type.GetConstructor(Type.EmptyTypes) != null)) {
+            var fields = RecordFields(type);
+            if (fields.Length > 0 && fields.All(f => DescribeField(f.FieldType, depth + 1).Tag != 0)) return (26u, 0);
+        }
+        return (0, 0);
+    }
+    private static FieldInfo[] RecordFields(Type type) => type.GetFields(BindingFlags.Public | BindingFlags.Instance)
+        .Where(f => !f.IsInitOnly && !f.IsDefined(typeof(NonSerializedAttribute))).OrderBy(f => f.Name, StringComparer.Ordinal).ToArray();
+    private static string WriteRecord(Type type, object? value, int depth) {
+        Require(depth < MaxCollectionDepth, Status.InvalidArgument, "Record nesting exceeds limit");
+        var root = new XElement("record", new XAttribute("schema", type.FullName!), new XAttribute("null", value == null ? "1" : "0"));
+        object defaults = Activator.CreateInstance(type)!;
+        foreach (var field in RecordFields(type)) {
+            var node = CollectionItem("member", field.FieldType, field.GetValue(value ?? defaults), depth + 1);
+            node.Add(new XAttribute("name", field.Name)); root.Add(node);
+        }
+        string result = root.ToString(SaveOptions.DisableFormatting);
+        Require(Encoding.GetByteCount(result) <= MaxFieldTextBytes, Status.InvalidArgument, "Record exceeds byte limit");
+        return result;
+    }
+    private static object? ReadRecord(Type type, string text, int depth) {
+        Require(depth < MaxCollectionDepth && Encoding.GetByteCount(text) <= MaxFieldTextBytes, Status.InvalidArgument, "Record exceeds limits");
+        using var reader = XmlReader.Create(new StringReader(text), new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersInDocument = MaxFieldTextBytes });
+        var root = XElement.Load(reader);
+        Require(root.Name == "record" && root.Attributes().Count() == 2 && (string?)root.Attribute("schema") == type.FullName && (string?)root.Attribute("null") is "0" or "1", Status.FieldTypeMismatch, "Record schema mismatch");
+        var fields = RecordFields(type); var nodes = root.Elements().ToArray();
+        Require(nodes.Length == fields.Length, Status.FieldTypeMismatch, "Record field count mismatch");
+        object result = Activator.CreateInstance(type)!;
+        for (int i = 0; i < fields.Length; ++i) {
+            Require(nodes[i].Name == "member" && (string?)nodes[i].Attribute("name") == fields[i].Name, Status.FieldTypeMismatch, "Record field mismatch");
+            var item = new XElement(nodes[i]); item.Attribute("name")!.Remove();
+            fields[i].SetValue(result, ReadCollectionItem(item, fields[i].FieldType, depth + 1));
+        }
+        return (string?)root.Attribute("null") == "1" && !type.IsValueType ? null : result;
     }
     private static string CollectionSchema(Type type)
     {

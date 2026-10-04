@@ -39,9 +39,9 @@ if(process.argv.includes('--matrix-only')) stages[0].requested=true;
 const revision=cp.spawnSync('git',['-c',`safe.directory=${root.replaceAll('\\','/')}`,'rev-parse','HEAD'],{cwd:root,encoding:'utf8',windowsHide:true});
 const evidence={config,commit:revision.status===0?revision.stdout.trim():null,command:[process.execPath,...process.argv.slice(1)],node:process.version,
     scope:process.argv.includes('--matrix-only')?'matrix-only':'runtime',renderModes:[],stages,checks};
-function run(name,exe,argv) {
+function run(name,exe,argv,timeout=120000) {
     const log=path.join(output,name+'.log'),fd=fs.openSync(log,'w');
-    const r=cp.spawnSync(exe,argv,{cwd:root,env,windowsHide:true,stdio:['ignore',fd,fd],timeout:120000});
+    const r=cp.spawnSync(exe,argv,{cwd:root,env,windowsHide:true,stdio:['ignore',fd,fd],timeout});
     fs.closeSync(fd); checks.push({name,exe,argv,exit:r.status,error:String(r.error||'')});
     if(r.status!==0)throw Error(name+' failed: '+log);
     console.log('PASS '+name);
@@ -60,13 +60,19 @@ try {
         throw Error('--matrix-only cannot be combined with runtime validation options');
     for(const stage of stages.filter(s=>s.requested)) {
         stage.status='running';
-        const implemented=new Set(['U0','U3','U8','U9','U10','U11','U12']);
-        if(!implemented.has(stage.id)) { stage.status='unavailable'; throw Error(`${stage.flag} is reserved; ${stage.id} acceptance is not implemented yet`); }
         run('U0-reference',process.execPath,[path.join(root,'Tools/UI/reference-ugui.mjs'),'--check']);
         run('U0-matrix',process.execPath,[path.join(root,'Tests/UI/runtime-matrix.test.mjs')]);
+        if(stage.id==='U1') {
+            run('U1-codec',process.execPath,[path.join(root,'Tests/UI/run-field-codec-validation.mjs')]);
+            run('U1-foundations',process.execPath,[path.join(root,'Tests/UI/run-validation.mjs'),config,'--managed','--foundations'],600000);
+        }
+        const suites={U2:['graphics'],U4:['layout'],U5:['font'],U6:['input'],U7:['coroutine','tween']};
+        for(const suite of suites[stage.id]||[])
+            run(stage.id+'-'+suite,process.execPath,[path.join(root,`Tests/UI/run-${suite}-validation.mjs`)],600000);
         if(stage.id==='U3') run('U3-image',process.execPath,[path.join(root,'Tests/UI/run-image-validation.mjs')]);
         if(stage.id==='U8'||stage.id==='U9'||stage.id==='U10') run('U8-controls',process.execPath,[path.join(root,'Tests/UI/run-controls-validation.mjs')]);
         if(stage.id==='U11'||stage.id==='U12') run('U11-input-controls',process.execPath,[path.join(root,'Tests/UI/run-input-controls-validation.mjs')]);
+        if(stage.id==='U13') run('U13-runtime-completion',process.execPath,[path.join(root,'Tests/UI/run-completion-validation.mjs')],1200000);
         stage.status='passed';
     }
     if(process.argv.includes('--matrix-only')) {

@@ -8,6 +8,7 @@
 #include <OvCore/UI/Frame.h>
 #include <OvCore/Rendering/RenderFrontend.h>
 #include <OvCore/Rendering/FramebufferUtil.h>
+#include <OvWindowing/Inputs/InputManager.h>
 #include <baregl/ResourceExecutor.h>
 #include <baregl/detail/glad/glad.h>
 #include <fstream>
@@ -127,6 +128,9 @@ int wmain(int argc, wchar_t** argv) try
     OvCore::Scripting::ScriptEngine scripts(project, project);
     OvCore::Global::ServiceLocator::Provide(scripts);
     Engine engine(std::wstring(argv[4]) == L"render-thread");
+    OvWindowing::Inputs::InputManager input(engine.window);
+    OvCore::Global::ServiceLocator::Provide(input);
+    input.SetUIViewport({{0,0},{kWidth,kHeight},{1,1}});
     OvCore::Global::ServiceLocator::Provide(engine.scenes);
     std::unique_ptr<baregl::ResourceExecutor> executor;
     if (engine.render)
@@ -135,6 +139,11 @@ int wmain(int argc, wchar_t** argv) try
     auto& scene = *engine.scenes.GetCurrentScene();
     auto& canvas = scene.CreateActor("Canvas");
     canvas.AddComponent<CCanvas>();
+    Add(canvas,"Overload.UI.GraphicRaycaster");
+    auto& events=scene.CreateActor("EventSystem");
+    Add(events,"Overload.EventSystems.BaseInput");
+    Add(events,"Overload.EventSystems.EventSystem");
+    Add(events,"Overload.EventSystems.StandaloneInputModule");
 
     auto& field = scene.CreateActor("Field");
     field.SetParent(canvas);
@@ -194,6 +203,57 @@ int wmain(int argc, wchar_t** argv) try
             scene.FindActorByName("Dropdown") && scene.FindActorByName("Scroll View"),
         "DefaultControls actors exist");
 
+    scene.LateUpdate(1.f/60);
+    OvCore::UI::ExtractFrame(scene, {kWidth, kHeight});
+    scene.Update(1.f/60);scene.LateUpdate(1.f/60);
+    std::fprintf(stderr,"completion checks=%d failure=%s\n",Int(factoryScript,"checks"),Str(factoryScript,"failure").c_str());
+    Require(Str(factoryScript,"failure").empty(),"factory and control completion assertions");
+    Require(Int(factoryScript,"checks")>=23,"completion assertions executed");
+    auto* button=scene.FindActorByName("Button");
+    for(auto* child:factory.GetChildren())child->SetActive(child==button);
+    button->SetParent(canvas);Place(*button,160,100,160,30);
+    using namespace OvWindowing::Inputs;
+    auto tick=[&]{scene.Update(1.f/60);scene.LateUpdate(1.f/60);input.ClearEvents();OvCore::UI::ExtractFrame(scene,{kWidth,kHeight});};
+    engine.window.UIInputEvent.Invoke({UIInputKind::Focus,1});tick();
+    engine.window.UIInputEvent.Invoke({UIInputKind::PointerDown,0,{160,100}});
+    engine.window.UIInputEvent.Invoke({UIInputKind::PointerUp,0,{160,100}});tick();
+    Require(Int(factoryScript,"clicks")==1,"factory button receives native pointer click");
+    auto* inputActor=scene.FindActorByName("InputField");
+    inputActor->SetParent(canvas);Place(*inputActor,160,150,180,30);inputActor->SetActive(true);
+    auto& interactive=inputActor->GetBehaviours().at(ScriptIdentity::CSharp("InputFixture","Overload.UI.InputField").Key());
+    SetInt(interactive,"m_ContentType",0);SetInt(interactive,"m_InputType",0);SetInt(interactive,"m_LineType",0);SetStr(interactive,"m_Text","");tick();
+    auto key=[&](int code){engine.window.UIInputEvent.Invoke({UIInputKind::KeyDown,code});engine.window.UIInputEvent.Invoke({UIInputKind::KeyUp,code});tick();};
+    auto clickInput=[&]{engine.window.UIInputEvent.Invoke({UIInputKind::PointerDown,0,{160,50}});engine.window.UIInputEvent.Invoke({UIInputKind::PointerUp,0,{160,50}});tick();};
+    clickInput();
+    engine.window.UIInputEvent.Invoke({UIInputKind::Character,0x1f600});tick();
+    Require(Str(interactive,"m_Text")=="\xf0\x9f\x98\x80","native character input preserves supplementary Unicode");
+    key(259);Require(Str(interactive,"m_Text").empty(),"native Backspace deletes complete Unicode scalar");
+    engine.window.UIInputEvent.Invoke({UIInputKind::Character,'a'});tick();key(257);
+    engine.window.UIInputEvent.Invoke({UIInputKind::Character,'b'});tick();
+    Require(Str(interactive,"m_Text")=="a","Enter ends editing without immediate submit reactivation");
+    clickInput();engine.window.UIInputEvent.Invoke({UIInputKind::Focus,0});tick();
+    engine.window.UIInputEvent.Invoke({UIInputKind::Focus,1});tick();
+    engine.window.UIInputEvent.Invoke({UIInputKind::Character,'c'});tick();
+    Require(Str(interactive,"m_Text")=="a","window focus loss releases input field editing");
+    inputActor->SetActive(false);button->SetActive(false);
+    auto* sliderActor=scene.FindActorByName("Slider");sliderActor->SetParent(canvas);Place(*sliderActor,160,100,200,20);sliderActor->SetActive(true);
+    auto& sliderScript=sliderActor->GetBehaviours().at(ScriptIdentity::CSharp("InputFixture","Overload.UI.Slider").Key());
+    SetInt(sliderScript,"m_Direction",0);tick();
+    engine.window.UIInputEvent.Invoke({UIInputKind::PointerDown,0,{110,100}});
+    engine.window.UIInputEvent.Invoke({UIInputKind::PointerUp,0,{110,100}});tick();
+    bool sliderMoved=false;
+    for(const auto& field:sliderScript.GetScript()->ManagedFields())if(field.name=="m_Value")
+        sliderMoved=std::abs(sliderScript.GetScript()->ReadManagedField(field.token)->scalar.float32_value-0.25f)<0.03f;
+    Require(sliderMoved,"native slider click uses local rectangle coordinates");sliderActor->SetActive(false);
+    auto* scrollActor=scene.FindActorByName("Scroll View");scrollActor->SetParent(canvas);Place(*scrollActor,160,100,200,150);scrollActor->SetActive(true);
+    auto& scrollScript=scrollActor->GetBehaviours().at(ScriptIdentity::CSharp("InputFixture","Overload.UI.ScrollRect").Key());
+    SetInt(scrollScript,"m_MovementType",2);tick();
+    auto* contentRect=scrollActor->GetChildren()[0]->GetChildren()[0]->GetComponent<CRectTransform>();
+    float beforeDrag=contentRect->GetAnchoredPosition().y;
+    engine.window.UIInputEvent.Invoke({UIInputKind::PointerDown,0,{160,100}});tick();
+    engine.window.UIInputEvent.Invoke({UIInputKind::PointerMove,0,{160,50}});tick();
+    engine.window.UIInputEvent.Invoke({UIInputKind::PointerUp,0,{160,50}});tick();
+    Require(contentRect->GetAnchoredPosition().y>beforeDrag+1,"native ScrollRect drag moves content after capture");
     Render(engine, scene);
     const auto out = project / (std::wstring(argv[4]) + L".rgba");
     std::ofstream capture(out, std::ios::binary);

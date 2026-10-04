@@ -70,7 +70,7 @@ std::array<int, 4> FindBestFitWindowSizeAndPosition(std::array<int, 4> p_workAre
 }
 
 OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
-	projectFolder(p_projectFolder),
+	projectFolder(std::filesystem::is_regular_file(p_projectFolder) ? p_projectFolder.parent_path() : p_projectFolder),
 	projectFile(Utils::ProjectManagement::GetProjectFile(p_projectFolder)),
 	engineAssetsPath(std::filesystem::current_path() / "Data" / "Engine"),
 	projectAssetsPath(projectFolder / "Assets"),

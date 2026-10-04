@@ -5,6 +5,7 @@ using Overload.Maths;
 
 namespace Overload.UI;
 
+[Serializable]
 public struct ColorBlock
 {
     public Color normalColor, highlightedColor, pressedColor, selectedColor, disabledColor;
@@ -29,11 +30,13 @@ public struct Navigation
     public static Navigation defaultNavigation => new() { mode = NavigationMode.Automatic };
 }
 
+[Serializable]
 public struct SpriteState
 {
     public AssetRef highlightedSprite, pressedSprite, selectedSprite, disabledSprite;
 }
 
+[Serializable]
 public class AnimationTriggers
 {
     public string normalTrigger = "Normal";
@@ -65,25 +68,41 @@ public class Selectable : UIBehaviour,
     [SerializeField] private float m_DisabledR = 0.78f, m_DisabledG = 0.78f, m_DisabledB = 0.78f, m_DisabledA = 0.5f;
     [SerializeField] private float m_ColorMultiplier = 1, m_FadeDuration = 0.1f;
     [SerializeField] private bool m_Interactable = true;
-    [SerializeField] private Graphic? m_TargetGraphic;
+    [SerializeField, FieldId("m_TargetGraphic")] private ComponentRef<Graphic> m_TargetGraphicRef;
+    private Graphic? m_TargetGraphic { get => ResolveUIReference(m_TargetGraphicRef); set => m_TargetGraphicRef = value == null ? default : ComponentRef<Graphic>.From(Owner, value); }
 
     private bool m_GroupsAllowInteraction = true;
     private bool m_IsPointerInside, m_IsPointerDown, m_HasSelection;
     private IUIAnimationDriver? m_AnimationDriver;
-    private static readonly List<Selectable> s_List = new();
+    private IDisposable? registration;
+    [SerializeField] private SpriteState m_SpriteState;
+    [SerializeField] private AnimationTriggers m_AnimationTriggers=new();
+    [SerializeField] private ComponentRef<Selectable> m_Up,m_Down,m_Left,m_Right;
+    private AssetRef normalSprite;
+    public SpriteState spriteState {get=>m_SpriteState;set{m_SpriteState=value;EvaluateAndTransitionToSelectionState(true);}}
+    public AnimationTriggers animationTriggers {get=>m_AnimationTriggers;set=>m_AnimationTriggers=value??new();}
+    public Navigation navigation {
+        get=>new(){mode=m_NavigationMode,selectOnUp=ResolveUIReference(m_Up),selectOnDown=ResolveUIReference(m_Down),selectOnLeft=ResolveUIReference(m_Left),selectOnRight=ResolveUIReference(m_Right)};
+        set{m_NavigationMode=value.mode;m_Up=Reference(value.selectOnUp);m_Down=Reference(value.selectOnDown);m_Left=Reference(value.selectOnLeft);m_Right=Reference(value.selectOnRight);}
+    }
+    private ComponentRef<Selectable> Reference(Selectable? value)=>value==null?default:ComponentRef<Selectable>.From(Owner,value);
+    public static Selectable[] AllSelectables(Actor context)=>UISessionRegistry<Selectable>.For(context).Snapshot();
 
     public override void OnEnable() {
         base.OnEnable();
-        if (!s_List.Contains(this)) s_List.Add(this);
+        registration??=UISessionRegistry<Selectable>.For(Owner).Register(this,this);
+        if(targetGraphic is Image image)normalSprite=image.sprite;
         RefreshCanvasGroups();
         DoStateTransition(currentSelectionState, true);
     }
     public override void OnDisable() {
-        s_List.Remove(this);
+        registration?.Dispose();registration=null;
+        m_IsPointerInside=m_IsPointerDown=m_HasSelection=false;
+        m_AnimationDriver?.Stop();
         base.OnDisable();
     }
     internal override void ReleaseNativeComponents() {
-        s_List.Remove(this);
+        registration?.Dispose();registration=null;
         base.ReleaseNativeComponents();
     }
 
@@ -122,7 +141,7 @@ public class Selectable : UIBehaviour,
     }
     public Graphic? targetGraphic {
         get => m_TargetGraphic;
-        set { m_TargetGraphic = value; DoStateTransition(currentSelectionState, true); }
+        set { m_TargetGraphic = value;if(value is Image image)normalSprite=image.sprite; DoStateTransition(currentSelectionState, true); }
     }
     public bool interactable {
         get => m_Interactable;
@@ -148,10 +167,12 @@ public class Selectable : UIBehaviour,
             return SelectionState.Normal;
         }
     }
-    protected bool IsInteractable() => m_Interactable && m_GroupsAllowInteraction;
+    public bool IsInteractable() => m_Interactable && enabled && (owner==null || Owner.ActiveInHierarchy && GroupsAllowInteraction());
 
     public virtual void OnPointerDown(PointerEventData eventData) {
         if (eventData.button != PointerEventData.InputButton.Left) return;
+        if(!IsInteractable())return;
+        if(navigationMode!=NavigationMode.None)Select();
         m_IsPointerDown = true;
         EvaluateAndTransitionToSelectionState(false);
     }
@@ -177,10 +198,31 @@ public class Selectable : UIBehaviour,
         EvaluateAndTransitionToSelectionState(false);
     }
     public virtual void OnMove(AxisEventData eventData) {
-        // Explicit navigation targets are provided by controls; automatic
-        // directional search is completed with the EventSystem selection pass.
+        if(!IsInteractable() || navigationMode==NavigationMode.None)return;
+        var nav=navigation;
+        Selectable? target=eventData.moveDir switch {MoveDirection.Up=>nav.selectOnUp,MoveDirection.Down=>nav.selectOnDown,MoveDirection.Left=>nav.selectOnLeft,MoveDirection.Right=>nav.selectOnRight,_=>null};
+        if(navigationMode!=NavigationMode.Explicit){
+            bool horizontal=eventData.moveDir is MoveDirection.Left or MoveDirection.Right;
+            if(navigationMode==NavigationMode.Horizontal&&!horizontal||navigationMode==NavigationMode.Vertical&&horizontal)return;
+            var direction=eventData.moveDir switch{MoveDirection.Right=>new Vector2(1,0),MoveDirection.Left=>new Vector2(-1,0),MoveDirection.Up=>new Vector2(0,1),_=>new Vector2(0,-1)};
+            target=FindSelectable(direction);
+        }
+        if(target!=null&&target.IsActive()&&target.IsInteractable()){eventData.selectedObject=target.Owner;eventData.Use();}
     }
 
+    public Selectable? FindSelectable(Vector2 direction) {
+        if(owner==null)return null;
+        Selectable? best=null;float score=0;var start=Clipping.CanvasRect(rectTransform);var center=start.min+start.size*0.5f;
+        foreach(var candidate in AllSelectables(Owner)){
+            if(ReferenceEquals(candidate,this)||!candidate.IsActive()||!candidate.IsInteractable()||candidate.navigationMode==NavigationMode.None||Owner.Access.Query(Owner.Handle,19,candidate.Owner.Handle)==0)continue;
+            var bounds=Clipping.CanvasRect(candidate.rectTransform);var delta=bounds.min+bounds.size*0.5f-center;
+            float dot=delta.x*direction.x+delta.y*direction.y;float length=delta.x*delta.x+delta.y*delta.y;
+            if(dot<=0||length<0.0001f)continue;float value=dot/length;
+            if(value>score){score=value;best=candidate;}
+        }
+        return best;
+    }
+    protected override void SetDirty(){base.SetDirty();if(IsActive())EvaluateAndTransitionToSelectionState(true);}
     protected void EvaluateAndTransitionToSelectionState(bool instant)
         => DoStateTransition(currentSelectionState, instant);
 
@@ -197,15 +239,18 @@ public class Selectable : UIBehaviour,
             tint = new Color(tint.r * m_ColorMultiplier, tint.g * m_ColorMultiplier,
                 tint.b * m_ColorMultiplier, tint.a);
             m_TargetGraphic.CrossFadeColor(tint, instant ? 0 : m_FadeDuration, true, true);
+        } else if(m_Transition==Transition.SpriteSwap && m_TargetGraphic is Image image){
+            AssetRef sprite=state switch{SelectionState.Highlighted=>m_SpriteState.highlightedSprite,SelectionState.Pressed=>m_SpriteState.pressedSprite,SelectionState.Selected=>m_SpriteState.selectedSprite,SelectionState.Disabled=>m_SpriteState.disabledSprite,_=>normalSprite};
+            image.sprite=string.IsNullOrEmpty(sprite.Path)?normalSprite:sprite;
         } else if (m_Transition == Transition.Animation) {
             string trigger = state switch {
-                SelectionState.Normal => "Normal",
-                SelectionState.Highlighted => "Highlighted",
-                SelectionState.Pressed => "Pressed",
-                SelectionState.Selected => "Selected",
-                _ => "Disabled"
+                SelectionState.Normal => m_AnimationTriggers.normalTrigger,
+                SelectionState.Highlighted => m_AnimationTriggers.highlightedTrigger,
+                SelectionState.Pressed => m_AnimationTriggers.pressedTrigger,
+                SelectionState.Selected => m_AnimationTriggers.selectedTrigger,
+                _ => m_AnimationTriggers.disabledTrigger
             };
-            m_AnimationDriver?.Play(trigger);
+            (m_AnimationDriver ??= new UIAnimationDriver(this)).Play(trigger);
         }
     }
 
@@ -213,18 +258,29 @@ public class Selectable : UIBehaviour,
         EventSystem.GetCurrent(Owner)?.SetSelectedObject(Owner);
     }
 
-    public void RefreshCanvasGroups() {
-        bool allow = true;
-        for (Actor? a = Owner; a != null; a = a.Parent) {
-            foreach (var group in a.GetComponents<CanvasGroup>()) {
-                if (!group.interactable) { allow = false; break; }
-                if (group.ignoreParentGroups) break;
+    private bool GroupsAllowInteraction(){
+        if(owner==null)return true;
+        for(Actor? actor=Owner;actor!=null;actor=actor.Parent){bool stop=false;
+            foreach(var group in actor.GetComponents<CanvasGroup>()){
+                if(!group.IsActive())continue;if(!group.interactable)return false;if(group.ignoreParentGroups)stop=true;
             }
-            if (!allow) break;
+            if(stop)break;
         }
-        if (allow != m_GroupsAllowInteraction) {
-            m_GroupsAllowInteraction = allow;
-            DoStateTransition(currentSelectionState, false);
-        }
+        return true;
     }
+    public void RefreshCanvasGroups(){bool allow=GroupsAllowInteraction();if(allow==m_GroupsAllowInteraction)return;m_GroupsAllowInteraction=allow;EvaluateAndTransitionToSelectionState(false);}
+}
+
+/// <summary>Default state animation; projects can replace this driver with their animation system.</summary>
+public sealed class UIAnimationDriver(Selectable owner) : IUIAnimationDriver
+{
+    public string currentTrigger {get;private set;}="";
+    public void Play(string trigger){
+        currentTrigger=trigger;
+        if(owner.targetGraphic is not Graphic graphic)return;
+        var colors=owner.colors;var triggers=owner.animationTriggers;
+        Color tint=trigger==triggers.disabledTrigger?colors.disabledColor:trigger==triggers.pressedTrigger?colors.pressedColor:trigger==triggers.highlightedTrigger?colors.highlightedColor:trigger==triggers.selectedTrigger?colors.selectedColor:colors.normalColor;
+        graphic.CrossFadeColor(tint,colors.fadeDuration,true,true);
+    }
+    public void Stop(){currentTrigger="";}
 }

@@ -78,7 +78,8 @@ OvRendering::Resources::Texture* OvRendering::Resources::Loaders::TextureLoader:
 			image.isHDR
 		);
 
-		return new Texture{ p_filepath, std::move(texture) };
+		auto* result=new Texture{p_filepath,std::move(texture)};
+        result->SetAlphaData(image.data,image.width,image.height,image.isHDR);return result;
 	}
 
 	return nullptr;
@@ -129,7 +130,8 @@ OvRendering::Resources::Texture* OvRendering::Resources::Loaders::TextureLoader:
 		false
 	);
 
-	return new Texture("", std::move(texture));
+	auto* result=new Texture("",std::move(texture));
+    result->SetAlphaData(p_data,p_width,p_height,false);return result;
 }
 
 OvRendering::Resources::Texture* OvRendering::Resources::Loaders::TextureLoader::CreateFromEncodedMemory(
@@ -159,7 +161,8 @@ OvRendering::Resources::Texture* OvRendering::Resources::Loaders::TextureLoader:
 			image.isHDR
 		);
 
-		return new Texture("", std::move(texture));
+		auto* result=new Texture("",std::move(texture));
+        result->SetAlphaData(image.data,image.width,image.height,image.isHDR);return result;
 	}
 
 	return nullptr;
@@ -196,6 +199,7 @@ void OvRendering::Resources::Loaders::TextureLoader::Reload(
 		);
 
 		p_texture.SetTexture(std::move(texture));
+        p_texture.SetAlphaData(image.data,image.width,image.height,image.isHDR);
 	}
 }
 
@@ -227,6 +231,7 @@ void OvRendering::Resources::Loaders::TextureLoader::ReloadFromMemory(
 	);
 
 	p_texture.SetTexture(std::move(texture));
+        p_texture.SetAlphaData(p_data,p_width,p_height,false);
 }
 
 void OvRendering::Resources::Loaders::TextureLoader::ReloadFromEncodedMemory(
@@ -258,6 +263,7 @@ void OvRendering::Resources::Loaders::TextureLoader::ReloadFromEncodedMemory(
 		);
 
 		p_texture.SetTexture(std::move(texture));
+        p_texture.SetAlphaData(image.data,image.width,image.height,image.isHDR);
 	}
 }
 

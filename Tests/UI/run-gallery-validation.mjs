@@ -133,6 +133,14 @@ try {
   writePng(path.join(project,'render-thread.rgba'),path.join(output,'preview-render-thread.png'),960,540);
   fs.copyFileSync(path.join(project,'default.rgba'),path.join(output,'gallery.rgba'));
   evidence.preview=path.join(output,'preview.png');
+  for(const mode of ['default','render-thread']) {
+    run('controls-'+mode,native,[runtime,managed,fixture,mode,'controls']);
+    if(/\[ERROR\]|UI rebuild:/.test(fs.readFileSync(path.join(output,'controls-'+mode+'.log'),'utf8')))
+      throw Error('Interactive gallery reported a lifecycle error');
+  }
+  if(!fs.readFileSync(path.join(project,'controls-default.rgba')).equals(fs.readFileSync(path.join(project,'controls-render-thread.rgba'))))
+    throw Error('Interactive gallery differs across rendering modes');
+  writePng(path.join(project,'controls-default.rgba'),path.join(output,'controls.png'),960,540);
 
   fs.writeFileSync(path.join(output,'result.json'),JSON.stringify({
     ...evidence,success:true,

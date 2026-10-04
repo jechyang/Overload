@@ -17,7 +17,6 @@ Object.assign(process.env,{
   CommonProgramW6432:process.env.CommonProgramW6432||'C:\\Program Files\\Common Files',
   SystemRoot:process.env.SystemRoot||'C:\\Windows', SYSTEMDRIVE:process.env.SYSTEMDRIVE||'C:',
 });
-fs.mkdirSync('C:\\ProgramData\\NuGet\\Config',{recursive:true});
 const parent=path.join(root,'Build/UGUI-InputControls');fs.mkdirSync(parent,{recursive:true});
 const output=fs.mkdtempSync(path.join(parent,'input-'));
 const temporary=path.join(output,'temp');fs.mkdirSync(temporary,{recursive:true});
@@ -78,6 +77,8 @@ try {
   const runs={};
   for(const mode of ['default','render-thread']){
     run('runtime-'+mode,native,[runtime,managed,fixture,mode],nativeEnv);
+    if (/\[ERROR\]|UI rebuild:|callback=.*Exception/.test(fs.readFileSync(path.join(output,'runtime-'+mode+'.log'),'utf8')))
+      throw Error('Input controls reported an engine or lifecycle error in '+mode);
     runs[mode]=fs.readFileSync(path.join(project,mode+'.rgba'));
   }
   if(!runs.default.equals(runs['render-thread']))throw Error('Input controls pixels differ across render modes');

@@ -29,6 +29,30 @@ public class Image : MaskableGraphic, ILayoutElement, ICanvasRaycastFilter
     [SerializeField] private float m_TextureWidth = 100, m_TextureHeight = 100;
     [SerializeField] private float m_SpritePixelsPerUnit = 100;
     [SerializeField] private float m_PadL, m_PadB, m_PadR, m_PadT;
+    [SerializeField] private Vector2[] m_SpriteVertices = Array.Empty<Vector2>();
+    [SerializeField] private Vector2[] m_SpriteUV = Array.Empty<Vector2>();
+    [SerializeField] private int[] m_SpriteTriangles = Array.Empty<int>();
+
+    /// <summary>Normalized sprite positions and texture UVs supplied by the project's sprite importer.</summary>
+    public void SetSpriteMesh(Vector2[] positions, Vector2[] uv, int[] triangles) {
+        ArgumentNullException.ThrowIfNull(positions);
+        ArgumentNullException.ThrowIfNull(uv);
+        ArgumentNullException.ThrowIfNull(triangles);
+        ValidateSpriteMesh(positions, uv, triangles);
+        m_SpriteVertices = (Vector2[])positions.Clone();
+        m_SpriteUV = (Vector2[])uv.Clone();
+        m_SpriteTriangles = (int[])triangles.Clone();
+        SetVerticesDirty();
+    }
+    private static void ValidateSpriteMesh(Vector2[] positions, Vector2[] uv, int[] triangles) {
+        if (positions.Length != uv.Length || positions.Length > 1024 || triangles.Length > 1024 || triangles.Length % 3 != 0)
+            throw new ArgumentException("Sprite mesh requires matching vertices/UVs and complete triangles within field limits");
+        for (int i = 0; i < positions.Length; ++i)
+            if (!float.IsFinite(positions[i].x) || !float.IsFinite(positions[i].y) || !float.IsFinite(uv[i].x) || !float.IsFinite(uv[i].y))
+                throw new ArgumentException("Sprite mesh contains nonfinite coordinates");
+        foreach (int index in triangles)
+            if (index < 0 || index >= positions.Length) throw new ArgumentException("Sprite mesh index out of range");
+    }
 
     public AssetRef sprite {
         get => m_Sprite;
@@ -189,12 +213,36 @@ public class Image : MaskableGraphic, ILayoutElement, ICanvasRaycastFilter
     public bool IsRaycastLocationValid(Vector2 screenPoint, Actor? eventCamera) {
         if (m_AlphaHitTestMinimumThreshold <= 0) return true;
         if (!rectTransform.rect.Contains(screenPoint)) return false;
-        // Without a CPU-readable sprite, treat threshold as a full-rect hit only
-        // when threshold is 0. Readable-texture sampling is a later platform pass.
+        if(string.IsNullOrEmpty(sprite.Path))return true;
+        using var mesh=new VertexHelper();OnPopulateMesh(mesh);var vertices=mesh.Vertices();var indices=mesh.Indices();
+        for(int i=0;i<indices.Length;i+=3){
+            var a=vertices[indices[i]];var b=vertices[indices[i+1]];var c=vertices[indices[i+2]];
+            float denominator=(b.position.Y-c.position.Y)*(a.position.X-c.position.X)+(c.position.X-b.position.X)*(a.position.Y-c.position.Y);
+            if(Math.Abs(denominator)<0.000001f)continue;
+            float u=((b.position.Y-c.position.Y)*(screenPoint.x-c.position.X)+(c.position.X-b.position.X)*(screenPoint.y-c.position.Y))/denominator;
+            float v=((c.position.Y-a.position.Y)*(screenPoint.x-c.position.X)+(a.position.X-c.position.X)*(screenPoint.y-c.position.Y))/denominator;
+            float w=1-u-v;if(u<0||v<0||w<0)continue;
+            var uv=a.uv0*u+b.uv0*v+c.uv0*w;
+            float alpha=NativeUIComponent.Unpack(Owner.Access.Query(canvasRenderer.Handle,54,NativeUIComponent.Pack(uv),sprite.Path)).x;
+            if(alpha>=m_AlphaHitTestMinimumThreshold)return true;
+        }
         return false;
     }
 
     protected override void OnPopulateMesh(VertexHelper helper) {
+        if (m_Type == ImageType.Simple && m_UseSpriteMesh && m_SpriteTriangles.Length > 0) {
+            ValidateSpriteMesh(m_SpriteVertices, m_SpriteUV, m_SpriteTriangles);
+            helper.Clear();
+            var dimensions = GetDrawingDimensions(m_PreserveAspect);
+            for (int i = 0; i < m_SpriteVertices.Length; ++i) {
+                var point = m_SpriteVertices[i];
+                helper.AddVert(new(dimensions.X + point.x * (dimensions.Z - dimensions.X),
+                    dimensions.Y + point.y * (dimensions.W - dimensions.Y), 0), color, m_SpriteUV[i]);
+            }
+            for (int i = 0; i < m_SpriteTriangles.Length; i += 3)
+                helper.AddTriangle(m_SpriteTriangles[i], m_SpriteTriangles[i + 1], m_SpriteTriangles[i + 2]);
+            return;
+        }
         if (m_SpriteRectW <= 0 || m_SpriteRectH <= 0 || m_Type == ImageType.Simple && !hasBorder && m_Sprite.Path.Length == 0) {
             base.OnPopulateMesh(helper);
             return;

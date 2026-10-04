@@ -1,0 +1,118 @@
+<root><scene><actors>
+<actor>
+                <name>Camera</name>
+                <tag></tag>
+                <active>true</active>
+                <id>100</id>
+                <guid>1369332637595243126</guid>
+                <prefab_source></prefab_source>
+                <prefab_node_guid>0</prefab_node_guid>
+                <parent>0</parent>
+                <components>
+                    <component>
+                        <type>class OvCore::ECS::Components::CTransform</type>
+                        <data>
+                            <position><x>0</x><y>0</y><z>0</z></position>
+                            <rotation><x>0</x><y>0</y><z>0</z><w>1</w></rotation>
+                            <scale><x>1</x><y>1</y><z>1</z></scale>
+                        </data>
+                    </component>
+                    <component>
+                        <type>class OvCore::ECS::Components::CCamera</type>
+                        <data>
+                            <fov>60</fov>
+                            <size>5</size>
+                            <near>0.1</near>
+                            <far>1000</far>
+                            <clear_color><x>0.05</x><y>0.06</y><z>0.08</z></clear_color>
+                            <frustum_geometry_culling>true</frustum_geometry_culling>
+                            <frustum_light_culling>true</frustum_light_culling>
+                            <projection_mode>1</projection_mode>
+                        </data>
+                    </component>
+                </components>
+                <behaviours/>
+            </actor>
+<actor>
+                <name>EventSystem</name>
+                <tag></tag>
+                <active>true</active>
+                <id>200</id>
+                <guid>5550000000000000201</guid>
+                <prefab_source></prefab_source>
+                <prefab_node_guid>0</prefab_node_guid>
+                <parent>0</parent>
+                <components>
+                    <component>
+                        <type>class OvCore::ECS::Components::CTransform</type>
+                        <data>
+                            <position><x>0</x><y>0</y><z>0</z></position>
+                            <rotation><x>0</x><y>0</y><z>0</z><w>1</w></rotation>
+                            <scale><x>1</x><y>1</y><z>1</z></scale>
+                        </data>
+                    </component>
+                </components>
+                <behaviours>
+                    <behaviour>
+                        <type>UIGallery.EventSystemRoot</type>
+                        <script_identity backend="csharp" assembly="GameScripts" type="UIGallery.EventSystemRoot" id=""/>
+                        <data/>
+                    </behaviour>
+                    <behaviour>
+                        <type>UIGallery.InputModule</type>
+                        <script_identity backend="csharp" assembly="GameScripts" type="UIGallery.InputModule" id=""/>
+                        <data/>
+                    </behaviour>
+                </behaviours>
+            </actor>
+<actor>
+                <name>Canvas</name>
+                <tag></tag>
+                <active>true</active>
+                <id>1</id>
+                <guid>709581266370247569</guid>
+                <prefab_source></prefab_source>
+                <prefab_node_guid>0</prefab_node_guid>
+                <parent>0</parent>
+                <components>
+                    <component>
+                        <type>class OvCore::ECS::Components::CTransform</type>
+                        <data>
+                            <position><x>0</x><y>0</y><z>0</z></position>
+                            <rotation><x>0</x><y>0</y><z>0</z><w>1</w></rotation>
+                            <scale><x>1</x><y>1</y><z>1</z></scale>
+                        </data>
+                    </component>
+                    <component>
+                        <type>class OvCore::ECS::Components::CRectTransform</type>
+                        <data>
+                            <anchor_min><x>0</x><y>0</y></anchor_min>
+                            <anchor_max><x>1</x><y>1</y></anchor_max>
+                            <pivot><x>0.5</x><y>0.5</y></pivot>
+                            <anchored_position><x>0</x><y>0</y></anchored_position>
+                            <size_delta><x>0</x><y>0</y></size_delta>
+                        </data>
+                    </component>
+                    <component>
+                        <type>class OvCore::ECS::Components::CCanvas</type>
+                        <data>
+                            <scale_factor>1</scale_factor>
+                            <sorting_order>0</sorting_order>
+                            <override_sorting>false</override_sorting>
+                        </data>
+                    </component>
+                </components>
+                <behaviours>
+                    <behaviour>
+                        <type>UIGallery.GalleryCanvas</type>
+                        <script_identity backend="csharp" assembly="GameScripts" type="UIGallery.GalleryCanvas" id=""/>
+                        <data/>
+                    </behaviour>
+                    <behaviour>
+                        <type>UIGallery.ControlsGallery</type>
+                        <script_identity backend="csharp" assembly="GameScripts" type="UIGallery.ControlsGallery" id=""/>
+                        <data/>
+                    </behaviour>
+                </behaviours>
+            </actor>
+</actors></scene></root>

@@ -5,6 +5,11 @@ namespace Overload;
 
 public sealed partial class Actor
 {
+    /// <summary>Clone a hierarchy with persistent component references remapped; runtime listeners are never copied.</summary>
+    public Actor Clone(Actor? parent = null) {
+        if(parent!=null && (!ReferenceEquals(Access.UIRegistry,parent.Access.UIRegistry)||Access.Query(Handle,19,parent.Handle)==0))throw new InvalidOperationException("Cross-scene clone parent");
+        return new Actor(Access,Access.Query(Handle,29,parent?.Handle??0));
+    }
     public int GetSiblingIndex() => checked((int)Access.Query(Handle, 22));
     public void SetSiblingIndex(int index)
     {

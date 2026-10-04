@@ -38,7 +38,7 @@ public static unsafe partial class Bootstrap
     private static readonly Dictionary<nuint, FieldResult> FieldResults = new();
     private static readonly Dictionary<nuint, FieldValue> FieldValues = new();
     private static uint Tag(Type t) => t == typeof(bool) ? 1u : t == typeof(sbyte) ? 2u : t == typeof(byte) ? 3u :
-        t == typeof(short) ? 4u : t == typeof(ushort) ? 5u : t == typeof(int) ? 6u : t == typeof(uint) ? 7u :
+        t == typeof(short) ? 4u : t == typeof(ushort) || t == typeof(char) ? 5u : t == typeof(int) ? 6u : t == typeof(uint) ? 7u :
         t == typeof(long) ? 8u : t == typeof(ulong) ? 9u : t == typeof(float) ? 10u : t == typeof(double) ? 11u :
         t == typeof(string) ? 12u : t == typeof(V3) ? 15u : t == typeof(Q4) ? 16u : t == typeof(ActorRef) ? 17u : t == typeof(AssetRef) ? 18u : UITag(t);
     private static List<ProjectField> DiscoverFields(Type type)
@@ -49,9 +49,6 @@ public static unsafe partial class Bootstrap
             if (f.IsStatic || f.IsInitOnly || f.IsLiteral || f.IsDefined(typeof(NonSerializedAttribute)) ||
                 (!f.IsPublic && !f.IsDefined(typeof(SerializeFieldAttribute)))) continue;
             var (tag, auxiliary) = DescribeField(f.FieldType);
-            // The bounded collection codec is tested independently; expose fields only
-            // after native XML/Inspector support is connected, preserving saved records meanwhile.
-            if (tag == 25) tag = 0;
             if (tag == 0) { Log($"UnsupportedField: {type.FullName}.{f.Name} ({f.FieldType.FullName}); serialized data retained"); continue; }
             if (tag == 24) _ = ReferenceType(f.FieldType);
             string id = f.GetCustomAttribute<FieldIdAttribute>()?.Id ?? f.Name; IdentityText(id);

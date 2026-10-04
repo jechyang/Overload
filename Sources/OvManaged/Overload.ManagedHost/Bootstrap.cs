@@ -28,6 +28,7 @@ public static unsafe partial class Bootstrap
         internal ProjectContext? Project;
         internal readonly List<ProjectType> Types = new();
         internal readonly Dictionary<ulong, Instance> Instances = new();
+        internal readonly Dictionary<ulong, List<Instance>> OwnerInstances = new();
         internal readonly UI.CanvasUpdateRegistry UIRegistry = new();
         internal bool Closed;
         internal bool Closing;
@@ -37,7 +38,7 @@ public static unsafe partial class Bootstrap
             foreach (Instance instance in Instances.Values) Destroy(instance, reloading);
             Exception? fontCleanup = null;
             try { ReleaseSessionFonts(this); } catch (Exception ex) { fontCleanup = ex; }
-            Instances.Clear(); UIRegistry.Clear(); Closed = true;
+            Instances.Clear(); OwnerInstances.Clear(); UIRegistry.Clear(); Closed = true;
             Core = null; Entry = 0; Types.Clear();
             if (Project != null) Retire(Project); Project = null;
             if (fontCleanup != null) throw new InvalidOperationException("Native font session cleanup failed", fontCleanup);
@@ -52,6 +53,7 @@ public static unsafe partial class Bootstrap
     private static BootstrapServices services;
     private static int mainThread;
     private static bool busy;
+    private static int uiConstructionDepth;
     private static ulong nextId, attachmentStart;
 
     private static void Require(bool condition, Status status, string message)
@@ -66,14 +68,14 @@ public static unsafe partial class Bootstrap
         (errors ??= new())[session] = error.ToString();
         return (uint)(error is Failure failure ? failure.Status : Status.ManagedException);
     }
-    private static uint Guard(SessionHandle session, Action action, bool requireAttached = true)
+    private static uint Guard(SessionHandle session, Action action, bool requireAttached = true, bool allowConstruction = false)
     {
         bool entered = false;
         try {
             Require(Environment.CurrentManagedThreadId == Volatile.Read(ref mainThread), Status.WrongThread, "Host entry requires captured engine Main");
             Require(!requireAttached || (services.Context != 0 && services.IsMain != null && services.IsMain() == 1), Status.WrongThread, "Native Main/context is not attached");
-            Require(!busy, Status.Busy, "Reentrant Host ABI calls are rejected at the S1 boundary");
-            busy = entered = true;
+            Require(!busy || allowConstruction && uiConstructionDepth > 0 && !constructing, Status.Busy, "Reentrant Host ABI calls require the scoped UI construction channel");
+            entered = !busy; busy = true;
             action();
             errors?.Remove(session);
             return 0;
@@ -194,7 +196,7 @@ public static unsafe partial class Bootstrap
             NativeMemory.Free(value->Data);
         }
         *value = default;
-    }, false);
+    }, false, true);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint TakeError(SessionHandle session, Utf8* output)
     {
@@ -204,7 +206,7 @@ public static unsafe partial class Bootstrap
             Require(output != null, Status.InvalidArgument, "Null error output");
             *output = default;
             if (errors != null && errors.TryGetValue(session, out string? error)) *output = Allocate(error);
-        }, false);
+        }, false, true);
     }
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint TypeCount(SessionHandle s, uint* count) => Guard(s, () => {
@@ -212,7 +214,7 @@ public static unsafe partial class Bootstrap
         *count = checked((uint)Lookup(s).Types.Count);
     });
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint ReleaseValue(void* p) => Guard(default, () => ReleaseFieldValue((FieldValue*)p), false);
+    public static uint ReleaseValue(void* p) => Guard(default, () => ReleaseFieldValue((FieldValue*)p), false, true);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint ReleaseType(void* p) => Guard(default, () => ReleaseTypeResult((TypeResult*)p), false);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
@@ -235,19 +237,20 @@ public static unsafe partial class Bootstrap
         *p = Allocate(f.Aliases[(int)index]);
     });
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint CreateInstance(SessionHandle s, void* info, InstanceHandle* p) => Guard(s, () => Create(s, (InstanceInfo*)info, p));
+    public static uint CreateInstance(SessionHandle s, void* info, InstanceHandle* p) => Guard(s, () => Create(s, (InstanceInfo*)info, p), allowConstruction: true);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint DestroyInstance(SessionHandle s, InstanceHandle instance) => Guard(s, () => {
         Session session = Lookup(s);
         Instance value = FindInstance(s, instance);
-        try { Destroy(value); } finally { session.Instances.Remove(instance.Id); }
+        ulong owner = value.OwnerHandle;
+        try { Destroy(value); } finally { session.Instances.Remove(instance.Id); if (session.OwnerInstances.TryGetValue(owner, out var list)) { list.Remove(value); if (list.Count == 0) session.OwnerInstances.Remove(owner); } }
     });
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
     public static uint Dispatch(SessionHandle s, void* call) => Guard(s, () => Invoke(s, (LifecycleCall*)call));
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint ReadField(SessionHandle s, InstanceHandle instance, ulong field, void* p) => Guard(s, () => ReadFieldValue(s,instance,field,(FieldValue*)p));
+    public static uint ReadField(SessionHandle s, InstanceHandle instance, ulong field, void* p) => Guard(s, () => ReadFieldValue(s,instance,field,(FieldValue*)p), allowConstruction: true);
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvCdecl) })]
-    public static uint WriteField(SessionHandle s, InstanceHandle instance, ulong field, void* p) => Guard(s, () => WriteFieldValue(s,instance,field,(FieldValue*)p));
+    public static uint WriteField(SessionHandle s, InstanceHandle instance, ulong field, void* p) => Guard(s, () => WriteFieldValue(s,instance,field,(FieldValue*)p), allowConstruction: true);
 
 #if S1_ACCEPTANCE
     // Compiled only into the acceptance artifact, never the production ManagedHost.

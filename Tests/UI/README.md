@@ -43,20 +43,40 @@ native compiler or GPU; its evidence explicitly says `scope: matrix-only` and
 cannot substitute for runtime acceptance. `--u0` adds these checks to the native
 and optional managed regression. `node Tools/UI/reference-ugui.mjs --check --complete`
 is the U13 completion gate: it rejects any pending, partial or blocked type or
-engine dependency. TouchScreenKeyboard is `adapted` to the desktop character/IME
+engine dependency, and requires a successful current-source receipt from
+`node Tests/UI/run-completion-validation.mjs`. The receipt covers Debug/Release
+foundation and scripting regressions, the dedicated UI suites, FlappyBird product
+paths and editor camera checks. Classification alone cannot pass this gate.
+TouchScreenKeyboard is `adapted` to the desktop character/IME
 backend and is accepted by U11 input-controls.
 
-U1 utility and lifetime work in progress can be checked with:
+U1 utility, fields and lifetime validation:
 
     node Tests/UI/run-validation.mjs Debug --managed --foundations --scripting-regression
 
 This adds randomized IndexedSet mutations, pool ownership/reset checks, event
 mutation and thread rejection, and real native-host tests for receiver/source
 destruction, weak registries, three hot reloads and collectible project contexts.
-It is a subset of U1; field serialization, cloning and the remaining U1 acceptance
-are still outstanding, so `--u1` remains unavailable.
+`--u1` now invokes the codec and native foundation checks. All `--u0` through
+`--u13` flags have runtime suite mappings; `--u13` runs the combined completion
+suite. Most dedicated feature runners use Debug; the combined suite also runs
+the core native/managed/scripting regression against Release libraries.
+
+The input-controls suite verifies factory parent/child references, nested record
+and array reference remapping during cloning, dropdown options and lifecycle,
+Unicode limits/deletion, PIN masking, placeholder preservation, focus cleanup,
+native pointer clicks, native Unicode/Backspace/Enter input and default/RenderThread
+pixel agreement. Controls tests reject unchanged white for disabled ColorTint.
+The native UI suite checks 120 static frames without geometry uploads and removal
+while an older frame still retains its original immutable geometry.
 
 When another task changes native headers, build a matching OvCore library in an
 independent output directory and pass `--core-library=<absolute .lib path>`.
 The override is recorded in evidence. It must match the current headers; this
 option does not rebuild the library or make a stale library compatible.
+
+## Flappy Bird acceptance
+
+    node Tests/UI/run-flappy-validation.mjs --apps
+
+Build matching Debug libraries and OvEditor/OvGame objects first. This loads the shipped FlappyBird scene and scripts, exercises native keyboard/mouse input through six pipe crossings and recycling, death/reset, focus loss, resize and hot reload, and compares Ready/Playing/Game Over GPU pixels between default and RenderThread modes. The optional --apps additionally links product Editor/Game objects to check Play/Pause/Stop/replay and standalone startup. Logs, source hashes, screenshots and result.json are saved under Build/FlappyValidation.

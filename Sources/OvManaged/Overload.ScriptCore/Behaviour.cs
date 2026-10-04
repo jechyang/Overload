@@ -65,6 +65,7 @@ internal interface INativeAccess
 {
     ulong Query(ulong owner, uint operation, ulong argument = 0, string text = "");
     bool IsActorAlive(ulong owner) => Query(owner, 21) != 0;
+    Behaviour AddUIBehaviour(ulong owner, Type type) => throw new NotSupportedException("UI creation is unavailable in this backend");
     void SetUIMesh(ulong renderer, UI.UIVertex[] vertices, int[] indices);
     ulong ExchangeFont(ulong owner, uint operation, byte[] packet);
     Vector3 Read(ulong component, bool box);
@@ -115,6 +116,9 @@ public sealed partial class Actor
         return (T)(object)(kind == 2 ? (object)new Transform(this, handle) : new Box(this, handle));
     }
     public void Destroy() => Access.Query(Handle, 6);
+    /// <summary>Creates and prepares a UI component now; gameplay callbacks remain deferred until the current dispatch completes.</summary>
+    public T AddUIBehaviour<T>() where T : EventSystems.UIBehaviour => (T)Access.AddUIBehaviour(Handle, typeof(T));
+    public Actor CreateChild(string name) { var child = Create(name); child.Parent = this; return child; }
     public void AddBehaviour<T>() where T : Behaviour => Access.Query(Handle, 7, 0, typeof(T).FullName!);
     public void RemoveBehaviour<T>() where T : Behaviour => Access.Query(Handle, 8, 0, typeof(T).FullName!);
     public Actor? Find(string name) { ulong id = Access.Query(Handle, 9, 0, name); return id == 0 ? null : new Actor(Access, id); }

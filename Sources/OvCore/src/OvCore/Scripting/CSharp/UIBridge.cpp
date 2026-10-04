@@ -1,6 +1,9 @@
 #include <OvCore/Scripting/CSharp/UIBridge.h>
 #include <OvCore/ECS/Components/CUI.h>
 #include <OvCore/UI/Frame.h>
+#include <OvCore/Global/ServiceLocator.h>
+#include <OvCore/ResourceManagement/TextureManager.h>
+#include <OvRendering/Resources/Texture.h>
 #include <OvCore/ECS/Actor.h>
 #include <bit>
 #include <cmath>
@@ -201,9 +204,22 @@ namespace OvCore::Scripting::CSharp
             if(op==51)output=mask.IsEnabled();
             else {Require(mask.owner.CanRunScripts(),OV_SCRIPT_INVALID_HANDLE);Require(argument<=1);mask.SetEnabled(argument!=0);}
         }
+        else if(op == 54) {
+            auto& renderer=*state.Get<CCanvasRenderer>(handle);
+            const auto uv=Unpack(argument);Require(std::isfinite(uv.x)&&std::isfinite(uv.y));
+            auto* manager=Global::ServiceLocator::TryGet<ResourceManagement::TextureManager>();
+            auto* texture=manager&&!property.empty()?manager->GetResource(property):nullptr;
+            output=Pack({texture?texture->SampleAlpha(uv.x,uv.y):1.0f,0});
+        }
         else if(op == 53) {
             auto& renderer=*state.Get<CCanvasRenderer>(handle);
             const auto frame=renderer.GetHitFrame();
+            if (property == "projectValid" || property == "projectLocal") {
+                const auto point = frame ? frame->ProjectGraphic(renderer.owner.GetGUID(), Unpack(argument)) : std::nullopt;
+                if (property == "projectValid") output = point.has_value();
+                else { Require(point.has_value()); output = Pack(*point); }
+                return;
+            }
             const auto hit=frame?frame->RaycastGraphic(renderer.owner.GetGUID(),Unpack(argument)):std::nullopt;
             if(property=="valid")output=hit.has_value();
             else if(hit) {

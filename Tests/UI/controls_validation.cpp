@@ -142,16 +142,16 @@ int wmain(int argc, wchar_t** argv) try
     Require(toggleScript.GetScript()->IsValid() && sliderScript.GetScript()->IsValid() && scrollScript.GetScript()->IsValid(),
         "Toggle/Slider/Scroll prepared");
 
+    scene.Play();scene.Update(1.f/60);scene.LateUpdate(1.f/60);
     // ColorTint disabled state applies through the shared field ABI.
     SetBool(buttonGraphic, "m_Interactable", false);
     OvCore::UI::ExtractFrame(scene, {kWidth, kHeight});
     Render(engine, scene);
-    // DisabledColorBlock default is (0.78,0.78,0.78,0.5) over black → ~198 gray at full alpha blend is not exact;
-    // assert the sample is grey (r≈g≈b) rather than white/normal (1,1,1).
+    // Reject unchanged white as well as missing black geometry.
     const size_t bi = (size_t(100) * kWidth + 60) * 4;
     Require(std::abs(int(g_pixels[bi]) - int(g_pixels[bi + 1])) < 24 &&
             std::abs(int(g_pixels[bi + 1]) - int(g_pixels[bi + 2])) < 24 &&
-            g_pixels[bi] > 80, "Button ColorTint disabled is grey");
+            g_pixels[bi] > 80 && g_pixels[bi] < 220, "Button ColorTint disabled differs from normal white");
     SetBool(buttonGraphic, "m_Interactable", true);
     OvCore::UI::ExtractFrame(scene, {kWidth, kHeight});
     Render(engine, scene);

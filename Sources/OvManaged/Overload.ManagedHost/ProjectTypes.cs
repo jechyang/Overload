@@ -80,9 +80,13 @@ public static unsafe partial class Bootstrap
             Dictionary<string, string> keys = new(StringComparer.Ordinal);
             Type[] projectTypes = assembly.GetTypes();
             bool uiEnabled = assembly.IsDefined(typeof(UI.EnableUIAttribute)) || projectTypes.Any(IsUIType);
-            var candidates = uiEnabled ? projectTypes.Concat(new[] { typeof(UI.CanvasScaler), typeof(UI.LayoutElement),
-                typeof(UI.HorizontalLayoutGroup), typeof(UI.VerticalLayoutGroup), typeof(UI.ContentSizeFitter),
-                typeof(UI.Image), typeof(UI.RawImage) }) : projectTypes;
+            // Register the complete built-in UI catalogue. Project scripts can add these
+            // types directly; requiring a project subclass silently left input and
+            // controls as MissingType even though their implementations existed.
+            var builtins = typeof(EventSystems.UIBehaviour).Assembly.GetTypes().Where(t =>
+                IsUIType(t) && t.IsSubclassOf(typeof(Behaviour)) && !t.IsAbstract &&
+                !t.ContainsGenericParameters && t.IsVisible && t.GetConstructor(Type.EmptyTypes) != null);
+            var candidates = uiEnabled ? projectTypes.Concat(builtins).Distinct() : projectTypes;
             foreach (Type type in candidates.OrderBy(t => t.FullName, StringComparer.Ordinal)) {
                 if (!type.IsSubclassOf(typeof(Overload.Behaviour))) continue;
                 if (type.IsAbstract || type.ContainsGenericParameters || !type.IsVisible || type.GetConstructor(Type.EmptyTypes) == null) {

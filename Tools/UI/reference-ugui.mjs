@@ -4,6 +4,7 @@ import cp from 'node:child_process';
 import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {inventory, validateMatrix} from './runtime-matrix.mjs';
+import {requireCompletionEvidence} from '../../Tests/UI/completion-evidence.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const reference = JSON.parse(fs.readFileSync(path.join(root, 'Tools/UI/ugui-reference.json'), 'utf8'));
@@ -30,6 +31,7 @@ if (git([...prefix, 'status', '--porcelain']))
 const files = git([...prefix, 'ls-tree', '-r', '--name-only', 'HEAD']).split('\n');
 const matrixPath = path.join(root, 'Tests/UI/ugui-runtime-matrix.json');
 const summary = validateMatrix(JSON.parse(fs.readFileSync(matrixPath, 'utf8')), inventory(target, files), reference, root, {requireComplete: process.argv.includes('--complete')});
+if(process.argv.includes('--complete'))requireCompletionEvidence(root);
 const index = files.filter(p => p.startsWith('UnityEngine.UI/') && p.endsWith('.cs')).map(p => ({
     path: p, sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(target, p))).digest('hex')
 }));

@@ -1,4 +1,5 @@
 #define wmain HostValidationMain
+#include <OvWindowing/Inputs/InputManager.h>
 #include "Tests/Scripting/Integration/native_host_validation.cpp"
 #undef wmain
 #include <OvCore/Global/ServiceLocator.h>
@@ -207,7 +208,8 @@ static void CheckAnchors(OvCore::SceneSystem::Scene& scene)
 
 int wmain(int argc, wchar_t** argv) try
 {
-    Require(argc == 5, "gallery arguments: runtime, host, GameScripts.dll, default/render-thread");
+    Require(argc == 5 || argc == 6, "gallery arguments: runtime, host, GameScripts.dll, default/render-thread, [controls]");
+    const bool controls=argc==6;
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     OvReflection::MainThread authority;
     RuntimeHost host(authority);
@@ -219,6 +221,9 @@ int wmain(int argc, wchar_t** argv) try
     OvCore::Scripting::ScriptEngine scripts(project, project);
     OvCore::Global::ServiceLocator::Provide(scripts);
     Engine engine(std::wstring(argv[4]) == L"render-thread");
+    OvWindowing::Inputs::InputManager input(engine.window);
+    OvCore::Global::ServiceLocator::Provide(input);
+    input.SetUIViewport({{0,0},{kWidth,kHeight},{1,1}});
     OvCore::Global::ServiceLocator::Provide(engine.scenes);
     std::unique_ptr<baregl::ResourceExecutor> executor;
     if (engine.render)
@@ -227,11 +232,16 @@ int wmain(int argc, wchar_t** argv) try
     Require(scripts.LoadCSharpProject(host, project, assembly, "GameScripts"), "load UIGallery GameScripts");
 
     tinyxml2::XMLDocument doc;
-    Require(doc.LoadFile("Examples/UIGallery/Assets/Scenes/UIGallery.ovscene") == tinyxml2::XML_SUCCESS,
+    Require(doc.LoadFile(controls ? "Examples/UIGallery/Assets/Scenes/Controls.ovscene" : "Examples/UIGallery/Assets/Scenes/UIGallery.ovscene") == tinyxml2::XML_SUCCESS,
         "load UIGallery.ovscene");
     auto& scene = *engine.scenes.GetCurrentScene();
     scene.OnDeserialize(doc, doc.RootElement()->FirstChildElement("scene"));
 
+    if(controls) {
+        OvCore::UI::ExtractFrame(scene,{kWidth,kHeight});scene.Play();
+        for(int i=0;i<5;++i){scene.Update(1.f/60);scene.LateUpdate(1.f/60);input.ClearEvents();OvCore::UI::ExtractFrame(scene,{kWidth,kHeight});}
+        Require(scene.FindActorByName("Controls Gallery")&&scene.FindActorByName("InputField")&&scene.FindActorByName("Dropdown"),"interactive controls gallery starts");
+    }
     // First edit-mode ExtractFrame prepares UI types (no Inspector, no Play).
     auto first = OvCore::UI::ExtractFrame(scene, { kWidth, kHeight });
     Require(first.meshes.size() + first.images.size() >= 20, "first frame initializes gallery UI");
@@ -242,9 +252,9 @@ int wmain(int argc, wchar_t** argv) try
     for (int pass = 0; pass < 3; ++pass) OvCore::UI::ExtractFrame(scene, { kWidth, kHeight });
 
     RenderAndRead(engine, scene);
-    CheckAnchors(scene);
+    if(!controls)CheckAnchors(scene);
 
-    const auto out = project / (std::wstring(argv[4]) + L".rgba");
+    const auto out = project / ((controls?L"controls-":L"")+std::wstring(argv[4]) + L".rgba");
     std::ofstream capture(out, std::ios::binary);
     capture.write(reinterpret_cast<const char*>(g_pixels.data()), std::streamsize(g_pixels.size()));
     capture.close();

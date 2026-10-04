@@ -64,7 +64,7 @@ public class CanvasGroup : UIBehaviour, ICanvasRaycastFilter
     public bool blocksRaycasts {get=>m_BlocksRaycasts;set{m_BlocksRaycasts=value;SetDirty();}}
     public bool ignoreParentGroups {get=>m_IgnoreParentGroups;set{m_IgnoreParentGroups=value;SetDirty();}}
     internal override void EnsureNativeComponents(){base.EnsureNativeComponents();Sync();}
-    protected override void SetDirty(){if(owner!=null)Sync();}
+    protected override void SetDirty(){if(owner!=null){Sync();foreach(var selectable in Owner.GetComponentsInChildren<Selectable>(true))selectable.RefreshCanvasGroups();}}
     private void Sync(){var native=Owner.AddComponent<NativeCanvasGroup>();native.Set(m_Alpha,m_Interactable,m_BlocksRaycasts,m_IgnoreParentGroups,IsActive());}
     internal override void ReleaseNativeComponents(){if(owner!=null && Owner.IsAlive)Owner.GetComponent<NativeCanvasGroup>()?.Clear();}
     public override void OnEnable(){base.OnEnable();Sync();}

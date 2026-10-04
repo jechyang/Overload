@@ -98,7 +98,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -117,7 +117,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: BaseEventData."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: BaseEventData."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.BaseEventData",
@@ -130,7 +130,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -149,7 +149,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.PointerEventData.InputButton",
@@ -162,7 +162,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.PointerEventData.FramePressState",
@@ -175,7 +175,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -194,7 +194,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -213,7 +213,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.IPointerEnterHandler",
@@ -226,7 +226,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.IPointerExitHandler",
@@ -239,7 +239,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.IPointerDownHandler",
@@ -252,7 +252,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.IPointerUpHandler",
@@ -265,7 +265,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.IPointerClickHandler",
@@ -278,7 +278,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.IBeginDragHandler",
@@ -291,7 +291,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.IInitializePotentialDragHandler",
@@ -304,7 +304,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.IDragHandler",
@@ -317,7 +317,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.IEndDragHandler",
@@ -330,7 +330,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.IDropHandler",
@@ -343,7 +343,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.IScrollHandler",
@@ -356,7 +356,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.IUpdateSelectedHandler",
@@ -369,7 +369,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.ISelectHandler",
@@ -382,7 +382,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.IDeselectHandler",
@@ -395,7 +395,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.IMoveHandler",
@@ -408,7 +408,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.ISubmitHandler",
@@ -421,7 +421,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.ICancelHandler",
@@ -434,7 +434,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -453,7 +453,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -472,7 +472,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.EventTrigger.TriggerEvent",
@@ -485,7 +485,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.EventTrigger.Entry",
@@ -498,7 +498,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -517,7 +517,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -536,7 +536,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.ExecuteEvents.EventFunction\u003cT1\u003e",
@@ -549,7 +549,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: EventFunction\u003cT\u003e."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: EventFunction\u003cT\u003e."
                                     }
                                 ]
                   },
@@ -568,7 +568,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -587,7 +587,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -606,7 +606,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.PointerInputModule.ButtonState",
@@ -619,7 +619,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: PointerEventData."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: PointerEventData."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.PointerInputModule.MouseState",
@@ -632,7 +632,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIInputSnapshot."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: UIInputSnapshot."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.PointerInputModule.MouseButtonEventData",
@@ -645,7 +645,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIInputEvent."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: UIInputEvent."
                                     }
                                 ]
                   },
@@ -664,7 +664,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.EventSystems.StandaloneInputModule.InputMode",
@@ -677,7 +677,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: StandaloneInputModule."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: StandaloneInputModule."
                                     }
                                 ]
                   },
@@ -696,7 +696,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -715,7 +715,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -734,7 +734,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -753,7 +753,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -772,7 +772,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -791,7 +791,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -810,7 +810,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -945,7 +945,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -964,7 +964,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Button.ButtonClickedEvent",
@@ -977,7 +977,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: UIEvent."
                                     }
                                 ]
                   },
@@ -1041,7 +1041,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -1060,7 +1060,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -1079,7 +1079,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -1098,7 +1098,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.IClippable",
@@ -1111,7 +1111,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -1130,7 +1130,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -1149,7 +1149,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.DefaultControls.Resources",
@@ -1162,7 +1162,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -1181,7 +1181,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Dropdown.DropdownItem",
@@ -1194,7 +1194,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: OptionData."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: OptionData."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Dropdown.OptionData",
@@ -1207,7 +1207,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Dropdown.OptionDataList",
@@ -1220,7 +1220,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Dropdown.DropdownEvent",
@@ -1233,7 +1233,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent\u003cint\u003e."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: UIEvent\u003cint\u003e."
                                     }
                                 ]
                   },
@@ -1252,7 +1252,7 @@
                                         "tests":  [
                                                       "U6-TEXT-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -1271,7 +1271,7 @@
                                         "tests":  [
                                                       "U6-TEXT-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -1309,7 +1309,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.GraphicRaycaster.BlockingObjects",
@@ -1322,7 +1322,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -1341,7 +1341,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -1360,7 +1360,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -1379,7 +1379,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -1398,7 +1398,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -1417,7 +1417,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -1449,7 +1449,7 @@
                                         "tests":  [
                                                       "U3-IMAGE-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: ImageType."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: ImageType."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Image.FillMethod",
@@ -1462,7 +1462,7 @@
                                         "tests":  [
                                                       "U3-IMAGE-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Image.OriginHorizontal",
@@ -1475,7 +1475,7 @@
                                         "tests":  [
                                                       "U3-IMAGE-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: fillOrigin."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: fillOrigin."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Image.OriginVertical",
@@ -1488,7 +1488,7 @@
                                         "tests":  [
                                                       "U3-IMAGE-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: fillOrigin."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: fillOrigin."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Image.Origin90",
@@ -1501,7 +1501,7 @@
                                         "tests":  [
                                                       "U3-IMAGE-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: fillOrigin."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: fillOrigin."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Image.Origin180",
@@ -1514,7 +1514,7 @@
                                         "tests":  [
                                                       "U3-IMAGE-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: fillOrigin."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: fillOrigin."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Image.Origin360",
@@ -1527,7 +1527,7 @@
                                         "tests":  [
                                                       "U3-IMAGE-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: fillOrigin."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: fillOrigin."
                                     }
                                 ]
                   },
@@ -1546,7 +1546,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.InputField.ContentType",
@@ -1559,7 +1559,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.InputField.InputType",
@@ -1572,7 +1572,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.InputField.CharacterValidation",
@@ -1585,7 +1585,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.InputField.LineType",
@@ -1598,7 +1598,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.InputField.OnValidateInput",
@@ -1611,7 +1611,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: CharacterValidation."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: CharacterValidation."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.InputField.SubmitEvent",
@@ -1624,7 +1624,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent\u003cstring\u003e."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: UIEvent\u003cstring\u003e."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.InputField.OnChangeEvent",
@@ -1637,7 +1637,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent\u003cstring\u003e."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: UIEvent\u003cstring\u003e."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.InputField.EditState",
@@ -1650,7 +1650,7 @@
                                         "tests":  [
                                                       "U11-INPUT-CONTROLS"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: isFocused."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: isFocused."
                                     }
                                 ]
                   },
@@ -1669,7 +1669,7 @@
                                         "tests":  [
                                                       "U4-LAYOUT-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.AspectRatioFitter.AspectMode",
@@ -1682,7 +1682,7 @@
                                         "tests":  [
                                                       "U4-LAYOUT-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -1791,7 +1791,7 @@
                                         "tests":  [
                                                       "U4-LAYOUT-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.GridLayoutGroup.Corner",
@@ -1804,7 +1804,7 @@
                                         "tests":  [
                                                       "U4-LAYOUT-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.GridLayoutGroup.Axis",
@@ -1817,7 +1817,7 @@
                                         "tests":  [
                                                       "U4-LAYOUT-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.GridLayoutGroup.Constraint",
@@ -1830,7 +1830,7 @@
                                         "tests":  [
                                                       "U4-LAYOUT-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -2053,7 +2053,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -2072,7 +2072,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -2091,7 +2091,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.MaskableGraphic.CullStateChangedEvent",
@@ -2104,7 +2104,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: onCullStateChanged."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: onCullStateChanged."
                                     }
                                 ]
                   },
@@ -2123,7 +2123,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -2142,7 +2142,7 @@
                                         "tests":  [
                                                       "U4-LAYOUT-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: LayoutUtility."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: LayoutUtility."
                                     }
                                 ]
                   },
@@ -2161,7 +2161,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Navigation.Mode",
@@ -2174,7 +2174,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: NavigationMode."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: NavigationMode."
                                     }
                                 ]
                   },
@@ -2231,7 +2231,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.ScrollRect.MovementType",
@@ -2244,7 +2244,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.ScrollRect.ScrollbarVisibility",
@@ -2257,7 +2257,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.ScrollRect.ScrollRectEvent",
@@ -2270,7 +2270,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent\u003cVector2\u003e."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: UIEvent\u003cVector2\u003e."
                                     }
                                 ]
                   },
@@ -2289,7 +2289,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Scrollbar.Direction",
@@ -2302,7 +2302,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Scrollbar.ScrollEvent",
@@ -2315,7 +2315,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent\u003cfloat\u003e."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: UIEvent\u003cfloat\u003e."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Scrollbar.Axis",
@@ -2328,7 +2328,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -2347,7 +2347,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Selectable.Transition",
@@ -2360,7 +2360,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Selectable.SelectionState",
@@ -2373,7 +2373,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -2411,7 +2411,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Slider.Direction",
@@ -2424,7 +2424,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Slider.SliderEvent",
@@ -2437,7 +2437,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent\u003cfloat\u003e."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: UIEvent\u003cfloat\u003e."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Slider.Axis",
@@ -2450,7 +2450,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -2488,7 +2488,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -2507,7 +2507,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.StencilMaterial.MatEntry",
@@ -2520,7 +2520,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIStencilState."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: UIStencilState."
                                     }
                                 ]
                   },
@@ -2539,7 +2539,7 @@
                                         "tests":  [
                                                       "U6-TEXT-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -2558,7 +2558,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Toggle.ToggleTransition",
@@ -2571,7 +2571,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: Selectable.Transition."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: Selectable.Transition."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.Toggle.ToggleEvent",
@@ -2584,7 +2584,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: UIEvent\u003cbool\u003e."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: UIEvent\u003cbool\u003e."
                                     }
                                 ]
                   },
@@ -2603,7 +2603,7 @@
                                         "tests":  [
                                                       "U8-CONTROLS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -2660,7 +2660,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: IUIGraphicHitSource."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: IUIGraphicHitSource."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.ReflectionMethodsCache.Raycast3DCallback",
@@ -2673,7 +2673,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: PhysicsRaycaster."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: PhysicsRaycaster."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.ReflectionMethodsCache.Raycast2DCallback",
@@ -2686,7 +2686,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: Physics2DRaycaster."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: Physics2DRaycaster."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.ReflectionMethodsCache.RaycastAllCallback",
@@ -2699,7 +2699,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: PhysicsRaycaster."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: PhysicsRaycaster."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.ReflectionMethodsCache.GetRayIntersectionAllCallback",
@@ -2712,7 +2712,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: PhysicsRaycaster."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: PhysicsRaycaster."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.ReflectionMethodsCache.GetRayIntersectionAllNonAllocCallback",
@@ -2725,7 +2725,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: PhysicsRaycaster."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: PhysicsRaycaster."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.ReflectionMethodsCache.GetRaycastNonAllocCallback",
@@ -2738,7 +2738,7 @@
                                         "tests":  [
                                                       "U7-EVENTS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: PhysicsRaycaster."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: PhysicsRaycaster."
                                     }
                                 ]
                   },
@@ -2776,7 +2776,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -2795,7 +2795,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: IMeshModifier."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: IMeshModifier."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.BaseMeshEffect",
@@ -2808,7 +2808,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -2827,7 +2827,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet. Overload equivalent: IMeshModifier."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations. Overload equivalent: IMeshModifier."
                                     },
                                     {
                                         "name":  "UnityEngine.UI.IMeshModifier",
@@ -2840,7 +2840,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -2859,7 +2859,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -2878,7 +2878,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   },
@@ -2897,7 +2897,7 @@
                                         "tests":  [
                                                       "U2-U5-GRAPHICS-RUNTIME"
                                                   ],
-                                        "differences":  "Planned behavior rewrite; not implemented or accepted yet."
+                                        "differences":  "Overload C# runtime implementation. Listed tests define the validated scope; see UGUI-COMPATIBILITY.zh-CN.md for engine adaptations."
                                     }
                                 ]
                   }

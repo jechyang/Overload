@@ -26,6 +26,7 @@ namespace Overload.EventSystems
             if (owner != null && Owner.GetComponent<RectTransform>() is RectTransform rect)
                 UI.LayoutRebuilder.MarkLayoutForRebuild(rect);
         }
+        protected T? ResolveUIReference<T>(ComponentRef<T> reference) where T : class => owner == null || reference.ActorGuid == 0 ? null : reference.Resolve(Owner);
         internal virtual void EnsureNativeComponents() {
             Owner.AddComponent<RectTransform>();
             if (this is UI.CanvasScaler) Owner.AddComponent<Canvas>();

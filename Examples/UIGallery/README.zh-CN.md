@@ -1,8 +1,11 @@
 # UIGallery — 已实现 UGUI 功能测试工程
 
-日期：2026-09-21。本工程**只覆盖当前已落地**的 Overload uGUI 能力，不包含
-U3 完整 Image 模式、U8–U12 交互控件（Button/Toggle/Slider/ScrollRect/InputField/Dropdown）
-或 U13 收口内容。完整边界见 `Tests/UI/UGUI-COMPATIBILITY.zh-CN.md` 与各 `*-PROGRESS.zh-CN.md`。
+更新：2026-10-04。本工程提供静态布局画廊与交互控件画廊。
+完整兼容边界见 `Tests/UI/UGUI-COMPATIBILITY.zh-CN.md`。
+
+打开 `Assets/Scenes/Controls.ovscene` 并进入 Play，可操作 Button、Toggle、Slider、
+InputField、Dropdown 和带滚动条的 ScrollRect。底部状态文字显示点击、输入和选择结果。
+这张场景由 `GalleryControls.cs` 使用生产 `DefaultControls` 工厂建立，支持脚本热重载时清理并重建。
 
 ## 覆盖范围
 
@@ -41,7 +44,7 @@ Scripts\Windows\Build.bat Debug -skip-project-generation
 3. 首次打开或改脚本后，生成托管宿主与工程程序集（与 ManagedUI 相同通道）：
 
 ```text
-node Examples/ManagedUI/build.mjs <Python3 绝对路径>
+node Examples/UIGallery/build.mjs
 ```
 
 或在编辑器内打开并保存工程，触发自动 C# 构建。本机路径写在
@@ -94,8 +97,6 @@ node Tests/UI/run-gallery-validation.mjs
 ## 明确未包含
 
 - Image Sliced / Tiled / Filled 与 Sprite border（U3，工作包 C）
-- Button / Toggle / Slider / Scrollbar / ScrollRect（U8–U10，工作包 G）
-- InputField / Dropdown / DefaultControls（U11–U12，工作包 H）
 - Camera / World Space Canvas 画廊（主路径是 Overlay，可后续加场景）
 
 ## 验证定位

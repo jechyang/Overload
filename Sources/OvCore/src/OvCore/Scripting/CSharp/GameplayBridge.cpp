@@ -6,6 +6,9 @@
 #include <OvCore/ECS/Components/CUI.h>
 #include <OvCore/UI/Frame.h>
 #include <bit>
+#include <tinyxml2.h>
+#include <functional>
+#include <unordered_map>
 #include <algorithm>
 #include <charconv>
 #include <limits>
@@ -84,6 +87,48 @@ namespace OvCore::Scripting::CSharp
                     if (!ticket.expired() && actor.CanRunScripts()) actor.AddBehaviour(identity);
                 });
                 else actor.RemoveBehaviour(identity);
+                break;
+            }
+            case 29: {
+                Require(actor.CanRunScripts(), OV_SCRIPT_INVALID_HANDLE);
+                auto* scene=actor.GetScene();Require(scene!=nullptr);
+                ECS::Actor* parent=argument?&state.Get<ECS::Components::CTransform>(argument)->owner:nullptr;
+                Require(!parent || parent->GetScene()==scene);
+                std::vector<ECS::Actor*> sources, copies;
+                std::function<void(ECS::Actor&)> collect=[&](ECS::Actor& value){sources.push_back(&value);for(auto* child:value.GetChildren())collect(*child);};collect(actor);
+                std::unordered_map<uint64_t,uint64_t> mapping;
+                std::unordered_map<ECS::Actor*,ECS::Actor*> actors;
+                try {
+                    for(auto* source:sources){
+                        tinyxml2::XMLDocument doc;auto* root=doc.NewElement("actors");doc.InsertEndChild(root);source->OnSerialize(doc,root);
+                        auto* record=root->FirstChildElement("actor");
+                        auto* behaviourRecord=record->FirstChildElement("behaviours")->FirstChildElement("behaviour");
+                        for(const auto& key:source->GetBehavioursOrder()){
+                            auto* behaviour=source->GetBehaviour(key);if(!behaviour||!behaviourRecord)continue;
+                            behaviour->PrepareManagedFields();behaviour->SerializeLiveManagedFields(doc,behaviourRecord->FirstChildElement("data"));
+                            behaviourRecord=behaviourRecord->NextSiblingElement("behaviour");
+                        }
+                        auto& copy=scene->CreateActor(source->GetName());copies.push_back(&copy);
+                        auto id=copy.GetID();auto guid=copy.GetGUID();copy.OnDeserialize(doc,record);copy.SetID(id);copy.SetGUID(guid);
+                        mapping[source->GetGUID()]=guid;actors[source]=&copy;
+                    }
+                    for(size_t i=0;i<copies.size();++i){
+                        auto* source=sources[i];auto* copy=copies[i];
+                        if(i==0){if(parent)copy->SetParent(*parent);else copy->DetachFromParent();}
+                        else copy->SetParent(*actors.at(source->GetParent()));
+                        for(auto& [key,behaviour]:copy->GetBehaviours())behaviour.RemapManagedActorReferences(mapping);
+                    }
+                    for(auto* copy:copies)for(auto& [key,behaviour]:copy->GetBehaviours())scripts.PrepareCSharp(behaviour);
+                    *output=publish(copies.front()->transform);
+                } catch(...) {for(auto* copy:copies)copy->MarkAsDestroy();throw;}
+                break;
+            }
+            case 27: {
+                Require(actor.CanRunScripts(), OV_SCRIPT_INVALID_HANDLE);
+                const auto split = value.find('\n'); Require(split != std::string::npos);
+                const auto identity = ScriptIdentity::CSharp(value.substr(0, split), value.substr(split + 1));
+                auto& component = actor.AddBehaviour(identity);
+                Require(scripts.PrepareCSharp(component), OV_SCRIPT_INVALID_HANDLE);
                 break;
             }
             case 9: case 10: case 11: {

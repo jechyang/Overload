@@ -66,7 +66,7 @@ namespace OvCore::Scripting
                 if(tag==15) v.scalar.vector3={parts[0],parts[1],parts[2]}; else v.scalar.quaternion={parts[0],parts[1],parts[2],parts[3]};
                 break;
             }
-            case 12: case 18: case OVCS_FIELD_COMPONENT_REF: v.text=input; ok=true; break;
+            case OVCS_FIELD_COLLECTION: case OVCS_FIELD_RECORD: case 12: case 18: case OVCS_FIELD_COMPONENT_REF: v.text=input; ok=true; break;
             case OVCS_FIELD_VECTOR2: case OVCS_FIELD_VECTOR4: case OVCS_FIELD_RECT: case OVCS_FIELD_RECT_OFFSET: case OVCS_FIELD_COLOR: {
                 size_t begin=0; ok=true; const size_t count=tag==OVCS_FIELD_VECTOR2?2:4;
                 for (size_t i=0;i<count;++i) {

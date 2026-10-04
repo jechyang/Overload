@@ -10,12 +10,12 @@ public static unsafe partial class Bootstrap
     private static FieldValue PackField(Type type, object? value, out string text, int depth = 0)
     {
         var kind = DescribeField(type);
-        Require(value != null || kind.Tag == 25, Status.UnsupportedField, "Null scalar field is unsupported");
+        Require(value != null || kind.Tag is 25 or 26, Status.UnsupportedField, "Null scalar field is unsupported");
         FieldValue r = new() { Size = 48, Tag = kind.Tag, Auxiliary = kind.Auxiliary }; text = "";
         switch (kind.Tag) {
             case 1: r.Scalar.B = (bool)value! ? (byte)1 : (byte)0; break;
             case 2: r.Scalar.I8 = (sbyte)value!; break; case 3: r.Scalar.B = (byte)value!; break;
-            case 4: r.Scalar.I16 = (short)value!; break; case 5: r.Scalar.U16 = (ushort)value!; break;
+            case 4: r.Scalar.I16 = (short)value!; break; case 5: r.Scalar.U16 = type == typeof(char) ? (char)value! : (ushort)value!; break;
             case 6: r.Scalar.I32 = (int)value!; break; case 7: r.Scalar.U32 = (uint)value!; break;
             case 8: r.Scalar.I64 = (long)value!; break; case 9: r.Scalar.U64 = (ulong)value!; break;
             case 10: r.Scalar.F32 = (float)value!; break; case 11: r.Scalar.F64 = (double)value!; break;
@@ -28,6 +28,7 @@ public static unsafe partial class Bootstrap
                 var reference = (IComponentReference)value!; r.Scalar.U64 = reference.ActorGuid;
                 text = ReferenceType(type) + "\n" + reference.ComponentType; break;
             case 25: text = WriteCollection(type, value, depth); break;
+            case 26: text = WriteRecord(type, value, depth); break;
             default: ReadUIScalar(kind.Tag, value!, &r.Scalar); break;
         }
         ValidateFieldScalar(kind.Tag, &r.Scalar);
@@ -40,14 +41,14 @@ public static unsafe partial class Bootstrap
         Require(p != null && p->Size == 48 && p->Flags == 0, Status.InvalidArgument, "Invalid field value layout/flags");
         var kind = DescribeField(type);
         Require(p->Tag == kind.Tag && (kind.Tag == 18 ? p->Auxiliary <= (uint)AssetKind.Prefab : p->Auxiliary == kind.Auxiliary), Status.FieldTypeMismatch, "Field tag/enum underlying type/asset kind mismatch");
-        Require(kind.Tag is 12 or 18 or 24 or 25 || p->Text.Length == 0, Status.InvalidArgument, "Unexpected scalar text");
+        Require(kind.Tag is 12 or 18 or 24 or 25 or 26 || p->Text.Length == 0, Status.InvalidArgument, "Unexpected scalar text");
         Require(p->Text.Length <= MaxFieldTextBytes, Status.InvalidArgument, "Field text exceeds byte limit");
         ValidateFieldScalar(kind.Tag, &p->Scalar);
         object? value;
         switch (kind.Tag) {
             case 1: Require(p->Scalar.B <= 1, Status.InvalidArgument, "Bool must be 0 or 1"); value = p->Scalar.B != 0; break;
             case 2: value = p->Scalar.I8; break; case 3: value = p->Scalar.B; break;
-            case 4: value = p->Scalar.I16; break; case 5: value = p->Scalar.U16; break;
+            case 4: value = p->Scalar.I16; break; case 5: value = type == typeof(char) ? (object)(char)p->Scalar.U16 : p->Scalar.U16; break;
             case 6: value = p->Scalar.I32; break; case 7: value = p->Scalar.U32; break;
             case 8: value = p->Scalar.I64; break; case 9: value = p->Scalar.U64; break;
             case 10: value = p->Scalar.F32; break; case 11: value = p->Scalar.F64; break;
@@ -69,6 +70,7 @@ public static unsafe partial class Bootstrap
                     referenceType[1].Length > 0 && !referenceType[1].Any(char.IsControl), Status.FieldTypeMismatch, "Component reference type mismatch");
                 value = Activator.CreateInstance(type, p->Scalar.U64, referenceType[1])!; break;
             case 25: value = ReadCollection(type, Decode(p->Text), depth); break;
+            case 26: value = ReadRecord(type, Decode(p->Text), depth); break;
             default: value = WriteUIScalar(kind.Tag, &p->Scalar); break;
         }
         if (kind.Tag is 13 or 14) ValidateEnum(type, value!);

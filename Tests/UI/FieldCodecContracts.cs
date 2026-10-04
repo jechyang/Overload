@@ -32,7 +32,7 @@ public static unsafe partial class Bootstrap
         try {
             services.Log = &CaptureCleanupLog;
             var fields = DiscoverFields(typeof(FieldExposureProbe));
-            Assert(fields.Count == 1 && fields[0].Name == "scalar", "unconnected collection ABI is not advertised to native Inspector");
+            Assert(fields.Count == 2 && fields.Any(f => f.Name == "pendingCollection"), "connected collection ABI is exposed to native Inspector");
         } finally { services = previousServices; }
     }
     [System.Runtime.InteropServices.UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvCdecl) })]
@@ -82,6 +82,10 @@ public static unsafe partial class Bootstrap
     public static int Main() {
         CleanupContracts();
         FieldExposureContracts();
+        Roundtrip(typeof(char), '密');
+        Roundtrip(typeof(ColorBlock), ColorBlock.defaultColorBlock);
+        Roundtrip(typeof(Dropdown.OptionDataList), new Dropdown.OptionDataList { options = new() { new("中文😀"), new("Beta") } });
+        Roundtrip(typeof(SpriteState), default(SpriteState));
         Roundtrip(typeof(bool[]), new[] { true, false });
         Roundtrip(typeof(sbyte[]), new[] { sbyte.MinValue, sbyte.MaxValue });
         Roundtrip(typeof(byte[]), new byte[] { 0, 255 });

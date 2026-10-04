@@ -97,6 +97,27 @@ namespace OvCore::UI
         }
     }
 
+    std::optional<OvMaths::FVector2> Frame::ProjectGraphic(uint64_t actorGuid, OvMaths::FVector2 screen) const
+    {
+        if (!IsFinite(screen) || size.x <= 0 || size.y <= 0) return std::nullopt;
+        for (const auto& mesh : meshes) {
+            if (mesh.actorGuid != actorGuid || mesh.pop) continue;
+            OvMaths::FVector2 point = screen;
+            if (mesh.renderMode != RenderMode::ScreenSpaceOverlay) {
+                const float x = screen.x / size.x * 2 - 1, y = screen.y / size.y * 2 - 1;
+                auto a = mesh.screenToCanvas * OvMaths::FVector4{x,y,-1,1};
+                auto b = mesh.screenToCanvas * OvMaths::FVector4{x,y,1,1};
+                if (std::abs(a.w) < 1e-8f || std::abs(b.w) < 1e-8f) return std::nullopt;
+                a = a * (1/a.w); b = b * (1/b.w);
+                if (std::abs(b.z-a.z) < 1e-8f) return std::nullopt;
+                const float t = -a.z/(b.z-a.z);
+                point = {a.x+(b.x-a.x)*t, a.y+(b.y-a.y)*t};
+            }
+            return point / mesh.coordinateScale - mesh.localOrigin;
+        }
+        return std::nullopt;
+    }
+
     std::optional<GraphicHit> Frame::RaycastGraphic(uint64_t actorGuid, OvMaths::FVector2 screen) const
     {
         if (!Rect{{0,0},size}.Contains(screen)) return std::nullopt;

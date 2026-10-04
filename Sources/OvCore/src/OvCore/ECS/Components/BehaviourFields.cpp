@@ -53,7 +53,7 @@ namespace {
         // Stored scalar/hex lexemes allow XML whitespace; actual string bytes stay hex encoded.
         const auto first=text.find_first_not_of(" \t\r\n");
         text=first==std::string::npos?"":text.substr(first,text.find_last_not_of(" \t\r\n")-first+1);
-        if(tag==12 || tag==18 || tag==OVCS_FIELD_COMPONENT_REF) {
+        if(tag==12 || tag==18 || tag==OVCS_FIELD_COMPONENT_REF || tag==OVCS_FIELD_COLLECTION || tag==OVCS_FIELD_RECORD) {
             if(!node.Attribute("encoding","utf8-hex")) return {};
             auto decoded=Unhex(text); if(!decoded) return {}; text=*decoded;
         } else if(node.Attribute("encoding")) return {};
@@ -65,6 +65,57 @@ namespace {
             if(parsed.ec!=std::errc{} || parsed.ptr!=end) return {};
         }
         return result;
+    }
+    std::optional<ManagedFieldValue> CompositeItem(const tinyxml2::XMLElement& node) {
+        ManagedFieldValue value;
+        if(node.QueryUnsignedAttribute("tag",&value.tag)!=tinyxml2::XML_SUCCESS||node.QueryUnsignedAttribute("auxiliary",&value.auxiliary)!=tinyxml2::XML_SUCCESS)return {};
+        auto bytes=Unhex(node.Attribute("scalar")?node.Attribute("scalar"):"");auto* text=node.FirstChildElement("text");
+        auto decoded=Unhex(text&&text->GetText()?text->GetText():"");
+        if(!bytes||bytes->size()!=16||!decoded||decoded->size()>ManagedFieldValue::MaxTextBytes)return {};
+        std::memcpy(&value.scalar,bytes->data(),16);value.text=*decoded;return value;
+    }
+    void StoreCompositeItem(tinyxml2::XMLElement& node,const ManagedFieldValue& value) {
+        node.SetAttribute("scalar",Hex(std::string(reinterpret_cast<const char*>(&value.scalar),16)).c_str());
+        node.FirstChildElement("text")->SetText(Hex(value.text).c_str());
+    }
+    void RemapComposite(ManagedFieldValue& value,const std::unordered_map<uint64_t,uint64_t>& mapping,int depth=0) {
+        if(depth>8||value.text.size()>ManagedFieldValue::MaxTextBytes)return;
+        if(value.tag==OVCS_FIELD_ACTOR_REF||value.tag==OVCS_FIELD_COMPONENT_REF){auto it=mapping.find(value.scalar.actor_guid);if(it!=mapping.end())value.scalar.actor_guid=it->second;return;}
+        if(value.tag!=OVCS_FIELD_COLLECTION&&value.tag!=OVCS_FIELD_RECORD)return;
+        tinyxml2::XMLDocument doc;if(doc.Parse(value.text.c_str())!=tinyxml2::XML_SUCCESS||!doc.RootElement())return;
+        size_t count=0;
+        for(auto* node=doc.RootElement()->FirstChildElement();node&&count++<=1024;node=node->NextSiblingElement())if(auto child=CompositeItem(*node)){RemapComposite(*child,mapping,depth+1);StoreCompositeItem(*node,*child);}
+        value.text=Record(*doc.RootElement());
+    }
+    int ResizeCompositeText(ImGuiInputTextCallbackData* data){auto& value=*static_cast<std::string*>(data->UserData);value.resize(data->BufTextLen);data->Buf=value.data();return 0;}
+    bool DrawComposite(ManagedFieldValue& value,int depth=0) {
+        if(depth>=8||value.text.size()>ManagedFieldValue::MaxTextBytes){ImGui::TextDisabled("Field limit exceeded");return false;}
+        tinyxml2::XMLDocument doc;if(doc.Parse(value.text.c_str())!=tinyxml2::XML_SUCCESS||!doc.RootElement()){ImGui::TextDisabled("Invalid field data");return false;}
+        auto* root=doc.RootElement();bool changed=false;bool list=std::string_view(root->Name())=="list";
+        if(root->Attribute("null","1")){if(ImGui::Button("Create value")){root->SetAttribute("null","0");changed=true;}else return false;}
+        int index=0;
+        for(auto* node=root->FirstChildElement();node&&index<1024;){auto* next=node->NextSiblingElement();
+            if(list&&std::string_view(node->Name())=="default"){node=next;continue;}
+            ImGui::PushID(index);std::string label=list?"Element "+std::to_string(index):(node->Attribute("name")?node->Attribute("name"):"Field");
+            if(auto item=CompositeItem(*node)){
+                bool edited=false;
+                if(item->tag==OVCS_FIELD_COLLECTION||item->tag==OVCS_FIELD_RECORD){if(ImGui::TreeNode(label.c_str())){edited=DrawComposite(*item,depth+1);ImGui::TreePop();}}
+                else if(item->tag==OVCS_FIELD_BOOL){bool on=item->scalar.boolean!=0;edited=ImGui::Checkbox(label.c_str(),&on);item->scalar.boolean=on;}
+                else if(item->tag==OVCS_FIELD_COMPONENT_REF||item->tag==OVCS_FIELD_ACTOR_REF)edited=ImGui::InputScalar(label.c_str(),ImGuiDataType_U64,&item->scalar.actor_guid);
+                else {
+                    std::string text=item->Display();text.reserve(std::max(size_t(128),text.size()+1));
+                    if(ImGui::InputText(label.c_str(),text.data(),text.capacity()+1,ImGuiInputTextFlags_CallbackResize,ResizeCompositeText,&text)){
+                        text.resize(std::strlen(text.c_str()));if(auto parsed=ManagedFieldValue::Parse(item->tag,item->auxiliary,text)){*item=*parsed;edited=true;}
+                    }
+                }
+                if(edited){StoreCompositeItem(*node,*item);changed=true;}
+            }
+            if(list){ImGui::SameLine();if(ImGui::SmallButton("Remove")){root->DeleteChild(node);changed=true;}}
+            ImGui::PopID();node=next;++index;
+        }
+        if(list&&index<1024&&ImGui::Button("Add element")){if(auto* prototype=root->FirstChildElement("default")){auto* node=prototype->DeepClone(&doc)->ToElement();node->SetName("item");root->InsertEndChild(node);changed=true;}}
+        if(changed){auto text=Record(*root);if(text.size()>ManagedFieldValue::MaxTextBytes)return false;value.text=std::move(text);}
+        return changed;
     }
     bool Matches(const ManagedField& f,const char* id) { return id && (f.id==id || std::find(f.aliases.begin(),f.aliases.end(),id)!=f.aliases.end()); }
 }
@@ -124,12 +175,14 @@ bool Behaviour::SetManagedFieldOverride(const std::string& id,bool enabled) {
     }
     return false;
 }
-void Behaviour::SerializeManagedFields(tinyxml2::XMLDocument& doc,tinyxml2::XMLNode* node) {
+void Behaviour::SerializeManagedFields(tinyxml2::XMLDocument& doc,tinyxml2::XMLNode* node,bool live) {
+    auto values=m_managedOverrides;
+    if(live && m_script && m_script->IsValid()) for(const auto& field:m_script->ManagedFields()) if(auto value=m_script->ReadManagedField(field.token)) values[field.id]=*value;
     auto* fields=node->FirstChildElement("managed_fields");
-    if(!fields && !m_managedOverrides.empty()) { fields=doc.NewElement("managed_fields"); node->InsertEndChild(fields); }
+    if(!fields && !values.empty()) { fields=doc.NewElement("managed_fields"); node->InsertEndChild(fields); }
     if(!fields) return;
-    for(auto* n=fields->FirstChild();n;) { auto* next=n->NextSibling(); if(m_managedLoaded.contains(Record(*n))) fields->DeleteChild(n); n=next; }
-    for(const auto& [id,v]:m_managedOverrides) {
+    for(auto* n=fields->FirstChild();n;) { auto* next=n->NextSibling(); if(m_managedLoaded.contains(Record(*n)) || (live && n->ToElement() && n->ToElement()->Attribute("id") && values.contains(n->ToElement()->Attribute("id")))) fields->DeleteChild(n); n=next; }
+    for(const auto& [id,v]:values) {
         // Preserve attributes/comments/extension children of successfully decoded records too.
         tinyxml2::XMLElement* n=nullptr; tinyxml2::XMLDocument source;
         for(const auto& record:m_managedLoaded) {
@@ -142,7 +195,7 @@ void Behaviour::SerializeManagedFields(tinyxml2::XMLDocument& doc,tinyxml2::XMLN
         if(!n) n=doc.NewElement("field");
         n->SetAttribute("id",id.c_str()); n->SetAttribute("tag",v.tag); n->SetAttribute("auxiliary",v.auxiliary);
         if(v.tag==OVCS_FIELD_COMPONENT_REF) n->SetAttribute("actor_guid",std::to_string(v.scalar.actor_guid).c_str());
-        if(v.tag==12 || v.tag==18 || v.tag==OVCS_FIELD_COMPONENT_REF) { n->SetAttribute("encoding","utf8-hex"); n->SetText(Hex(v.text).c_str()); }
+        if(v.tag==12 || v.tag==18 || v.tag==OVCS_FIELD_COMPONENT_REF || v.tag==OVCS_FIELD_COLLECTION || v.tag==OVCS_FIELD_RECORD) { n->SetAttribute("encoding","utf8-hex"); n->SetText(Hex(v.text).c_str()); }
         else { n->DeleteAttribute("encoding"); n->SetText(v.Display().c_str()); }
         fields->InsertEndChild(n);
     }
@@ -151,11 +204,11 @@ void Behaviour::RemapManagedActorReferences(const std::unordered_map<uint64_t,ui
     if(m_identity.backend!="csharp") return;
     tinyxml2::XMLDocument doc; auto* data=doc.NewElement("data");doc.InsertEndChild(data); OnSerialize(doc,data);
     if(auto* fields=data->FirstChildElement("managed_fields")) for(auto* n=fields->FirstChildElement("field");n;n=n->NextSiblingElement("field")) {
-        auto v=Decode(*n); if(!v || (v->tag!=OVCS_FIELD_ACTOR_REF && v->tag!=OVCS_FIELD_COMPONENT_REF) || v->auxiliary!=0) continue;
-        auto it=mapping.find(v->scalar.actor_guid); if(it!=mapping.end()) {
-            if(v->tag==OVCS_FIELD_COMPONENT_REF) n->SetAttribute("actor_guid",std::to_string(it->second).c_str());
-            else n->SetText(std::to_string(it->second).c_str());
-        }
+        auto v=Decode(*n);if(!v)continue;
+        RemapComposite(*v,mapping);
+        if(v->tag==OVCS_FIELD_COMPONENT_REF)n->SetAttribute("actor_guid",std::to_string(v->scalar.actor_guid).c_str());
+        else if(v->tag==OVCS_FIELD_ACTOR_REF)n->SetText(std::to_string(v->scalar.actor_guid).c_str());
+        else if(v->tag==OVCS_FIELD_COLLECTION||v->tag==OVCS_FIELD_RECORD)n->SetText(Hex(v->text).c_str());
     }
     // Also works without a project assembly; only explicitly tagged GUID references are rewritten.
     m_rawData=Record(*data); m_managedLoaded.clear(); m_managedOverrides.clear();
@@ -263,6 +316,7 @@ void OvCore::Helpers::ManagedFieldInput::_Draw_Impl()
     ImGui::SetNextItemWidth(-FLT_MIN);
     bool changed = false;
     switch (value.tag) {
+    case OVCS_FIELD_COLLECTION: case OVCS_FIELD_RECORD: changed=DrawComposite(value);break;
     case OVCS_FIELD_BOOL: {
         bool enabled = value.scalar.boolean != 0;
         changed = ImGui::Checkbox("##value",&enabled); value.scalar.boolean = enabled ? 1 : 0; break;

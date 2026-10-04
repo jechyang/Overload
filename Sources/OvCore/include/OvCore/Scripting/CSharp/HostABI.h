@@ -85,6 +85,8 @@ typedef uint32_t OvCsFieldTag;
 #define OVCS_FIELD_RECT ((OvCsFieldTag)21)
 #define OVCS_FIELD_RECT_OFFSET ((OvCsFieldTag)22)
 #define OVCS_FIELD_COLOR ((OvCsFieldTag)23)
+#define OVCS_FIELD_COLLECTION ((OvCsFieldTag)25) /* bounded typed XML payload */
+#define OVCS_FIELD_RECORD ((OvCsFieldTag)26) /* bounded named fields */
 #define OVCS_FIELD_COMPONENT_REF ((OvCsFieldTag)24) /* actor_guid + stable component type in text */
 
 typedef struct OvCsUtf8View

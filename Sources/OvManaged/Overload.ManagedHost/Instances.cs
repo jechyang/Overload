@@ -17,6 +17,7 @@ public static unsafe partial class Bootstrap
     private sealed class Instance(Behaviour value, ulong guid, ProjectType type)
     {
         internal readonly Behaviour Value = value;
+        internal readonly ulong OwnerHandle = value.owner?.Handle ?? 0;
         internal readonly ulong Guid = guid;
         internal readonly ProjectType Type = type;
         internal bool Awake, Started, Enabled, Faulted, Destroyed;
@@ -38,9 +39,15 @@ public static unsafe partial class Bootstrap
     {
         public string LogicalName => session.LogicalName;
         public UI.CanvasUpdateRegistry UIRegistry { get { Check(); return session.UIRegistry; } }
+        public Behaviour AddUIBehaviour(ulong owner, Type type) {
+            Check();
+            Require(typeof(EventSystems.UIBehaviour).IsAssignableFrom(type) && session.Types.Any(t => t.Type == type), Status.TypeNotFound, "Unknown UI component type");
+            Query(owner, 27, 0, type.FullName!);
+            return GetBehaviours(owner).First(b => b.GetType() == type);
+        }
         public IReadOnlyList<Behaviour> GetBehaviours(ulong owner) {
             _ = Query(owner, 1); // Validate the captured native owner and current session.
-            return session.Instances.Values.Where(i => !i.Destroyed && !i.Faulted && i.Value.owner?.Handle == owner).Select(i => i.Value).ToArray();
+            return session.OwnerInstances.TryGetValue(owner, out var list) ? list.Where(i => !i.Destroyed && !i.Faulted).Select(i => i.Value).ToArray() : Array.Empty<Behaviour>();
         }
         private void Check() {
             Require(Environment.CurrentManagedThreadId == mainThread && services.IsMain != null && services.IsMain() == 1,
@@ -50,15 +57,20 @@ public static unsafe partial class Bootstrap
         }
         public ulong Query(ulong owner, uint operation, ulong argument = 0, string text = "") {
             Check(); ++nativeCalls;
-            Require(!session.Closing || operation <= 4 || operation is 12 or 13 or 14 or 15 or 16 or 18 or 19 or 21 or 22 or 30 or 40 or 42 or 44 or 48 or 49 or 51 or 53 or 61 or 62 || operation == 50 && argument == 0 && text == "release" || operation == 52 && argument == 0, Status.SessionClosing, "Session closing rejects mutations");
+            Require(!session.Closing || operation <= 4 || operation is 6 or 12 or 13 or 14 or 15 or 16 or 18 or 19 or 21 or 22 or 30 or 40 or 42 or 44 or 48 or 49 or 51 or 53 or 61 or 62 || operation == 50 && argument == 0 && text == "release" || operation == 52 && argument == 0, Status.SessionClosing, "Session closing rejects mutations");
             // Behaviour names are metadata names; native receives the explicit logical assembly too.
-            if (operation is 7 or 8) text = LogicalName + "\n" + text;
+            if (operation is 7 or 8 or 27) text = LogicalName + "\n" + text;
             // Native context survives hot reload; driven ownership is a managed generation identity.
             if (operation is >= 60 and <= 62) text = session.Identity.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n" + text;
             byte[] bytes = Encoding.GetBytes(text);
             ulong result = 0;
-            fixed (byte* p = bytes) Overload.Script.Bridge.Check((int)gameplay(services.Context, owner, operation, argument,
-                new Utf8 { Data = p, Length = (ulong)bytes.Length }, &result));
+            bool construction = operation is 27 or 29;
+            Require(!construction || uiConstructionDepth < 32, Status.InvalidLifecycle, "UI construction recursion limit");
+            if (construction) ++uiConstructionDepth;
+            try {
+                fixed (byte* p = bytes) Overload.Script.Bridge.Check((int)gameplay(services.Context, owner, operation, argument,
+                    new Utf8 { Data = p, Length = (ulong)bytes.Length }, &result));
+            } finally { if (construction) --uiConstructionDepth; }
             return result;
         }
         public bool IsActorAlive(ulong owner) {
@@ -139,7 +151,10 @@ public static unsafe partial class Bootstrap
         value.owner = new Actor(access, info->Owner);
         if (value is EventSystems.UIBehaviour ui) ui.EnsureNativeComponents();
         ulong id = checked(++nextInstance);
-        session.Instances.Add(id, new Instance(value, info->Guid, type));
+        var instance = new Instance(value, info->Guid, type);
+        session.Instances.Add(id, instance);
+        if (!session.OwnerInstances.TryGetValue(info->Owner, out var list)) session.OwnerInstances.Add(info->Owner, list = new());
+        list.Add(instance);
         *output = new InstanceHandle { Id = id, Generation = s.Generation };
     }
     private static void Destroy(Instance instance, bool reloading = false) {
