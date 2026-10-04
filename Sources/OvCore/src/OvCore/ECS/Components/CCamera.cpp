@@ -167,7 +167,9 @@ void OvCore::ECS::Components::CCamera::OnInspector(OvUI::Internal::WidgetContain
 
 	OvCore::Helpers::GUIDrawer::DrawScalar<float>(p_root, "Near", std::bind(&CCamera::GetNear, this), std::bind(&CCamera::SetNear, this, std::placeholders::_1));
 	OvCore::Helpers::GUIDrawer::DrawScalar<float>(p_root, "Far", std::bind(&CCamera::GetFar, this), std::bind(&CCamera::SetFar, this, std::placeholders::_1));
-	OvCore::Helpers::GUIDrawer::DrawColor(p_root, "Clear color", [this]() {return reinterpret_cast<const OvUI::Types::Color&>(GetClearColor()); }, [this](OvUI::Types::Color p_color) { SetClearColor({ p_color.r, p_color.g, p_color.b }); }, false);
+    OvCore::Helpers::GUIDrawer::DrawColor(p_root, "Clear color", [this]() {
+        const auto& color = GetClearColor(); return OvUI::Types::Color{color.x,color.y,color.z,1.f};
+    }, [this](OvUI::Types::Color color) { SetClearColor({color.r,color.g,color.b}); }, false);
 	OvCore::Helpers::GUIDrawer::DrawBoolean(p_root, "Frustum Geometry Culling", std::bind(&CCamera::HasFrustumGeometryCulling, this), std::bind(&CCamera::SetFrustumGeometryCulling, this, std::placeholders::_1));
 	OvCore::Helpers::GUIDrawer::DrawBoolean(p_root, "Frustum Light Culling", std::bind(&CCamera::HasFrustumLightCulling, this), std::bind(&CCamera::SetFrustumLightCulling, this, std::placeholders::_1));
 

@@ -43,6 +43,10 @@ void OvEditor::Settings::EditorSettings::Save()
 	iniFile.Add("reflection_probe_scale", ReflectionProbeScale.Get());
 	iniFile.Add("translation_snap_unit", TranslationSnapUnit.Get());
     iniFile.Add("snap_enabled", SnapEnabled.Get());
+    iniFile.Add("game_preview_mode", GamePreviewMode.Get());
+    iniFile.Add("game_preview_width", GamePreviewWidth.Get());
+    iniFile.Add("game_preview_height", GamePreviewHeight.Get());
+    iniFile.Add("camera_preview_enabled", CameraPreviewEnabled.Get());
 	iniFile.Add("rotation_snap_unit", RotationSnapUnit.Get());
 	iniFile.Add("scaling_snap_unit", ScalingSnapUnit.Get());
 	iniFile.Add("color_theme", ColorTheme.Get());
@@ -67,6 +71,10 @@ void OvEditor::Settings::EditorSettings::Load()
 	LoadIniEntry<float>(iniFile, "reflection_probe_scale", ReflectionProbeScale);
 	LoadIniEntry<float>(iniFile, "translation_snap_unit", TranslationSnapUnit);
     LoadIniEntry<bool>(iniFile, "snap_enabled", SnapEnabled);
+    LoadIniEntry<int>(iniFile, "game_preview_mode", GamePreviewMode);
+    LoadIniEntry<int>(iniFile, "game_preview_width", GamePreviewWidth);
+    LoadIniEntry<int>(iniFile, "game_preview_height", GamePreviewHeight);
+    LoadIniEntry<bool>(iniFile, "camera_preview_enabled", CameraPreviewEnabled);
 	LoadIniEntry<float>(iniFile, "rotation_snap_unit", RotationSnapUnit);
 	LoadIniEntry<float>(iniFile, "scaling_snap_unit", ScalingSnapUnit);
 	LoadIniEntry<int>(iniFile, "color_theme", ColorTheme);

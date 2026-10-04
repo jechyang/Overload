@@ -250,6 +250,9 @@ void OvEditor::Core::Editor::Update(float p_deltaTime)
 	// Disable mouse input when the cursor is locked during gameplay or view interaction.
 	const bool mouseEnabled = m_context.window->GetCursorMode() != OvWindowing::Cursor::ECursorMode::DISABLED;
 	m_context.uiManager->EnableMouse(mouseEnabled);
+    // Apply the last displayed image region before gameplay captures UI input.
+    // Closed tabs and resolution controls must release focus on this tick.
+    m_panelsManager.GetPanelAs<GameView>("Game View").RefreshInputViewport();
 
 	HandleGlobalShortcuts();
 	UpdateCurrentEditorMode(p_deltaTime);
@@ -418,10 +421,7 @@ void OvEditor::Core::Editor::RenderViews(float p_deltaTime)
 			assetView.Update(p_deltaTime);
 		}
 
-		if (gameView.IsOpened())
-		{
-			gameView.Update(p_deltaTime);
-		}
+        gameView.Update(p_deltaTime);
 
 		if (sceneView.IsOpened())
 		{
@@ -465,10 +465,7 @@ OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p
 			assetView.Update(p_deltaTime);
 		}
 
-		if (gameView.IsOpened())
-		{
-			gameView.Update(p_deltaTime);
-		}
+        gameView.Update(p_deltaTime);
 
 		if (sceneView.IsOpened())
 		{
@@ -501,6 +498,7 @@ OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p
 	{
 		ZoneScopedN("Scene View Rendering");
 		collectView(sceneView);
+        if (auto* preview = sceneView.GetCameraPreviewView()) collectView(*preview);
 	}
     for (auto& item : pending) item.view->PrepareView(item.frame);
     for (auto& item : pending)

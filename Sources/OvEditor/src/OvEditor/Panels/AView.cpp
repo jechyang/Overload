@@ -52,6 +52,7 @@ OvEditor::Panels::AView::ViewFrame OvEditor::Panels::AView::ExtractView()
     const auto [width,height]=GetSafeSize();m_image->size={float(width),float(height)};
     if(!(width&&height&&GetCamera()&&GetScene())) return result;
     m_surface.Resize(width,height);
+    m_outputSize={width,height};
     m_image->textureID=m_surface.GetColor();
     InitFrame();
     result.request=std::make_unique<OvCore::Rendering::SceneRenderRequest>(CreateSceneRequest());

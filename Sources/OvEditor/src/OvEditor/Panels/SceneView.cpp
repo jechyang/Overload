@@ -9,6 +9,7 @@
 #include <array>
 #include <OvUI/Styling/Style.h>
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
+#include <OvCore/ECS/Components/CCamera.h>
 
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Core/SelectionBounds.h>
@@ -55,7 +56,7 @@ OvEditor::Panels::SceneView::SceneView
 {
 
 	m_camera.SetFar(5000.0f);
-    CreateWidget<NavigationWidget>([this] { DrawViewportTools(); DrawNavigationOverlay(); });
+    CreateWidget<NavigationWidget>([this] { DrawViewportTools(); DrawNavigationOverlay(); DrawCameraPreview(); });
     m_focusLostListener = EDITOR_CONTEXT(window)->LostFocusEvent += [this] {
         m_boxPending = false;
         if (m_gizmoOperations.IsPicking())
@@ -105,11 +106,16 @@ OvEditor::Panels::SceneView::~SceneView()
 OvRendering::Data::RenderCommandList OvEditor::Panels::SceneView::RecordRenderCommands(bool p_deferEncoding)
 {
     m_recordedInteraction.reset();
-    return AViewControllable::RecordRenderCommands(p_deferEncoding);
+    GetCameraPreviewView();
+    auto commands = AViewControllable::RecordRenderCommands(true);
+    if (auto* preview = GetCameraPreviewView()) commands.AppendRecording(preview->RecordRenderCommands(true));
+    if (!p_deferEncoding) commands.Seal(m_jobs);
+    return commands;
 }
 
 void OvEditor::Panels::SceneView::Update(float p_deltaTime)
 {
+    GetCameraPreviewView();
     if (m_boxPending && (!IsOpened() || !GetScene() || m_boxScene != GetScene()->GetLifetimeToken())) m_boxPending = false;
     m_cameraController.SetInputBlocked((IsNavigationHovered() && !m_cameraController.IsOperating()) || m_gizmoOperations.IsPicking() || m_boxPending);
 	AViewControllable::Update(p_deltaTime);
@@ -422,6 +428,7 @@ void OvEditor::Panels::SceneView::OnPrefabDropped(const std::string& p_path)
 bool OvEditor::Panels::SceneView::IsNavigationHovered() const
 {
     if (m_navigationPopupOpen || m_toolsPopupOpen) return true;
+    if (IsCameraPreviewHovered()) return true;
     const float scale = OVUI_SCALE;
     if (!IsHovered()) return false;
     const auto [x,y] = EDITOR_CONTEXT(inputManager)->GetMousePosition();
@@ -483,6 +490,88 @@ void OvEditor::Panels::SceneView::FrameSelection()
     if (m_gizmoOperations.IsPicking() || m_boxPending || m_cameraController.IsOperating()) return;
     m_cameraController.FrameSelection(EDITOR_EXEC(GetSelectedActors()));
     InvalidateNavigationPicking();
+}
+
+OvEditor::Panels::AView* OvEditor::Panels::SceneView::GetCameraPreviewView()
+{
+    auto* scene = GetScene();
+    const auto clear = [&]() -> AView* {
+        if (m_cameraPreview) m_cameraPreview->Configure({},0,{});
+        m_previewPosition = {}; m_previewSize = {}; return nullptr;
+    };
+    if (!scene || !IsOpened() || !Settings::EditorSettings::CameraPreviewEnabled.Get() ||
+        GetSize().x < 420*OVUI_SCALE || GetSafeSize().second < 360*OVUI_SCALE) return clear();
+    for (auto* actor : EDITOR_EXEC(GetSelectedActors()))
+    {
+        if (!actor->IsActive() || !actor->GetComponent<OvCore::ECS::Components::CCamera>()) continue;
+        // Allocate on first use, after SetupUI has assigned the regular panels'
+        // IDs. This preserves saved docking layouts and avoids an idle target.
+        if (!m_cameraPreview) m_cameraPreview = std::make_unique<CameraPreview>();
+        auto size = EDITOR_PANEL(GameView,"Game View").GetSafeSize();
+        if (!size.first || !size.second)
+            size = {uint16_t(std::clamp(EDITOR_CONTEXT(projectSettings).GetOrDefault<int>("x_resolution",1280),64,4096)),
+                uint16_t(std::clamp(EDITOR_CONTEXT(projectSettings).GetOrDefault<int>("y_resolution",720),64,4096))};
+        m_cameraPreview->SetCommandRecordingEnabled(m_jobs != nullptr,m_jobs);
+        m_cameraPreview->Configure(scene->GetLifetimeToken(),actor->GetGUID(),size);
+        UpdateCameraPreviewRect(size);
+        return m_cameraPreview.get();
+    }
+    return clear();
+}
+
+bool OvEditor::Panels::SceneView::IsCameraPreviewHovered() const
+{
+    if (!IsHovered() || !Settings::EditorSettings::CameraPreviewEnabled.Get() ||
+        m_previewSize.x <= 0 || m_previewSize.y <= 0 || !m_cameraPreview || !m_cameraPreview->GetCamera()) return false;
+    const auto [x,y] = EDITOR_CONTEXT(inputManager)->GetMousePosition();
+    const auto origin = ImGui::GetMainViewport()->Pos;
+    const float left = m_previewPosition.x-origin.x, top = m_previewPosition.y-origin.y;
+    return x >= left && y >= top && x <= left+m_previewSize.x && y <= top+m_previewSize.y;
+}
+
+void OvEditor::Panels::SceneView::DrawCameraPreview()
+{
+    m_previewPosition = {}; m_previewSize = {};
+    if (!Settings::EditorSettings::CameraPreviewEnabled.Get() || !m_cameraPreview || !m_cameraPreview->GetCamera() ||
+        GetSize().x < 420*OVUI_SCALE || GetSafeSize().second < 360*OVUI_SCALE) return;
+    auto* actor = GetScene()->FindActorByGUID(m_cameraPreview->GetCameraGUID());
+    if (!actor || !EDITOR_EXEC(IsActorSelected(*actor))) return;
+    const auto [width,height] = m_cameraPreview->GetOutputSize();
+    if (!width || !height) return;
+    UpdateCameraPreviewRect({width,height});
+    const float scale = OVUI_SCALE, header = ImGui::GetFrameHeight()+8*scale;
+    const float imageWidth = m_previewSize.x-8*scale, imageHeight = m_previewSize.y-header-4*scale;
+    const ImVec2 pos{m_previewPosition.x,m_previewPosition.y};
+    auto* draw = ImGui::GetWindowDrawList();
+    draw->AddRectFilled(pos,{pos.x+m_previewSize.x,pos.y+m_previewSize.y},IM_COL32(23,25,30,245),5*scale);
+    draw->AddRect(pos,{pos.x+m_previewSize.x,pos.y+m_previewSize.y},IM_COL32(88,94,105,255),5*scale);
+    draw->PushClipRect({pos.x+7*scale,pos.y},{pos.x+m_previewSize.x-30*scale,pos.y+header},true);
+    const auto label = "Camera: "+actor->GetName();
+    draw->AddText({pos.x+7*scale,pos.y+4*scale},IM_COL32(231,233,240,255),label.c_str());
+    draw->PopClipRect();
+    OvUI::Internal::TextureID texture(m_cameraPreview->GetOutputTexture()); texture.RetainForCapture();
+    draw->AddImage(texture.id,{pos.x+4*scale,pos.y+header},{pos.x+4*scale+imageWidth,pos.y+header+imageHeight},{0,1},{1,0});
+    const auto saved = ImGui::GetCursorScreenPos();
+    ImGui::SetCursorScreenPos({pos.x+m_previewSize.x-25*scale,pos.y+3*scale});
+    ImGui::PushID(this);
+    if (ImGui::SmallButton("x##CameraPreview")) Settings::EditorSettings::CameraPreviewEnabled = false;
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Hide camera preview. Enable it again in viewport Help.");
+    ImGui::PopID(); ImGui::SetCursorScreenPos(saved); ImGui::Dummy({0,0});
+}
+
+void OvEditor::Panels::SceneView::UpdateCameraPreviewRect(std::pair<uint16_t,uint16_t> size)
+{
+    const auto [width,height] = size;
+    if (!width || !height) { m_previewPosition = {}; m_previewSize = {}; return; }
+    const float scale = OVUI_SCALE, header = ImGui::GetFrameHeight()+8*scale;
+    float imageWidth = std::min(284*scale,GetSize().x*.38f);
+    float imageHeight = imageWidth*height/width;
+    const float maxHeight = GetSafeSize().second*.36f-header;
+    if (imageHeight > maxHeight) { imageHeight = maxHeight; imageWidth = imageHeight*width/height; }
+    const auto window = GetPosition();
+    m_previewSize = {imageWidth+8*scale,imageHeight+header+4*scale};
+    m_previewPosition = {window.x+GetSize().x-m_previewSize.x-12*scale,
+        window.y+ImGui::GetFrameHeight()+GetSafeSize().second-m_previewSize.y-12*scale};
 }
 
 void OvEditor::Panels::SceneView::DrawViewportTools()
@@ -555,6 +644,9 @@ void OvEditor::Panels::SceneView::DrawViewportTools()
         ImGui::TextUnformatted("Ctrl+drag: add to selection | Esc: cancel");
         ImGui::TextUnformatted("F: frame selection | W / E / R: transform");
         ImGui::TextUnformatted("Gold: primary | Blue: other selected objects");
+        ImGui::Separator();
+        bool preview = EditorSettings::CameraPreviewEnabled.Get();
+        if (ImGui::Checkbox("Selected camera preview",&preview)) EditorSettings::CameraPreviewEnabled = preview;
         ImGui::EndPopup();
     }
     m_toolsPopupOpen = ImGui::IsPopupOpen("ViewportHelp");

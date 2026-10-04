@@ -35,7 +35,8 @@ namespace OvEditor::Panels
         virtual void CompleteRender() {}
         virtual OvRendering::Entities::Camera* GetCamera()=0;
         virtual OvCore::SceneSystem::Scene* GetScene()=0;
-        std::pair<uint16_t,uint16_t> GetSafeSize() const;
+        virtual std::pair<uint16_t,uint16_t> GetSafeSize() const;
+        std::pair<uint16_t,uint16_t> GetOutputSize() const { return m_outputSize; }
         baregl::Framebuffer::Snapshot GetOutputTarget() const { return m_surface.GetTarget(); }
         std::shared_ptr<baregl::Texture> GetOutputTexture() const { return m_surface.GetColor(); }
         const OvRendering::Data::FrameInfo& GetFrameInfo() const { return m_frameInfo; }
@@ -54,6 +55,7 @@ namespace OvEditor::Panels
         Rendering::EditorOverlayRequest m_overlayRequest;
         OvRendering::Data::RenderCommandList::Completion m_completion;
         OvRendering::Data::FrameInfo m_frameInfo;
+        std::pair<uint16_t,uint16_t> m_outputSize{};
         OvTools::Jobs::JobSystem* m_jobs=nullptr;
         std::chrono::high_resolution_clock::time_point m_startTime=std::chrono::high_resolution_clock::now();
     };

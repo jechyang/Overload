@@ -13,6 +13,7 @@
 
 namespace OvEditor::Panels
 {
+    class CameraPreview;
 	class SceneView : public OvEditor::Panels::AViewControllable
 	{
 	public:
@@ -90,6 +91,9 @@ namespace OvEditor::Panels
         void SetCenterPivot(bool center);
         bool IsCenterPivot() const { return m_centerPivot; }
         Core::GizmoBehaviour::Frame GetGizmoFrame() const;
+        AView* GetCameraPreviewView();
+        bool IsCameraPreviewHovered() const;
+        std::pair<OvMaths::FVector2,OvMaths::FVector2> GetCameraPreviewRect() const { return {m_previewPosition,m_previewSize}; }
 
 	protected:
 		OvCore::Rendering::SceneRenderRequest CreateSceneRequest() override;
@@ -98,6 +102,10 @@ namespace OvEditor::Panels
 	private:
         void DrawNavigationOverlay();
         void DrawViewportTools();
+        void DrawCameraPreview();
+        void UpdateCameraPreviewRect(std::pair<uint16_t,uint16_t> size);
+        std::unique_ptr<CameraPreview> m_cameraPreview;
+        OvMaths::FVector2 m_previewPosition{}, m_previewSize{};
         void InvalidateNavigationPicking();
         uint64_t m_navigationRevision = 0;
         bool m_navigationPopupOpen = false;
