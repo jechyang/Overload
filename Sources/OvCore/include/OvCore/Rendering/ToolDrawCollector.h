@@ -4,6 +4,7 @@
 #include <OvCore/Rendering/ToolDrawInput.h>
 #include <OvRendering/Resources/Model.h>
 #include <OvRendering/Utils/Profiling.h>
+#include <OvRendering/Core/FullscreenCommandRecorder.h>
 namespace OvCore::Rendering
 {
     // Main-thread tool extraction. Only owned values enter deferred packet encoding.
@@ -13,7 +14,7 @@ namespace OvCore::Rendering
         ToolDrawCollector();
         const OvRendering::Data::FrameInfo& GetFrameInfo() const { return m_info; }
         void Begin(OvRendering::Data::RenderView view, OvRendering::Data::PipelineState state,
-            std::optional<baregl::Framebuffer::Snapshot> target);
+            std::optional<baregl::Framebuffer::Snapshot> target,OvRendering::Data::RenderPlan* plan=nullptr);
         OvRendering::Data::RenderCommandList Finish();
         void CollectMesh(OvRendering::Data::PipelineState state, const OvCore::Rendering::ToolDrawInput& drawable,
             const OvRendering::Data::Material::PropertyOverrides& overrides = {},
@@ -30,9 +31,21 @@ namespace OvCore::Rendering
         OvRendering::Data::PipelineState CreatePipelineState() const { return m_state; }
         const OvRendering::Data::RenderView& GetView() const { return m_view; }
         OvRendering::Data::RenderCommandList::Completion GetCommandCompletion() const { return m_commands->GetCompletion(); }
-        void SubmitRenderOperation(OvRendering::Data::RenderCommandList::Operation operation) { m_commands->Append(std::move(operation)); }
-        OvRendering::Utils::GpuScope ProfileGpuScope(const tracy::SourceLocationData* source) { return {m_commands.get(),source}; }
+        void SetPassName(std::string name) { m_passName=std::move(name); }
+        void SubmitRenderOperation(OvRendering::Data::RenderCommandList::Operation);
+        class GpuScope {
+        public:
+            GpuScope(OvRendering::Data::RenderPlan*,OvRendering::Data::RenderCommandList*,const tracy::SourceLocationData*);
+        private:
+            std::optional<OvRendering::Core::FullscreenCommandRecorder::PlanGpuScope> m_planScope;
+            std::optional<OvRendering::Utils::GpuScope> m_commandScope;
+        };
+        GpuScope ProfileGpuScope(const tracy::SourceLocationData* source) { return {m_plan,m_commands.get(),source}; }
     private:
+        OvRendering::Data::RenderPlan* m_plan=nullptr;
+        std::string m_passName="Editor.ToolDraw";
+        std::vector<OvRendering::Data::ResourceAccess> TargetAccesses(bool color,bool depth,bool stencil,bool clear=false);
+        void AppendPass(std::string,OvRendering::Data::RenderCommandList::OperationFactory,std::vector<OvRendering::Data::ResourceAccess>);
         OvRendering::Data::FrameInfo m_info;
         OvRendering::Core::MeshCommandRecorder m_resources;
         std::shared_ptr<baregl::Buffer> m_engineBuffer, m_lightBuffer, m_reflectionBuffer, m_skinBuffer;

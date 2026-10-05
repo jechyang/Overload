@@ -26,9 +26,13 @@ namespace OvEditor::Panels
             OvRendering::Data::PipelineState state;
             std::unique_ptr<OvCore::Rendering::SceneRenderRequest> request;
             bool active = false;
+            OvRendering::Data::FrameInfo extractedInfo;
+            size_t viewCount=0;
         };
         ViewFrame ExtractView();
         void PrepareView(ViewFrame& view);
+        void CaptureProductInteraction() { OnViewRecorded(); }
+        void PublishProductView(const ViewFrame&,std::span<const std::shared_ptr<const OvRendering::Data::PreparedFrameData>>);
         OvRendering::Data::RenderCommandList RecordView(ViewFrame& view, bool deferEncoding=false);
         void SetCommandRecordingEnabled(bool enabled,OvTools::Jobs::JobSystem* jobs=nullptr) { m_jobs=enabled?jobs:nullptr; }
         OvTools::Jobs::JobSystem* GetCommandRecordingJobs() const { return m_jobs; }

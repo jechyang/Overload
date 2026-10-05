@@ -27,6 +27,9 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
         const auto found = std::find_if(resources.begin(), resources.end(), [&](const auto& r) { return r.storage.GetID() == storage.GetID(); });
         if (found != resources.end()) return size_t(found - resources.begin());
         resources.push_back({resources.size()+1, generation, storage, width, height, mask, available, origin});
+        auto& resource=resources.back();resource.descriptor=Data::PlanResourceDesc::From(storage);
+        if(available==mask&&(origin==Data::ResourceOrigin::Imported||origin==Data::ResourceOrigin::History))
+            resource.initialized.push_back({resource.descriptor->aspect,0,resource.descriptor->mips,0,resource.descriptor->layers});
         return resources.size()-1;
     };
     const auto addResource = [&](const std::shared_ptr<baregl::Texture>& texture, uint16_t width, uint16_t height,
@@ -68,7 +71,14 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
         frame->m_views.push_back(std::move(scene));
         frame->m_plan.passes.push_back({std::move(name),index,input.viewId,input.pipeline.stages,std::move(target),std::move(reads),std::move(writes),{}});
         addDepthStencil(frame->m_plan.passes.back());
-        return frame->m_plan.passes.back();
+        auto& pass=frame->m_plan.passes.back();
+        for(const auto& mesh:frame->m_views.back()->GetMeshes())for(const auto& storage:Data::Material::GetPreparedTextureReads(mesh.material)) {
+            auto handle=frame->m_plan.Find(storage);const auto desc=Data::PlanResourceDesc::From(storage);
+            if(!handle) {handle=frame->m_plan.Import("Material.Sampler",storage,Data::ResourceOrigin::Imported,{{desc.aspect,0,desc.mips,0,desc.layers}});}
+            if(std::none_of(pass.accesses.begin(),pass.accesses.end(),[&](const auto& access){return access.resource==*handle&&access.type==Data::ResourceAccessType::Sample;}))
+                pass.accesses.push_back({*handle,{desc.aspect,0,desc.mips,0,desc.layers},Data::ResourceAccessType::Sample});
+        }
+        return pass;
     };
     std::vector<Data::ResourceUse> mainReads;
     // Preserve production of every directional caster and selection of the first.
@@ -220,18 +230,12 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
             if (hasSceneUI)
             {
                 auto sceneUI = resources.Extract(ui, viewId(), white, black, Data::RenderStage::SceneUI, &lightingView);
-                frame->m_plan.passes.push_back({"CanvasUI", frame->m_views.size(), sceneUI->GetView().id,
-                    {Data::RenderStage::SceneUI}, request.target, reads, addTargetWrites(request.target, main.width, main.height), {}});
-                frame->m_views.push_back(std::move(sceneUI));
-                addDepthStencil(frame->m_plan.passes.back());
+                frame->AddView(std::move(sceneUI),request.target,"CanvasUI");
             }
             if (hasOverlay)
             {
                 auto overlay = resources.Extract(ui, viewId(), white, black);
-                frame->m_plan.passes.push_back({"OverlayUI", frame->m_views.size(), overlay->GetView().id,
-                    {Data::RenderStage::OverlayUI}, request.target, std::move(reads), addTargetWrites(request.target, main.width, main.height), {}});
-                frame->m_views.push_back(std::move(overlay));
-                addDepthStencil(frame->m_plan.passes.back());
+                frame->AddView(std::move(overlay),request.target,"OverlayUI");
             }
         }
     }
@@ -252,4 +256,31 @@ std::optional<size_t> SceneFrame::FindResource(const baregl::Texture::Snapshot& 
     for (size_t i = 0; i < m_plan.resources.size(); ++i)
         if (m_plan.resources[i].storage.GetID() == id) return i;
     return std::nullopt;
+}
+
+void SceneFrame::AddView(std::shared_ptr<const Data::RenderSceneSnapshot> input,std::optional<baregl::Framebuffer::Snapshot> target,std::string name)
+{
+    if(m_compiled||!input)throw std::invalid_argument("Cannot append a missing view to a published frame");
+    Data::RenderPlanPass pass;pass.name=std::move(name);pass.view=m_views.size();pass.viewId=input->GetView().id;
+    pass.stages=input->GetPipeline().stages;pass.target=target;
+    if(target) {
+        for(const auto& attachment:target->GetTextureAttachments())if(attachment.writable) {
+            auto handle=m_plan.Find(attachment.storage);if(!handle)handle=m_plan.Import("View.Color",attachment.storage,Data::ResourceOrigin::CurrentFrame);
+            m_plan.resources[handle->index].sceneGeneration=input->GetView().sceneGeneration;
+            pass.writes.push_back({handle->index,attachment.layer?uint8_t(1u<<*attachment.layer):m_plan.resources[handle->index].subresources});
+        }
+        for(const auto& attachment:target->GetRenderbufferAttachments()) {
+            const auto handle=m_plan.Import("View.DepthStencil",attachment.storage,Data::ResourceOrigin::CurrentFrame);
+            const bool depth=attachment.attachment==baregl::types::EFramebufferAttachment::DEPTH;
+            const auto aspect=depth?Data::ResourceAspect::Depth:Data::ResourceAspect::Stencil;
+            pass.accesses.push_back({handle,{aspect},Data::ResourceAccessType::Attachment,(depth?input->GetView().clearDepth:input->GetView().clearStencil)?Data::AttachmentLoad::Clear:Data::AttachmentLoad::Load});
+        }
+    }
+    for(const auto& mesh:input->GetMeshes())for(const auto& storage:Data::Material::GetPreparedTextureReads(mesh.material)) {
+        auto handle=m_plan.Find(storage);const auto desc=Data::PlanResourceDesc::From(storage);
+        if(!handle)handle=m_plan.Import("Material.Sampler",storage,Data::ResourceOrigin::Imported,{{desc.aspect,0,desc.mips,0,desc.layers}});
+        if(std::none_of(pass.accesses.begin(),pass.accesses.end(),[&](const auto& access){return access.resource==*handle;}))
+            pass.accesses.push_back({*handle,{desc.aspect,0,desc.mips,0,desc.layers},Data::ResourceAccessType::Sample});
+    }
+    m_views.push_back(std::move(input));m_plan.passes.push_back(std::move(pass));
 }

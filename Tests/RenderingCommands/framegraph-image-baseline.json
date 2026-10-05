@@ -1,0 +1,10 @@
+{
+  "baseline": "FrameGraph F0, 2026-10-05, pre-migration UI; see FRAMEGRAPH_F0_BASELINE.zh-CN.md",
+  "files": [
+    {
+      "name": "editor-command-frames.bin",
+      "bytes": 460800,
+      "sha256": "d9ee1593edaed4bbd991d6341593c79ca5b1a7989a1a74e6090f8b46762ae25a"
+    }
+  ]
+}

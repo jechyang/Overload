@@ -28,7 +28,7 @@ namespace OvEditor::Rendering
         // Source references are used only here, on the main-thread scene boundary.
         OvRendering::Data::RenderCommandList Extract(OvCore::SceneSystem::Scene& scene,
             const EditorOverlayRequest& request, const OvRendering::Data::RenderView& view,
-            OvRendering::Data::PipelineState state, baregl::Framebuffer::Snapshot target);
+            OvRendering::Data::PipelineState state, baregl::Framebuffer::Snapshot target,OvRendering::Data::RenderPlan* plan=nullptr);
     private:
         struct Impl;
         std::unique_ptr<Impl> m_impl;

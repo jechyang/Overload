@@ -263,3 +263,37 @@ OvRendering::Data::RenderCommandList OvUI::Core::UIManager::RecordRenderCommands
         throw;
     }
 }
+
+void OvUI::Core::UIManager::RecordPlan(OvRendering::Data::RenderPlan& plan,std::optional<baregl::Framebuffer::Snapshot> target)
+{
+    using namespace OvRendering::Data;
+    SetCommandRecordingEnabled(true);
+    std::vector<Internal::TextureID> textures;Internal::TextureCaptureScope scope(textures);
+    try {
+        if(m_currentCanvas&&m_currentCanvas->BuildFrame(false)) {
+            auto frame=m_recorder->CaptureBindings(*ImGui::GetDrawData(),textures);
+            if(!target){const auto size=m_window.GetSize();if(!size.first||!size.second)return;}
+            RenderPlanPass pass;pass.name="ImGui";pass.view=RenderPlanPass::NoView;pass.target=target;
+            for(const auto& storage:frame.PrepareTextureReads()) {
+                const auto desc=PlanResourceDesc::From(storage);auto handle=plan.Find(storage);
+                if(!handle)handle=plan.Import("ImGui.Texture",storage,ResourceOrigin::Imported,{{desc.aspect,0,desc.mips,0,desc.layers}});
+                pass.accesses.push_back({*handle,{desc.aspect,0,desc.mips,0,desc.layers},ResourceAccessType::Sample});
+            }
+            if(target) {for(const auto& attachment:target->GetTextureAttachments())if(attachment.writable) {
+                const auto desc=PlanResourceDesc::From(attachment.storage);auto handle=plan.Find(attachment.storage);
+                if(!handle)handle=plan.Import("ImGui.Output",attachment.storage,ResourceOrigin::Imported,{{desc.aspect,0,desc.mips,0,desc.layers}});
+                pass.accesses.push_back({*handle,{},ResourceAccessType::Attachment,AttachmentLoad::Load});
+            }}
+            else {
+                const auto [width,height]=m_window.GetSize();
+                pass.accesses.push_back({plan.ImportBackbuffer(width,height,true),{},ResourceAccessType::Attachment,AttachmentLoad::Load});
+            }
+            pass.operation=[frame=std::move(frame),target] {return [frame,target](auto&) {
+                if(target)target->Bind();else baregl::Framebuffer::BindDefault();frame.Execute();
+            };};
+            plan.passes.push_back(std::move(pass));
+        }
+    }catch(...) {
+        if(ImGui::GetCurrentContext()&&ImGui::GetCurrentContext()->WithinFrameScope)ImGui::EndFrame();throw;
+    }
+}

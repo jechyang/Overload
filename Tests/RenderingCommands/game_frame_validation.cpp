@@ -56,7 +56,7 @@ int main(int argc,char** argv) try
             const auto [w,h]=context.framebuffer->GetSize();std::vector<uint8_t> image(size_t(w)*h*4);context.framebuffer->RecordTarget().ReadRGBA8(image);
             if(owned)Require(image==loopImages[i],"Game product loop image differs");else loopImages.push_back(std::move(image));
         }
-        Require(ProductFenceHook::count==(owned?8:0),"Game fence count differs from owned frame count");
+        Require(ProductFenceHook::count==8,"Game did not create exactly one retirement fence per product frame");
     }
     Require(states.front()!=states.back() && loopImages.front()!=loopImages.back(),"Game product sequence did not animate");
     game.SetFrameSubmissionEnabled(false);

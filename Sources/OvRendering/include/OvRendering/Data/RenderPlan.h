@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <unordered_map>
 namespace tracy { struct SourceLocationData; }
 namespace OvRendering::Core { class RenderResourceMapping; }
 
@@ -26,6 +27,7 @@ namespace OvRendering::Data
         uint32_t generation=1;
         std::shared_ptr<baregl::Texture> textureOwner;
         std::optional<baregl::Framebuffer::Snapshot> importedTarget;
+        std::vector<uint64_t> sceneGenerations;
     };
     struct ResourceUse { size_t resource = 0; uint8_t subresources = 1; };
     struct RenderPlanPass
@@ -46,6 +48,7 @@ namespace OvRendering::Data
         std::vector<size_t> after;
         std::vector<const tracy::SourceLocationData*> gpuScopesBegin;
         size_t gpuScopesEnd=0;
+        std::shared_ptr<RenderCommandList> commandBlock;
     };
     // External commands appended after the plan's last pass (editor overlay, picking,
     // final UI). Declared so Validate can cover the full frame resource contract;
@@ -60,6 +63,12 @@ namespace OvRendering::Data
     struct RenderPlan
     {
         RenderPlan();
+        struct RemappedResource { uint32_t generation;ResourceHandle target; };
+        std::unordered_map<uint64_t,std::vector<RemappedResource>> remaps;
+        std::vector<uint64_t> viewScopes;
+        void Append(RenderPlan&&,size_t viewOffset,size_t viewCount);
+        void AddCommands(std::string,RenderCommandList&&,std::vector<ResourceAccess> accesses={});
+        ResourceHandle ImportBackbuffer(uint16_t width,uint16_t height,bool initialized);
         std::vector<PlanResource> resources;
         std::vector<RenderPlanPass> passes;
         std::vector<ExternalComposition> trailing;

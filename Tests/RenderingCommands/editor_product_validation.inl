@@ -25,7 +25,9 @@ void EditorProductValidation(OvEditor::Core::Editor& editor,OvEditor::Core::Cont
             const auto [w,h]=view.GetSafeSize();std::vector<uint8_t> pixels(size_t(w)*h*4);view.GetOutputTarget().ReadRGBA8(pixels);
             if(owned)Require(pixels==images[i],"product Editor Game view image differs");else images.push_back(std::move(pixels));
         }
-        Require(ProductFenceHook::count==(owned?8:0),"Editor did not create exactly one fence per owned frame");
+        // Both modes execute the same product graph; immediate mode must also
+        // retire its transient leases before another frame can reuse them.
+        Require(ProductFenceHook::count==8,"Editor did not create exactly one retirement fence per product frame");
         editor.m_editorActions.StopPlaying();
     }
     Require(states.front()!=states.back() && images.front()!=images.back(),"Editor product sequence did not animate");

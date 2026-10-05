@@ -8,6 +8,7 @@
 
 #include <optional>
 #include <OvRendering/Data/RenderCommandList.h>
+#include <OvRendering/Data/RenderPlan.h>
 #include <OvUI/Rendering/DrawData.h>
 #include <baregl/Framebuffer.h>
 #include <string>
@@ -155,6 +156,7 @@ namespace OvUI::Core
         // the recorder itself issues no GPU operations. Widget callbacks still obey
         // their existing main-thread/GL-owner requirements.
         void SetCommandRecordingEnabled(bool p_enabled);
+        void RecordPlan(OvRendering::Data::RenderPlan&,std::optional<baregl::Framebuffer::Snapshot> target=std::nullopt);
         OvRendering::Data::RenderCommandList RecordRenderCommands(
             std::optional<baregl::Framebuffer::Snapshot> p_target = std::nullopt,
             std::span<const std::shared_ptr<baregl::Texture>> p_textures = {});

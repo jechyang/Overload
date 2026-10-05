@@ -54,6 +54,7 @@ OvEditor::Core::Editor::Editor(Context& p_context) :
 	m_panelsManager(m_canvas),
 	m_editorActions(m_context, m_panelsManager)
 {
+    m_productFrontend.GetResourcePool()->SetFrameReserve(m_context.renderThread?2:1);
 	SetupUI();
 
 	m_context.sceneManager.LoadDefaultScene();
@@ -259,9 +260,8 @@ void OvEditor::Core::Editor::Update(float p_deltaTime)
     if (m_frameSubmissionEnabled) m_pendingFrame.emplace(RecordRenderFrame(p_deltaTime));
     else
     {
-        RenderViews(p_deltaTime);
-        UpdateEditorPanels(p_deltaTime);
-        RenderEditorUI(p_deltaTime);
+        auto immediate=RecordRenderFrame(p_deltaTime);immediate.Submit(*m_context.driver);immediate.Wait();
+        immediate.GetCompletion().RethrowIfFailed();CompleteRenderFrame(immediate.GetCompletion());
         m_editorActions.ExecuteDelayedActions();
     }
 }
@@ -500,13 +500,27 @@ OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p
 		collectView(sceneView);
         if (auto* preview = sceneView.GetCameraPreviewView()) collectView(*preview);
 	}
-    for (auto& item : pending) item.view->PrepareView(item.frame);
-    for (auto& item : pending)
-        frame.AppendRecording(item.view->RecordView(item.frame, true));
-    if (sceneView.IsOpened() && sceneView.IsVisible())
-        m_recordedInteraction = sceneView.GetRecordedInteraction();
+    std::vector<std::unique_ptr<OvCore::Rendering::SceneFrame>> fragments;
+    for(auto& item:pending) {
+        if(item.frame.active)item.view->CaptureProductInteraction();
+        if(item.frame.active)fragments.push_back(std::move(item.frame.frame));
+    }
+    if(sceneView.IsOpened()&&sceneView.IsVisible())m_recordedInteraction=sceneView.GetRecordedInteraction();
+    auto product=m_productFrontend.ComposeFrames(std::move(fragments));
     UpdateEditorPanels(p_deltaTime);
-    frame.Append(m_context.uiManager->RecordRenderCommands());
+    m_context.uiManager->RecordPlan(product->ComposePlan());
+    const auto [windowWidth,windowHeight]=m_context.window->GetSize();
+    if(windowWidth&&windowHeight) {
+        OvRendering::Data::RenderPlanPass present;present.name="Window.Present";present.view=OvRendering::Data::RenderPlanPass::NoView;
+        present.accesses.push_back({product->ComposePlan().ImportBackbuffer(windowWidth,windowHeight,true),{},OvRendering::Data::ResourceAccessType::Present});
+        present.operation=[] {return [](auto&) {};};product->ComposePlan().passes.push_back(std::move(present));
+    }
+    product=m_productFrontend.PrepareFrame(std::move(product),m_context.driver->CreatePipelineState(),recordingJobs);
+    size_t viewOffset=0;
+    for(auto& item:pending)if(item.frame.active) {
+        item.view->PublishProductView(item.frame,product->GetPreparedViews().subspan(viewOffset,item.frame.viewCount));viewOffset+=item.frame.viewCount;
+    }
+    frame.AppendRecording(m_productFrontend.RecordFrame(std::move(product),recordingJobs,nullptr,true));
     frame.Seal(recordingJobs);
     m_latestFrameCompletion = frame.GetCompletion();
     return frame;

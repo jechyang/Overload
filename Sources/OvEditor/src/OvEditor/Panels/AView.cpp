@@ -7,6 +7,7 @@
 
 #include <tracy/Tracy.hpp>
 #include <algorithm>
+#include <OvRendering/Core/ViewPreparer.h>
 
 #include <OvCore/Rendering/FramebufferUtil.h>
 #include <OvEditor/Core/EditorActions.h>
@@ -60,14 +61,25 @@ OvEditor::Panels::AView::ViewFrame OvEditor::Panels::AView::ExtractView()
     OvCore::Rendering::SceneFrameRequest frameRequest{*result.request,m_surface.GetTarget(),m_shadowFallback};
     frameRequest.postProcess=&m_postProcess;frameRequest.postProcessTarget=&m_surface.GetFramebuffer();frameRequest.postProcessState=result.state;
     result.frame=m_frontend.ExtractFrame(frameRequest);
-    const auto colorIndex=result.frame->FindResource(m_surface.GetColor()->RetainStorage());
     m_overlayRequest=CreateOverlayRequest();
-    std::vector<OvRendering::Data::ResourceUse> overlayWrites;
-    if(colorIndex) overlayWrites.push_back({*colorIndex,1});
-    if(m_overlayRequest.grid||m_overlayRequest.debugObjects)
-        result.frame->DeclareTrailingComposition("EditorOverlay",{},std::move(overlayWrites));
-    if(m_overlayRequest.picking)
-        result.frame->DeclareTrailingComposition("Picking",{},{});
+    const auto snapshots=result.frame->GetViews();
+    const auto main=std::find_if(snapshots.begin(),snapshots.end(),[&](const auto& input){return input->GetView().id==result.request->viewId;});
+    if(main==snapshots.end())throw std::logic_error("Viewport main camera view is missing");
+    const auto overlayView=OvRendering::Core::ViewPreparer::BuildView((*main)->GetView());
+    result.extractedInfo=result.frame->GetFrameInfo();
+    if(m_overlayRequest.grid||m_overlayRequest.debugObjects) {
+        if(!m_overlays)m_overlays=std::make_unique<Rendering::EditorOverlayCollector>();
+        auto tools=m_overlays->Extract(result.request->scene,m_overlayRequest,overlayView,result.state,m_surface.GetTarget(),&result.frame->ComposePlan());
+        result.frame->ComposePlan().AddCommands("Editor.Tools.Completion",std::move(tools));result.extractedInfo+=m_overlays->GetFrameInfo();
+    }
+    if(m_overlayRequest.picking) {
+        if(!m_picking)m_picking=std::make_unique<Rendering::PickingCollector>();
+        m_picking->Build(*result.frame,*result.request,m_overlayRequest,result.state);result.extractedInfo+=m_picking->GetFrameInfo();
+    }
+    OvRendering::Data::RenderCommandList end;
+    m_completion=end.GetCompletion();end.Append([](auto& driver){driver.OnFrameCompleted();});
+    result.frame->ComposePlan().AddCommands("Viewport.Complete",std::move(end));
+    result.viewCount=result.frame->GetViews().size();
     result.active=true;
     return result;
 }
@@ -86,32 +98,20 @@ OvRendering::Data::RenderCommandList OvEditor::Panels::AView::RecordView(ViewFra
         return commands;
     }
     FrameMarkStart(name.c_str());
-    // A trailing OverlayUI pass has screen-space matrices, not the viewport
-    // camera. Editor grids and gizmos must always use the requested camera.
-    const auto preparedViews=view.frame->GetPreparedViews();
-    const auto mainView=std::find_if(preparedViews.begin(),preparedViews.end(),
-        [&](const auto& prepared) { return prepared->GetView().input.id == view.request->viewId; });
-    if(mainView==preparedViews.end())throw std::logic_error("Viewport main camera view is missing");
-    const auto overlayView=(*mainView)->GetView();
-    m_frameInfo=view.frame->GetFrameInfo();
-    commands.Append(m_frontend.RecordFrame(std::move(view.frame),m_jobs));
-    if(m_overlayRequest.grid||m_overlayRequest.debugObjects)
-    {
-        if(!m_overlays)m_overlays=std::make_unique<Rendering::EditorOverlayCollector>();
-        commands.AppendRecording(m_overlays->Extract(view.request->scene,m_overlayRequest,overlayView,view.state,m_surface.GetTarget()));
-        m_frameInfo+=m_overlays->GetFrameInfo();
-    }
-    if(m_overlayRequest.picking)
-    {
-        if(!m_picking)m_picking=std::make_unique<Rendering::PickingCollector>();
-        commands.AppendRecording(m_picking->Extract(*view.request,m_overlayRequest,view.state,m_jobs));
-        m_frameInfo+=m_picking->GetFrameInfo();
-    }
-    OnViewRecorded();
-    commands.Append([](auto& driver){driver.OnFrameCompleted();});
-    FrameMarkEnd(name.c_str());
+    PublishProductView(view,view.frame->GetPreparedViews());
+    commands.AppendRecording(m_frontend.RecordFrame(std::move(view.frame),m_jobs,nullptr,true));
+    CaptureProductInteraction();FrameMarkEnd(name.c_str());
     if(!deferEncoding)commands.Seal(m_jobs);
     return commands;
+}
+void OvEditor::Panels::AView::PublishProductView(const ViewFrame& view,
+    std::span<const std::shared_ptr<const OvRendering::Data::PreparedFrameData>> prepared)
+{
+    m_frameInfo=view.extractedInfo;
+    for(const auto& frame:prepared)for(const auto& draw:frame->GetDraws()) {
+        const auto& mesh=frame->GetScene().GetMeshes()[draw.sourceIndex];
+        m_frameInfo.Add(mesh.geometry->GetVertexCount(),mesh.geometry->GetIndexCount(),mesh.instances);
+    }
 }
 OvRendering::Data::RenderCommandList OvEditor::Panels::AView::RecordRenderCommands(bool deferEncoding)
 {

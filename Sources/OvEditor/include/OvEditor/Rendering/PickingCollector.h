@@ -9,6 +9,7 @@ namespace OvEditor::Rendering
     public:
         PickingCollector();
         const OvRendering::Data::FrameInfo& GetFrameInfo() const { return m_info; }
+        void Build(OvCore::Rendering::SceneFrame&,OvCore::Rendering::SceneRenderRequest,const EditorOverlayRequest&,OvRendering::Data::PipelineState);
         OvRendering::Data::RenderCommandList Extract(OvCore::Rendering::SceneRenderRequest request,
             const EditorOverlayRequest& overlay, OvRendering::Data::PipelineState state, OvTools::Jobs::JobSystem* jobs);
         std::shared_ptr<const PickingReadback> GetReadback() const { return m_readback; }

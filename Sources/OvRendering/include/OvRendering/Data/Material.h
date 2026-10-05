@@ -155,6 +155,7 @@ namespace OvRendering::Data
             const PreparedSnapshot& p_previous, bool p_uploadStable, bool p_uploadSingleUse,
             bool p_consumeSingleUse = true, const PropertyOverrides& p_overrides = {});
         static std::shared_ptr<const Snapshot> EncodeSnapshot(const PreparedSnapshot& p_input);
+        static std::vector<baregl::Texture::Snapshot> GetPreparedTextureReads(const PreparedSnapshot&);
         static PreparedSnapshot RebindPreparedTextures(const PreparedSnapshot&,
             const std::unordered_map<std::string,std::shared_ptr<baregl::Texture>>&);
 

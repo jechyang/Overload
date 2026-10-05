@@ -2,7 +2,9 @@
 #include <OvUI/Internal/TextureID.h>
 #include <imgui_impl_opengl3.h>
 #include <baregl/detail/glad/glad.h>
+#include <baregl/ResourceExecutor.h>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
 #include <stdexcept>
@@ -46,7 +48,8 @@ namespace OvUI::Rendering
             uint32_t width, height;
             ImTextureID logicalID;
             std::vector<uint8_t> pixels;
-            std::shared_ptr<baregl::Texture> texture; // Only the GL consumer accesses this field.
+            std::shared_ptr<baregl::Texture> texture; // Only the GL owner accesses this field.
+            std::atomic<std::shared_ptr<const baregl::Texture::Snapshot>> published;
             uint32_t GetID()
             {
                 if (!texture)
@@ -56,9 +59,9 @@ namespace OvUI::Rendering
                     value->Allocate({.width=width, .height=height,
                         .minFilter=baregl::types::ETextureFilteringMode::LINEAR, .magFilter=baregl::types::ETextureFilteringMode::LINEAR,
                         .horizontalWrap=baregl::types::ETextureWrapMode::CLAMP_TO_EDGE, .verticalWrap=baregl::types::ETextureWrapMode::CLAMP_TO_EDGE,
-                        .internalFormat=baregl::types::EInternalFormat::RGBA8, .useMipMaps=false});
-                    value->Upload(pixels.data(), baregl::types::EFormat::RGBA, baregl::types::EPixelDataType::UNSIGNED_BYTE);
-                    texture = std::move(value);
+                        .internalFormat=baregl::types::EInternalFormat::RGBA, .useMipMaps=false,
+                        .mutableDesc=baregl::data::MutableTextureDesc{baregl::types::EFormat::RGBA,baregl::types::EPixelDataType::UNSIGNED_BYTE,pixels.data()}});
+                    texture = std::move(value);published.store(std::make_shared<const baregl::Texture::Snapshot>(texture->RetainStorage()),std::memory_order_release);
                 }
                 return texture->GetID();
             }
@@ -213,6 +216,21 @@ namespace OvUI::Rendering
         for(auto* texture:acknowledge){texture->SetTexID(m_state->fonts.at(texture).generation->logicalID);texture->SetStatus(ImTextureStatus_OK);}
         for(auto* texture:retire){texture->SetTexID(ImTextureID_Invalid);texture->SetStatus(ImTextureStatus_Destroyed);}
         return DrawData(std::move(result));
+    }
+
+    std::vector<baregl::Texture::Snapshot> DrawData::PrepareTextureReads() const
+    {
+        if(!m_storage)return {};
+        std::vector<std::shared_ptr<FontGeneration>> missing;
+        for(const auto& list:m_storage->lists)for(const auto& binding:list->bindings)
+            if(binding.font&&!binding.font->published.load(std::memory_order_acquire)&&std::find(missing.begin(),missing.end(),binding.font)==missing.end())missing.push_back(binding.font);
+        if(!missing.empty())baregl::ResourceExecutor::Invoke([&] {for(const auto& font:missing)font->GetID();});
+        std::vector<baregl::Texture::Snapshot> result;
+        for(const auto& list:m_storage->lists)for(const auto& binding:list->bindings) {
+            const auto storage=binding.font?*binding.font->published.load(std::memory_order_acquire):binding.texture.storage;
+            if(storage.GetID()&&std::find(result.begin(),result.end(),storage)==result.end())result.push_back(storage);
+        }
+        return result;
     }
 
     void DrawData::Execute() const

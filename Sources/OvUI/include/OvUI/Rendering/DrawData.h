@@ -19,6 +19,7 @@ namespace OvUI::Rendering
     public:
         DrawData() = default;
         void Execute() const;
+        std::vector<baregl::Texture::Snapshot> PrepareTextureReads() const;
         size_t GetVertexCount() const;
         size_t GetIndexCount() const;
     };

@@ -57,18 +57,20 @@ int main(int argc, char** argv)
         };
         sample("context");
         {
-            const bool sharedMode=GetEnvironmentVariableA("OV_FRAMEGRAPH_MEMORY_SHARED64",nullptr,0)>0;
+            const bool productMode=GetEnvironmentVariableA("OV_FRAMEGRAPH_MEMORY_PRODUCT",nullptr,0)>0;
+            const bool sharedMode=productMode||GetEnvironmentVariableA("OV_FRAMEGRAPH_MEMORY_SHARED64",nullptr,0)>0;
             const uint64_t budget=sharedMode?64ull*1024*1024:256ull*1024*1024;
             std::vector<std::shared_ptr<OvRendering::Core::RenderTargetPool>> pools;
             const auto sharedPool=sharedMode?std::make_shared<OvRendering::Core::RenderTargetPool>(budget):nullptr;
-            std::ofstream(output/"pool-mode.txt")<<(sharedMode?"shared pool, 64 MiB idle budget":"per-viewport pools, default 256 MiB idle budget each")<<'\n';
+            if(productMode)sharedPool->SetIdleBudget(256ull*1024*1024);
+            std::ofstream(output/"pool-mode.txt")<<(productMode?"one product graph and pool, default 256 MiB idle budget":sharedMode?"shared pool, 64 MiB idle budget":"per-viewport pools, default 256 MiB idle budget each")<<'\n';
             std::ofstream poolReport(output/"pool.csv");poolReport<<"phase,allocations,hits,aliases,evictions,idleBytes,leasedBytes,peakLeasedBytes\n";
             const auto samplePool=[&](const char* phase) {
                 OvRendering::Core::RenderTargetPool::Statistics total;
                 for(const auto& pool:pools) {
                     const auto s=pool->GetStatistics();total.allocations+=s.allocations;total.hits+=s.hits;total.aliases+=s.aliases;
                     total.evictions+=s.evictions;total.idleBytes+=s.idleBytes;total.leasedBytes+=s.leasedBytes;total.peakLeasedBytes+=s.peakLeasedBytes;
-                    Require(s.leasedBytes==0&&s.idleBytes<=budget,"retired effects exceed pool idle budget");
+                    Require(s.leasedBytes==0&&s.idleBytes<=(productMode?256ull*1024*1024:budget),"retired effects exceed pool idle budget");
                 }
                 poolReport<<phase<<','<<total.allocations<<','<<total.hits<<','<<total.aliases<<','<<total.evictions<<','<<total.idleBytes<<','<<total.leasedBytes<<','<<total.peakLeasedBytes<<'\n';poolReport.flush();
             };
@@ -82,17 +84,36 @@ int main(int argc, char** argv)
             baregl::Framebuffer target("MemoryTarget"); OvCore::Rendering::FramebufferUtil::SetupFramebuffer(target,1920,1080,false,false,false);
             const float initialColor[]={.4f,.8f,1.5f,1};glClearNamedFramebufferfv(target.GetID(),GL_COLOR,0,initialColor);
             OvCore::Rendering::PostProcess::PostProcessSnapshot settings;
+            std::ofstream timings(output/"product-timings.csv");timings<<"phase,sample,compileUs,realizeUs,encodeExecuteUs,logicalTransientBytes,estimatedPeakBytes,physicalAllocations\n";
+            const auto render=[&](const char* phase) {
+                if(!productMode) {for(auto& pipeline:pipelines){auto commands=pipeline->Record(settings,target,driver.CreatePipelineState());commands.Execute(driver);}return;}
+                for(unsigned iteration=0;iteration<6;++iteration) {
+                    OvRendering::Data::RenderPlan product;OvRendering::Data::RenderCommandList commands;
+                    for(auto& pipeline:pipelines) {
+                        OvRendering::Data::RenderPlan fragment;
+                        fragment.Import("Viewport.Output",target.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)->RetainStorage(),OvRendering::Data::ResourceOrigin::Imported,{{}});
+                        pipeline->Build(fragment,commands,settings,target,driver.CreatePipelineState());product.Append(std::move(fragment),0,0);
+                    }
+                    const auto start=std::chrono::steady_clock::now();const auto compiled=product.Compile();const auto compiledAt=std::chrono::steady_clock::now();
+                    const auto before=sharedPool->GetStatistics().allocations;auto mapping=sharedPool->Realize(product,compiled);const auto realizedAt=std::chrono::steady_clock::now();
+                    product.RecordOperations(commands,{},std::move(mapping));commands.Seal();commands.Execute(driver);const auto finished=std::chrono::steady_clock::now();
+                    uint64_t logical=0;for(size_t i=0;i<product.resources.size();++i)if(product.resources[i].origin==OvRendering::Data::ResourceOrigin::Transient)logical+=compiled.lifetimes[i].estimatedBytes;
+                    const auto us=[](auto a,auto b){return std::chrono::duration<double,std::micro>(b-a).count();};
+                    timings<<phase<<','<<iteration<<','<<us(start,compiledAt)<<','<<us(compiledAt,realizedAt)<<','<<us(realizedAt,finished)<<','<<logical<<','<<compiled.estimatedPeakBytes<<','<<sharedPool->GetStatistics().allocations-before<<'\n';
+                    if(iteration)Require(sharedPool->GetStatistics().allocations==before,"warm unified product allocated another transient");
+                }
+            };
             settings.exposure.enabled=settings.bloom.enabled=settings.tonemapping.enabled=settings.fxaa.enabled=false;
-            for(auto& pipeline:pipelines) { auto commands=pipeline->Record(settings,target,driver.CreatePipelineState()); commands.Execute(driver); }
+            render("disabled");
             sample("three-disabled-1080p");samplePool("three-disabled-1080p");
             settings.bloom.enabled=true;
-            for(auto& pipeline:pipelines) { auto commands=pipeline->Record(settings,target,driver.CreatePipelineState()); commands.Execute(driver); }
+            render("bloom");
             sample("three-bloom-1080p");samplePool("three-bloom-1080p");
             settings.exposure.enabled=true; settings.exposure.progressive=false;
-            for(auto& pipeline:pipelines) { auto commands=pipeline->Record(settings,target,driver.CreatePipelineState()); commands.Execute(driver); }
+            render("exposure-bloom");
             sample("three-exposure-bloom-1080p");samplePool("three-exposure-bloom-1080p");
             settings.exposure.enabled=settings.bloom.enabled=false;
-            for(auto& pipeline:pipelines) { auto commands=pipeline->Record(settings,target,driver.CreatePipelineState()); commands.Execute(driver); }
+            render("disabled-after-enabled");
             sample("disabled-after-enabled");samplePool("disabled-after-enabled");
             for(const auto& pool:pools)pool->SetIdleBudget(0);sample("idle-cache-trimmed");samplePool("idle-cache-trimmed");
         }

@@ -8,6 +8,7 @@
 #include <OvCore/Rendering/FramebufferUtil.h>
 #include <OvCore/Rendering/SkinningUtils.h>
 #include <OvUI/Styling/Style.h>
+#include <OvRendering/Core/ViewPreparer.h>
 #include <algorithm>
 namespace
 {
@@ -175,33 +176,43 @@ void OvEditor::Rendering::PickingCollector::DrawPickableGizmo(
 		.CollectModel(p_pso, *arrowModel, m_gizmoPickingMaterial, modelMatrix);
 }
 
-OvRendering::Data::RenderCommandList OvEditor::Rendering::PickingCollector::Extract(
-    OvCore::Rendering::SceneRenderRequest request,const EditorOverlayRequest& overlay,
-    OvRendering::Data::PipelineState state,OvTools::Jobs::JobSystem* jobs)
+void OvEditor::Rendering::PickingCollector::Build(OvCore::Rendering::SceneFrame& product,
+    OvCore::Rendering::SceneRenderRequest request,const EditorOverlayRequest& overlay,OvRendering::Data::PipelineState state)
 {
-    m_readback.reset(); m_info={};
+    m_readback.reset();m_info={};
     if(overlay.scene!=request.scene.GetLifetimeToken())throw std::invalid_argument("Picking request belongs to another scene");
     request.pipeline.stages={OvRendering::Data::RenderStage::Picking};request.pickingFallback=&m_actorPickingFallbackMaterial;
+    uint64_t lastID=request.viewId;for(const auto& view:product.GetViews())lastID=std::max(lastID,view->GetView().id);
+    if(lastID==UINT64_MAX)throw std::invalid_argument("Picking view identity overflow");request.viewId=lastID+1;
     m_actorPickingFramebuffer.Resize(request.width,request.height);
     auto input=m_frontend.ExtractScene(request);
-    auto frame=m_frontend.Prepare(input,state,jobs);
-    for(const auto& draw:frame->GetDraws()) {const auto& mesh=frame->GetScene().GetMeshes()[draw.sourceIndex];m_info.Add(mesh.geometry->GetVertexCount(),mesh.geometry->GetIndexCount(),mesh.instances);}
-    OvRendering::Data::RenderCommandList commands;
-    commands.Append(m_frontend.Record(frame,m_actorPickingFramebuffer.RecordTarget(),jobs));
-    m_collector.Begin(frame->GetView(),state,m_actorPickingFramebuffer.RecordTarget());
-    if (overlay.cameraIcons) DrawPickableCameras(state,request.scene);
-    if (overlay.reflectionIcons) DrawPickableReflectionProbes(state,request.scene);
-    if (overlay.lightIcons) DrawPickableLights(state,request.scene);
-    m_collector.Clear(false,true,false);
+    const auto view=OvRendering::Core::ViewPreparer::BuildView(input->GetView());
+    product.AddView(std::move(input),m_actorPickingFramebuffer.RecordTarget(),"Picking.Geometry");
+    m_collector.Begin(view,state,m_actorPickingFramebuffer.RecordTarget(),&product.ComposePlan());
+    m_collector.SetPassName("Picking.Icons");
+    if(overlay.cameraIcons)DrawPickableCameras(state,request.scene);
+    if(overlay.reflectionIcons)DrawPickableReflectionProbes(state,request.scene);
+    if(overlay.lightIcons)DrawPickableLights(state,request.scene);
+    m_collector.SetPassName("Picking.GizmoDepthStencil");m_collector.Clear(false,true,false);
     auto* selected=request.scene.FindActorByGUID(overlay.selected);
     const bool hasGizmo=selected&&HasEditableTransformGizmo(*selected);
-    if(hasGizmo)DrawPickableGizmo(state,overlay.gizmoFrame ? overlay.gizmoFrame->position : selected->transform.GetWorldPosition(),
-        overlay.gizmoFrame ? overlay.gizmoFrame->rotation : selected->transform.GetWorldRotation(),overlay.operation);
-    auto readback=std::make_shared<PickingReadback>();readback->completion=commands.GetCompletion();
+    if(hasGizmo)DrawPickableGizmo(state,overlay.gizmoFrame?overlay.gizmoFrame->position:selected->transform.GetWorldPosition(),
+        overlay.gizmoFrame?overlay.gizmoFrame->rotation:selected->transform.GetWorldRotation(),overlay.operation);
+    auto readback=std::make_shared<PickingReadback>();
     readback->scene=request.scene.GetLifetimeToken();readback->width=request.width;readback->height=request.height;
     readback->gizmoActorGUID=hasGizmo?selected->GetGUID():0;readback->gizmoOperation=overlay.operation;
     readback->pixels.resize(size_t(request.width)*request.height*4);
     for(const auto* actor:request.scene.GetActors())readback->actors.emplace(static_cast<uint32_t>(actor->GetID()),actor->GetGUID());
     m_collector.SubmitRenderOperation([readback,target=m_actorPickingFramebuffer.RecordTarget()](auto&){target.ReadRGBA8(readback->pixels);});
-    m_info+=m_collector.GetFrameInfo();commands.AppendRecording(m_collector.Finish());m_readback=std::move(readback);return commands;
+    auto completion=m_collector.Finish();readback->completion=completion.GetCompletion();
+    product.ComposePlan().AddCommands("Picking.Completion",std::move(completion));
+    m_info=m_collector.GetFrameInfo();m_readback=std::move(readback);
+}
+OvRendering::Data::RenderCommandList OvEditor::Rendering::PickingCollector::Extract(
+    OvCore::Rendering::SceneRenderRequest request,const EditorOverlayRequest& overlay,
+    OvRendering::Data::PipelineState state,OvTools::Jobs::JobSystem* jobs)
+{
+    auto frame=m_frontend.ComposeFrame({},{});Build(*frame,request,overlay,state);
+    frame=m_frontend.PrepareFrame(std::move(frame),state,jobs);m_info=frame->GetFrameInfo();
+    return m_frontend.RecordFrame(std::move(frame),jobs,nullptr,true);
 }

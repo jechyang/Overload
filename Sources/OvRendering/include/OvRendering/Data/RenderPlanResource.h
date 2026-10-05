@@ -9,7 +9,7 @@
 
 namespace OvRendering::Data
 {
-    enum class PlanResourceKind { Texture2D, TextureCube, Renderbuffer };
+    enum class PlanResourceKind { Texture2D, TextureCube, Renderbuffer, Backbuffer };
     enum class ResourceAspect : uint8_t { Color=1, Depth=2, Stencil=4, DepthStencil=6 };
     enum class ResourceAccessType { Sample, Attachment, CopySource, CopyDestination, MipmapSource, MipmapDestination, Readback, Export, Present };
     enum class AttachmentLoad { Load, Clear, DontCare };

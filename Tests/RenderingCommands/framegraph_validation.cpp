@@ -4,6 +4,7 @@
 #include <OvRendering/Data/RenderFrame.h>
 #include <OvRendering/Core/RenderTargetPool.h>
 #include <baregl/ResourceLifetime.h>
+#include <baregl/ResourceExecutor.h>
 #include <iostream>
 using namespace OvRendering::Data;
 namespace
@@ -66,6 +67,15 @@ namespace
         {auto ready=pool->Realize(plan,compiled);RenderCommandList list;plan.RecordOperations(list,{},ready);ready.reset();list.Seal();list.Execute(driver);Require(list.GetCompletion().Succeeded()&&pool->GetStatistics().leasedTargets==0,"immediate lease did not use GPU retirement");}
         Require(pool->GetStatistics().allocations==allocations,"warm pool allocated another target");
         {
+            auto previous=pool->Realize(plan,compiled);const auto retained=previous->TextureStorage(a);previous.reset();
+            auto inspection=plan;const auto external=inspection.Import("Debugger.PreviousGeneration",retained,ResourceOrigin::Imported,{{}});
+            inspection.passes.push_back(Node("UI.PreviousGeneration",{{external,{},ResourceAccessType::Sample}}));
+            auto first=pool->Realize(inspection,inspection.Compile());auto second=pool->Realize(inspection,inspection.Compile());
+            Require(first->TextureStorage(a)!=retained&&second->TextureStorage(a)!=retained,"external UI sampler was overwritten by pooled scratch");
+            first.reset();auto unrelated=pool->Realize(plan,compiled);
+            Require(unrelated->TextureStorage(a)!=retained,"retiring one UI frame released another frame's external pool pin");
+        }
+        {
             OvTools::Jobs::JobSystem jobs(2);auto map=pool->Realize(plan,compiled);
             RenderCommandList parallel;plan.RecordOperations(parallel,{},map);map.reset();
             std::atomic_bool workerStarted=false;std::atomic_uint encoded=0;
@@ -117,6 +127,22 @@ namespace
         auto pinned=pool->Realize(plan,compiled);const auto pinID=pinned->TextureStorage(a).GetID();pool->Close();
         Require(glIsTexture(pinID)&&pool->GetStatistics().leasedTargets==1,"pool close invalidated active frame storage");pinned.reset();Require(!glIsTexture(pinID),"closed pool failed to release final lease");
         bool closed=false;try{pool->Realize(plan,compiled);}catch(...){closed=true;}Require(closed,"closed pool reused another context");
+        {
+            unsigned dispatches=0;
+            baregl::ResourceExecutor owner([&](auto operation){
+                ++dispatches;
+                // The real GL owner has no producer dispatcher. Model its
+                // nested native calls without counting them as producer waits.
+                baregl::ResourceExecutor native([](auto operation){operation();});operation();
+            });
+            OvRendering::Core::RenderTargetPool bounded;bounded.SetFrameReserve(2);
+            {auto first=bounded.Realize(plan,compiled);Require(bounded.GetStatistics().allocations==2&&dispatches==1,"bounded pool did not batch two frame sets on its owner");}
+            auto first=bounded.Realize(plan,compiled),second=bounded.Realize(plan,compiled);
+            Require(first->TextureStorage(a)!=second->TextureStorage(a)&&dispatches==1,"warm in-flight pool performed an owner wait or reused active storage");
+            bool rejected=false;
+            {baregl::ResourceExecutor foreignOwner([&](auto operation){++dispatches;operation();});try{bounded.Realize(plan,compiled);}catch(const std::logic_error&){rejected=true;}}
+            Require(rejected&&dispatches==1,"warm pool accepted a foreign producer binding");
+        }
         auto oldDomainPool=std::make_shared<OvRendering::Core::RenderTargetPool>();auto old=oldDomainPool->Realize(plan,compiled);const auto oldStorage=old->TextureStorage(a);old.reset();
         domain->Close();domain.reset();Require(oldStorage.GetID()==0,"closed domain did not invalidate pooled storage");
         domain=std::make_unique<baregl::DeletionQueue>();bool foreign=false;try{oldDomainPool->Realize(plan,compiled);}catch(...){foreign=true;}Require(foreign,"pool reused a previous context domain");oldDomainPool.reset();
@@ -200,6 +226,70 @@ namespace
         Require(a==b&&a[0]>0&&glGetError()==GL_NO_ERROR,"independent copy output/lifetime failure");
         std::cout<<"PASS: view-independent owned GL copy executes through Compose/Prepare/Record/RenderFrame after source resize/destruction; duplicate imports normalize\n";
     }
+    void ProductPlanValidation(const std::filesystem::path& output)
+    {
+        OvWindowing::Settings::DeviceSettings ds;ds.contextMajorVersion=4;ds.contextMinorVersion=5;
+        OvWindowing::Context::Device device(ds);OvWindowing::Settings::WindowSettings ws;ws.visible=false;ws.focused=false;ws.width=96;ws.height=64;ws.samples=1;
+        OvWindowing::Window window(device,ws);window.MakeCurrentContext();OvRendering::Context::Driver driver(OvRendering::Settings::DriverSettings{true});
+        OvCore::ResourceManagement::ShaderManager shaders;const auto assets=std::filesystem::current_path()/"Data/Engine";
+        shaders.ProvideAssetPaths(assets,assets);ServiceLocator::Provide(shaders);
+        std::array<std::unique_ptr<baregl::Framebuffer>,4> targets;
+        std::array<std::unique_ptr<OvCore::Rendering::PostProcess::PostProcessPipeline>,4> pipelines;
+        std::array<std::vector<uint8_t>,4> expected,actual;
+        std::array<baregl::Framebuffer::Snapshot,4> outputs;
+        std::array<ResourceHandle,4> scratch;
+        OvCore::Rendering::PostProcess::PostProcessSnapshot settings;settings.exposure.progressive=false;settings.bloom.passes=6;
+        RenderPlan product;RenderCommandList commands;size_t independentTargets=0;
+        for(size_t i=0;i<4;++i) {
+            const uint16_t width=i==3?48:96,height=i==3?32:64;
+            targets[i]=std::make_unique<baregl::Framebuffer>();OvCore::Rendering::FramebufferUtil::SetupFramebuffer(*targets[i],width,height,false,false,false);
+            pipelines[i]=std::make_unique<OvCore::Rendering::PostProcess::PostProcessPipeline>();
+            const float color[]={.2f+float(i)*.1f,.8f,1.5f,1};glClearNamedFramebufferfv(targets[i]->GetID(),GL_COLOR,0,color);
+            auto oracle=pipelines[i]->Record(settings,*targets[i],driver.CreatePipelineState(),false);oracle.Execute(driver);
+            expected[i].resize(size_t(width)*height*4);targets[i]->RecordTarget().ReadRGBA8(expected[i]);
+            glClearNamedFramebufferfv(targets[i]->GetID(),GL_COLOR,0,color);
+            RenderPlan fragment;const auto texture=targets[i]->RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR);
+            fragment.Import("Viewport.Color",texture->RetainStorage(),ResourceOrigin::Imported,{{}});
+            RenderCommandList history;pipelines[i]->Build(fragment,history,settings,*targets[i],driver.CreatePipelineState());
+            scratch[i]=fragment.Handle(1);const auto compiled=fragment.Compile();
+            for(const auto& resource:fragment.resources)if(resource.origin==ResourceOrigin::Transient)++independentTargets;
+            outputs[i]=targets[i]->RecordTarget();product.Append(std::move(fragment),0,0);commands.AppendRecording(std::move(history));
+        }
+        RenderPlanPass consumer=Node("UI.FinalViewportConsumer",{});
+        for(size_t i=0;i<4;++i) {
+            const auto texture=targets[i]->RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR);
+            consumer.accesses.push_back({*product.Find(texture->RetainStorage()),{},ResourceAccessType::Sample});actual[i].resize(expected[i].size());
+        }
+        consumer.operation=[outputs,&actual] {return [outputs,&actual](auto&) {for(size_t i=0;i<4;++i)outputs[i].ReadRGBA8(actual[i]);};};
+        product.passes.push_back(std::move(consumer));const auto compiled=product.Compile();
+        OvRendering::Core::RenderTargetPool pool;auto mapping=pool.Realize(product,compiled);
+        Require(mapping->PhysicalID(scratch[0])==mapping->PhysicalID(scratch[1])&&mapping->PhysicalID(scratch[1])==mapping->PhysicalID(scratch[2]),"product did not alias completed viewport scratch");
+        Require(pool.GetStatistics().allocations<independentTargets&&pool.GetStatistics().aliases>0,"product kept every private viewport temporary");
+        auto forged=scratch[0];++forged.generation;bool stale=false;try{mapping->PhysicalID(forged);}catch(const std::invalid_argument&){stale=true;}Require(stale,"fragment generation validation was lost during composition");
+        std::ofstream(output/"product-plan.txt")<<compiled.Dump()<<mapping->Dump();
+        // Frozen sampler owners and outputs survive changes before Worker encoding.
+        for(auto& target:targets){target->Resize(8,8);target.reset();}
+        product.RecordOperations(commands,{},mapping);mapping.reset();
+        OvTools::Jobs::JobSystem jobs(2);commands.Seal(&jobs);RenderFrame frame;frame.Append(std::move(commands));frame.Seal();frame.Submit(driver);frame.Wait();frame.GetCompletion().RethrowIfFailed();
+        for(size_t i=0;i<4;++i)Require(actual[i]==expected[i],"product composition changed a viewport's exact output");
+        Require(pool.GetStatistics().leasedTargets==0&&glGetError()==GL_NO_ERROR,"product did not retire shared scratch");
+        // A later fragment cannot declare a missing earlier producer initialized.
+        RenderPlan before;const auto outputHandle=before.ImportBackbuffer(96,64,false);before.passes.push_back(Node("before",{}));
+        RenderPlan after;const auto later=after.ImportBackbuffer(96,64,true);after.passes.push_back(Node("present",{{later,{},ResourceAccessType::Present}}));
+        RenderPlan missing;missing.Append(std::move(before),0,0);missing.Append(std::move(after),0,0);
+        bool rejected=false;try{missing.Compile();}catch(const std::invalid_argument&){rejected=true;}Require(rejected,"later product import promoted uninitialized content");
+        (void)outputHandle;
+        RenderPlan initial;const auto first=initial.ImportBackbuffer(96,64,false);
+        initial.passes.push_back(Node("first-clear",{{first,{},ResourceAccessType::Attachment,AttachmentLoad::Clear}}));
+        RenderPlan laterVersion;const auto second=laterVersion.ImportBackbuffer(96,64,true);
+        ResourceAccess load{second,{},ResourceAccessType::Attachment,AttachmentLoad::Load};load.expectedVersion=0;
+        laterVersion.passes.push_back(Node("later-write",{load}));
+        ResourceAccess present{second,{},ResourceAccessType::Present};present.expectedVersion=1;
+        laterVersion.passes.push_back(Node("later-present",{present}));
+        RenderPlan versioned;versioned.Append(std::move(initial),0,0);versioned.Append(std::move(laterVersion),0,0);
+        Require(versioned.Compile().finalVersions[0]==2,"fragment content versions did not account for earlier product writes");
+        std::cout<<"PASS: four viewport chains share physical scratch in one ordered plan; exact no-reuse images, final UI reads, frozen resize/destruction, fragment generations, GPU retirement and import promotion rejection\n";
+    }
     void PostProcessValidation(const std::filesystem::path& output)
     {
         OvWindowing::Settings::DeviceSettings ds;ds.contextMajorVersion=4;ds.contextMinorVersion=5;
@@ -279,5 +369,5 @@ namespace
 }
 int main(int argc,char** argv) try
 {
-    Require(argc==2,"expected evidence directory");ContractValidation(argv[1]);OperationValidation();PoolValidation(argv[1]);PostProcessValidation(argv[1]);return 0;
+    Require(argc==2,"expected evidence directory");ContractValidation(argv[1]);OperationValidation();PoolValidation(argv[1]);ProductPlanValidation(argv[1]);PostProcessValidation(argv[1]);return 0;
 }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}

@@ -37,10 +37,19 @@ void EditorUIValidation(OvEditor::Core::Editor& editor,OvEditor::Core::Context& 
     auto clear=[] {glBindFramebuffer(GL_FRAMEBUFFER,0);glDisable(GL_SCISSOR_TEST);glClearColor(.08f,.12f,.18f,1);glClear(GL_COLOR_BUFFER_BIT);};
     auto pixels=[&] {const auto [w,h]=context.window->GetFramebufferSize();std::vector<uint8_t> result(size_t(w)*h*4);glReadPixels(0,0,w,h,GL_RGBA,GL_UNSIGNED_BYTE,result.data());return result;};
     std::ofstream evidence(dir/"editor-ui-frames.bin",std::ios::binary);size_t pairs=0;
+    const auto geometry=[] {std::vector<ImDrawVert> vertices;for(const auto* list:ImGui::GetDrawData()->CmdLists)vertices.insert(vertices.end(),list->VtxBuffer.begin(),list->VtxBuffer.end());return vertices;};
     auto compare=[&](const std::string& name) {
         for(int i=0;i<4;++i){clear();ui.Render();}
-        const auto expected=pixels();auto frame=ui.RecordRenderCommands();clear();frame.Execute(*context.driver);const auto actual=pixels();
-        if(actual!=expected)throw std::runtime_error("Editor UI pixels differ: "+name);
+        const auto expected=pixels();const auto expectedGeometry=geometry();auto frame=ui.RecordRenderCommands();const auto actualGeometry=geometry();clear();frame.Execute(*context.driver);const auto actual=pixels();
+        if(actual!=expected) {
+            const auto [w,h]=context.window->GetFramebufferSize();
+            std::ofstream(dir/"ui-diff-size.txt")<<w<<' '<<h;
+            std::ofstream(dir/"ui-diff-expected.rgba",std::ios::binary).write(reinterpret_cast<const char*>(expected.data()),expected.size());
+            std::ofstream(dir/"ui-diff-actual.rgba",std::ios::binary).write(reinterpret_cast<const char*>(actual.data()),actual.size());
+            std::ofstream(dir/"ui-diff-expected.vertices",std::ios::binary).write(reinterpret_cast<const char*>(expectedGeometry.data()),expectedGeometry.size()*sizeof(ImDrawVert));
+            std::ofstream(dir/"ui-diff-actual.vertices",std::ios::binary).write(reinterpret_cast<const char*>(actualGeometry.data()),actualGeometry.size()*sizeof(ImDrawVert));
+            throw std::runtime_error("Editor UI pixels differ: "+name);
+        }
         size_t varied=0;for(size_t i=4;i<actual.size();i+=4)if(std::memcmp(actual.data(),actual.data()+i,3))++varied;
         Require(varied>100,"empty UI image");
         evidence.write(reinterpret_cast<const char*>(actual.data()),static_cast<std::streamsize>(actual.size()));++pairs;

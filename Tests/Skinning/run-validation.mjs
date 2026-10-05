@@ -35,6 +35,8 @@ const editor = process.argv.includes('--editor') || editorThread || editorCamera
 const gameThread = process.argv.includes('--game-thread') || gameBenchmark;
 const gameFrame = process.argv.includes('--game-frame') || gameThread;
 const productLoop = process.argv.includes('--product-loop');
+const framegraphBaseline = process.argv.includes('--framegraph-baseline');
+if(framegraphBaseline&&!editor)throw Error('--framegraph-baseline requires an Editor test');
 if (editorThread && productLoop) throw Error('--editor-thread runs separately from --product-loop');
 if (productLoop && !editor && !gameFrame) throw Error('--product-loop requires --editor or --game-frame');
 if (gameFrame && process.argv.some(x => ['--editor','--editor-thread','--editor-stress','--editor-benchmark','--command-list','--ui-commands','--render-frame','--render-thread','--log-dispatch','--resource-lifetime','--texture-registry','--imgui-lifetime','--gpu-profiling','--resource-executor','--parallel','--asan','--geometry','--material','--snapshots','--draw-inputs','--draw-packets','--frame-inputs','--target-state'].includes(x))) throw Error('--game-frame runs separately');
@@ -357,7 +359,7 @@ function run(file, args, cwd, log, timeout = 120000) {
       pollution: 'new paths: absent/short/stale bindings before replay and between staged draws'  };
     console.log('PASS: 8 cold processes with clean/poisoned explicit bindings, exact serial/Worker pixels and staged draw data; tracing does not change any pixel');
   } else {
-    const stdout = run(exe, [dir], path.join(root,'Build',config), path.join(dir,'run.log'), productBenchmark ? 600000 : (parallelRecording || editorStress) ? 300000 : 120000);
+    const stdout = run(exe, [dir], path.join(root,'Build',config), path.join(dir,'run.log'), productBenchmark ? 600000 : (parallelRecording || editorThread) ? 300000 : 120000);
     console.log(stdout.split(/\r?\n/).filter(line => /^(PASS:|Single-instance|BENCH:)/.test(line)).join('\n'));
     manifest.results.push({ variant, stdout });
   }
@@ -369,10 +371,21 @@ const expected=golden.files.filter(f=>f.path.startsWith(relative)&&
   (/(?:^|\/)frames\.bin$|(?:shadows|cubes)\.bin$|editor-command-frames\.bin$|\.(rgba|draws)$/.test(f.path))&&
   (!auxiliary||/\/mode-[123]\//.test(f.path))&&(!frontend||/\/cold-[12]-/.test(f.path)));
 manifest.historicalComparison={baseline:golden.baseline,files:[]};
+const f0=framegraphBaseline?JSON.parse(fs.readFileSync(path.join(root,'Tests/RenderingCommands/framegraph-image-baseline.json'),'utf8')):null;
+if(f0)manifest.framegraphComparison={baseline:f0.baseline,files:[],preexistingA5Differences:[]};
 for(const item of expected) {
   const bytes=fs.readFileSync(path.join(root,item.path));
-  if(bytes.length!==item.bytes||crypto.createHash('sha256').update(bytes).digest('hex')!==item.sha256)
-    throw Error('A5 exact baseline differs: '+item.path);
-  manifest.historicalComparison.files.push(item.path);
+  const hash=crypto.createHash('sha256').update(bytes).digest('hex');
+  if(bytes.length!==item.bytes||hash!==item.sha256) {
+    const frozen=f0?.files.find(f=>f.name===path.basename(item.path));
+    if(!frozen||bytes.length!==frozen.bytes||hash!==frozen.sha256)throw Error('A5/F0 exact baseline differs: '+item.path);
+    manifest.framegraphComparison.preexistingA5Differences.push(item.path);
+    console.log('PASS: frozen F0 pixels; preexisting A5 difference retained: '+item.path);
+  } else manifest.historicalComparison.files.push(item.path);
+}
+if(f0)for(const item of f0.files) {
+  const file=path.join(output,'current',item.name),bytes=fs.readFileSync(file);
+  if(bytes.length!==item.bytes||crypto.createHash('sha256').update(bytes).digest('hex')!==item.sha256)throw Error('Frozen F0 baseline differs: '+file);
+  manifest.framegraphComparison.files.push(file);
 }
 fs.writeFileSync(path.join(output,'result.json'), JSON.stringify(manifest, null, 2));

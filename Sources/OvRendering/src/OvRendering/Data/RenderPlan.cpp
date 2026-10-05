@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <atomic>
 #include <map>
+#include <set>
 #include <limits>
 #include <OvRendering/Utils/Profiling.h>
 #include <OvRendering/Core/RenderTargetPool.h>
@@ -23,7 +24,7 @@ CompiledRenderPlan RenderPlan::Compile(std::span<const std::shared_ptr<const Ren
     {
         scope="RenderPlan resource "+std::to_string(resource.id);
         require(resource.id && identities.insert(resource.id).second, "Duplicate or missing resource identity");
-        if (resource.origin==ResourceOrigin::Transient || resource.renderbuffer)
+        if (resource.origin==ResourceOrigin::Transient || resource.renderbuffer || (resource.descriptor&&resource.descriptor->kind==PlanResourceKind::Backbuffer))
         {
             require(resource.descriptor.has_value(), "Logical resource requires a descriptor");
             resource.descriptor->Validate();
@@ -36,9 +37,10 @@ CompiledRenderPlan RenderPlan::Compile(std::span<const std::shared_ptr<const Ren
         available.push_back(resource.available);
     }
     scope="RenderPlan views";
-    std::unordered_set<uint64_t> viewIds;
-    for (const auto& view : views)
-        require(view && viewIds.insert(view->GetView().id).second, "Missing or duplicate view identity");
+    require(viewScopes.empty()||viewScopes.size()==views.size(),"Wrong view scope count");
+    std::set<std::pair<uint64_t,uint64_t>> viewIds;
+    for(size_t i=0;i<views.size();++i)
+        require(views[i]&&viewIds.emplace(viewScopes.empty()?Scope():viewScopes[i],views[i]->GetView().id).second,"Missing or duplicate view identity");
     const auto checkResource = [&](const ResourceUse& use) -> const PlanResource& {
         require(use.resource < resources.size(), "Unknown pass resource");
         const auto& resource = resources[use.resource];
@@ -54,7 +56,7 @@ CompiledRenderPlan RenderPlan::Compile(std::span<const std::shared_ptr<const Ren
         gpuScopeDepth+=pass.gpuScopesBegin.size();require(pass.gpuScopesEnd<=gpuScopeDepth,"Unmatched GPU scope");gpuScopeDepth-=pass.gpuScopesEnd;
         if (pass.view==RenderPlanPass::NoView)
         {
-            require(!pass.name.empty()&&(bool(pass.operation)||bool(pass.prepareOperation)),"Independent pass needs an owned operation");
+            require(!pass.name.empty()&&(bool(pass.operation)||bool(pass.prepareOperation)||bool(pass.commandBlock)),"Independent pass needs an owned operation");
             require(pass.stages.empty()&&pass.reads.empty()&&pass.writes.empty(),"Independent pass uses view-specific fields");
             for(const auto& access:pass.accesses)
                 if((access.type==ResourceAccessType::Attachment||access.type==ResourceAccessType::CopyDestination||access.type==ResourceAccessType::MipmapDestination)&&
@@ -77,7 +79,7 @@ CompiledRenderPlan RenderPlan::Compile(std::span<const std::shared_ptr<const Ren
         }
         const auto checkUse = [&](const ResourceUse& use) -> const PlanResource& {
             const auto& resource = checkResource(use);
-            require(resource.sceneGeneration == view.GetView().sceneGeneration, "Resource belongs to another scene generation");
+            require(resource.sceneGeneration==view.GetView().sceneGeneration||std::find(resource.sceneGenerations.begin(),resource.sceneGenerations.end(),view.GetView().sceneGeneration)!=resource.sceneGenerations.end(),"Resource belongs to another scene generation");
             return resource;
         };
         for (const auto& use : pass.reads)
@@ -135,7 +137,7 @@ const PlanResource& RenderPlan::Resolve(ResourceHandle handle) const
 }
 ResourceHandle RenderPlan::CreateTransient(std::string name,const PlanResourceDesc& descriptor)
 {
-    descriptor.Validate(); PlanResource resource;
+    descriptor.Validate();if(descriptor.kind==PlanResourceKind::Backbuffer)throw std::invalid_argument("RenderPlan: backbuffer cannot be transient"); PlanResource resource;
     resource.id=resources.size()+1; resource.name=std::move(name); resource.descriptor=descriptor;
     resource.width=static_cast<uint16_t>(descriptor.texture.width);resource.height=static_cast<uint16_t>(descriptor.texture.height);
     resource.subresources=descriptor.layers==6?63:1; resource.origin=ResourceOrigin::Transient;
@@ -175,6 +177,86 @@ std::optional<ResourceHandle> RenderPlan::Find(const baregl::Texture::Snapshot& 
     for(size_t i=0;i<resources.size();++i)if(resources[i].storage==storage)return Handle(i);
     return {};
 }
+void RenderPlan::AddCommands(std::string name,RenderCommandList&& commands,std::vector<ResourceAccess> accesses)
+{
+    RenderPlanPass pass;pass.name=std::move(name);pass.view=RenderPlanPass::NoView;
+    pass.commandBlock=std::make_shared<RenderCommandList>(std::move(commands));pass.accesses=std::move(accesses);passes.push_back(std::move(pass));
+}
+ResourceHandle RenderPlan::ImportBackbuffer(uint16_t width,uint16_t height,bool initialized)
+{
+    for(size_t i=0;i<resources.size();++i)if(resources[i].descriptor&&resources[i].descriptor->kind==PlanResourceKind::Backbuffer) {
+        if(resources[i].width!=width||resources[i].height!=height)throw std::invalid_argument("RenderPlan: backbuffer extent changed during composition");
+        return Handle(i);
+    }
+    PlanResourceDesc desc;desc.kind=PlanResourceKind::Backbuffer;desc.sampleable=false;desc.copyable=true;
+    desc.texture.width=width;desc.texture.height=height;desc.texture.internalFormat=baregl::types::EInternalFormat::RGBA8;desc.texture.useMipMaps=false;
+    desc.Validate();PlanResource resource;resource.id=resources.size()+1;resource.name="Window.Backbuffer";resource.descriptor=desc;
+    resource.width=width;resource.height=height;resource.origin=initialized?ResourceOrigin::Imported:ResourceOrigin::CurrentFrame;
+    if(initialized)resource.initialized.push_back({});resources.push_back(std::move(resource));return Handle(resources.size()-1);
+}
+void RenderPlan::Append(RenderPlan&& source,size_t viewOffset,size_t viewCount)
+{
+    if(&source==this||source.Scope()==Scope()||remaps.contains(source.Scope()))throw std::invalid_argument("RenderPlan: duplicate product fragment scope");
+    if(!source.trailing.empty())throw std::invalid_argument("RenderPlan: product fragment still has opaque trailing composition");
+    if(viewScopes.empty()&&viewOffset)viewScopes.resize(viewOffset,Scope());
+    if(viewScopes.size()!=viewOffset)throw std::invalid_argument("RenderPlan: fragment view offset mismatch");
+    for(size_t i=0;i<viewCount;++i)viewScopes.push_back(source.viewScopes.empty()?source.Scope():source.viewScopes.at(i));
+    std::vector<RemappedResource> mapped;
+    for(auto& resource:source.resources) {
+        const auto found=std::find_if(resources.begin(),resources.end(),[&](const auto& other) {
+            return (resource.storage.GetID()&&resource.storage==other.storage)||(resource.renderbuffer&&resource.renderbuffer==other.renderbuffer)||
+                (resource.descriptor&&other.descriptor&&resource.descriptor->kind==PlanResourceKind::Backbuffer&&other.descriptor->kind==PlanResourceKind::Backbuffer);
+        });
+        size_t index;
+        if(found==resources.end()) {index=resources.size();resource.id=index+1;resources.push_back(std::move(resource));}
+        else {
+            index=static_cast<size_t>(found-resources.begin());
+            if(resource.descriptor&&found->descriptor&&!resource.descriptor->Compatible(*found->descriptor))throw std::invalid_argument("RenderPlan: conflicting imported descriptors");
+            if(!found->descriptor)found->descriptor=resource.descriptor;
+            if(!found->textureOwner)found->textureOwner=std::move(resource.textureOwner);
+            if(!found->importedTarget)found->importedTarget=std::move(resource.importedTarget);
+            if(resource.sceneGeneration!=found->sceneGeneration)found->sceneGenerations.push_back(resource.sceneGeneration);
+            found->sceneGenerations.insert(found->sceneGenerations.end(),resource.sceneGenerations.begin(),resource.sceneGenerations.end());
+            // Later fragments cannot promote initial content. Earlier producers,
+            // mip generation and Load requirements are checked in product order.
+        }
+        mapped.push_back({source.resources[mapped.size()].generation,Handle(index)});
+    }
+    const auto translate=[&](ResourceHandle old) {
+        if(old.scope!=source.Scope()||old.index>=mapped.size()||old.generation!=mapped[old.index].generation)throw std::invalid_argument("RenderPlan: foreign fragment handle");
+        return mapped[old.index].target;
+    };
+    for(auto& [scope,aliases]:source.remaps) {
+        if(scope==Scope()||remaps.contains(scope))throw std::invalid_argument("RenderPlan: duplicate nested fragment scope");
+        for(auto& alias:aliases)alias.target=translate(alias.target);
+        remaps.emplace(scope,std::move(aliases));
+    }
+    std::vector<uint32_t> versionOffsets(resources.size());
+    const bool needsVersions=std::any_of(source.passes.begin(),source.passes.end(),[](const auto& pass){return std::any_of(pass.accesses.begin(),pass.accesses.end(),[](const auto& access){return access.expectedVersion.has_value();});});
+    if(needsVersions)for(const auto& pass:passes) {
+        std::unordered_set<size_t> written;
+        for(const auto& use:pass.writes)written.insert(use.resource);
+        for(const auto& access:pass.accesses)if(access.type==ResourceAccessType::Attachment||access.type==ResourceAccessType::CopyDestination||access.type==ResourceAccessType::MipmapDestination)written.insert(access.resource.index);
+        for(auto resource:written)++versionOffsets[resource];
+    }
+    const auto passOffset=passes.size();
+    for(auto& pass:source.passes) {
+        if(pass.view!=RenderPlanPass::NoView)pass.view+=viewOffset;
+        for(auto& use:pass.reads)use.resource=mapped.at(use.resource).target.index;
+        for(auto& use:pass.writes)use.resource=mapped.at(use.resource).target.index;
+        for(auto& access:pass.accesses) {
+            access.resource=translate(access.resource);
+            if(access.expectedVersion) {
+                const auto offset=versionOffsets[access.resource.index];
+                if(*access.expectedVersion>UINT32_MAX-offset)throw std::invalid_argument("RenderPlan: product content version overflow");
+                *access.expectedVersion+=offset;
+            }
+        }
+        for(auto& previous:pass.after)previous+=passOffset;
+        passes.push_back(std::move(pass));
+    }
+    remaps.emplace(source.Scope(),std::move(mapped));
+}
 void RenderPlan::GenerateMipmaps(std::string name,const std::shared_ptr<baregl::Texture>& texture)
 {
     if(!texture)throw std::invalid_argument("RenderPlan: missing mipmap texture");
@@ -194,7 +276,8 @@ void RenderPlan::RecordOperations(RenderCommandList& commands,std::span<RenderCo
     {
         for(const auto* source:pass.gpuScopesBegin)scopes.emplace_back(commands.GetPendingCount(),source);
         if(pass.view==RenderPlanPass::NoView) {
-            if(pass.prepareOperation){if(!mapping)throw std::logic_error("RenderPlan: missing physical resource mapping");commands.AppendDeferred(pass.prepareOperation(*mapping));}
+            if(pass.commandBlock)commands.AppendRecording(std::move(*pass.commandBlock));
+            else if(pass.prepareOperation){if(!mapping)throw std::logic_error("RenderPlan: missing physical resource mapping");commands.AppendDeferred(pass.prepareOperation(*mapping));}
             else commands.AppendDeferred(pass.operation);
         }
         else {if(pass.view>=blocks.size())throw std::invalid_argument("RenderPlan: missing recorded view block");commands.Append(std::move(blocks[pass.view]));}

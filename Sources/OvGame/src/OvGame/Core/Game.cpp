@@ -13,6 +13,17 @@
 #include <OvTools/Utils/PathParser.h>
 #include <OvUI/Widgets/Texts/Text.h>
 
+namespace {
+    void AddWindowPresentation(OvRendering::Data::RenderPlan& plan,std::pair<uint16_t,uint16_t> size)
+    {
+        using namespace OvRendering::Data;
+        if(!size.first||!size.second)return;
+        RenderPlanPass pass;pass.name="Window.Present";pass.view=RenderPlanPass::NoView;
+        pass.accesses.push_back({plan.ImportBackbuffer(size.first,size.second,true),{},ResourceAccessType::Present});
+        pass.operation=[] {return [](auto&) {};};plan.passes.push_back(std::move(pass));
+    }
+}
+
 OvGame::Core::Game::Game(Context & p_context) :
 	m_context(p_context),
 	m_fpsCounter(*p_context.window)
@@ -22,6 +33,7 @@ OvGame::Core::Game::Game(Context & p_context) :
 	m_frameInfo(*m_context.window)
 	#endif
 {
+    m_frontend.GetResourcePool()->SetFrameReserve(m_context.renderThread?2:1);
 	m_shadowFallback.SetShader(m_context.shaderManager[":Shaders\\ShadowFallback.ovfx"]);
 	m_context.uiManager->SetCanvas(m_canvas);
 	m_canvas.AddPanel(m_fpsCounter);
@@ -68,6 +80,7 @@ void OvGame::Core::Game::Update(float p_deltaTime)
     if (m_pendingFrame) throw std::logic_error("Previous Game frame has not been submitted");
     std::optional<OvRendering::Data::RenderFrame> frame;
     if (m_frameSubmissionEnabled) frame.emplace(++m_recordedFrameID);
+    std::unique_ptr<OvCore::Rendering::SceneFrame> product;
 	if (auto currentScene = m_context.sceneManager.GetCurrentScene())
 	{
 		{
@@ -94,11 +107,7 @@ void OvGame::Core::Game::Update(float p_deltaTime)
 			m_context.audioEngine->Update();
 		}
 
-        if (frame) frame->Append(RecordSceneCommands());
-        else
-        {
-            auto commands=RecordSceneCommands();commands.Execute(*m_context.driver);
-        }
+        product=BuildSceneFrame();
 	}
 
 	m_context.sceneManager.Update();
@@ -112,10 +121,16 @@ void OvGame::Core::Game::Update(float p_deltaTime)
 		#ifdef _DEBUG
 		m_frameInfo.Update(m_renderStats);
 		#endif
-        if (frame) frame->Append(m_context.uiManager->RecordRenderCommands());
-        else m_context.uiManager->Render();
+        if(!product)product=m_frontend.ComposeFrame({},{});
+        m_context.uiManager->RecordPlan(product->ComposePlan());
 	}
-    if (frame) { frame->Seal(); m_pendingFrame.emplace(std::move(*frame)); }
+    if(!product)product=m_frontend.ComposeFrame({},{});
+    AddWindowPresentation(product->ComposePlan(),m_context.window->GetSize());
+    product=m_frontend.PrepareFrame(std::move(product),m_context.driver->CreatePipelineState(),m_renderJobs);
+    m_renderStats=product->GetFrameInfo();
+    auto commands=m_frontend.RecordFrame(std::move(product),m_renderJobs,nullptr,true);
+    if(frame){frame->AppendRecording(std::move(commands));frame->Seal(m_renderJobs);m_pendingFrame.emplace(std::move(*frame));}
+    else {commands.Seal(m_renderJobs);commands.Execute(*m_context.driver);}
 }
 
 void OvGame::Core::Game::PostUpdate()
@@ -171,36 +186,54 @@ void OvGame::Core::Game::SetFrameSubmissionEnabled(bool enabled)
 
 OvRendering::Data::RenderFrame OvGame::Core::Game::RecordRenderFrame()
 {
+    auto product=BuildSceneFrame();
+    if(m_showDebugInformation)m_context.uiManager->RecordPlan(product->ComposePlan());
+    AddWindowPresentation(product->ComposePlan(),m_context.window->GetSize());
+    product=m_frontend.PrepareFrame(std::move(product),m_context.driver->CreatePipelineState(),m_renderJobs);m_renderStats=product->GetFrameInfo();
     OvRendering::Data::RenderFrame frame(++m_recordedFrameID);
-    frame.Append(RecordSceneCommands());
-    if (m_showDebugInformation) frame.Append(m_context.uiManager->RecordRenderCommands());
-    frame.Seal();
-    return frame;
+    frame.AppendRecording(m_frontend.RecordFrame(std::move(product),m_renderJobs,nullptr,true));frame.Seal(m_renderJobs);return frame;
 }
-
-OvRendering::Data::RenderCommandList OvGame::Core::Game::RecordSceneCommands()
+std::unique_ptr<OvCore::Rendering::SceneFrame> OvGame::Core::Game::BuildSceneFrame()
 {
-    OvRendering::Data::RenderCommandList commands;m_renderStats={};
-    auto* scene=m_context.sceneManager.GetCurrentScene();
-    const auto [width,height]=m_context.window->GetSize();
-    if(scene&&width&&height)
-    {
-        if(auto camera=scene->FindMainCamera())
-        {
+    using namespace OvRendering::Data;
+    auto* scene=m_context.sceneManager.GetCurrentScene();const auto [width,height]=m_context.window->GetSize();
+    auto product=m_frontend.ComposeFrame({},{});
+    if(scene&&width&&height) {
+        if(auto camera=scene->FindMainCamera()) {
             OvCore::Rendering::SceneRenderRequest request{{*scene,camera->GetCamera(),width,height,0,0,
                 std::chrono::duration<float>(std::chrono::high_resolution_clock::now()-m_renderStart).count()}};
             const auto state=m_context.driver->CreatePipelineState();
-            OvCore::Rendering::SceneFrameRequest frameRequest{request,m_context.framebuffer->RecordTarget(),m_shadowFallback};
-            frameRequest.postProcess=&m_postProcess;frameRequest.postProcessTarget=m_context.framebuffer.get();frameRequest.postProcessState=state;
-            auto frame=m_frontend.PrepareFrame(m_frontend.ExtractFrame(frameRequest),state,m_renderJobs);
-            m_renderStats=frame->GetFrameInfo();
-            commands.Append(m_frontend.RecordFrame(std::move(frame),m_renderJobs));
+            OvCore::Rendering::SceneFrameRequest input{request,m_context.framebuffer->RecordTarget(),m_shadowFallback};
+            input.postProcess=&m_postProcess;input.postProcessTarget=m_context.framebuffer.get();input.postProcessState=state;
+            product=m_frontend.ExtractFrame(input);
+        } else {
+            const auto target=m_context.framebuffer->RecordTarget();RenderPlanPass clear;clear.name="Game.EmptySceneClear";clear.view=RenderPlanPass::NoView;clear.target=target;
+            for(const auto& attachment:target.GetTextureAttachments())if(attachment.writable) {
+                const auto handle=product->ComposePlan().Import("Game.Color",attachment.storage,ResourceOrigin::CurrentFrame);
+                clear.accesses.push_back({handle,{},ResourceAccessType::Attachment,AttachmentLoad::Clear});
+            }
+            for(const auto& attachment:target.GetRenderbufferAttachments()) {
+                const auto handle=product->ComposePlan().Import("Game.DepthStencil",attachment.storage,ResourceOrigin::CurrentFrame);
+                const auto aspect=attachment.attachment==baregl::types::EFramebufferAttachment::DEPTH?ResourceAspect::Depth:ResourceAspect::Stencil;
+                clear.accesses.push_back({handle,{aspect},ResourceAccessType::Attachment,AttachmentLoad::Clear});
+            }
+            clear.operation=[target] {return ClearTarget(target,true,true,true);};product->ComposePlan().passes.push_back(std::move(clear));
         }
-        else commands.Append(OvRendering::Data::ClearTarget(m_context.framebuffer->RecordTarget(),true,true,true));
-        commands.Append(OvRendering::Data::PresentColor(m_context.framebuffer->RecordTarget(),
-            static_cast<uint16_t>(width),static_cast<uint16_t>(height)));
+        auto& plan=product->ComposePlan();RenderPlanPass blit;blit.name="Game.BackbufferBlit";blit.view=RenderPlanPass::NoView;
+        for(const auto& attachment:m_context.framebuffer->RecordTarget().GetTextureAttachments())if(attachment.writable) {
+            const auto handle=plan.Find(attachment.storage);if(!handle)throw std::logic_error("Game output has no producer");
+            blit.accesses.push_back({*handle,{},ResourceAccessType::CopySource});
+        }
+        blit.accesses.push_back({plan.ImportBackbuffer(width,height,false),{},ResourceAccessType::CopyDestination,AttachmentLoad::DontCare,AttachmentStore::Store,true});
+        const auto target=m_context.framebuffer->RecordTarget();blit.operation=[target,width,height] {return PresentColor(target,width,height);};plan.passes.push_back(std::move(blit));
     }
-    commands.Seal();return commands;
+    return product;
+}
+OvRendering::Data::RenderCommandList OvGame::Core::Game::RecordSceneCommands()
+{
+    auto product=BuildSceneFrame();AddWindowPresentation(product->ComposePlan(),m_context.window->GetSize());
+    product=m_frontend.PrepareFrame(std::move(product),m_context.driver->CreatePipelineState(),m_renderJobs);m_renderStats=product->GetFrameInfo();
+    return m_frontend.RecordFrame(std::move(product),m_renderJobs);
 }
 
 void OvGame::Core::Game::CollectCompletedFrames()

@@ -112,6 +112,7 @@ namespace OvEditor::Core
 		void PostUpdate();
 
 	private:
+        OvCore::Rendering::RenderFrontend m_productFrontend;
         void CollectCompletedFrames();
         struct InFlightFrame
         {

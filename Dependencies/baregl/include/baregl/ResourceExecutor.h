@@ -1,5 +1,6 @@
 #pragma once
 #include <functional>
+#include <memory>
 #include <optional>
 #include <thread>
 #include <type_traits>
@@ -18,6 +19,7 @@ namespace baregl
     {
         static thread_local ResourceExecutor* s_current;
         ResourceExecutor* m_previous;
+        std::shared_ptr<const void> m_identity=std::make_shared<char>();
         std::thread::id m_thread = std::this_thread::get_id();
         std::function<void(std::function<void()>)> m_dispatch;
     public:
@@ -25,6 +27,8 @@ namespace baregl
         ~ResourceExecutor();
         ResourceExecutor(const ResourceExecutor&) = delete;
         ResourceExecutor& operator=(const ResourceExecutor&) = delete;
+        // CPU identity of this producer binding, retained by caches across scopes.
+        static std::shared_ptr<const void> CurrentBinding() { return s_current?s_current->m_identity:nullptr; }
         template<class F> static auto Invoke(F&& function)
         {
             using Result = std::invoke_result_t<F>;

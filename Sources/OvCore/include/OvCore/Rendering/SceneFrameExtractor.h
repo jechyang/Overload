@@ -26,6 +26,9 @@ namespace OvCore::Rendering
         const OvRendering::Data::RenderPlan& GetPlan() const { return m_plan; }
         std::span<const std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot>> GetViews() const { return m_views; }
         std::span<const std::shared_ptr<const OvRendering::Data::PreparedFrameData>> GetPreparedViews() const { return m_prepared; }
+        OvRendering::Data::RenderPlan& ComposePlan() { if(m_compiled)throw std::logic_error("Frame plan already published");return m_plan; }
+        OvRendering::Data::RenderCommandList::Completion GetCompletion() const { return m_commands.GetCompletion(); }
+        void AddView(std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot>,std::optional<baregl::Framebuffer::Snapshot>,std::string);
         // Declare external commands that append after the plan (editor overlay, picking).
         // Resource contracts become part of Validate; commands stay with the caller.
         void DeclareTrailingComposition(std::string name,

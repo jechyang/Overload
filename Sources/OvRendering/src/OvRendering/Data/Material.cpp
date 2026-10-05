@@ -877,6 +877,17 @@ OvRendering::Data::Material::PreparedSnapshot OvRendering::Data::Material::Prepa
     return result;
 }
 
+std::vector<baregl::Texture::Snapshot> OvRendering::Data::Material::GetPreparedTextureReads(const PreparedSnapshot& input)
+{
+    if(!input)throw std::invalid_argument("Missing prepared material");
+    std::vector<baregl::Texture::Snapshot> result;
+    for(const auto& property:input->properties)if(property->texture) {
+        const auto storage=property->texture->RetainStorage();
+        if(std::find(result.begin(),result.end(),storage)==result.end())result.push_back(storage);
+    }
+    return result;
+}
+
 OvRendering::Data::Material::PreparedSnapshot OvRendering::Data::Material::RebindPreparedTextures(
     const PreparedSnapshot& input,const std::unordered_map<std::string,std::shared_ptr<baregl::Texture>>& bindings)
 {

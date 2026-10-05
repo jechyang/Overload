@@ -37,6 +37,8 @@ namespace OvRendering::Core
         std::shared_ptr<const RenderResourceMapping> Realize(const Data::RenderPlan&,const Data::CompiledRenderPlan&,bool reuse=true);
         Statistics GetStatistics() const;
         void SetIdleBudget(uint64_t);
+        // Reserve physical sets for the product's bounded in-flight capacity.
+        void SetFrameReserve(size_t);
         // Owner boundary, after draining frames. Active leases remain pinned.
         // A closed pool cannot be used for another context.
         void Close();

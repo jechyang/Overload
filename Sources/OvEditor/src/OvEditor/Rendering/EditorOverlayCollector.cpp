@@ -321,7 +321,7 @@ public:
                 const bool primary = debugSceneDescriptor.selectedActor && owner == &debugSceneDescriptor.selectedActor.value();
                 const OvMaths::FVector4 color = primary ? kSelectedOutlineColor : OvMaths::FVector4{.25f,.65f,1.f,1.f};
                 m_collector.Clear(false,false,true);
-                m_outline.DrawOutline(*actor,color,primary ? kSelectedOutlineWidth : 3.f,false);
+                m_collector.SetPassName("Editor.Outline");m_outline.DrawOutline(*actor,color,primary ? kSelectedOutlineWidth : 3.f,false);
                 if (!actor->GetComponent<OvCore::ECS::Components::CModelRenderer>() && !actor->GetComponent<OvCore::ECS::Components::CCamera>())
                 {
                     const auto& view = m_collector.GetView();
@@ -337,7 +337,7 @@ public:
         {
             auto& selectedActor = debugSceneDescriptor.selectedActor.value();
             if (auto* canvas = FindRootCanvas(selectedActor)) DrawCanvasRect(*canvas);
-            m_collector.Clear(false,true,false);
+            m_collector.SetPassName("Editor.GizmoDepthStencil");m_collector.Clear(false,true,false);
             if (HasEditableTransformGizmo(selectedActor))
                 m_gizmo.DrawGizmo(debugSceneDescriptor.frame ? debugSceneDescriptor.frame->position : selectedActor.transform.GetWorldPosition(),
                     debugSceneDescriptor.frame ? debugSceneDescriptor.frame->rotation : selectedActor.transform.GetWorldRotation(),
@@ -351,7 +351,7 @@ public:
 			// Render the outline only if the actor is not already selected (as its outline render should have been handled already).
 			if (!drawn.contains(&highlightedActor))
 			{
-				m_outline.DrawOutline(highlightedActor, kHoveredOutlineColor, kHoveredOutlineWidth);
+				m_collector.SetPassName("Editor.Outline");m_outline.DrawOutline(highlightedActor, kHoveredOutlineColor, kHoveredOutlineWidth);
 			}
 		}
 	}
@@ -808,14 +808,15 @@ OvEditor::Rendering::EditorOverlayCollector::EditorOverlayCollector() : m_impl(s
 OvEditor::Rendering::EditorOverlayCollector::~EditorOverlayCollector() = default;
 OvRendering::Data::RenderCommandList OvEditor::Rendering::EditorOverlayCollector::Extract(
     OvCore::SceneSystem::Scene& scene,const EditorOverlayRequest& request,const OvRendering::Data::RenderView& view,
-    OvRendering::Data::PipelineState state,baregl::Framebuffer::Snapshot target)
+    OvRendering::Data::PipelineState state,baregl::Framebuffer::Snapshot target,OvRendering::Data::RenderPlan* plan)
 {
     if(request.scene != scene.GetLifetimeToken())throw std::invalid_argument("Overlay request belongs to another scene");
     auto& impl=*m_impl;
-    impl.tools.Begin(view,state,target);impl.shapes.Begin(view);
-    if(request.grid)impl.Grid(request,view);
+    impl.tools.Begin(view,state,target,plan);impl.shapes.Begin(view);
+    if(request.grid){impl.tools.SetPassName("Editor.Grid");impl.Grid(request,view);}
     if(request.debugObjects)
     {
+        impl.tools.SetPassName("Editor.DebugObjects");
         if (request.cameraIcons) impl.cameras.Draw(state,scene);
         if (request.reflectionIcons) impl.probes.Draw(state,scene);
         if (request.lightIcons) impl.lights.Draw(state,scene);

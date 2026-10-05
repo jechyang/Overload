@@ -41,6 +41,7 @@ void PlanResourceDesc::Validate() const
 {
     const auto reject=[](bool valid,const char* error) { if(!valid)throw std::invalid_argument(std::string("RenderPlan descriptor: ")+error); };
     reject(texture.width&&texture.height&&texture.width<=65535&&texture.height<=65535,"invalid extent");
+    reject(kind!=PlanResourceKind::Backbuffer||(!sampleable&&mips==1&&layers==1&&!texture.useMipMaps),"invalid backbuffer description");
     reject(samples==1&&mips&&layers,"unsupported samples or empty subresources");
     unsigned maxMips=1; for(auto size=std::max(texture.width,texture.height);size>1;size/=2) ++maxMips;
     reject(mips<=maxMips&&mips==(texture.useMipMaps?maxMips:1),"mip count differs from GL allocation");
