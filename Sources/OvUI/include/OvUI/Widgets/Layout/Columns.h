@@ -14,6 +14,7 @@
 
 #include <OvUI/Internal/WidgetContainer.h>
 #include <OvUI/Widgets/Visual/Separator.h>
+#include <OvUI/Widgets/Layout/GroupCollapsable.h>
 
 namespace OvUI::Widgets::Layout
 {
@@ -122,7 +123,7 @@ namespace OvUI::Widgets::Layout
 
 			for (auto it = m_widgets.begin(); it != m_widgets.end(); ++it)
 			{
-				if (dynamic_cast<Visual::Separator*>(it->first))
+				if (dynamic_cast<Visual::Separator*>(it->first) || dynamic_cast<GroupCollapsable*>(it->first))
 				{
 					drawTableSegment(segmentBegin, it, segmentIndex++);
 					it->first->Draw();

@@ -1,4 +1,5 @@
 #pragma once
+#include <OvReflection/Annotations.h>
 
 #include <OvMaths/FVector2.h>
 
@@ -14,12 +15,17 @@ namespace OvCore::UI
         static Rect Intersect(const Rect& a, const Rect& b);
     };
 
-    struct RectLayout
+    struct OV_TYPE(Record) RectLayout
     {
+        OV_FIELD(Serialize, Inspect, Name = "anchor_min", DisplayName = "Anchor Min", Step = 0.01, Order = 0)
         OvMaths::FVector2 anchorMin{0.5f, 0.5f};
+        OV_FIELD(Serialize, Inspect, Name = "anchor_max", DisplayName = "Anchor Max", Step = 0.01, Order = 1)
         OvMaths::FVector2 anchorMax{0.5f, 0.5f};
+        OV_FIELD(Serialize, Inspect, Name = "pivot", DisplayName = "Pivot", Step = 0.01, Order = 2)
         OvMaths::FVector2 pivot{0.5f, 0.5f};
+        OV_FIELD(Serialize, Inspect, Name = "anchored_position", DisplayName = "Anchored Position", Step = 0.01, Order = 3)
         OvMaths::FVector2 anchoredPosition{0, 0};
+        OV_FIELD(Serialize, Inspect, Name = "size_delta", DisplayName = "Size Delta", Step = 0.01, Order = 4)
         OvMaths::FVector2 sizeDelta{100, 100};
     };
 

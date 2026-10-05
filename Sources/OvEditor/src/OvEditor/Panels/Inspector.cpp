@@ -51,11 +51,12 @@ namespace
         for (auto& c : value) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
         return value;
     }
-    void SetVisible(AWidget& widget, bool visible)
+    void SetVisible(AWidget& widget, bool visible, bool expand = false)
     {
         widget.visible = visible;
+        if (auto* group = dynamic_cast<Layout::GroupCollapsable*>(&widget)) group->expandForSearch = expand && visible;
         if (auto* children = dynamic_cast<OvUI::Internal::WidgetContainer*>(&widget))
-            for (auto [child, mode] : children->GetWidgets()) SetVisible(*child,visible);
+            for (auto [child, mode] : children->GetWidgets()) SetVisible(*child,visible,expand);
     }
     bool FilterProperties(OvUI::Internal::WidgetContainer& root, const std::string& context,
         const std::vector<std::string>& terms)
@@ -66,7 +67,7 @@ namespace
         };
         if (matches(context))
         {
-            for (auto [widget, mode] : root.GetWidgets()) SetVisible(*widget,true);
+            for (auto [widget, mode] : root.GetWidgets()) SetVisible(*widget,true,!terms.empty());
             return true;
         }
         bool any = false;
@@ -79,8 +80,9 @@ namespace
             {
                 if (auto* children = dynamic_cast<OvUI::Internal::WidgetContainer*>(widget))
                 {
-                    const auto* group = dynamic_cast<Layout::GroupCollapsable*>(widget);
+                    auto* group = dynamic_cast<Layout::GroupCollapsable*>(widget);
                     widget->visible = FilterProperties(*children,title+(group ? " "+group->name : ""),terms);
+                    if (group) group->expandForSearch = !terms.empty() && widget->visible;
                     hit |= widget->visible;
                 }
                 else widget->visible = hit;

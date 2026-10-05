@@ -14,7 +14,7 @@ namespace OvCore::Rendering::PostProcess
 	/**
 	* Settings for the FXAA effect
 	*/
-	struct FXAASettings : public EffectSettings {};
+	struct OV_TYPE(Record) FXAASettings : public EffectSettings {};
 
 	/**
 	* Post-processing effect that applies FXAA (Fast Approximate Anti-Aliasing).

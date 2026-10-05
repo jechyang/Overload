@@ -22,9 +22,11 @@ namespace OvCore::Rendering::PostProcess
 	/**
 	* Settings for the BloomEffect
 	*/
-	struct BloomSettings : public EffectSettings
+	struct OV_TYPE(Record) BloomSettings : public EffectSettings
 	{
+		OV_FIELD(Serialize, Inspect, Name = "intensity", DisplayName = "Intensity", Order = 1, Step = 0.1, Min = 0, Max = 25)
 		float intensity = 1.0f;
+		OV_FIELD(Serialize, Inspect, Name = "passes", DisplayName = "Passes", Order = 2, Step = 1, Min = 1, Max = 10)
 		int passes = 6;
 	};
 

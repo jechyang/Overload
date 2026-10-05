@@ -57,6 +57,7 @@ template<class T> static std::vector<T*> Widgets(OvUI::Internal::WidgetContainer
 #include "property_workflow_validation.h"
 #include "generated_serialization_validation.h"
 #include "resource_serialization_validation.h"
+#include "record_serialization_validation.h"
 
 int wmain(int argc, wchar_t** argv)
 {
@@ -214,6 +215,7 @@ int wmain(int argc, wchar_t** argv)
         ValidatePropertyWorkflow(context, actions, inspector, draw);
         ValidateGeneratedSerialization(context);
         ValidateResourceSerialization(context);
+        ValidateRecordSerialization(context, actions, inspector, draw);
         auto& demo = actions.CreateEmptyActor(true, nullptr, "Player");
         demo.SetTag("Gameplay"); demo.AddComponent<OvCore::ECS::Components::CPointLight>();
         auto& cameraRig = context.sceneManager.GetCurrentScene()->CreateActor("Camera Rig");

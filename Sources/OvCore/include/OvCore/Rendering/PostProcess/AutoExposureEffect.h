@@ -18,14 +18,21 @@ namespace OvCore::Rendering::PostProcess
 	/**
 	* Settings for the AutoExposure effect
 	*/
-	struct AutoExposureSettings : public EffectSettings
+	struct OV_TYPE(Record) AutoExposureSettings : public EffectSettings
 	{
+		OV_FIELD(Serialize, Inspect, Name = "center_weight_bias", DisplayName = "Center Weight Bias", Order = 1, Step = 0.1, Min = 0, Max = 1)
 		float centerWeightBias = 0.5f;
+		OV_FIELD(Serialize, Inspect, Name = "luminance_min", DisplayName = "Min Luminance (EV)", Order = 2, Alias = "min_luminance", Step = 0.1)
 		float minLuminanceEV = -2.0f;
+		OV_FIELD(Serialize, Inspect, Name = "luminance_max", DisplayName = "Max Luminance (EV)", Order = 3, Alias = "max_luminance", Step = 0.1)
 		float maxLuminanceEV = 16.0f;
+		OV_FIELD(Serialize, Inspect, Name = "exposure_compensation", DisplayName = "Exposure Compensation (EV)", Order = 4, Step = 0.1)
 		float exposureCompensationEV = 0.0f;
+		OV_FIELD(Serialize, Inspect, Name = "progressive", DisplayName = "Progressive", Order = 5)
 		bool progressive = true;
+		OV_FIELD(Serialize, Inspect, Name = "speed_up", DisplayName = "Speed Up", Order = 6, Step = 0.1)
 		float speedUp = 1.0f;
+		OV_FIELD(Serialize, Inspect, Name = "speed_down", DisplayName = "Speed Down", Order = 7, Step = 0.1)
 		float speedDown = 1.0f;
 	};
 

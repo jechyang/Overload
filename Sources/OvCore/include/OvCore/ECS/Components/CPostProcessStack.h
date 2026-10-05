@@ -42,25 +42,6 @@ namespace OvCore::ECS::Components
 		*/
 		virtual std::string GetTypeName() override;
 
-		/**
-		* Serialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
-		* Deserialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
-		* Defines how the component should be drawn in the inspector
-		* @param p_root
-		*/
-		virtual void OnInspector(OvUI::Internal::WidgetContainer& p_root) override;
 
 		/**
 		* Returns the post process setting stack
@@ -70,21 +51,25 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns the bloom settings
 		*/
+		OV_PROPERTY(Serialize, Inspect, Flatten, Prefix = "bloom_", Setter = SetBloomSettings, DisplayName = "Bloom", Order = 1)
 		const OvCore::Rendering::PostProcess::BloomSettings& GetBloomSettings() const;
 
 		/**
 		* Returns the auto-exposure settings
 		*/
+		OV_PROPERTY(Serialize, Inspect, Flatten, Prefix = "auto_exposure_", Setter = SetAutoExposureSettings, DisplayName = "Auto Exposure", Order = 0)
 		const OvCore::Rendering::PostProcess::AutoExposureSettings& GetAutoExposureSettings() const;
 
 		/**
 		* Returns the tonemapping settings
 		*/
+		OV_PROPERTY(Serialize, Inspect, Flatten, Prefix = "tonemapping_", Setter = SetTonemappingSettings, DisplayName = "Tonemapping", Order = 2)
 		const OvCore::Rendering::PostProcess::TonemappingSettings& GetTonemappingSettings() const;
 
 		/**
 		* Returns the FXAA settings
 		*/
+		OV_PROPERTY(Serialize, Inspect, Flatten, Prefix = "fxaa_", Setter = SetFXAASettings, DisplayName = "FXAA", Order = 3)
 		const OvCore::Rendering::PostProcess::FXAASettings& GetFXAASettings() const;
 
 		/**

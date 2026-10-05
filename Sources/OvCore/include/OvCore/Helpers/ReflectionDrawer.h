@@ -10,6 +10,8 @@ namespace OvCore::Helpers::ReflectionProperties
         const PropertyDesc* property;
         std::function<Result(std::any&)> read;
         std::function<Result(const std::any&)> write;
+        std::string identity;
+        bool readOnly = false;
     };
     // Caller supplies an epoch that expires before target destruction or detachment.
     // Every invocation checks application Main before touching either target or ticket.

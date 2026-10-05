@@ -16,7 +16,7 @@ namespace OvCore::Rendering::PostProcess
 	/**
 	* Enum of available tonemapping modes
 	*/
-	enum class ETonemappingMode
+	enum class OV_TYPE() ETonemappingMode
 	{
 		NEUTRAL = 0,
 		REINHARD = 1,
@@ -29,10 +29,13 @@ namespace OvCore::Rendering::PostProcess
 	/**
 	* Tonemapping effect settings
 	*/
-	struct TonemappingSettings : public EffectSettings
+	struct OV_TYPE(Record) TonemappingSettings : public EffectSettings
 	{
+		OV_FIELD(Serialize, Inspect, Name = "exposure", DisplayName = "Exposure", Order = 1, Step = 0.05, Min = 0)
 		float exposure = 1.0f;
+		OV_FIELD(Serialize, Inspect, Name = "mode", DisplayName = "Mode", Order = 2)
 		ETonemappingMode mode = ETonemappingMode::NEUTRAL;
+		OV_FIELD(Serialize, Inspect, Name = "gamma_correction", DisplayName = "Gamma Correction", Order = 3)
 		bool gammaCorrection = true;
 	};
 

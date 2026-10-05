@@ -141,12 +141,13 @@ def emit(schema, directory, *, types=None, dependencies=(), known_types=None):
         impl += ["        return components;", "    }", "}"]
     impl += ['#include "Script.generated.inc"']
     if module == "OvCore":
-        adapted = sorted({p["type"]["value_type"] for t in types for p in t["properties"]
-                          if p["type"]["category"] in ("resource-reference", "resource-array")})
+        adapted = {p["type"]["value_type"]: p["type"]["category"] for t in types for p in t["properties"]
+                   if p["type"]["category"] in ("resource-reference", "resource-array", "record-adapter")}
         impl += ['#include <OvCore/Helpers/ReflectionResourceCodecs.h>',
+                 '#include <OvCore/Helpers/ReflectionRecordCodecs.h>',
                  'namespace OvCore::Helpers::ReflectionProperties', '{',
                  '    std::span<const ValueCodec> GetOvCoreValueCodecs()', '    {']
-        array("codecs", "ValueCodec", [f'MakeResourceCodec<{v}>()' for v in adapted])
+        array("codecs", "ValueCodec", [f'Make{"Record" if adapted[v] == "record-adapter" else "Resource"}Codec<{v}>()' for v in sorted(adapted)])
         impl += ['        return codecs;', '    }', '}']
     try:
         script.emit(schema, directory, types)

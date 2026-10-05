@@ -6,7 +6,7 @@ schema.json from explicitly annotated declarations only.
 
 ## Identity and names
 
-- Generator schema version: 1. Generator version: 0.7.0. Business archive versions
+- Generator schema version: 1. Generator version: 0.8.0. Business archive versions
   are independent of both.
 - Only OV_TYPE(), OV_FIELD(), OV_PROPERTY() and OV_METHOD() opt declarations in.
   OV_TYPE is the sole class/struct/enum/enum-class entry point. The AST determines
@@ -130,18 +130,18 @@ tokens is promised: the annotation string preserves the written arguments.
 
 | Target | Flags | Value keys besides Id/Alias/Name |
 |---|---|---|
-| Type | Component | DisplayName, Category, Order, Factory, Lookup, SerializeHook, DeserializeHook |
-| Field | Serialize, Inspect, Script, ReadOnly | Thread, DisplayName, Category, Min, Max, Step, Drawer, Order, Missing, Default, ItemName, Return, Ownership, Nullable |
+| Type | Component, Record | DisplayName, Category, Order, Factory, Lookup, SerializeHook, DeserializeHook |
+| Field | Serialize, Inspect, Script, ReadOnly, Flatten | Thread, DisplayName, Category, Min, Max, Step, Drawer, Order, Missing, Default, ItemName, Prefix, Validate, Return, Ownership, Nullable |
 | Property getter | Serialize, Inspect, Script, ReadOnly | Field keys plus Setter |
 | Method | Script | Thread, Return, Ownership, Nullable, Overload |
 
-Id/Alias/Name/DisplayName/Category/Drawer/SerializeHook/DeserializeHook/Default/ItemName take strings. Alias may repeat, but its
+Id/Alias/Name/DisplayName/Category/Drawer/SerializeHook/DeserializeHook/Default/ItemName/Prefix/Validate take strings. Alias may repeat, but its
 values must be unique. Order/Min/Max/Step take finite numbers and are metadata
 only. Setter/Factory/Lookup/Thread/Missing/Return/Ownership/Nullable take identifiers.
 Overload takes a quoted canonical signature. R6 Script boundary policies require
 Script and follow SCRIPT_ABI.md. Thread is Main or Any; Script always requires Main.
 Type Name is rejected: the C++ name comes from AST, and DisplayName is the UI
-label. An enum cannot use Component/Factory/Lookup. Factory/Lookup require
+label. An enum cannot use Component/Record/Factory/Lookup. Factory/Lookup require
 Component; Component requires real AComponent ancestry and exactly one of
 `Factory = AddComponent` (concrete type) or `Lookup = Existing`. These record
 explicit strategies; R1 does not emit or invoke factories. Component property
@@ -167,14 +167,48 @@ the scan; it does not register twice. Unsupported annotation targets fail.
 Supported property/method value categories: bool, target integer types of
 8/16/32/64 bits (including signed/unsigned char, excluding plain char/wchar),
 float/double, std::string with standard traits/allocator, explicitly reflected
-enums, and the named FVector3/FQuaternion adapters. R6 additionally accepts
+enums, and the named FVector2/FVector3/FVector4/FQuaternion adapters. R6 additionally accepts
 Script-only reflected object pointers with explicit borrowed/nullability policies.
-Other pointers, arrays, arbitrary records/templates/containers, volatile values and rvalue-reference value types
+Explicit Record and resource adapters below extend this set. Other pointers, arrays, arbitrary records/templates/containers, volatile values and rvalue-reference value types
 fail. Reference cv qualifiers are retained. Void is allowed only as a method
 return. Static/deleted/variadic/template/operator methods, constructors,
 destructors and implicit overload sets are rejected. R6 Script overloads require
 an exact Overload signature and unique exported name. Method const/ref/noexcept qualifiers
 and parameter types are modeled; R1 does not provide generic invocation.
+
+## Aggregate Record adapters
+
+- `OV_TYPE(Record)` opts a non-component aggregate into typed nested value
+  adaptation. All instance fields require public writable OV_FIELD declarations;
+  bases must also be Records. Annotated getters/methods and component archive
+  hooks are rejected. Values must be default/copy constructible; generated C++
+  checks this without offsets or borrowed references to aggregate storage.
+- Record fields/properties use category `record-adapter` and exact C++ keys.
+  Core generates the codec table from actual annotated property types. Parsing
+  recursively stages changes on owned copies, resolves resources only after the
+  entire component passes validation, then calls component setters. Existing
+  business setter exceptions still propagate without a general rollback promise.
+- Ordinary Record XML has a property wrapper. `Flatten` requires Serialize on a
+  Record property and places children on the enclosing node. Optional quoted
+  Prefix defaults to empty; a nonempty prefix starts with an ASCII letter or
+  underscore and contains only ASCII letters/digits/underscores. Prefix without
+  Flatten fails. Parent aliases on Flatten fail: migration aliases belong on leaf
+  fields and receive the same prefix. Inherited canonical/alias wire keys and
+  recursively flattened keys must be unique in each enclosing XML node.
+- Missing records keep the current value by default, and partial records keep
+  missing child values. Record text defaults and Record Script value signatures
+  are unsupported. Script object-handle policies are a separate contract.
+- `Validate = "Positive"` requires a floating-point property and validates a
+  positive value; `Validate = "EnumChoice"` requires an enum and restricts values
+  to declared choices. The codec validates these explicit business policies
+  before publishing any component field. Min/Max remain Inspector bounds.
+- FVector2/FVector4 adapters preserve x/y[/z/w] XML nodes and missing coordinates.
+  Inspect records form collapsible full-width groups with stable descriptor-path
+  identities. Each child edit reads the current record before replacing one field;
+  callback epochs and Main checks guard all recursive access. Parent read-only
+  state propagates to children. Search expands matching groups temporarily.
+  `Drawer = "Color"` supplies a Vec4 color picker. Integers up to 32 bits use
+  numeric drags; 64-bit integers retain exact text editing.
 
 ## R2 C++ and runtime contract
 
@@ -372,5 +406,6 @@ is the production method pilot. R6 does not replace existing Lua or host Behavio
   arbitrary setter exceptions are not rolled back.
 - Model, Audio, Material and SkinnedMesh components inherit the default component
   codecs with their legacy keys. SkinnedMeshState performs one final animation
-  normalization/rebuild after the generated batch. Remaining custom native UI,
-  probe and postprocess codecs are documented in SERIALIZATION.zh-CN.md.
+  normalization/rebuild after the generated batch. Postprocessing and authored
+  native UI use the aggregate/scalar adapters above. Reflection Probe and transient
+  CanvasRenderer behavior are documented in SERIALIZATION.zh-CN.md.

@@ -4,7 +4,10 @@
 #include <OvTools/Utils/CallbackScope.h>
 #include <OvUI/Widgets/Selection/CheckBox.h>
 #include <OvUI/Widgets/Selection/ComboBox.h>
+#include <OvUI/Widgets/Selection/ColorEdit.h>
 #include <OvUI/Widgets/Texts/Text.h>
+#include <OvUI/Widgets/Layout/Columns.h>
+#include <OvUI/Widgets/Layout/GroupCollapsable.h>
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -58,7 +61,7 @@ namespace OvCore::Helpers::ReflectionProperties
         auto ticket = widget.template AddPlugin<Lease>().scope.Ticket();
         auto last = std::make_shared<T>(std::move(initial));
         auto& dispatcher = widget.template AddPlugin<OvUI::Plugins::DataDispatcher<T>>();
-        widget.disabled = binding.property->Info().readOnly;
+        widget.disabled = binding.readOnly || binding.property->Info().readOnly;
         dispatcher.RegisterGatherer([ticket, last, binding, read, w = &widget]() mutable
         {
             if (ticket.expired()) return *last;
@@ -69,26 +72,26 @@ namespace OvCore::Helpers::ReflectionProperties
         });
         dispatcher.RegisterProvider([ticket, binding, write](T value)
         {
-            if (ticket.expired() || binding.property->Info().readOnly) return;
+            if (ticket.expired() || binding.readOnly || binding.property->Info().readOnly) return;
             auto converted = write(value);
             if (converted.has_value()) binding.write(converted);
         });
     }
     template<class T> void Vector(OvUI::Internal::WidgetContainer& root, const Binding& binding, const std::any& initial)
     {
-        constexpr size_t count = std::is_same_v<T, OvMaths::FVector3> ? 3 : 4;
+        constexpr size_t count = std::is_same_v<T, OvMaths::FVector2> ? 2 : std::is_same_v<T, OvMaths::FVector3> ? 3 : 4;
         using Array = std::array<float, count>;
         auto toArray = [](const std::any& value) -> Array
         {
             const auto& v = std::any_cast<const T&>(value);
-            if constexpr (count == 3) return {v.x, v.y, v.z}; else return {v.x, v.y, v.z, v.w};
+            if constexpr (count == 2) return {v.x, v.y}; else if constexpr (count == 3) return {v.x, v.y, v.z}; else return {v.x, v.y, v.z, v.w};
         };
         auto fromArray = [](Array v) -> std::any
-        { if constexpr (count == 3) return T{v[0], v[1], v[2]}; else return T{v[0], v[1], v[2], v[3]}; };
+        { if constexpr (count == 2) return T{v[0], v[1]}; else if constexpr (count == 3) return T{v[0], v[1], v[2]}; else return T{v[0], v[1], v[2], v[3]}; };
         auto& p = *binding.property;
         auto& widget = root.CreateWidget<OvUI::Widgets::Drags::DragMultipleScalars<float, count>>(ImGuiDataType_Float,
             Option(p, "Min", GUIDrawer::_MIN_FLOAT), Option(p, "Max", GUIDrawer::_MAX_FLOAT), 0.f, Option(p, "Step", 1.f), "", "%.3f");
-        widget.axisLabels = count == 3;
+        widget.axisLabels = count == 2 || count == 3;
         if (p.Info().name == "scale") { widget.axisResetValue = 1.f; widget.showProportionalLock = true; }
         Connect<Array>(widget, binding, toArray(initial), toArray, fromArray);
     }
@@ -97,13 +100,51 @@ namespace OvCore::Helpers::ReflectionProperties
         if (binding.property->Info().type.key != Key<OvMaths::FQuaternion>()) return {std::string(binding.property->Info().id), Status::Unsupported};
         Binding converted{binding.property,
             [binding](std::any& value) { auto r = binding.read(value); if (r.Ok()) value = OvMaths::FQuaternion::EulerAngles(std::any_cast<OvMaths::FQuaternion>(value)); return r; },
-            [binding](const std::any& value) { return binding.write(OvMaths::FQuaternion(std::any_cast<OvMaths::FVector3>(value))); }};
+            [binding](const std::any& value) { return binding.write(OvMaths::FQuaternion(std::any_cast<OvMaths::FVector3>(value))); }, binding.identity, binding.readOnly};
         std::any initial; auto result = converted.read(initial); if (!result.Ok()) return result;
         GUIDrawer::CreateTitle(root, Label(*binding.property)); Vector<OvMaths::FVector3>(root, converted, initial);
         return result;
     }
+    static Result Record(OvUI::Internal::WidgetContainer& root, const Binding& binding, const Registry& registry, std::span<const DrawerHook> hooks)
+    {
+        const auto* codec = FindValueCodec(*binding.property);
+        if (!codec || !codec->recordType || !codec->borrowRecord) return {std::string(binding.property->Info().id), Status::Unsupported};
+        auto& group = root.CreateWidget<OvUI::Widgets::Layout::GroupCollapsable>(Label(*binding.property));
+        const auto identity = binding.identity.empty() ? std::string(binding.property->Info().id) : binding.identity;
+        group.SetID("reflection_record_" + identity);
+        group.disabled = binding.readOnly || binding.property->Info().readOnly;
+        auto& columns = group.CreateWidget<OvUI::Widgets::Layout::Columns<2>>(); columns.widths[0] = 180 * OVUI_SCALE;
+        for (auto* child : Properties(*codec->recordType, "Inspect"))
+        {
+            auto access = [binding, codec, child, main = &registry.Main()](std::any* output, const std::any* input) -> Result
+            {
+                if (!main->IsCurrent()) return {std::string(child->Info().id), Status::AccessDenied, Error::WrongThread};
+                std::any record; auto result = binding.read(record); if (!result.Ok()) return result;
+                auto object = codec->borrowRecord(record); if (!object) return {std::string(child->Info().id), Status::AccessDenied, Error::WrongValueType};
+                if (input && (binding.readOnly || binding.property->Info().readOnly)) return {std::string(child->Info().id), Status::ReadOnly};
+                const auto error = output ? child->ReadValue(*main, *object, *output) : child->WriteValue(*main, *object, *input);
+                if (error != Error::None) return {std::string(child->Info().id), Status::AccessDenied, error};
+                return input ? binding.write(record) : Result{std::string(child->Info().id)};
+            };
+            Binding field{child, [access](std::any& value) { return access(&value, nullptr); }, [access](const std::any& value) { return access(nullptr, &value); },
+                identity + "/" + std::string(child->Info().id), binding.readOnly || binding.property->Info().readOnly};
+            auto result = Draw(columns, field, registry, hooks); if (!result.Ok()) return result;
+        }
+        return {std::string(binding.property->Info().id)};
+    }
+    static Result Color(OvUI::Internal::WidgetContainer& root, const Binding& binding, const Registry&)
+    {
+        if (binding.property->Info().type.key != Key<OvMaths::FVector4>()) return {std::string(binding.property->Info().id), Status::Unsupported};
+        std::any initial; auto result = binding.read(initial); if (!result.Ok()) return result;
+        auto convert = [](const std::any& value) { const auto& v = std::any_cast<const OvMaths::FVector4&>(value); return OvUI::Types::Color{v.x, v.y, v.z, v.w}; };
+        GUIDrawer::CreateTitle(root, Label(*binding.property));
+        auto& widget = root.CreateWidget<OvUI::Widgets::Selection::ColorEdit>(true);
+        Connect<OvUI::Types::Color>(widget, binding, convert(initial), convert,
+            [](OvUI::Types::Color v) -> std::any { return OvMaths::FVector4{v.r, v.g, v.b, v.a}; });
+        return result;
+    }
     std::span<const DrawerHook> ComponentDrawers()
-    { static const DrawerHook hooks[]{{"EulerAngles", Euler}}; return hooks; }
+    { static const DrawerHook hooks[]{{"EulerAngles", Euler}, {"Color", Color}}; return hooks; }
     Result Draw(OvUI::Internal::WidgetContainer& root, const Binding& binding, const Registry& registry, std::span<const DrawerHook> hooks)
     {
         const auto& p = *binding.property; const auto& info = p.Info();
@@ -114,6 +155,7 @@ namespace OvCore::Helpers::ReflectionProperties
             return {std::string(info.id), Status::Unsupported};
         }
         std::any initial; auto result = binding.read(initial); if (!result.Ok()) return result;
+        if (info.type.category == "record-adapter") return Record(root, binding, registry, hooks);
         GUIDrawer::CreateTitle(root, Label(p));
         if (info.type.category == "enum")
         {
@@ -136,11 +178,20 @@ namespace OvCore::Helpers::ReflectionProperties
                 auto& widget = root.CreateWidget<OvUI::Widgets::Selection::CheckBox>();
                 Connect<bool>(widget, binding, std::any_cast<bool>(initial), [](const std::any& v) { return std::any_cast<bool>(v); }, [](bool v) -> std::any { return v; });
             }
-            else if constexpr (std::is_same_v<T, OvMaths::FVector3> || std::is_same_v<T, OvMaths::FQuaternion>) Vector<T>(root, binding, initial);
+            else if constexpr (std::is_same_v<T, OvMaths::FVector2> || std::is_same_v<T, OvMaths::FVector3> || std::is_same_v<T, OvMaths::FVector4> || std::is_same_v<T, OvMaths::FQuaternion>) Vector<T>(root, binding, initial);
             else if constexpr (std::is_floating_point_v<T>)
             {
                 auto& widget = root.CreateWidget<OvUI::Widgets::Drags::DragSingleScalar<T>>(std::is_same_v<T, float> ? ImGuiDataType_Float : ImGuiDataType_Double,
                     Option(p, "Min", std::numeric_limits<T>::lowest()), Option(p, "Max", std::numeric_limits<T>::max()), T{}, Option(p, "Step", 1.f), "", "%.6g");
+                Connect<T>(widget, binding, std::any_cast<T>(initial), [](const std::any& v) { return std::any_cast<T>(v); }, [](T v) -> std::any { return v; });
+            }
+            else if constexpr (std::is_integral_v<T> && sizeof(T) <= 4)
+            {
+                constexpr auto dataType = sizeof(T) == 1 ? (std::is_signed_v<T> ? ImGuiDataType_S8 : ImGuiDataType_U8) :
+                    sizeof(T) == 2 ? (std::is_signed_v<T> ? ImGuiDataType_S16 : ImGuiDataType_U16) :
+                    (std::is_signed_v<T> ? ImGuiDataType_S32 : ImGuiDataType_U32);
+                auto& widget = root.CreateWidget<OvUI::Widgets::Drags::DragSingleScalar<T>>(dataType,
+                    Option(p, "Min", std::numeric_limits<T>::lowest()), Option(p, "Max", std::numeric_limits<T>::max()), T{}, Option(p, "Step", 1.f), "", std::is_signed_v<T> ? "%d" : "%u");
                 Connect<T>(widget, binding, std::any_cast<T>(initial), [](const std::any& v) { return std::any_cast<T>(v); }, [](T v) -> std::any { return v; });
             }
             else

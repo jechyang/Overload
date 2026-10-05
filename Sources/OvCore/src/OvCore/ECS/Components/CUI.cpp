@@ -1,7 +1,8 @@
 #include <OvCore/ECS/Components/CUI.h>
 #include <OvCore/ECS/Components/CCamera.h>
 #include <OvCore/ECS/Actor.h>
-#include <OvCore/Helpers/Serializer.h>
+#include <OvCore/Helpers/ReflectionDrawer.h>
+#include <OvCore/Helpers/ReflectionResourceCodecs.h>
 #include <OvCore/Helpers/GUIHelpers.h>
 #include <OvCore/SceneSystem/Scene.h>
 #include <OvUI/Plugins/DataDispatcher.h>
@@ -20,6 +21,13 @@ using namespace OvCore::Helpers;
 namespace UI = OvCore::UI;
 namespace
 {
+    struct ImagePreview final : OvUI::Plugins::IPlugin
+    {
+        OvUI::Widgets::InputFields::AssetField& widget;
+        std::function<OvUI::Internal::TextureID()> gather;
+        ImagePreview(OvUI::Widgets::InputFields::AssetField& field, std::function<OvUI::Internal::TextureID()> read) : widget(field), gather(std::move(read)) {}
+        void Execute(OvUI::Plugins::EPluginExecutionContext) override { widget.previewTextureID = gather(); }
+    };
     void Finite(OvMaths::FVector2 value)
     { if (!UI::IsFinite(value)) throw std::invalid_argument("UI vector must be finite"); }
     void Positive(float value)
@@ -36,23 +44,6 @@ CRectMask2D::CRectMask2D(Actor& actor) : AComponent(actor) { actor.AddComponent<
 
 std::string CRectTransform::GetName() { return "Rect Transform"; }
 std::string CRectTransform::GetTypeName() { return std::string(ComponentTraits<CRectTransform>::Name); }
-void CRectTransform::OnSerialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
-{
-    const auto authored = m_driven.Authored(m_layout);
-    Serializer::SerializeVec2(doc, node, "anchor_min", authored.anchorMin);
-    Serializer::SerializeVec2(doc, node, "anchor_max", authored.anchorMax);
-    Serializer::SerializeVec2(doc, node, "pivot", authored.pivot);
-    Serializer::SerializeVec2(doc, node, "anchored_position", authored.anchoredPosition);
-    Serializer::SerializeVec2(doc, node, "size_delta", authored.sizeDelta);
-}
-void CRectTransform::OnDeserialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
-{
-    if (node->FirstChildElement("anchor_min")) { auto value = m_layout.anchorMin; Serializer::DeserializeVec2(doc, node, "anchor_min", value); SetAnchorMin(value); }
-    if (node->FirstChildElement("anchor_max")) { auto value = m_layout.anchorMax; Serializer::DeserializeVec2(doc, node, "anchor_max", value); SetAnchorMax(value); }
-    if (node->FirstChildElement("pivot")) { auto value = m_layout.pivot; Serializer::DeserializeVec2(doc, node, "pivot", value); SetPivot(value); }
-    if (node->FirstChildElement("anchored_position")) { auto value = m_layout.anchoredPosition; Serializer::DeserializeVec2(doc, node, "anchored_position", value); SetAnchoredPosition(value); }
-    if (node->FirstChildElement("size_delta")) { auto value = m_layout.sizeDelta; Serializer::DeserializeVec2(doc, node, "size_delta", value); SetSizeDelta(value); }
-}
 void CRectTransform::OnInspector(OvUI::Internal::WidgetContainer& root)
 {
     if (m_driven.Mask()) GUIDrawer::CreateTitle(root, "Driven by managed layout (mask " + std::to_string(m_driven.Mask()) + ")");
@@ -65,33 +56,9 @@ void CRectTransform::OnInspector(OvUI::Internal::WidgetContainer& root)
 
 std::string CCanvas::GetName() { return "Canvas"; }
 std::string CCanvas::GetTypeName() { return std::string(ComponentTraits<CCanvas>::Name); }
-void CCanvas::OnSerialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
-{
-    Serializer::SerializeInt(doc, node, "render_mode", static_cast<int>(m_renderMode));
-    Serializer::SerializeFloat(doc, node, "plane_distance", m_planeDistance);
-    Serializer::SerializeUInt64(doc, node, "world_camera", m_worldCameraGuid);
-    Serializer::SerializeFloat(doc, node, "scale_factor", m_scaleFactor);
-    Serializer::SerializeInt(doc, node, "sorting_order", m_sortingOrder);
-    Serializer::SerializeBoolean(doc, node, "override_sorting", m_overrideSorting);
-}
-void CCanvas::OnDeserialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
-{
-    if (node->FirstChildElement("render_mode")) { auto value = static_cast<int>(m_renderMode); Serializer::DeserializeInt(doc, node, "render_mode", value); SetRenderMode(static_cast<RenderMode>(value)); }
-    if (node->FirstChildElement("plane_distance")) { auto value = m_planeDistance; Serializer::DeserializeFloat(doc, node, "plane_distance", value); SetPlaneDistance(value); }
-    if (node->FirstChildElement("world_camera")) Serializer::DeserializeUInt64(doc, node, "world_camera", m_worldCameraGuid);
-    if (node->FirstChildElement("scale_factor")) { auto value = m_scaleFactor; Serializer::DeserializeFloat(doc, node, "scale_factor", value); SetScaleFactor(value); }
-    if (node->FirstChildElement("sorting_order")) { auto value = m_sortingOrder; Serializer::DeserializeInt(doc, node, "sorting_order", value); SetSortingOrder(value); }
-    if (node->FirstChildElement("override_sorting")) Serializer::DeserializeBoolean(doc, node, "override_sorting", m_overrideSorting);
-}
 void CCanvas::OnInspector(OvUI::Internal::WidgetContainer& root)
 {
-    GUIDrawer::CreateTitle(root, "Render Mode");
-    auto& mode = root.CreateWidget<OvUI::Widgets::Selection::ComboBox>(static_cast<int>(m_renderMode));
-    mode.choices.emplace(0, "Screen Space - Overlay");
-    mode.choices.emplace(1, "Screen Space - Camera");
-    mode.choices.emplace(2, "World Space");
-    mode.ValueChangedEvent += [this](int value) { SetRenderMode(static_cast<RenderMode>(value)); };
-    GUIDrawer::DrawScalar<float>(root, "Plane Distance", std::function<float()>([this] { return m_planeDistance; }), std::function<void(float)>([this](float value) { SetPlaneDistance(value); }), 0.1f, 0.001f, 1000000.0f);
+    AComponent::OnInspector(root);
     GUIDrawer::CreateTitle(root, "Render Camera");
     auto& camera = root.CreateWidget<OvUI::Widgets::InputFields::ActorField>(m_worldCameraGuid);
     camera.iconTextureID = GUIHelpers::GetActorIconID();
@@ -129,31 +96,21 @@ void CCanvas::OnInspector(OvUI::Internal::WidgetContainer& root)
         }
         GUIHelpers::OpenPicker(std::move(items), "Select Render Camera");
     };
-    GUIDrawer::DrawScalar<float>(root, "Scale Factor", std::function<float()>([this] { return m_scaleFactor; }), std::function<void(float)>([this](float value) { SetScaleFactor(value); }), 0.01f, 0.001f, 10000.0f);
-    GUIDrawer::DrawScalar<int>(root, "Sorting Order", std::function<int()>([this] { return m_sortingOrder; }), std::function<void(int)>([this](int value) { SetSortingOrder(value); }), 1.0f, std::numeric_limits<int>::min(), std::numeric_limits<int>::max());
-    GUIDrawer::DrawBoolean(root, "Override Sorting", m_overrideSorting);
 
 }
 
 std::string CUIImage::GetName() { return "UI Image"; }
 std::string CUIImage::GetTypeName() { return std::string(ComponentTraits<CUIImage>::Name); }
-void CUIImage::OnSerialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
-{
-    Serializer::SerializeVec4(doc, node, "color", m_color);
-    Serializer::SerializeTexture(doc, node, "texture", m_texture);
-    Serializer::SerializeBoolean(doc, node, "raycast_target", m_raycastTarget);
-}
-void CUIImage::OnDeserialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
-{
-    if (node->FirstChildElement("color")) { auto value = m_color; Serializer::DeserializeVec4(doc, node, "color", value); SetColor(value); }
-    if (node->FirstChildElement("texture")) { auto value = m_texture; Serializer::DeserializeTexture(doc, node, "texture", value); SetTexture(value); }
-    if (node->FirstChildElement("raycast_target")) { auto value = m_raycastTarget; Serializer::DeserializeBoolean(doc, node, "raycast_target", value); SetRaycastTarget(value); }
-}
 void CUIImage::OnInspector(OvUI::Internal::WidgetContainer& root)
 {
-    GUIDrawer::DrawVec4(root, "Color", std::function<OvMaths::FVector4()>([this] { return m_color; }), std::function<void(OvMaths::FVector4)>([this](OvMaths::FVector4 value) { SetColor(value); }), 0.01f);
-    GUIDrawer::DrawTexture(root, "Texture", m_texture);
-    GUIDrawer::DrawBoolean(root, "Raycast Target", m_raycastTarget);
+    AComponent::OnInspector(root);
+    auto& texture = ReflectionProperties::DrawResourceReference<OvRendering::Resources::Texture>(root, "Texture", InspectorTicket(),
+        [this] { return GetSerializedTexture(); }, [this](const auto& value) { SetSerializedTexture(value); }, OvTools::Utils::PathParser::EFileType::TEXTURE);
+    texture.AddPlugin<ImagePreview>(texture, [this, ticket = InspectorTicket(), main = &GetComponentRegistry().Reflection().Main()]() -> OvUI::Internal::TextureID {
+        if (!main->IsCurrent() || ticket.expired()) return {};
+        auto* asset = m_texture ? m_texture : GUIHelpers::GetEmptyTexture();
+        return asset ? OvUI::Internal::TextureID(asset->RetainTexture()) : OvUI::Internal::TextureID{};
+    });
 }
 
 std::string CCanvasRenderer::GetName() { return "Canvas Renderer"; }
@@ -230,44 +187,8 @@ void CCanvasRenderer::OnInspector(OvUI::Internal::WidgetContainer& root)
 
 std::string CCanvasGroup::GetName() { return "Canvas Group"; }
 std::string CCanvasGroup::GetTypeName() { return std::string(ComponentTraits<CCanvasGroup>::Name); }
-void CCanvasGroup::OnSerialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
-{
-    Serializer::SerializeFloat(doc, node, "alpha", m_alpha);
-    Serializer::SerializeBoolean(doc, node, "interactable", m_interactable);
-    Serializer::SerializeBoolean(doc, node, "blocks_raycasts", m_blocksRaycasts);
-    Serializer::SerializeBoolean(doc, node, "ignore_parent_groups", m_ignoreParentGroups);
-    Serializer::SerializeBoolean(doc, node, "enabled", m_enabled);
-}
-void CCanvasGroup::OnDeserialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
-{
-    if (node->FirstChildElement("alpha")) { auto value = m_alpha; Serializer::DeserializeFloat(doc, node, "alpha", value); SetAlpha(value); }
-    if (node->FirstChildElement("interactable")) { auto value = m_interactable; Serializer::DeserializeBoolean(doc, node, "interactable", value); SetInteractable(value); }
-    if (node->FirstChildElement("ignore_parent_groups")) Serializer::DeserializeBoolean(doc, node, "ignore_parent_groups", m_ignoreParentGroups);
-    if (node->FirstChildElement("enabled")) Serializer::DeserializeBoolean(doc, node, "enabled", m_enabled);
-    if (node->FirstChildElement("blocks_raycasts")) { auto value = m_blocksRaycasts; Serializer::DeserializeBoolean(doc, node, "blocks_raycasts", value); SetBlocksRaycasts(value); }
-}
-void CCanvasGroup::OnInspector(OvUI::Internal::WidgetContainer& root)
-{
-    GUIDrawer::DrawScalar<float>(root, "Alpha", std::function<float()>([this] { return m_alpha; }), std::function<void(float)>([this](float value) { SetAlpha(value); }), 0.01f, 0.0f, 1.0f);
-    GUIDrawer::DrawBoolean(root, "Interactable", m_interactable);
-    GUIDrawer::DrawBoolean(root, "Blocks Raycasts", m_blocksRaycasts);
-    GUIDrawer::DrawBoolean(root, "Ignore Parent Groups", m_ignoreParentGroups);
-}
-
 std::string CRectMask2D::GetName() { return "Rect Mask 2D"; }
 std::string CRectMask2D::GetTypeName() { return std::string(ComponentTraits<CRectMask2D>::Name); }
-void CRectMask2D::OnSerialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
-{
-    Serializer::SerializeBoolean(doc, node, "enabled", m_enabled);
-}
-void CRectMask2D::OnDeserialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
-{
-    if (node->FirstChildElement("enabled")) { auto value = m_enabled; Serializer::DeserializeBoolean(doc, node, "enabled", value); SetEnabled(value); }
-}
-void CRectMask2D::OnInspector(OvUI::Internal::WidgetContainer& root)
-{
-    GUIDrawer::DrawBoolean(root, "Enabled", m_enabled);
-}
 void CRectTransform::SetAnchorMin(OvMaths::FVector2 value) { Finite(value); m_layout.anchorMin = value; }
 void CRectTransform::SetAnchorMax(OvMaths::FVector2 value) { Finite(value); m_layout.anchorMax = value; }
 void CRectTransform::SetPivot(OvMaths::FVector2 value) { Finite(value); m_layout.pivot = value; }
@@ -369,3 +290,14 @@ void CUIImage::SetColor(OvMaths::FVector4 value)
     value.w = Unit(value.w); m_color = value;
 }
 void CCanvasGroup::SetAlpha(float value) { m_alpha = Unit(value); }
+
+void CRectTransform::SetAuthoredLayout(const UI::RectLayout& value)
+{
+    Finite(value.anchorMin); Finite(value.anchorMax); Finite(value.pivot);
+    Finite(value.anchoredPosition); Finite(value.sizeDelta);
+    m_driven.SetAuthored(m_layout, value);
+}
+OvCore::Resources::ResourceReference<OvRendering::Resources::Texture> CUIImage::GetSerializedTexture() const
+{ return Resources::ResourceReference<OvRendering::Resources::Texture>::From(m_texture, m_texturePath); }
+void CUIImage::SetSerializedTexture(const Resources::ResourceReference<OvRendering::Resources::Texture>& value)
+{ SetTexture(value.resource); m_texturePath = value.path; }

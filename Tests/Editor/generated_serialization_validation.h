@@ -27,7 +27,13 @@ static void ValidateGeneratedSerialization(OvEditor::Core::Context& context)
         {"CModelRenderer", {"model", "frustum_behaviour", "custom_bounding_sphere_position", "custom_bounding_sphere_radius"}},
         {"CMaterialRenderer", {"materials", "visibility_flags"}},
         {"CAudioSource", {"autoplay", "spatial", "volume", "pan", "looped", "pitch", "attenuation_threshold", "audio_clip"}},
-        {"CSkinnedMeshRenderer", {"playing", "looping", "playback_speed", "mesh_bounds_scale", "pose_eval_rate", "time_ticks", "animation_source", "animation"}}
+        {"CSkinnedMeshRenderer", {"playing", "looping", "playback_speed", "mesh_bounds_scale", "pose_eval_rate", "time_ticks", "animation_source", "animation"}},
+        {"CPostProcessStack", {"bloom_enabled", "bloom_intensity", "bloom_passes", "auto_exposure_enabled", "auto_exposure_center_weight_bias", "auto_exposure_luminance_min", "auto_exposure_luminance_max", "auto_exposure_exposure_compensation", "auto_exposure_progressive", "auto_exposure_speed_up", "auto_exposure_speed_down", "tonemapping_enabled", "tonemapping_exposure", "tonemapping_mode", "tonemapping_gamma_correction", "fxaa_enabled"}},
+        {"CRectTransform", {"anchor_min", "anchor_max", "pivot", "anchored_position", "size_delta"}},
+        {"CCanvas", {"render_mode", "plane_distance", "world_camera", "scale_factor", "sorting_order", "override_sorting"}},
+        {"CUIImage", {"color", "texture", "raycast_target"}},
+        {"CCanvasGroup", {"alpha", "interactable", "blocks_raycasts", "ignore_parent_groups", "enabled"}},
+        {"CRectMask2D", {"enabled"}}
     };
     for (const auto& [name, keys] : expected)
     {

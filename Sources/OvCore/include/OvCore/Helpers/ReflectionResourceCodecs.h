@@ -86,8 +86,8 @@ namespace OvCore::Helpers::ReflectionProperties
     {
         return {Key<T>(),
             [](std::string_view text, std::any& output) { T value{}; if (!ResourceCodec<T>::Parse(text, value)) return false; output = std::move(value); return true; },
-            [](const PropertyDesc& p, const tinyxml2::XMLElement& node, std::any& output) { T value{}; if (!ResourceCodec<T>::Read(p, node, value)) return false; output = std::move(value); return true; },
-            [](const PropertyDesc& p, tinyxml2::XMLDocument& doc, tinyxml2::XMLElement& node, const std::any& input) { auto* value = std::any_cast<T>(&input); return value && ResourceCodec<T>::Write(p, doc, node, *value); },
+            [](const MainThread&, const PropertyDesc& p, const tinyxml2::XMLNode& node, std::any& output, std::string_view) { T value{}; auto* element = node.ToElement(); if (!element || !ResourceCodec<T>::Read(p, *element, value)) return false; output = std::move(value); return true; },
+            [](const MainThread&, const PropertyDesc& p, tinyxml2::XMLDocument& doc, tinyxml2::XMLNode& node, const std::any& input, std::string_view) { auto* value = std::any_cast<T>(&input); auto* element = node.ToElement(); return value && element && ResourceCodec<T>::Write(p, doc, *element, *value); },
             [](const MainThread& main, std::any& input) { if (!main.IsCurrent()) return false; auto* value = std::any_cast<T>(&input); if (!value) return false; ResourceCodec<T>::Resolve(*value); return true; }};
     }
     // Reuse the editor asset picker while preserving unresolved paths and guarding

@@ -2,6 +2,7 @@
 
 #include <OvReflection/Annotations.h>
 #include <OvCore/ECS/Components/AComponent.h>
+#include <OvCore/Resources/ResourceReference.h>
 #include <OvCore/UI/Layout.h>
 #include <OvCore/UI/DrivenProperties.h>
 #include <OvMaths/FVector2.h>
@@ -54,11 +55,13 @@ namespace OvCore::ECS::Components
         void SetAnchoredPosition(OvMaths::FVector2 value);
         void SetSizeDelta(OvMaths::FVector2 value);
         UI::Rect Resolve(const UI::Rect& parent) const { return UI::ResolveRect(m_layout, parent); }
-        void OnSerialize(tinyxml2::XMLDocument&, tinyxml2::XMLNode*) override;
-        void OnDeserialize(tinyxml2::XMLDocument&, tinyxml2::XMLNode*) override;
         void OnInspector(OvUI::Internal::WidgetContainer&) override;
     private:
         OvMaths::FVector2 GetParentSize() const;
+        friend struct OvReflection::Access<CRectTransform>;
+        OV_PROPERTY(Serialize, Flatten, Name = "authored_layout", Setter = SetAuthoredLayout)
+        UI::RectLayout GetAuthoredLayout() const { return m_driven.Authored(m_layout); }
+        void SetAuthoredLayout(const UI::RectLayout& value);
         UI::RectLayout m_layout;
         UI::DrivenProperties m_driven;
         OvMaths::FVector2 m_parentSize{0, 0};
@@ -68,26 +71,30 @@ namespace OvCore::ECS::Components
     class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CCanvas", DisplayName = "Canvas", Order = 31) CCanvas : public AComponent
     {
     public:
-        enum class RenderMode { ScreenSpaceOverlay = 0, ScreenSpaceCamera = 1, WorldSpace = 2 };
+        enum class OV_TYPE() RenderMode { ScreenSpaceOverlay = 0, ScreenSpaceCamera = 1, WorldSpace = 2 };
         explicit CCanvas(Actor& actor);
         std::string GetName() override;
         std::string GetTypeName() override;
+        OV_PROPERTY(Serialize, Inspect, Name = "render_mode", Setter = SetRenderMode, DisplayName = "Render Mode", Order = 0, Validate = "EnumChoice")
         RenderMode GetRenderMode() const { return m_renderMode; }
         void SetRenderMode(RenderMode value);
+        OV_PROPERTY(Serialize, Inspect, Name = "plane_distance", Setter = SetPlaneDistance, DisplayName = "Plane Distance", Order = 1, Step = 0.1, Min = 0.001, Max = 1000000, Validate = "Positive")
         float GetPlaneDistance() const { return m_planeDistance; }
         void SetPlaneDistance(float value);
+        OV_PROPERTY(Serialize, Name = "world_camera", Setter = SetWorldCameraGuid, DisplayName = "Render Camera", Order = 2)
         uint64_t GetWorldCameraGuid() const { return m_worldCameraGuid; }
         void SetWorldCameraGuid(uint64_t value);
         CCamera* GetWorldCamera() const;
         void SetWorldCamera(CCamera* value);
+        OV_PROPERTY(Serialize, Inspect, Name = "scale_factor", Setter = SetScaleFactor, DisplayName = "Scale Factor", Order = 3, Step = 0.01, Min = 0.001, Max = 10000, Validate = "Positive")
         float GetScaleFactor() const { return m_scaleFactor; }
         void SetScaleFactor(float value);
+        OV_PROPERTY(Serialize, Inspect, Name = "sorting_order", Setter = SetSortingOrder, DisplayName = "Sorting Order", Order = 4, Step = 1)
         int GetSortingOrder() const { return m_sortingOrder; }
         void SetSortingOrder(int value) { m_sortingOrder = value; }
+        OV_PROPERTY(Serialize, Inspect, Name = "override_sorting", Setter = SetOverrideSorting, DisplayName = "Override Sorting", Order = 5)
         bool OverridesSorting() const { return m_overrideSorting; }
         void SetOverrideSorting(bool value) { m_overrideSorting = value; }
-        void OnSerialize(tinyxml2::XMLDocument&, tinyxml2::XMLNode*) override;
-        void OnDeserialize(tinyxml2::XMLDocument&, tinyxml2::XMLNode*) override;
         void OnInspector(OvUI::Internal::WidgetContainer&) override;
     private:
         RenderMode m_renderMode = RenderMode::ScreenSpaceOverlay;
@@ -104,16 +111,21 @@ namespace OvCore::ECS::Components
         explicit CUIImage(Actor& actor);
         std::string GetName() override;
         std::string GetTypeName() override;
+        OV_PROPERTY(Serialize, Inspect, Name = "color", Setter = SetColor, DisplayName = "Color", Drawer = "Color", Order = 0)
         OvMaths::FVector4 GetColor() const { return m_color; }
         void SetColor(OvMaths::FVector4 value);
         OvRendering::Resources::Texture* GetTexture() const { return m_texture; }
-        void SetTexture(OvRendering::Resources::Texture* value) { m_texture = value; }
+        void SetTexture(OvRendering::Resources::Texture* value) { m_texture = value; m_texturePath.clear(); }
+        OV_PROPERTY(Serialize, Inspect, Name = "raycast_target", Setter = SetRaycastTarget, DisplayName = "Raycast Target", Order = 2)
         bool IsRaycastTarget() const { return m_raycastTarget; }
         void SetRaycastTarget(bool value) { m_raycastTarget = value; }
-        void OnSerialize(tinyxml2::XMLDocument&, tinyxml2::XMLNode*) override;
-        void OnDeserialize(tinyxml2::XMLDocument&, tinyxml2::XMLNode*) override;
         void OnInspector(OvUI::Internal::WidgetContainer&) override;
     private:
+        friend struct OvReflection::Access<CUIImage>;
+        OV_PROPERTY(Serialize, Name = "texture", Setter = SetSerializedTexture, Order = 1)
+        Resources::ResourceReference<OvRendering::Resources::Texture> GetSerializedTexture() const;
+        void SetSerializedTexture(const Resources::ResourceReference<OvRendering::Resources::Texture>& value);
+        std::string m_texturePath;
         OvMaths::FVector4 m_color{1, 1, 1, 1};
         OvRendering::Resources::Texture* m_texture = nullptr; // Resource manager owns the asset.
         bool m_raycastTarget = true;
@@ -208,19 +220,21 @@ namespace OvCore::ECS::Components
         explicit CCanvasGroup(Actor& actor);
         std::string GetName() override;
         std::string GetTypeName() override;
+        OV_PROPERTY(Serialize, Inspect, Name = "alpha", Setter = SetAlpha, DisplayName = "Alpha", Order = 0, Step = 0.01, Min = 0, Max = 1)
         float GetAlpha() const { return m_alpha; }
         void SetAlpha(float value);
+        OV_PROPERTY(Serialize, Inspect, Name = "interactable", Setter = SetInteractable, DisplayName = "Interactable", Order = 1)
         bool IsInteractable() const { return m_interactable; }
         void SetInteractable(bool value) { m_interactable = value; }
+        OV_PROPERTY(Serialize, Inspect, Name = "enabled", Setter = SetEnabled, DisplayName = "Enabled", Order = 4)
         bool IsEnabled() const { return m_enabled; }
         void SetEnabled(bool value) { m_enabled = value; }
+        OV_PROPERTY(Serialize, Inspect, Name = "ignore_parent_groups", Setter = SetIgnoreParentGroups, DisplayName = "Ignore Parent Groups", Order = 3)
         bool IgnoresParentGroups() const { return m_ignoreParentGroups; }
         void SetIgnoreParentGroups(bool value) { m_ignoreParentGroups = value; }
+        OV_PROPERTY(Serialize, Inspect, Name = "blocks_raycasts", Setter = SetBlocksRaycasts, DisplayName = "Blocks Raycasts", Order = 2)
         bool BlocksRaycasts() const { return m_blocksRaycasts; }
         void SetBlocksRaycasts(bool value) { m_blocksRaycasts = value; }
-        void OnSerialize(tinyxml2::XMLDocument&, tinyxml2::XMLNode*) override;
-        void OnDeserialize(tinyxml2::XMLDocument&, tinyxml2::XMLNode*) override;
-        void OnInspector(OvUI::Internal::WidgetContainer&) override;
     private:
         float m_alpha = 1;
         bool m_interactable = true, m_blocksRaycasts = true, m_ignoreParentGroups = false, m_enabled = true;
@@ -232,11 +246,9 @@ namespace OvCore::ECS::Components
         explicit CRectMask2D(Actor& actor);
         std::string GetName() override;
         std::string GetTypeName() override;
+        OV_PROPERTY(Serialize, Inspect, Name = "enabled", Setter = SetEnabled, DisplayName = "Enabled", Order = 0)
         bool IsEnabled() const { return m_enabled; }
         void SetEnabled(bool value) { m_enabled = value; }
-        void OnSerialize(tinyxml2::XMLDocument&, tinyxml2::XMLNode*) override;
-        void OnDeserialize(tinyxml2::XMLDocument&, tinyxml2::XMLNode*) override;
-        void OnInspector(OvUI::Internal::WidgetContainer&) override;
     private:
         bool m_enabled = true;
     };

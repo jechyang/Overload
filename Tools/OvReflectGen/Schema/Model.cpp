@@ -6,6 +6,7 @@
 #include <set>
 #include <charconv>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 #include <string_view>
 
@@ -15,9 +16,9 @@ namespace OvReflectGen
                        Metadata& output, std::string& error)
     {
         // Deliberately small grammar, not C++ expression evaluation.
-        const std::set<std::string> flags = kind == "type" ? std::set<std::string>{"Component"} :
+        const std::set<std::string> flags = kind == "type" ? std::set<std::string>{"Component", "Record"} :
             kind == "method" ? std::set<std::string>{"Script"} :
-            std::set<std::string>{"Serialize", "Inspect", "Script", "ReadOnly"};
+            std::set<std::string>{"Serialize", "Inspect", "Script", "ReadOnly", "Flatten"};
         std::set<std::string> keys{"Id", "Alias", "Name"};
         if (kind == "type") keys.insert({"Factory", "Lookup", "DisplayName", "Category", "Order", "SerializeHook", "DeserializeHook"});
         else
@@ -25,7 +26,7 @@ namespace OvReflectGen
             keys.insert("Thread");
             keys.insert({"Return", "Ownership", "Nullable"});
             if (kind == "method") keys.insert("Overload");
-            if (kind != "method") keys.insert({"DisplayName", "Category", "Min", "Max", "Step", "Drawer", "Order", "Missing", "Default", "ItemName"});
+            if (kind != "method") keys.insert({"DisplayName", "Category", "Min", "Max", "Step", "Drawer", "Order", "Missing", "Default", "ItemName", "Prefix", "Validate"});
             if (kind == "property") keys.insert("Setter");
         }
         size_t i = 0;
@@ -69,8 +70,8 @@ namespace OvReflectGen
                     while (i < text.size() && text[i] != ',' && !std::isspace(static_cast<unsigned char>(text[i]))) ++i;
                     value = text.substr(begin, i - begin);
                 }
-                if (value.empty() && key != "Default") return fail("empty metadata value: " + key);
-                if ((key == "Id" || key == "Alias" || key == "Name" || key == "DisplayName" || key == "Category" || key == "Drawer" || key == "SerializeHook" || key == "DeserializeHook" || key == "Default" || key == "Overload" || key == "ItemName") && !quoted)
+                if (value.empty() && key != "Default" && key != "Prefix") return fail("empty metadata value: " + key);
+                if ((key == "Id" || key == "Alias" || key == "Name" || key == "DisplayName" || key == "Category" || key == "Drawer" || key == "SerializeHook" || key == "DeserializeHook" || key == "Default" || key == "Overload" || key == "ItemName" || key == "Prefix" || key == "Validate") && !quoted)
                     return fail(key + " requires a quoted string");
                 if (key == "Setter" || key == "Factory" || key == "Lookup" || key == "Thread" || key == "Missing" || key == "Return" || key == "Ownership" || key == "Nullable")
                 {
@@ -147,7 +148,8 @@ namespace OvReflectGen
             double value{}; auto r = std::from_chars(text.data(), text.data() + text.size(), value);
             return r.ec == std::errc{} && r.ptr == text.data() + text.size() && std::isfinite(value) && (type.bits == 64 || std::abs(value) <= std::numeric_limits<float>::max());
         }
-        const size_t count = type.valueType == "OvMaths::FVector3" ? 3 : type.valueType == "OvMaths::FQuaternion" ? 4 : 0;
+        const size_t count = type.valueType == "OvMaths::FVector2" ? 2 : type.valueType == "OvMaths::FVector3" ? 3 :
+            (type.valueType == "OvMaths::FVector4" || type.valueType == "OvMaths::FQuaternion") ? 4 : 0;
         if (!count) return false;
         TypeRef scalar; scalar.category = "float"; scalar.bits = 32;
         for (size_t index = 0; index < count; ++index)
@@ -181,10 +183,36 @@ namespace OvReflectGen
         {
             aliases(type);
             byName.emplace(type.cppName, &type);
+            if (type.metadata.Has("Record") && (type.metadata.Has("SerializeHook") || type.metadata.Has("DeserializeHook")))
+                issues.push_back({type.source, "Record cannot specify component serialization hooks"});
             std::set<std::string> names;
             for (const auto& property : type.properties)
             {
                 aliases(property);
+                if (type.metadata.Has("Record") && property.readOnly)
+                    issues.push_back({property.source, "Record fields require public writable OV_FIELD declarations"});
+                if (property.metadata.Has("Flatten") && (property.type.category != "record-adapter" || !property.metadata.Has("Serialize")))
+                    issues.push_back({property.source, "Flatten requires a serializable Record value"});
+                if (property.metadata.Has("Flatten") && !property.metadata.aliases.empty())
+                    issues.push_back({property.source, "Flatten aliases belong on the Record fields"});
+                if (property.metadata.Has("Prefix") && !property.metadata.Has("Flatten"))
+                    issues.push_back({property.source, "Prefix requires Flatten"});
+                if (property.metadata.Has("Prefix"))
+                {
+                    const auto prefix = property.metadata.Get("Prefix");
+                    if (!prefix.empty() && !(std::isalpha(static_cast<unsigned char>(prefix.front())) || prefix.front() == '_'))
+                        issues.push_back({property.source, "Prefix must start with a letter or underscore"});
+                    for (unsigned char c : property.metadata.Get("Prefix")) if (!(c < 128 && (std::isalnum(c) || c == '_')))
+                    { issues.push_back({property.source, "Prefix must contain ASCII XML identifier characters"}); break; }
+                }
+                if (property.metadata.Has("Validate"))
+                {
+                    const auto rule = property.metadata.Get("Validate");
+                    if (!((rule == "Positive" && property.type.category == "float") || (rule == "EnumChoice" && property.type.category == "enum")))
+                        issues.push_back({property.source, "Validate must be Positive on a float or EnumChoice on an enum"});
+                    if (rule == "Positive" && property.metadata.Has("Default") && std::strtod(property.metadata.Get("Default").c_str(), nullptr) <= 0)
+                        issues.push_back({property.source, "Default violates Positive validation"});
+                }
                 if (property.metadata.Has("ItemName"))
                 {
                     const auto name = property.metadata.Get("ItemName");
@@ -195,7 +223,7 @@ namespace OvReflectGen
                 if (property.metadata.Has("Default") && !ValidDefault(property.type, property.metadata.Get("Default"), schema))
                     issues.push_back({property.source, "Default does not match property value type/range"});
                 TypeRef rangeType = property.type;
-                if (rangeType.valueType == "OvMaths::FVector3" || rangeType.valueType == "OvMaths::FQuaternion")
+                if (rangeType.category == "value-adapter")
                 { rangeType.category = "float"; rangeType.bits = 32; }
                 if (rangeType.category == "integer" || rangeType.category == "float")
                     for (const auto* key : {"Min", "Max"})
@@ -232,6 +260,34 @@ namespace OvReflectGen
         {
             std::set<std::string> names;
             inherited(type, names);
+            std::map<std::string, const Property*> wireNames;
+            std::function<void(const Type&, const std::string&)> collectWireNames;
+            auto collectProperties = [&](const Type& owner, const std::string& prefix)
+            {
+                for (const auto& property : owner.properties)
+                {
+                    if (!property.metadata.Has("Serialize")) continue;
+                    if (property.metadata.Has("Flatten") && property.type.category == "record-adapter")
+                    {
+                        if (auto record = byName.find(property.type.valueType); record != byName.end())
+                            collectWireNames(*record->second, prefix + property.metadata.Get("Prefix"));
+                        continue;
+                    }
+                    const auto insert = [&](const std::string& name) {
+                        auto [entry, added] = wireNames.emplace(prefix + name, &property);
+                        if (!added)
+                            issues.push_back({property.source, "serialized key/alias conflict: " + prefix + name});
+                    };
+                    insert(property.name);
+                    for (const auto& alias : property.metadata.aliases) insert(alias);
+                }
+            };
+            collectWireNames = [&](const Type& owner, const std::string& prefix) {
+                for (const auto& base : owner.castBases)
+                    if (auto found = byName.find(base.cppName); found != byName.end()) collectProperties(*found->second, prefix);
+                collectProperties(owner, prefix);
+            };
+            collectWireNames(type, "");
             auto byId = [](const auto& a, const auto& b) { return a.id < b.id; };
             std::sort(type.properties.begin(), type.properties.end(), byId);
             std::sort(type.methods.begin(), type.methods.end(), byId);

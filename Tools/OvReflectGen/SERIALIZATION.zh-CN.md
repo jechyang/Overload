@@ -61,8 +61,45 @@ XML 仍保存资源路径，空引用写 `?`。找不到资源时保留路径，
 
 动画的播放、循环、速度、包围盒倍率、求值频率、时间、资源和片段名都由
 注解生成。`SkinnedMeshState` 加载钩子在属性恢复后统一规范化并重建骨骼
-绑定，避免每恢复一个字段就重建状态。后处理、Reflection Probe 和原生 UI
-的特殊设置仍保留自定义编解码，尚未全部迁入注解。
+绑定，避免每恢复一个字段就重建状态。
+
+后处理的 Auto Exposure、Bloom、Tonemapping、FXAA 设置，以及原生 UI 的
+RectLayout，使用 `OV_TYPE(Record)` 描述嵌套值。Record 必须是可复制的聚合，
+其全部实例字段声明公共、可写的 `OV_FIELD`；继承基类也必须是 Record。
+不支持 Record 内的注解 getter/method、组件钩子或 Script 值签名。
+
+```cpp
+struct OV_TYPE(Record) BloomSettings : EffectSettings
+{
+    OV_FIELD(Serialize, Inspect, Step = 0.1, Order = 1) float intensity = 1;
+};
+OV_PROPERTY(Serialize, Inspect, Flatten, Prefix = "bloom_",
+            Setter = SetBloomSettings, DisplayName = "Bloom")
+const BloomSettings& GetBloomSettings() const;
+```
+
+常规 Record 保存为嵌套 XML；`Flatten` 将字段写入父节点，`Prefix` 保留
+`bloom_intensity` 这样的旧键。别名声明在 Record 叶字段上，前缀同时用于
+正式键和别名。Clang 会拒绝继承、平铺字段和别名的实际 XML 键冲突。
+自动曝光兼容历史保存的 `auto_exposure_luminance_min/max` 和旧读取代码使用的
+`auto_exposure_min/max_luminance`，修复曝光上下限无法正确重新加载的问题。
+
+Record 解析先修改拥有所有权的副本；全部嵌套字段验证通过后才解析资源并
+调用组件 setter。Vec2/Vec4 沿用旧 XML 坐标节点，缺失坐标保留原值。
+`Validate = "Positive"` 和 `Validate = "EnumChoice"` 显式声明 Canvas 的业务
+约束，避免在部分字段已写入后才由 setter 发现非法值；Min/Max 仍只控制 UI。
+
+Inspector 从 Record 的 Inspect 描述生成可折叠分组。子字段编辑每次重新读取
+当前聚合，避免外部替换设置后持有悬空成员引用；稳定分组身份保留折叠状态，
+搜索临时展开匹配组。复制、重置、多选编辑、撤销和父级只读状态继续生效。
+`Drawer = "Color"` 给 Vec4 保留颜色选择器，32 位整数使用拖动输入，64 位
+整数继续使用精确文本输入。
+
+RectTransform、Canvas、UI Image、Canvas Group、Rect Mask 2D 已移入默认
+序列化入口。RectTransform 保存 authored 布局：活跃布局驱动的临时值不写入
+场景；加载更新驱动器保存的用户值，释放驱动时恢复新值。CanvasRenderer 的
+托管 Graphic 网格、材质槽、字体页等继续作为临时输出，加载时清除。
+Reflection Probe 尚保留自定义编解码。
 
 普通项目构建会先运行 `OvReflectionGen`。手动仅构建某个库时先执行：
 
@@ -110,12 +147,18 @@ Editor 的 `BuildGameScripts`/`BuildCSharp` 自动向现有工程注入分析器
 node Tests/Scripting/Integration/verify_generated_fields.mjs --native
 node Tests/Editor/run-panel-validation.mjs
 python Tests/Reflection/Integration/verify_resource_schema.py
+python Tests/Reflection/Integration/verify_record_schema.py
+node Tests/UI/run-layout-validation.mjs --runtime
 ```
 
-前者验证真实 Roslyn 生成物、私有和继承字段、稳定身份、结构体、数组、
+托管字段测试验证真实 Roslyn 生成物、私有和继承字段、稳定身份、结构体、数组、
 64 位枚举、编译错误、旧程序集兼容和程序集卸载，并通过真实原生宿主验证
 场景/Prefab 保存加载、字段改名、缺失脚本数据保留与 Inspector。
-后者在普通与独立渲染线程下运行真实 Editor 面板，并覆盖 C++ 组件的 XML
+面板测试在普通与独立渲染线程下运行真实 Editor 面板，并覆盖 C++ 组件的 XML
 往返、旧字段名、继承去重、缺省策略、失败时不调用 setter 和过期回调，
-以及实际模型/音频资源、缺失路径、材质槽边界和动画恢复。
-Clang 专项验证检查资源模板类型、子元素名、数组容量和非法注解的诊断。
+以及实际模型/音频资源、缺失路径、材质槽边界和动画恢复，
+并覆盖后处理 Record、曝光别名、Vec2/Vec4、Canvas 业务校验、驱动布局的
+用户状态、嵌套字段操作及折叠/搜索行为。Clang 专项验证检查资源模板类型、
+子元素名、数组容量、Record 约束、平铺键冲突和非法注解的诊断。
+布局测试验证 C# 合约、原生驱动器、实际场景序列化及热重载，并比较普通与
+独立渲染线程的 26 帧实际画面是否逐字节一致。

@@ -23,6 +23,12 @@ int main() try {
     Require(layout.sizeDelta.x==120&&layout.sizeDelta.y==150&&layout.anchoredPosition.x==42,"partial release preserves other claims");
     driven.Release(layout,100,DrivenProperties::All,1); driven.Release(layout,200,DrivenProperties::All,2);
     Require(driven.Mask()==0&&layout.sizeDelta.y==80&&layout.anchoredPosition.x==7,"all claims restored");
+    driven.Acquire(layout,64,4,400); driven.Acquire(layout,128,5,500); layout.sizeDelta={400,250};
+    auto imported=driven.Authored(layout); imported.sizeDelta={180,95}; imported.pivot={.2f,.7f};
+    driven.SetAuthored(layout,imported);
+    Require(layout.sizeDelta==OvMaths::FVector2(400,250)&&layout.pivot==imported.pivot&&driven.Authored(layout).sizeDelta==imported.sizeDelta,"loading authored state preserves driven values and updates saved claims");
+    driven.Release(layout,400,64,4); Require(layout.sizeDelta==OvMaths::FVector2(180,250),"partial release uses newly loaded authored axis");
+    driven.Release(layout,500,128,5); Require(layout.sizeDelta==imported.sizeDelta&&driven.Mask()==0,"all releases restore newly loaded authored axes across sessions");
     for(uint32_t bit=0;bit<10;++bit){DrivenProperties individual;RectLayout original;individual.Acquire(original,1u<<bit,3,1);RectLayout changed=original;
         changed.anchorMin={.1f,.2f};changed.anchorMax={.8f,.9f};changed.pivot={.3f,.7f};changed.sizeDelta={1,2};changed.anchoredPosition={3,4};
         RectLayout before=changed;

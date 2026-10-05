@@ -52,5 +52,12 @@ namespace OvCore::UI
             for (const auto& [token, claim] : m_claims) Copy(layout, claim.saved, claim.mask);
             return layout;
         }
+        void SetAuthored(RectLayout& layout, const RectLayout& value)
+        {
+            const auto driven = layout;
+            layout = value;
+            Copy(layout, driven, Mask());
+            for (auto& [token, claim] : m_claims) Copy(claim.saved, value, claim.mask);
+        }
     };
 }

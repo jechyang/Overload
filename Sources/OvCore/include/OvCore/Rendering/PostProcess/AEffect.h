@@ -5,6 +5,7 @@
 */
 
 #pragma once
+#include <OvReflection/Annotations.h>
 #include <OvDebug/Assertion.h>
 
 
@@ -16,8 +17,9 @@ namespace OvCore::Rendering::PostProcess
 	/**
 	* Base effect settings structure
 	*/
-	struct EffectSettings
+	struct OV_TYPE(Record) EffectSettings
 	{
+		OV_FIELD(Serialize, Inspect, DisplayName = "Enabled", Order = 0)
 		bool enabled = true;
 	};
 

@@ -2,6 +2,7 @@
 #include <OvCore/Helpers/Serializer.h>
 #include <OvCore/ECS/Components/CTransform.h>
 #include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
+#include <OvCore/ECS/ComponentRegistry.h>
 #include <OvCore/Reflection.generated.h>
 #include <algorithm>
 #include <cmath>
@@ -54,7 +55,7 @@ namespace OvCore::Helpers::ReflectionProperties
             return true;
         }
     }
-    static const ValueCodec* Codec(const PropertyDesc& property)
+    const ValueCodec* FindValueCodec(const PropertyDesc& property)
     {
         for (const auto& codec : GetOvCoreValueCodecs()) if (codec.key == property.Info().type.key) return &codec;
         return nullptr;
@@ -71,7 +72,7 @@ namespace OvCore::Helpers::ReflectionProperties
     }
     bool Parse(const PropertyDesc& property, std::string_view text, std::any& value)
     {
-        if (auto* codec = Codec(property)) return codec->parse(text, value);
+        if (auto* codec = FindValueCodec(property)) return codec->parse(text, value);
         bool valid = false;
         Dispatch(property, [&]<class T>()
         {
@@ -93,7 +94,9 @@ namespace OvCore::Helpers::ReflectionProperties
                     if (comma == text.npos) break;
                     text.remove_prefix(comma + 1);
                 }
-                if constexpr (std::is_same_v<T, OvMaths::FVector3>)
+                if constexpr (std::is_same_v<T, OvMaths::FVector2>)
+                { if (parts.size() == 2) { parsed = {parts[0], parts[1]}; valid = true; } }
+                else if constexpr (std::is_same_v<T, OvMaths::FVector3>)
                 { if (parts.size() == 3) { parsed = {parts[0], parts[1], parts[2]}; valid = true; } }
                 else { if (parts.size() == 4) { parsed = {parts[0], parts[1], parts[2], parts[3]}; valid = true; } }
             }
@@ -120,13 +123,21 @@ namespace OvCore::Helpers::ReflectionProperties
         OV_FORMAT(long long) OV_FORMAT(unsigned long long) OV_FORMAT(float) OV_FORMAT(double)
 #undef OV_FORMAT
         if (auto* p = std::any_cast<std::string>(&value)) return *p;
+        if (auto* p = std::any_cast<OvMaths::FVector2>(&value)) return NumberText(p->x) + "," + NumberText(p->y);
         if (auto* p = std::any_cast<OvMaths::FVector3>(&value)) return NumberText(p->x) + "," + NumberText(p->y) + "," + NumberText(p->z);
+        if (auto* p = std::any_cast<OvMaths::FVector4>(&value)) return NumberText(p->x) + "," + NumberText(p->y) + "," + NumberText(p->z) + "," + NumberText(p->w);
         if (auto* p = std::any_cast<OvMaths::FQuaternion>(&value)) return NumberText(p->x) + "," + NumberText(p->y) + "," + NumberText(p->z) + "," + NumberText(p->w);
         return {};
     }
     static bool ReadElement(const PropertyDesc& property, const tinyxml2::XMLElement& element, std::any& value)
     {
-        if (auto* codec = Codec(property)) return codec->read(property, element, value);
+        if (auto* v = std::any_cast<OvMaths::FVector2>(&value))
+        {
+            for (auto [name, field] : {std::pair{"x", &v->x}, {"y", &v->y}})
+                if (auto* child = element.FirstChildElement(name))
+                    if (!child->GetText() || !Number(child->GetText(), *field)) return false;
+            return true;
+        }
         if (auto* v = std::any_cast<OvMaths::FVector3>(&value))
         {
             for (auto [name, field] : {std::pair{"x", &v->x}, {"y", &v->y}, {"z", &v->z}})
@@ -134,26 +145,68 @@ namespace OvCore::Helpers::ReflectionProperties
                     if (!child->GetText() || !Number(child->GetText(), *field)) return false;
             return true;
         }
-        if (auto* v = std::any_cast<OvMaths::FQuaternion>(&value))
+        auto readFour = [&element](auto* v)
         {
             for (auto [name, field] : {std::pair{"x", &v->x}, {"y", &v->y}, {"z", &v->z}, {"w", &v->w}})
                 if (auto* child = element.FirstChildElement(name))
                     if (!child->GetText() || !Number(child->GetText(), *field)) return false;
             return true;
-        }
+        };
+        if (auto* v = std::any_cast<OvMaths::FVector4>(&value)) return readFour(v);
+        if (auto* v = std::any_cast<OvMaths::FQuaternion>(&value)) return readFour(v);
         if (element.FirstChildElement()) return false;
         const char* text = element.GetText();
         return Parse(property, text ? text : "", value);
     }
-    Report Stage(const MainThread& main, ObjectRef object, const TypeDesc& type, const tinyxml2::XMLNode& node, std::vector<Pending>& pending)
+    static bool Valid(const PropertyDesc& property, const std::any& value)
+    {
+        if (property.ValidateValue(value) != Error::None) return false;
+        const auto rule = Meta(property.Info().metadata, "Validate");
+        if (rule.empty()) return true;
+        if (rule == "Positive")
+        { if (auto* v = std::any_cast<float>(&value)) return *v > 0; if (auto* v = std::any_cast<double>(&value)) return *v > 0; return false; }
+        if (rule == "EnumChoice")
+        {
+            const auto* text = std::any_cast<std::string>(&value); if (!text) return false;
+            for (auto* type : ECS::GetComponentRegistry().Reflection().Types()) if (type->Info().key == property.Info().type.key)
+                for (const auto& choice : type->Info().enumerators) if (choice.decimalValue == *text) return true;
+        }
+        return false;
+    }
+    bool HasSerializedFields(const TypeDesc& type, const tinyxml2::XMLNode& node, std::string_view prefix)
+    {
+        for (auto* property : Properties(type, "Serialize"))
+        {
+            const auto& info = property->Info();
+            if (Meta(info.metadata, "Flatten") == "true")
+            {
+                if (auto* codec = FindValueCodec(*property); codec && codec->recordType &&
+                    HasSerializedFields(*codec->recordType, node, std::string(prefix) + std::string(Meta(info.metadata, "Prefix")))) return true;
+            }
+            else
+            {
+                if (node.FirstChildElement((std::string(prefix) + std::string(info.name)).c_str())) return true;
+                for (auto alias : info.aliases) if (node.FirstChildElement((std::string(prefix) + std::string(alias)).c_str())) return true;
+            }
+        }
+        return false;
+    }
+    Report Stage(const MainThread& main, ObjectRef object, const TypeDesc& type, const tinyxml2::XMLNode& node, std::vector<Pending>& pending, std::string_view prefix)
     {
         pending.clear(); Report report;
         for (auto* property : Properties(type, "Serialize"))
         {
             const auto& info = property->Info(); Result result{std::string(info.id)};
-            const auto* element = node.FirstChildElement(std::string(info.name).c_str());
+            const auto* codec = FindValueCodec(*property);
+            std::string childPrefix;
+            const tinyxml2::XMLNode* element = node.FirstChildElement((std::string(prefix) + std::string(info.name)).c_str());
             // Canonical key wins; aliases are consulted only when the key is absent.
-            if (!element) for (auto alias : info.aliases) if ((element = node.FirstChildElement(std::string(alias).c_str()))) break;
+            if (!element) for (auto alias : info.aliases) if ((element = node.FirstChildElement((std::string(prefix) + std::string(alias)).c_str()))) break;
+            if (Meta(info.metadata, "Flatten") == "true")
+            {
+                childPrefix = std::string(prefix) + std::string(Meta(info.metadata, "Prefix"));
+                element = codec && codec->recordType && HasSerializedFields(*codec->recordType, node, childPrefix) ? &node : nullptr;
+            }
             if (auto error = main.Check(info.thread); error != Error::None) result = {result.property, Status::AccessDenied, error};
             else if (info.readOnly || object.IsConst()) result.status = Status::ReadOnly;
             else
@@ -171,7 +224,9 @@ namespace OvCore::Helpers::ReflectionProperties
                     }
                     if (result.Ok())
                     {
-                        if ((element && !ReadElement(*property, *element, value)) || property->ValidateValue(value) != Error::None) result.status = Status::Invalid;
+                        const bool parsed = !element || (codec ? codec->read(main, *property, *element, value, childPrefix) :
+                            element->ToElement() && ReadElement(*property, *element->ToElement(), value));
+                        if (!parsed || !Valid(*property, value)) result.status = Status::Invalid;
                         else { pending.push_back({property, std::move(value)}); result.status = element ? Status::Applied : Status::Defaulted; }
                     }
                 }
@@ -181,7 +236,7 @@ namespace OvCore::Helpers::ReflectionProperties
         if (!report.Ok()) pending.clear();
         return report;
     }
-    Report Serialize(const MainThread& main, ObjectRef object, const TypeDesc& type, tinyxml2::XMLDocument& doc, tinyxml2::XMLNode& node, std::span<const Hooks> hooks)
+    Report Serialize(const MainThread& main, ObjectRef object, const TypeDesc& type, tinyxml2::XMLDocument& doc, tinyxml2::XMLNode& node, std::span<const Hooks> hooks, std::string_view prefix)
     {
         if (node.GetDocument() != &doc) return {{{std::string(type.Info().id), Status::Invalid}}};
         auto hook = Meta(type.Info().metadata, "SerializeHook");
@@ -197,19 +252,24 @@ namespace OvCore::Helpers::ReflectionProperties
             if (auto error = property->ReadValue(main, object, value); error != Error::None) result = {result.property, Status::AccessDenied, error};
             else
             {
-                if (auto* codec = Codec(*property))
+                if (!Valid(*property, value)) { report.fields.push_back({result.property, Status::Invalid}); continue; }
+                if (auto* codec = FindValueCodec(*property))
                 {
-                    auto* element = doc.NewElement(std::string(property->Info().name).c_str());
-                    staging->InsertEndChild(element);
-                    if (!codec->write(*property, doc, *element, value)) result.status = Status::Invalid;
+                    const bool flat = Meta(property->Info().metadata, "Flatten") == "true";
+                    tinyxml2::XMLNode* element = staging;
+                    if (!flat) { element = doc.NewElement((std::string(prefix) + std::string(property->Info().name)).c_str()); staging->InsertEndChild(element); }
+                    auto childPrefix = flat ? std::string(prefix) + std::string(Meta(property->Info().metadata, "Prefix")) : std::string{};
+                    if (!codec->write(main, *property, doc, *element, value, childPrefix)) result.status = Status::Invalid;
                     report.fields.push_back(result);
                     continue;
                 }
                 std::any checked;
                 if (!Parse(*property, Format(value), checked))
                 { report.fields.push_back({result.property, Status::Invalid}); continue; }
-                std::string name(property->Info().name);
-                if (auto* v = std::any_cast<OvMaths::FVector3>(&value)) Serializer::SerializeVec3(doc, staging, name, *v);
+                std::string name = std::string(prefix) + std::string(property->Info().name);
+                if (auto* v = std::any_cast<OvMaths::FVector2>(&value)) Serializer::SerializeVec2(doc, staging, name, *v);
+                else if (auto* v = std::any_cast<OvMaths::FVector3>(&value)) Serializer::SerializeVec3(doc, staging, name, *v);
+                else if (auto* v = std::any_cast<OvMaths::FVector4>(&value)) Serializer::SerializeVec4(doc, staging, name, *v);
                 else if (auto* q = std::any_cast<OvMaths::FQuaternion>(&value)) Serializer::SerializeQuat(doc, staging, name, *q);
                 else
                 {
@@ -245,7 +305,7 @@ namespace OvCore::Helpers::ReflectionProperties
         {
             try
             {
-                if (auto* codec = Codec(*entry.property); codec && !codec->resolve(main, entry.value))
+                if (auto* codec = FindValueCodec(*entry.property); codec && !codec->resolve(main, entry.value))
                 { report.fields.push_back({std::string(entry.property->Info().id), Status::Invalid}); return report; }
                 if (auto error = entry.property->ValidateValue(entry.value); error != Error::None)
                 { report.fields.push_back({std::string(entry.property->Info().id), Status::Invalid, error}); return report; }

@@ -1,6 +1,7 @@
 #include "Frontend/SchemaExtraction.h"
 
 #include <filesystem>
+#include <algorithm>
 #include <set>
 
 #include <clang/AST/ASTContext.h>
@@ -117,7 +118,7 @@ namespace OvReflectGen
                     const auto* definition = enumeration->getDecl()->getDefinition();
                     if (!definition || !Annotation(definition)) Error(decl, "enum value type requires a complete OV_TYPE declaration");
                 }
-                else if (out.valueType == "OvMaths::FVector3" || out.valueType == "OvMaths::FQuaternion") out.category = "value-adapter";
+                else if (out.valueType == "OvMaths::FVector2" || out.valueType == "OvMaths::FVector3" || out.valueType == "OvMaths::FVector4" || out.valueType == "OvMaths::FQuaternion") out.category = "value-adapter";
                 else if (ResourceReference(value)) out.category = "resource-reference";
                 else if (ResourceArray(value)) out.category = "resource-array";
                 else if (const auto* record = value->getAsCXXRecordDecl(); record && record->getQualifiedNameAsString() == "std::basic_string")
@@ -132,6 +133,11 @@ namespace OvReflectGen
                     auto pointee = value->getPointeeType();
                     if (const auto* object = pointee->getAsCXXRecordDecl(); object && !pointee.isVolatileQualified() &&
                         object->getDefinition() && Annotation(object->getDefinition())) out.category = "object-handle";
+                }
+                if (out.category.empty()) if (const auto* record = value->getAsCXXRecordDecl(); record && record->getDefinition())
+                {
+                    Metadata metadata;
+                    if (Annotation(record->getDefinition()) && MetadataFor(record->getDefinition(), "type", metadata) && metadata.Has("Record")) out.category = "record-adapter";
                 }
                 if (out.category.empty()) Error(decl, "unsupported reflected type: " + out.display);
                 if (value->isBuiltinType() && !value->isVoidType() && !value->isDependentType()) out.bits = static_cast<unsigned>(context.getTypeSize(value));
@@ -188,6 +194,16 @@ namespace OvReflectGen
             void CheckScript(const Metadata& metadata, clang::QualType result, const std::vector<clang::QualType>& arguments, const clang::Decl* decl)
             {
                 if (!metadata.Has("Script")) return;
+                auto recordValue = [&](clang::QualType value) {
+                    if (const auto* record = value.getNonReferenceType().getUnqualifiedType()->getAsCXXRecordDecl(); record && record->hasDefinition())
+                    {
+                        Metadata policy;
+                        return MetadataFor(record->getDefinition(), "type", policy) && policy.Has("Record");
+                    }
+                    return false;
+                };
+                if (recordValue(result) || std::any_of(arguments.begin(), arguments.end(), recordValue))
+                    Error(decl, "Record value adapters cannot export Script signatures");
                 if (result->isLValueReferenceType() && metadata.Get("Return") != "Copy")
                     Error(decl, "Script reference return requires Return = Copy");
                 bool object = result.getNonReferenceType()->isPointerType();
@@ -217,6 +233,7 @@ namespace OvReflectGen
                 out.readOnly = out.metadata.Has("ReadOnly") || field->getType().isConstQualified();
                 out.source = Location(field);
                 out.type = Reference(field->getType(), field, false, out.metadata.Has("Script"));
+                if (out.type.category == "record-adapter" && out.metadata.Has("Script")) Error(field, "Record value adapters cannot export Script signatures");
                 CheckResourceProperty(out, field);
                 CheckScript(out.metadata, field->getType(), {}, field);
                 type.properties.push_back(std::move(out));
@@ -242,6 +259,7 @@ namespace OvReflectGen
                 out.access = Access(getter);
                 out.source = Location(getter);
                 out.type = Reference(getter->getReturnType(), getter, false, out.metadata.Has("Script"));
+                if (out.type.category == "record-adapter" && out.metadata.Has("Script")) Error(getter, "Record value adapters cannot export Script signatures");
                 CheckResourceProperty(out, getter);
                 CheckScript(out.metadata, getter->getReturnType(), {}, getter);
                 out.readOnly = out.metadata.Has("ReadOnly");
@@ -349,6 +367,20 @@ namespace OvReflectGen
                         if (record->isUnion()) Error(record, "reflected union is unsupported");
                         if (record->getDescribedClassTemplate() || llvm::isa<clang::ClassTemplateSpecializationDecl>(record)) Error(record, "reflected templates are unsupported");
                         CheckHierarchy(record, record);
+                        if (type.metadata.Has("Record"))
+                        {
+                            if (type.metadata.Has("Component") || !record->isAggregate()) Error(record, "Record requires a non-component aggregate value type");
+                            for (const auto& base : record->bases())
+                            {
+                                Metadata policy;
+                                const auto* parent = base.getType()->getAsCXXRecordDecl();
+                                if (!parent || !parent->hasDefinition() || !MetadataFor(parent->getDefinition(), "type", policy) || !policy.Has("Record"))
+                                    Error(record, "Record bases must also declare OV_TYPE(Record)");
+                            }
+                            for (const auto* field : record->fields())
+                                if (!Annotation(field) || field->getAccess() != clang::AS_public || field->getType().isConstQualified())
+                                    Error(field, "Record fields require public writable OV_FIELD declarations");
+                        }
                         for (const auto& base : record->bases())
                         {
                             type.bases.push_back({Spelling(base.getType().getCanonicalType()), "public"});
@@ -373,6 +405,7 @@ namespace OvReflectGen
                             if (const auto* field = llvm::dyn_cast<clang::FieldDecl>(member)) Field(field, record, type);
                             else if (const auto* method = llvm::dyn_cast<clang::CXXMethodDecl>(member))
                             {
+                                if (type.metadata.Has("Record")) Error(method, "Record reflection supports fields only");
                                 if (Annotation(method)->getAnnotation().starts_with("ov.property:")) PropertyGetter(method, record, type);
                                 else ExportMethod(method, record, type);
                             }
@@ -387,7 +420,7 @@ namespace OvReflectGen
                     else if (const auto* enumeration = llvm::dyn_cast<clang::EnumDecl>(definition))
                     {
                         type.kind = enumeration->isScoped() ? "enum class" : "enum";
-                        if (type.metadata.Has("Component") || type.metadata.Has("Factory") || type.metadata.Has("Lookup")) Error(enumeration, "enum cannot use Component/Factory/Lookup policies");
+                        if (type.metadata.Has("Component") || type.metadata.Has("Record") || type.metadata.Has("Factory") || type.metadata.Has("Lookup")) Error(enumeration, "enum cannot use Component/Record/Factory/Lookup policies");
                         type.underlying = Reference(enumeration->getIntegerType(), enumeration);
                         for (const auto* value : enumeration->enumerators())
                         {
