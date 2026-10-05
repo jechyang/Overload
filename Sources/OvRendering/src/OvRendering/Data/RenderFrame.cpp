@@ -44,6 +44,7 @@ namespace OvRendering::Data
     }
     RenderFrame::Completion RenderFrame::GetCompletion() const
     { return Completion(m_storage ? m_storage->shared : nullptr); }
+    size_t RenderFrame::GetExecutedCommandCount() const { return m_storage?m_storage->commands.GetExecutedCount():0; }
     void RenderFrame::Append(RenderCommandList&& commands) { AppendImpl(std::move(commands), false); }
     void RenderFrame::AppendRecording(RenderCommandList&& commands) { AppendImpl(std::move(commands), true); }
     void RenderFrame::AppendImpl(RenderCommandList&& commands, bool prepared)

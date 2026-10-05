@@ -39,6 +39,7 @@ namespace OvCore::Rendering
         OvRendering::Data::FrameInfo m_info;
         OvRendering::Data::RenderPlan m_plan;
         std::optional<OvRendering::Data::CompiledRenderPlan> m_compiled;
+        std::shared_ptr<const OvRendering::Core::RenderResourceMapping> m_mapping;
         std::vector<std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot>> m_views;
         std::vector<std::shared_ptr<const OvRendering::Data::PreparedFrameData>> m_prepared;
         // Registers histories before speculative owner state advances. Destruction,

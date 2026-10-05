@@ -7,6 +7,7 @@
 #include <map>
 #include <limits>
 #include <OvRendering/Utils/Profiling.h>
+#include <OvRendering/Core/RenderTargetPool.h>
 using namespace OvRendering::Data;
 namespace { CompiledRenderPlan CompileAccesses(const RenderPlan&,std::span<const std::shared_ptr<const RenderSceneSnapshot>>); }
 RenderPlan::RenderPlan() { static std::atomic_uint64_t next{1}; m_scope=next++; }
@@ -53,7 +54,7 @@ CompiledRenderPlan RenderPlan::Compile(std::span<const std::shared_ptr<const Ren
         gpuScopeDepth+=pass.gpuScopesBegin.size();require(pass.gpuScopesEnd<=gpuScopeDepth,"Unmatched GPU scope");gpuScopeDepth-=pass.gpuScopesEnd;
         if (pass.view==RenderPlanPass::NoView)
         {
-            require(!pass.name.empty()&&bool(pass.operation),"Independent pass needs an owned operation");
+            require(!pass.name.empty()&&(bool(pass.operation)||bool(pass.prepareOperation)),"Independent pass needs an owned operation");
             require(pass.stages.empty()&&pass.reads.empty()&&pass.writes.empty(),"Independent pass uses view-specific fields");
             for(const auto& access:pass.accesses)
                 if((access.type==ResourceAccessType::Attachment||access.type==ResourceAccessType::CopyDestination||access.type==ResourceAccessType::MipmapDestination)&&
@@ -184,13 +185,18 @@ void RenderPlan::GenerateMipmaps(std::string name,const std::shared_ptr<baregl::
     if(desc.mips>1)pass.accesses.push_back({*found,{desc.aspect,1,static_cast<uint16_t>(desc.mips-1),0,desc.layers},ResourceAccessType::MipmapDestination,AttachmentLoad::DontCare,AttachmentStore::Store,true});
     pass.operation=[texture] {return [texture](auto&) {texture->GenerateMipmaps();};};passes.push_back(std::move(pass));
 }
-void RenderPlan::RecordOperations(RenderCommandList& commands,std::span<RenderCommandList> blocks) const
+void RenderPlan::RecordOperations(RenderCommandList& commands,std::span<RenderCommandList> blocks,
+    std::shared_ptr<const Core::RenderResourceMapping> mapping) const
 {
+    if(mapping)commands.KeepUntilRetired(mapping);
     std::vector<std::pair<size_t,const tracy::SourceLocationData*>> scopes;
     for(const auto& pass:passes)
     {
         for(const auto* source:pass.gpuScopesBegin)scopes.emplace_back(commands.GetPendingCount(),source);
-        if(pass.view==RenderPlanPass::NoView)commands.AppendDeferred(pass.operation);
+        if(pass.view==RenderPlanPass::NoView) {
+            if(pass.prepareOperation){if(!mapping)throw std::logic_error("RenderPlan: missing physical resource mapping");commands.AppendDeferred(pass.prepareOperation(*mapping));}
+            else commands.AppendDeferred(pass.operation);
+        }
         else {if(pass.view>=blocks.size())throw std::invalid_argument("RenderPlan: missing recorded view block");commands.Append(std::move(blocks[pass.view]));}
         for(size_t i=0;i<pass.gpuScopesEnd;++i) {
             if(scopes.empty())throw std::invalid_argument("RenderPlan: unmatched GPU scope");

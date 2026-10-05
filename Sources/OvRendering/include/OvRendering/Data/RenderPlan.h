@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 namespace tracy { struct SourceLocationData; }
+namespace OvRendering::Core { class RenderResourceMapping; }
 
 namespace OvRendering::Data
 {
@@ -37,6 +38,8 @@ namespace OvRendering::Data
         // A view-independent operation owns immutable inputs. Encoding can run
         // after resource preparation without touching a Material, ECS or panel.
         RenderCommandList::OperationFactory operation;
+        // Main resolves logical resources once, before immutable encoding jobs.
+        std::function<RenderCommandList::OperationFactory(const Core::RenderResourceMapping&)> prepareOperation;
         std::vector<ResourceAccess> accesses;
         std::vector<size_t> after;
         std::vector<const tracy::SourceLocationData*> gpuScopesBegin;
@@ -68,7 +71,8 @@ namespace OvRendering::Data
             std::vector<ResourceRange> initialized={});
         std::optional<ResourceHandle> Find(const baregl::Texture::Snapshot&) const;
         void GenerateMipmaps(std::string name,const std::shared_ptr<baregl::Texture>&);
-        void RecordOperations(RenderCommandList&,std::span<RenderCommandList> viewBlocks={}) const;
+        void RecordOperations(RenderCommandList&,std::span<RenderCommandList> viewBlocks={},
+            std::shared_ptr<const Core::RenderResourceMapping> mapping={}) const;
         CompiledRenderPlan Compile(std::span<const std::shared_ptr<const RenderSceneSnapshot>> views={}) const;
         uint64_t Scope() const { return m_scope; }
     private:

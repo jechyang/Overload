@@ -74,7 +74,7 @@ namespace OvRendering::Data
         RenderCommandList(RenderCommandList&& other) noexcept :
             m_operations(std::move(other.m_operations)), m_state(other.m_state), m_executed(other.m_executed),
             m_completion(std::move(other.m_completion)), m_histories(std::move(other.m_histories)),
-            m_children(std::move(other.m_children)), m_deferred(std::move(other.m_deferred))
+            m_children(std::move(other.m_children)), m_deferred(std::move(other.m_deferred)), m_retained(std::move(other.m_retained))
         { other.m_state = State::CANCELLED; other.m_executed = 0; }
         RenderCommandList& operator=(RenderCommandList&&) = delete;
 
@@ -106,6 +106,11 @@ namespace OvRendering::Data
             catch (...) { FailRecording(); throw; }
         }
         using OperationFactory = std::function<Operation()>;
+        void KeepUntilRetired(std::shared_ptr<const void> lease)
+        {
+            if(m_state!=State::RECORDING||!lease)throw std::logic_error("Invalid frame lease");
+            try {m_retained.push_back(std::move(lease));}catch(...){FailRecording();throw;}
+        }
         // Reserve the exact execution position now; encode only owned, immutable
         // inputs later. Each factory has an exclusive output slot, never the parent
         // command buffer. GPU read/write dependencies remain in append order.
@@ -162,6 +167,7 @@ namespace OvRendering::Data
                 m_deferred.reserve(m_deferred.size() + child.m_deferred.size());
                 m_histories.reserve(m_histories.size() + child.m_histories.size());
                 m_children.reserve(m_children.size() + child.m_children.size() + 1);
+                m_retained.reserve(m_retained.size()+child.m_retained.size());
                 for (auto& history : child.m_histories)
                 {
                     if (history.previous == m_completion ||
@@ -172,8 +178,10 @@ namespace OvRendering::Data
                 for (auto& operation : child.m_operations) m_operations.push_back(std::move(operation));
                 for (auto& deferred : child.m_deferred) m_deferred.push_back(std::move(deferred));
                 for (auto& completion : child.m_children) m_children.push_back(std::move(completion));
+                for(auto& lease:child.m_retained)m_retained.push_back(std::move(lease));
                 m_children.push_back(std::move(child.m_completion));
                 child.m_operations.clear(); child.m_deferred.clear(); child.m_histories.clear(); child.m_children.clear();
+                child.m_retained.clear();
                 child.m_state = State::CANCELLED; // Ownership transferred, not a cancellation publication.
             }
             catch (...) { FailRecording(); child.Cancel(); throw; }
@@ -185,6 +193,7 @@ namespace OvRendering::Data
             if (m_state != State::RECORDING) throw std::logic_error("Cannot fail a sealed recording");
             SetTerminal(State::FAILED);
             m_operations.clear(); m_deferred.clear();
+            m_retained.clear();
         }
         void Seal(OvTools::Jobs::JobSystem* jobs = nullptr)
         {
@@ -197,8 +206,9 @@ namespace OvRendering::Data
             if (m_state != State::RECORDING && m_state != State::READY) throw std::logic_error("Command list cannot be cancelled");
             SetTerminal(State::CANCELLED);
             m_operations.clear(); m_deferred.clear();
+            m_retained.clear();
         }
-        void Execute(Context::Driver& driver) { ExecuteRetained(driver, {}, false); }
+        void Execute(Context::Driver& driver);
         State GetState() const { return m_state; }
         size_t GetPendingCount() const { return m_operations.size(); }
         size_t GetExecutedCount() const { return m_executed; }
@@ -228,7 +238,7 @@ namespace OvRendering::Data
             }
         }
         void ReleaseRetained() noexcept
-        { m_operations.clear(); m_deferred.clear(); m_histories.clear(); m_children.clear(); }
+        { m_operations.clear(); m_deferred.clear(); m_histories.clear(); m_children.clear(); m_retained.clear(); }
         void InvalidateHistories() noexcept
         { for (const auto& history : m_histories) history.epoch->store(true, std::memory_order_release); }
         void SetTerminal(State state, bool retain = false) noexcept
@@ -259,5 +269,6 @@ namespace OvRendering::Data
         std::vector<HistoryUse> m_histories;
         std::vector<std::shared_ptr<std::atomic<State>>> m_children;
         std::vector<std::shared_ptr<Deferred>> m_deferred;
+        std::vector<std::shared_ptr<const void>> m_retained;
     };
 }

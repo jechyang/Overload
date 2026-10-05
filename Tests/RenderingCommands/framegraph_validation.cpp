@@ -2,10 +2,22 @@
 #include "../Skinning/serial_validation.cpp"
 #undef main
 #include <OvRendering/Data/RenderFrame.h>
+#include <OvRendering/Core/RenderTargetPool.h>
+#include <baregl/ResourceLifetime.h>
 #include <iostream>
 using namespace OvRendering::Data;
 namespace
 {
+    struct PoolSyncHooks
+    {
+        inline static PFNGLFENCESYNCPROC fence;
+        inline static PFNGLCLIENTWAITSYNCPROC wait;
+        inline static bool timeout=false,failFence=false,failWait=false;
+        static GLsync APIENTRY Fence(GLenum c,GLbitfield f){return failFence?nullptr:fence(c,f);}
+        static GLenum APIENTRY Wait(GLsync s,GLbitfield f,GLuint64 n){return failWait?GL_WAIT_FAILED:timeout?GL_TIMEOUT_EXPIRED:wait(s,f,n);}
+        PoolSyncHooks(){fence=glad_glFenceSync;wait=glad_glClientWaitSync;timeout=failFence=failWait=false;glad_glFenceSync=Fence;glad_glClientWaitSync=Wait;}
+        ~PoolSyncHooks(){glad_glFenceSync=fence;glad_glClientWaitSync=wait;}
+    };
     PlanResourceDesc ColorDesc(unsigned w=64,unsigned h=32)
     {
         PlanResourceDesc desc;desc.texture.width=w;desc.texture.height=h;
@@ -18,6 +30,95 @@ namespace
     {
         RenderPlanPass pass;pass.name=std::move(name);pass.view=RenderPlanPass::NoView;pass.accesses=std::move(accesses);
         pass.operation=[] { return [](auto&) {}; };return pass;
+    }
+    void PoolValidation(const std::filesystem::path& output)
+    {
+        OvWindowing::Settings::DeviceSettings ds;ds.contextMajorVersion=4;ds.contextMinorVersion=5;
+        OvWindowing::Context::Device device(ds);OvWindowing::Settings::WindowSettings ws;ws.visible=false;ws.focused=false;ws.width=64;ws.height=32;ws.samples=1;
+        OvWindowing::Window window(device,ws);window.MakeCurrentContext();OvRendering::Context::Driver driver(OvRendering::Settings::DriverSettings{true});
+        auto domain=std::make_unique<baregl::DeletionQueue>();
+        auto pool=std::make_shared<OvRendering::Core::RenderTargetPool>();
+        RenderPlan plan;const auto a=plan.CreateTransient("A",ColorDesc()),b=plan.CreateTransient("B",ColorDesc());
+        auto result=std::make_shared<std::vector<uint8_t>>();
+        for(const auto handle:{a,b}) {
+            auto clear=Node("clear",{{handle,{},ResourceAccessType::Attachment,AttachmentLoad::Clear}});clear.operation={};
+            clear.prepareOperation=[handle](const auto& mapping)->RenderCommandList::OperationFactory {
+                const auto target=mapping.Target(handle);return [target,handle] {return [target,handle](auto&) {const float color[]={handle.index?.75f:.25f,.5f,1,1};glClearNamedFramebufferfv(target.GetID(),GL_COLOR,0,color);};};
+            };plan.passes.push_back(std::move(clear));
+            auto read=Node("readback",{{handle,{},ResourceAccessType::Readback}});read.operation={};
+            read.prepareOperation=[handle,result](const auto& mapping)->RenderCommandList::OperationFactory {
+                const auto target=mapping.Target(handle);return [target,result] {return [target,result](auto&) {std::vector<uint8_t> pixels(64*32*4);target.ReadRGBA8(pixels);result->insert(result->end(),pixels.begin(),pixels.end());};};
+            };plan.passes.push_back(std::move(read));
+        }
+        const auto compiled=plan.Compile();
+        auto mapping=pool->Realize(plan,compiled);
+        Require(mapping->TextureStorage(a)==mapping->TextureStorage(b)&&mapping->PhysicalID(a)==mapping->PhysicalID(b),"nonoverlapping transients did not share real GL storage");
+        const auto original=mapping->TextureStorage(a).GetID();
+        std::ofstream(output/"pooled-plan.txt")<<compiled.Dump()<<mapping->Dump();
+        RenderCommandList commands;plan.RecordOperations(commands,{},mapping);commands.Seal();mapping.reset();
+        PoolSyncHooks hooks;RenderFrame frame;frame.Append(std::move(commands));frame.Seal();Require(frame.Submit(driver),"pooled frame submission failed");
+        PoolSyncHooks::timeout=true;Require(!frame.Poll()&&pool->GetStatistics().leasedTargets==1,"GPU timeout returned an active lease to pool");
+        auto inFlight=pool->Realize(plan,compiled);Require(inFlight->TextureStorage(a).GetID()!=original,"in-flight storage was reused by another frame");inFlight.reset();
+        PoolSyncHooks::timeout=false;frame.Wait();Require(frame.GetCompletion().Succeeded()&&pool->GetStatistics().leasedTargets==0,"frame retirement did not release pool lease");
+        Require(result->size()==64*32*4*2&&(*result)[0]==64&&(*result)[64*32*4]==191,"aliased logical contents were corrupted");
+        const auto golden=*result;
+        const auto allocations=pool->GetStatistics().allocations;
+        {auto ready=pool->Realize(plan,compiled);RenderCommandList list;plan.RecordOperations(list,{},ready);ready.reset();list.Seal();list.Execute(driver);Require(list.GetCompletion().Succeeded()&&pool->GetStatistics().leasedTargets==0,"immediate lease did not use GPU retirement");}
+        Require(pool->GetStatistics().allocations==allocations,"warm pool allocated another target");
+        {
+            OvTools::Jobs::JobSystem jobs(2);auto map=pool->Realize(plan,compiled);
+            RenderCommandList parallel;plan.RecordOperations(parallel,{},map);map.reset();
+            std::atomic_bool workerStarted=false;std::atomic_uint encoded=0;
+            for(unsigned i=0;i<256;++i)parallel.AppendDeferred([&,i] {
+                if(!jobs.IsMainThread())workerStarted=true;
+                if(i==0)while(!workerStarted.load())std::this_thread::yield();
+                ++encoded;return [](auto&){};
+            });
+            parallel.Seal(&jobs);Require(encoded==256&&workerStarted,"immutable pool commands did not encode on Workers");
+            parallel.Execute(driver);Require(pool->GetStatistics().leasedTargets==0,"parallel immediate commands stranded lease");
+        }
+        {auto noReuse=pool->Realize(plan,compiled,false);Require(noReuse->TextureStorage(a)!=noReuse->TextureStorage(b),"diagnostic no-reuse still aliases resources");
+            result->clear();RenderCommandList list;plan.RecordOperations(list,{},noReuse);noReuse.reset();list.Seal();list.Execute(driver);Require(*result==golden,"reuse/no-reuse GL images differ");}
+        auto overlap=plan;overlap.passes[2].accesses.push_back({a,{},ResourceAccessType::Sample});
+        {auto map=pool->Realize(overlap,overlap.Compile());Require(map->TextureStorage(a)!=map->TextureStorage(b),"same-pass read/write lifetimes were aliased");}
+        auto incompatible=plan;incompatible.resources[b.index].descriptor->texture.minFilter=baregl::types::ETextureFilteringMode::NEAREST;
+        {auto map=pool->Realize(incompatible,incompatible.Compile());Require(map->TextureStorage(a)!=map->TextureStorage(b),"incompatible sampler state was reused");}
+        for(unsigned difference=0;difference<4;++difference) {
+            auto changed=plan;auto& desc=*changed.resources[b.index].descriptor;
+            if(difference==0)desc.texture.internalFormat=baregl::types::EInternalFormat::RGBA16F;
+            if(difference==1)desc.texture.width=32;
+            if(difference==2)desc.texture.horizontalWrap=baregl::types::ETextureWrapMode::CLAMP_TO_EDGE;
+            if(difference==3){desc.texture.useMipMaps=true;desc.mips=7;}
+            auto map=pool->Realize(changed,changed.Compile());Require(map->TextureStorage(a)!=map->TextureStorage(b),"incompatible format/extent/wrap/mips was reused");
+        }
+        for(int fault=0;fault<5;++fault) {
+            auto map=pool->Realize(plan,compiled);RenderCommandList list;list.KeepUntilRetired(map);map.reset();
+            if(fault==0){list.AppendDeferred([]()->RenderCommandList::Operation {throw std::runtime_error("encode failed");});bool failed=false;try{list.Seal();}catch(...){failed=true;}Require(failed&&pool->GetStatistics().leasedTargets==0,"record failure stranded pool lease");continue;}
+            list.Append([fault](auto&){if(fault==2)throw std::runtime_error("execute failed after GPU prefix");});list.Seal();RenderFrame failed;failed.Append(std::move(list));failed.Seal();
+            if(fault==1){failed.Cancel();Require(pool->GetStatistics().leasedTargets==0,"cancelled frame stranded pool lease");continue;}
+            PoolSyncHooks::failFence=fault==3;failed.Submit(driver);PoolSyncHooks::failWait=fault==4;
+            if(fault!=3)Require(pool->GetStatistics().leasedTargets==1,"failed frame returned storage before drain");
+            failed.Wait();PoolSyncHooks::failFence=PoolSyncHooks::failWait=false;
+            Require(!failed.GetCompletion().Succeeded()&&pool->GetStatistics().leasedTargets==0,"GPU failure did not drain/release lease");
+        }
+        // Allocation failure must roll back all previously acquired targets.
+        auto broken=plan;broken.resources[b.index].descriptor->texture.width=100000;
+        bool rolledBack=false;try{pool->Realize(broken,compiled);}catch(...){rolledBack=true;}
+        Require(rolledBack&&pool->GetStatistics().leasedTargets==0,"partial allocation failure stranded a reservation");
+        pool->SetIdleBudget(0);Require(pool->GetStatistics().idleTargets==0,"idle budget did not evict retired targets");
+        {auto map=pool->Realize(plan,compiled);const auto id=map->TextureStorage(a).GetID();
+            std::thread release([map=std::move(map)]{});release.join();
+            Require(pool->GetStatistics().leasedTargets==0&&domain->GetPendingCount()>0,"Worker release bypassed GL owner deletion queue");
+            domain->Drain();Require(!glIsTexture(id),"owner did not drain evicted Worker captures");}
+        auto pinned=pool->Realize(plan,compiled);const auto pinID=pinned->TextureStorage(a).GetID();pool->Close();
+        Require(glIsTexture(pinID)&&pool->GetStatistics().leasedTargets==1,"pool close invalidated active frame storage");pinned.reset();Require(!glIsTexture(pinID),"closed pool failed to release final lease");
+        bool closed=false;try{pool->Realize(plan,compiled);}catch(...){closed=true;}Require(closed,"closed pool reused another context");
+        auto oldDomainPool=std::make_shared<OvRendering::Core::RenderTargetPool>();auto old=oldDomainPool->Realize(plan,compiled);const auto oldStorage=old->TextureStorage(a);old.reset();
+        domain->Close();domain.reset();Require(oldStorage.GetID()==0,"closed domain did not invalidate pooled storage");
+        domain=std::make_unique<baregl::DeletionQueue>();bool foreign=false;try{oldDomainPool->Realize(plan,compiled);}catch(...){foreign=true;}Require(foreign,"pool reused a previous context domain");oldDomainPool.reset();
+        {OvRendering::Core::RenderTargetPool fresh;auto map=fresh.Realize(plan,compiled);Require(map->TextureStorage(a).GetID()!=0,"new resource domain could not allocate");}
+        Require(glGetError()==GL_NO_ERROR,"pool GL validation failed");
+        std::cout<<"PASS: real transient aliasing, overlapping/sampler separation, warm reuse, no-reuse, delayed GPU lease, immediate retirement, cancellation/encode/execute/fence/wait failure, rollback, idle eviction, close and domain rebuild\n";
     }
     void ContractValidation(const std::filesystem::path& output)
     {
@@ -127,5 +228,5 @@ namespace
 }
 int main(int argc,char** argv) try
 {
-    Require(argc==2,"expected evidence directory");ContractValidation(argv[1]);OperationValidation();PostProcessValidation(argv[1]);return 0;
+    Require(argc==2,"expected evidence directory");ContractValidation(argv[1]);OperationValidation();PoolValidation(argv[1]);PostProcessValidation(argv[1]);return 0;
 }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}

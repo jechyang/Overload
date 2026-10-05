@@ -40,5 +40,7 @@ namespace baregl
         void Adopt(uint32_t id);
         bool IsContextAlive() const noexcept;
         bool HasOwnerQueue() const noexcept { return static_cast<bool>(m_state); }
+        // GL owner only. A retained identity prevents reuse across deletion domains.
+        static std::shared_ptr<const void> CurrentDomain();
     };
 }

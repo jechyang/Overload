@@ -43,6 +43,7 @@ std::unique_ptr<SceneFrame> RenderFrontend::PrepareFrame(std::unique_ptr<SceneFr
     RequireOwner();
     if (!frame || !frame->m_prepared.empty()) throw std::invalid_argument("Frame missing or already prepared");
     frame->m_compiled = frame->m_plan.Compile(frame->m_views);
+    frame->m_mapping=m_pool->Realize(frame->m_plan,*frame->m_compiled);
     frame->m_prepared = OvRendering::Core::RenderTaskCoordinator::PrepareViews(frame->m_views,state,jobs,cancel);
     for(const auto& prepared:frame->m_prepared)for(const auto& draw:prepared->GetDraws())
     {
@@ -60,7 +61,7 @@ OvRendering::Data::RenderCommandList RenderFrontend::RecordFrame(std::unique_ptr
     std::vector<std::optional<baregl::Framebuffer::Snapshot>> targets(frame->m_views.size());
     for (const auto& pass : frame->m_plan.passes) if(pass.view!=OvRendering::Data::RenderPlanPass::NoView) targets[pass.view] = pass.target;
     auto blocks = OvRendering::Core::RenderTaskCoordinator::RecordViews(frame->m_prepared,targets,m_recorder,jobs,cancel);
-    frame->m_plan.RecordOperations(frame->m_commands,blocks);
+    frame->m_plan.RecordOperations(frame->m_commands,blocks,frame->m_mapping);
     frame->m_commands.Seal();
     return std::move(frame->m_commands);
 }

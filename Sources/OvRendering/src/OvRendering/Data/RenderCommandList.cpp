@@ -5,8 +5,26 @@
 */
 
 #include <OvRendering/Data/RenderCommandList.h>
+#include <OvRendering/Data/RenderFrame.h>
 #include <OvTools/Jobs/JobSystem.h>
 #include <tracy/Tracy.hpp>
+
+void OvRendering::Data::RenderCommandList::Execute(Context::Driver& driver)
+{
+    if(m_retained.empty()){ExecuteRetained(driver,{},false);return;}
+    if(m_state!=State::READY)throw std::logic_error("Command list is not ready");
+    // Immediate lists with pooled storage use the existing frame fence protocol.
+    // Queue submission continues to execute without waiting through RenderFrame.
+    const auto completion=m_completion;
+    RenderFrame frame;frame.Append(std::move(*this));frame.Seal();
+    frame.Submit(driver);frame.Wait();
+    m_completion=completion;m_executed=frame.GetExecutedCommandCount();
+    m_state=completion->load(std::memory_order_acquire);
+    if(!frame.GetCompletion().Succeeded()) {
+        m_state=State::FAILED;m_completion->store(m_state,std::memory_order_release);
+        frame.GetCompletion().RethrowIfFailed();
+    }
+}
 
 void OvRendering::Data::RenderCommandList::EncodeDeferred(OvTools::Jobs::JobSystem* jobs)
 {

@@ -51,6 +51,7 @@ namespace
 }
 namespace baregl
 {
+    std::shared_ptr<const void> ResourceLifetime::CurrentDomain() { return current; }
     DeletionQueue::DeletionQueue(std::function<void()> wake)
     {
         if (current) throw std::logic_error("A deletion queue is already bound to this thread");

@@ -6,6 +6,7 @@
 #include <OvRendering/Core/MeshCommandRecorder.h>
 #include <OvTools/Jobs/JobSystem.h>
 #include <OvCore/UI/RenderResources.h>
+#include <OvRendering/Core/RenderTargetPool.h>
 
 namespace OvCore::Rendering
 {
@@ -14,6 +15,8 @@ namespace OvCore::Rendering
     {
     public:
         RenderFrontend() = default;
+        void SetResourcePool(std::shared_ptr<OvRendering::Core::RenderTargetPool> pool) {RequireOwner();if(!pool)throw std::invalid_argument("Missing resource pool");m_pool=std::move(pool);}
+        std::shared_ptr<OvRendering::Core::RenderTargetPool> GetResourcePool() const {return m_pool;}
         std::unique_ptr<SceneFrame> ExtractFrame(const SceneFrameRequest& request) const;
         // Compose an owned, fixed plan from already extracted views. No tasks start here.
         std::unique_ptr<SceneFrame> ComposeFrame(
@@ -38,5 +41,6 @@ namespace OvCore::Rendering
         OvRendering::Core::MeshCommandRecorder m_recorder;
         mutable OvRendering::Core::MeshCommandRecorder::ProgramCache m_programs;
         mutable UI::RenderResources m_uiResources;
+        std::shared_ptr<OvRendering::Core::RenderTargetPool> m_pool=std::make_shared<OvRendering::Core::RenderTargetPool>();
     };
 }

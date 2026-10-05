@@ -47,6 +47,7 @@ namespace OvRendering::Data
         void Seal(OvTools::Jobs::JobSystem* jobs = nullptr);
         void Cancel();
         Completion GetCompletion() const;
+        size_t GetExecutedCommandCount() const;
         // The synchronous consumer callback must present its live target/window.
         // Failure is stored; partially submitted captures still wait for GPU retirement.
         bool Submit(Context::Driver& driver, const std::function<void()>& present = {});
