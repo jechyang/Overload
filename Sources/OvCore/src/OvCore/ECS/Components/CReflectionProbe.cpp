@@ -4,11 +4,14 @@
 * @licence: MIT
 */
 
-#include <format>
+#include <stdexcept>
 #include <cstring>
 #include <tinyxml2.h>
 
 #include <OvCore/ECS/Actor.h>
+#include <OvCore/ECS/ComponentRegistry.h>
+#include <OvTools/Utils/CallbackScope.h>
+#include <OvUI/Widgets/Texts/TextColored.h>
 #include <OvCore/ECS/Components/CReflectionProbe.h>
 
 #include <OvDebug/Assertion.h>
@@ -16,8 +19,6 @@
 #include <baregl/Renderbuffer.h>
 
 #include <OvUI/Widgets/Buttons/Button.h>
-#include <OvUI/Widgets/Layout/Dummy.h>
-#include <OvUI/Widgets/Selection/ComboBox.h>
 #include <OvUI/Widgets/Visual/Separator.h>
 
 namespace
@@ -39,6 +40,37 @@ namespace
 	{
 		return p_speed != OvCore::ECS::Components::CReflectionProbe::ECaptureSpeed::SIX_FACES;
 	}
+    struct InfluenceLease final : OvUI::Plugins::IPlugin
+    {
+        OvTools::Utils::CallbackScope scope;
+        void Execute(OvUI::Plugins::EPluginExecutionContext) override {}
+    };
+    template<class T> void GateInfluence(OvUI::Widgets::AWidget& widget, OvCore::ECS::Components::CReflectionProbe& probe)
+    {
+        auto* dispatcher=widget.GetPlugin<OvUI::Plugins::DataDispatcher<T>>(); if (!dispatcher) return;
+        auto copy=*dispatcher; auto ticket=widget.AddPlugin<InfluenceLease>().scope.Ticket(); auto component=probe.InspectorTicket();
+        auto* main=&OvCore::ECS::GetComponentRegistry().Reflection().Main();
+        widget.disabled=probe.GetInfluencePolicy()!=OvCore::ECS::Components::CReflectionProbe::EInfluencePolicy::LOCAL;
+        dispatcher->ReplaceBinding([copy,ticket,component,main,field=&widget,target=&probe]() mutable {
+            if (!main->IsCurrent() || ticket.expired() || component.expired()) return T{};
+            field->disabled=target->GetInfluencePolicy()!=OvCore::ECS::Components::CReflectionProbe::EInfluencePolicy::LOCAL;
+            return copy.Gather();
+        },[copy,ticket,component,main,target=&probe](T value) mutable {
+            if (!main->IsCurrent() || ticket.expired() || component.expired() || target->GetInfluencePolicy()!=OvCore::ECS::Components::CReflectionProbe::EInfluencePolicy::LOCAL) return;
+            copy.NotifyChange(); copy.Provide(value);
+        });
+    }
+    void GateInfluenceFields(OvUI::Internal::WidgetContainer& root,OvCore::ECS::Components::CReflectionProbe& probe)
+    {
+        std::string label;
+        for (auto [widget,mode]:root.GetWidgets())
+        {
+            if (auto* text=dynamic_cast<OvUI::Widgets::Texts::TextColored*>(widget)) label=text->content;
+            else if (label=="Influence Size") GateInfluence<std::array<float,3>>(*widget,probe);
+            else if (label=="Box Projection") GateInfluence<bool>(*widget,probe);
+            if (auto* children=dynamic_cast<OvUI::Internal::WidgetContainer*>(widget)) GateInfluenceFields(*children,probe);
+        }
+    }
 }
 
 OvCore::ECS::Components::CReflectionProbe::CReflectionProbe(ECS::Actor& p_owner) :
@@ -119,8 +151,8 @@ float OvCore::ECS::Components::CReflectionProbe::GetBrightness() const
 
 void OvCore::ECS::Components::CReflectionProbe::SetCubemapResolution(uint32_t p_resolution)
 {
-	OVASSERT(p_resolution > 0, "Cubemap resolution must be greater than 0");
-	OVASSERT((p_resolution & (p_resolution - 1)) == 0, "Cubemap resolution must be a power of 2");
+    if (!p_resolution || p_resolution > 4096 || (p_resolution & (p_resolution - 1)))
+        throw std::invalid_argument("Cubemap resolution must be a power of two between 1 and 4096");
 
 	if (p_resolution != m_resolution)
 	{
@@ -191,157 +223,34 @@ std::shared_ptr<baregl::Texture> OvCore::ECS::Components::CReflectionProbe::GetC
 	return target;
 }
 
-void OvCore::ECS::Components::CReflectionProbe::OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node)
+OvCore::ECS::Components::CReflectionProbe::Settings OvCore::ECS::Components::CReflectionProbe::GetSettings() const
 {
-	using namespace OvCore::Helpers;
-	Serializer::SerializeUint32(p_doc, p_node, "refresh_mode", static_cast<uint32_t>(m_refreshMode));
-	Serializer::SerializeUint32(p_doc, p_node, "capture_speed", static_cast<uint32_t>(m_captureSpeed));
-	Serializer::SerializeVec3(p_doc, p_node, "capture_position", m_capturePosition);
-	Serializer::SerializeFloat(p_doc, p_node, "brightness", m_brightness);
-	Serializer::SerializeUint32(p_doc, p_node, "resolution", m_resolution);
-	Serializer::SerializeUint32(p_doc, p_node, "influence_policy", static_cast<uint32_t>(m_influencePolicy));
-	Serializer::SerializeVec3(p_doc, p_node, "influence_size", m_influenceSize);
-	Serializer::SerializeBoolean(p_doc, p_node, "box_projection", m_boxProjection);
+    return {m_refreshMode, m_captureSpeed, m_resolution, m_capturePosition, m_brightness, m_influencePolicy, m_influenceSize, m_boxProjection};
 }
 
-void OvCore::ECS::Components::CReflectionProbe::OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node)
+void OvCore::ECS::Components::CReflectionProbe::SetSettings(const Settings& settings)
 {
-	using namespace OvCore::Helpers;
-
-	// Not ideal, but avoids garbage value from overriding the current resolution.
-	if (p_node->FirstChildElement("resolution"))
-	{
-		m_resolution = Serializer::DeserializeInt(p_doc, p_node, "resolution");
-	}
-
-	Serializer::DeserializeUint32(p_doc, p_node, "refresh_mode", reinterpret_cast<uint32_t&>(m_refreshMode));
-	Serializer::DeserializeUint32(p_doc, p_node, "capture_speed", reinterpret_cast<uint32_t&>(m_captureSpeed));
-	Serializer::DeserializeVec3(p_doc, p_node, "capture_position", m_capturePosition);
-	Serializer::DeserializeFloat(p_doc, p_node, "brightness", m_brightness);
-	Serializer::DeserializeUint32(p_doc, p_node, "resolution", m_resolution);
-	Serializer::DeserializeUint32(p_doc, p_node, "influence_policy", reinterpret_cast<uint32_t&>(m_influencePolicy));
-	Serializer::DeserializeVec3(p_doc, p_node, "influence_size", m_influenceSize);
-	Serializer::DeserializeBoolean(p_doc, p_node, "box_projection", m_boxProjection);
-
-	m_captureFaceIndex = 0;
+    // Restore both resource-dependent settings in one batch. Loading through the
+    // generated Record codec validates every leaf before this setter is invoked.
+    if (!settings.resolution || settings.resolution > 4096 || (settings.resolution & (settings.resolution - 1)))
+        throw std::invalid_argument("Cubemap resolution must be a power of two between 1 and 4096");
+    const bool allocate = settings.resolution != m_resolution || RequiresDoubleBuffering(settings.captureSpeed) != _IsDoubleBuffered();
+    m_refreshMode = settings.refreshMode; m_captureSpeed = settings.captureSpeed; m_resolution = settings.resolution;
+    m_capturePosition = settings.capturePosition; m_brightness = settings.brightness;
+    m_influencePolicy = settings.influencePolicy; m_influenceSize = settings.influenceSize; m_boxProjection = settings.boxProjection;
+    m_captureFaceIndex = 0;
+    if (allocate) _AllocateResources();
 }
 
-void OvCore::ECS::Components::CReflectionProbe::OnInspector(OvUI::Internal::WidgetContainer& p_root)
+void OvCore::ECS::Components::CReflectionProbe::OnInspector(OvUI::Internal::WidgetContainer& root)
 {
-	using namespace OvCore::Helpers;
-
-	Helpers::GUIDrawer::CreateTitle(p_root, "Refresh Mode");
-
-	auto& refreshMode = p_root.CreateWidget<OvUI::Widgets::Selection::ComboBox>(static_cast<int>(m_refreshMode));
-	refreshMode.choices = {
-		{ static_cast<int>(ERefreshMode::REALTIME), "Realtime" },
-		{ static_cast<int>(ERefreshMode::ONCE), "Once" },
-		{ static_cast<int>(ERefreshMode::ON_DEMAND), "On Demand" }
-	};
-
-	auto& refreshModeDispatcher = refreshMode.AddPlugin<OvUI::Plugins::DataDispatcher<int>>();
-	refreshModeDispatcher.RegisterGatherer([this] { return static_cast<int>(GetRefreshMode()); });
-	refreshModeDispatcher.RegisterProvider([this](int mode) { SetRefreshMode(static_cast<ERefreshMode>(mode)); });
-
-	Helpers::GUIDrawer::CreateTitle(p_root, "Capture Speed");
-
-	auto& progressiveFacesPerFrame = p_root.CreateWidget<OvUI::Widgets::Selection::ComboBox>(static_cast<int>(m_captureSpeed));
-	progressiveFacesPerFrame.choices = {
-		{ 1, "Low (1 face/frame)" },
-		{ 2, "Medium (2 faces/frame)" },
-		{ 3, "High (3 faces/frame)" },
-		{ 6, "Immediate (6 faces/frame)" },
-	};
-
-	auto& progressiveFacesPerFrameDispatcher = progressiveFacesPerFrame.AddPlugin<OvUI::Plugins::DataDispatcher<int>>();
-	progressiveFacesPerFrameDispatcher.RegisterGatherer([this] { return static_cast<int>(GetCaptureSpeed()); });
-	progressiveFacesPerFrameDispatcher.RegisterProvider([this](int mode) { SetCaptureSpeed(static_cast<ECaptureSpeed>(mode)); });
-
-	Helpers::GUIDrawer::CreateTitle(p_root, "Cubemap Resolution");
-
-	auto& cubemapResolution = p_root.CreateWidget<OvUI::Widgets::Selection::ComboBox>(m_resolution);
-	cubemapResolution.choices = {
-		{ 16, "16" },
-		{ 32, "32" },
-		{ 64, "64" },
-		{ 128, "128" },
-		{ 256, "256" },
-		{ 512, "512" },
-		{ 1024, "1024" },
-		{ 2048, "2048" },
-		{ 4096, "4096 (You're crazy!)" },
-	};
-
-	auto& cubemapResolutionDispatcher = cubemapResolution.AddPlugin<OvUI::Plugins::DataDispatcher<int>>();
-	cubemapResolutionDispatcher.RegisterGatherer(std::bind(&CReflectionProbe::GetCubemapResolution, this));
-	cubemapResolutionDispatcher.RegisterProvider(std::bind(&CReflectionProbe::SetCubemapResolution, this, std::placeholders::_1));
-
-	Helpers::GUIDrawer::DrawVec3(
-		p_root,
-		"Capture Position",
-		m_capturePosition,
-		0.05f
-	);
-
-	Helpers::GUIDrawer::DrawScalar<float>(
-		p_root,
-		"Brithgness",
-		m_brightness,
-		0.01f,
-		0.0f
-	);
-
-	Helpers::GUIDrawer::CreateTitle(p_root, "Influence Policy");
-
-	auto& influencePolicy = p_root.CreateWidget<OvUI::Widgets::Selection::ComboBox>(static_cast<int>(m_influencePolicy));
-	influencePolicy.choices = {
-		{ static_cast<int>(EInfluencePolicy::GLOBAL), "Global" },
-		{ static_cast<int>(EInfluencePolicy::LOCAL), "Local" }
-	};
-
-	auto& influencePolicyDispatcher = influencePolicy.AddPlugin<OvUI::Plugins::DataDispatcher<int>>();
-	influencePolicyDispatcher.RegisterGatherer([this] { return static_cast<int>(m_influencePolicy); });
-	influencePolicyDispatcher.RegisterProvider([this](int policy) { m_influencePolicy = static_cast<EInfluencePolicy>(policy); });
-
-	Helpers::GUIDrawer::DrawVec3(
-		p_root,
-		"Influence Size",
-		m_influenceSize,
-		0.05f,
-		0.0f
-	);
-
-	auto& influenceSize = *p_root.GetWidgets().back().first;
-
-	Helpers::GUIDrawer::DrawBoolean(
-		p_root,
-		"Box Projection",
-		m_boxProjection
-	);
-
-	auto& boxProjection = *p_root.GetWidgets().back().first;
-
-	auto updateInfluenceWidgets = [](auto& widget, auto policy) {
-		widget.disabled = policy == OvCore::ECS::Components::CReflectionProbe::EInfluencePolicy::GLOBAL;
-	};
-
-	updateInfluenceWidgets(influenceSize, m_influencePolicy);
-	updateInfluenceWidgets(boxProjection, m_influencePolicy);
-
-	influencePolicy.ValueChangedEvent += [&](int p_value) {
-		const auto value = static_cast<EInfluencePolicy>(p_value);
-		updateInfluenceWidgets(influenceSize, value);
-		updateInfluenceWidgets(boxProjection, value);
-	};
-
-	p_root.CreateWidget<OvUI::Widgets::Visual::Separator>();
-
-	Helpers::GUIDrawer::CreateTitle(p_root, "Reflection Probe Debugging");
-
-	auto& captureNowButton = p_root.CreateWidget<OvUI::Widgets::Buttons::Button>("Capture Now");
-	captureNowButton.ClickedEvent += [this] {
-		RequestCapture();
-	};
+    AComponent::OnInspector(root);
+    GateInfluenceFields(root,*this);
+    root.CreateWidget<OvUI::Widgets::Visual::Separator>();
+    auto& capture = root.CreateWidget<OvUI::Widgets::Buttons::Button>("Capture Now");
+    capture.ClickedEvent += [this, ticket = InspectorTicket(), main = &GetComponentRegistry().Reflection().Main()] {
+        if (main->IsCurrent() && !ticket.expired()) RequestCapture();
+    };
 }
 
 void OvCore::ECS::Components::CReflectionProbe::_NotifyCubemapComplete()

@@ -6,7 +6,7 @@ schema.json from explicitly annotated declarations only.
 
 ## Identity and names
 
-- Generator schema version: 1. Generator version: 0.8.0. Business archive versions
+- Generator schema version: 1. Generator version: 0.9.0. Business archive versions
   are independent of both.
 - Only OV_TYPE(), OV_FIELD(), OV_PROPERTY() and OV_METHOD() opt declarations in.
   OV_TYPE is the sole class/struct/enum/enum-class entry point. The AST determines
@@ -131,12 +131,12 @@ tokens is promised: the annotation string preserves the written arguments.
 | Target | Flags | Value keys besides Id/Alias/Name |
 |---|---|---|
 | Type | Component, Record | DisplayName, Category, Order, Factory, Lookup, SerializeHook, DeserializeHook |
-| Field | Serialize, Inspect, Script, ReadOnly, Flatten | Thread, DisplayName, Category, Min, Max, Step, Drawer, Order, Missing, Default, ItemName, Prefix, Validate, Return, Ownership, Nullable |
+| Field | Serialize, Inspect, Script, ReadOnly, Flatten | Thread, DisplayName, Category, Min, Max, Step, Drawer, Order, Missing, Default, ItemName, MaxItems, Prefix, Validate, Return, Ownership, Nullable |
 | Property getter | Serialize, Inspect, Script, ReadOnly | Field keys plus Setter |
 | Method | Script | Thread, Return, Ownership, Nullable, Overload |
 
 Id/Alias/Name/DisplayName/Category/Drawer/SerializeHook/DeserializeHook/Default/ItemName/Prefix/Validate take strings. Alias may repeat, but its
-values must be unique. Order/Min/Max/Step take finite numbers and are metadata
+values must be unique. MaxItems is an unquoted integer collection limit. Order/Min/Max/Step take finite numbers and are metadata
 only. Setter/Factory/Lookup/Thread/Missing/Return/Ownership/Nullable take identifiers.
 Overload takes a quoted canonical signature. R6 Script boundary policies require
 Script and follow SCRIPT_ABI.md. Thread is Main or Any; Script always requires Main.
@@ -169,7 +169,7 @@ Supported property/method value categories: bool, target integer types of
 float/double, std::string with standard traits/allocator, explicitly reflected
 enums, and the named FVector2/FVector3/FVector4/FQuaternion adapters. R6 additionally accepts
 Script-only reflected object pointers with explicit borrowed/nullability policies.
-Explicit Record and resource adapters below extend this set. Other pointers, arrays, arbitrary records/templates/containers, volatile values and rvalue-reference value types
+Explicit Record, collection and resource adapters below extend this set. Other pointers, arrays, arbitrary records/templates/containers, volatile values and rvalue-reference value types
 fail. Reference cv qualifiers are retained. Void is allowed only as a method
 return. Static/deleted/variadic/template/operator methods, constructors,
 destructors and implicit overload sets are rejected. R6 Script overloads require
@@ -202,6 +202,9 @@ and parameter types are modeled; R1 does not provide generic invocation.
   positive value; `Validate = "EnumChoice"` requires an enum and restricts values
   to declared choices. The codec validates these explicit business policies
   before publishing any component field. Min/Max remain Inspector bounds.
+  `Validate = "PowerOfTwo"` accepts unsigned integers, rejecting zero and other
+  non-powers before a setter. `Drawer = "PowerOfTwo"` supplies uint32 choices
+  bounded by Inspector Min/Max while retaining a representable custom value.
 - FVector2/FVector4 adapters preserve x/y[/z/w] XML nodes and missing coordinates.
   Inspect records form collapsible full-width groups with stable descriptor-path
   identities. Each child edit reads the current record before replacing one field;
@@ -209,6 +212,38 @@ and parameter types are modeled; R1 does not provide generic invocation.
   state propagates to children. Search expands matching groups temporarily.
   `Drawer = "Color"` supplies a Vec4 color picker. Integers up to 32 bits use
   numeric drags; 64-bit integers retain exact text editing.
+
+## Value collection adapters
+
+- `std::array<T,N>` (1..4096) uses `value-array`; `std::vector<T>` with the
+  standard allocator uses `value-list`. T may be a supported scalar, string,
+  reflected enum, math adapter or Record. Clang records recursive `element_type`
+  facts and array `capacity`; the emitter creates exact typed operations,
+  including vector<bool> proxy-safe copying. Const/volatile elements, pointers,
+  custom allocators and nested collections are rejected. Resource arrays retain
+  their separate adapter contract. Collection Script signatures are rejected.
+- Every collection requires quoted `ItemName`; vectors also require unquoted
+  `MaxItems` between 1 and 4096. MaxItems is a runtime/XML limit, not merely a
+  widget bound. Array MaxItems and collection scalar Min/Max/Step/Validate or
+  text Default are rejected. Element Record fields retain their own metadata.
+- XML wraps items in the property's canonical name, e.g.
+  `<values><item>1</item><item>2</item></values>`. Missing collections keep their
+  current values. A present empty vector clears it. Fixed arrays require exactly
+  N items. Unknown item names, non-whitespace collection text, invalid elements
+  and excess items reject the whole staged component. Partial item records/math
+  values keep previous index fields, or default-constructed values for new slots.
+  Resources inside Record items resolve only after the entire batch validates.
+- Inspector uses owned typed collection snapshots, with bounded Size/Add/Clear,
+  Duplicate/Remove and Up/Down operations; arrays permit only editing/reordering.
+  Large collections instantiate 32 items per page. Whole-value clipboard/default
+  menus check exact container types and destination limits. Structural changes
+  immediately expire element callback epochs before deferred widget rebuilding.
+- Multi-selection replays element/structural edits against each target's current
+  collection, preserving other items and unchanged record leaves/math axes.
+  Different lengths disable index editing; Size/Clear/paste/reset can unify them.
+  Root dispatchers participate in scene history, so undo/redo uses generated
+  deserialization and normal component factories. Main and lifetime checks guard
+  both root and nested callbacks; read-only state propagates through all controls.
 
 ## R2 C++ and runtime contract
 

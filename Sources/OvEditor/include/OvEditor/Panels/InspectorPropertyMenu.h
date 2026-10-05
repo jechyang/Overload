@@ -7,6 +7,7 @@
 #include <OvUI/Widgets/Texts/TextColored.h>
 #include <OvUI/Widgets/Layout/GroupCollapsable.h>
 #include <OvUI/Types/Color.h>
+#include <OvCore/Helpers/ReflectionCollectionField.h>
 #include <imgui_internal.h>
 #include <optional>
 
@@ -80,6 +81,11 @@ namespace OvEditor::Panels::InspectorBindings
     }
     template<class T> std::map<int,std::string> PropertyChoices(OvUI::Widgets::AWidget& widget)
     {
+        if constexpr (std::is_same_v<T,OvCore::Helpers::ReflectionProperties::CollectionValue>)
+        {
+            auto value=widget.GetPlugin<OvUI::Plugins::DataDispatcher<T>>()->Gather();
+            if (value.property) return {{0,std::string(value.property->Info().type.canonical)}, {1,std::to_string(OvCore::Helpers::ReflectionProperties::CollectionLimit(*value.property))}};
+        }
         if constexpr (std::is_same_v<T,int>)
             if (auto* field = dynamic_cast<OvUI::Widgets::Selection::ComboBox*>(&widget)) return field->choices;
         return {};
@@ -132,7 +138,7 @@ namespace OvEditor::Panels::InspectorBindings
         };
         actions->reset = [initial,apply] { return initial && apply(*initial,"Reset"); };
         if (label) label->AddPlugin<PropertyMenu>(actions,context,true);
-        widget->AddPlugin<PropertyMenu>(actions,std::move(context),false);
+        widget->AddPlugin<PropertyMenu>(actions,std::move(context),dynamic_cast<OvCore::Helpers::ReflectionProperties::CollectionField*>(widget)!=nullptr);
     }
 
     template<class T> bool CapturePropertyDefault(OvUI::Widgets::AWidget& widget, PropertyDefaults& defaults, const std::string& path)
@@ -149,6 +155,8 @@ namespace OvEditor::Panels::InspectorBindings
         {
             const auto key = path+std::to_string(i++);
             if (auto* label = dynamic_cast<OvUI::Widgets::Texts::TextColored*>(widget)) { title = label->content; continue; }
+            if (dynamic_cast<OvCore::Helpers::ReflectionProperties::CollectionField*>(widget))
+            { CapturePropertyDefault<OvCore::Helpers::ReflectionProperties::CollectionValue>(*widget,defaults,key+"/"); continue; }
             if (auto* children = dynamic_cast<OvUI::Internal::WidgetContainer*>(widget))
             { CapturePropertyDefaults(*children,defaults,ChildPropertyPath(*widget,key),title); continue; }
             const auto identity = key+"/"+title;

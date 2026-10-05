@@ -13,8 +13,12 @@ namespace OvReflectGen
         llvm::json::Object SourceJson(const Source& s)
         { return llvm::json::Object{{"path", s.path}, {"line", s.line}, {"column", s.column}}; }
         llvm::json::Object ReferenceJson(const TypeRef& t)
-        { return llvm::json::Object{{"display", t.display}, {"canonical", t.canonical}, {"value_type", t.valueType},
-                  {"category", t.category}, {"bits", t.bits}, {"signed", t.isSigned}}; }
+        {
+            llvm::json::Object result{{"display", t.display}, {"canonical", t.canonical}, {"value_type", t.valueType},
+                  {"category", t.category}, {"bits", t.bits}, {"signed", t.isSigned}};
+            if (t.element) { result["element_type"] = ReferenceJson(*t.element); result["capacity"] = t.capacity; }
+            return result;
+        }
         llvm::json::Object MetadataJson(const Metadata& m)
         {
             llvm::json::Object object;

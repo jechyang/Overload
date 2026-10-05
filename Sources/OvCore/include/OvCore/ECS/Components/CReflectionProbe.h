@@ -34,14 +34,14 @@ namespace OvCore::ECS::Components
 	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CReflectionProbe", DisplayName = "Reflection Probe", Order = 15) CReflectionProbe : public AComponent
 	{
 	public:
-		enum class ERefreshMode : uint32_t
+		enum class OV_TYPE() ERefreshMode : uint32_t
 		{
 			REALTIME,
 			ONCE,
 			ON_DEMAND
 		};
 
-		enum class ECaptureSpeed : uint32_t
+		enum class OV_TYPE() ECaptureSpeed : uint32_t
 		{
 			ONE_FACE = 1,		// Capture one face per frame
 			TWO_FACES = 2,		// Capture two faces per frame
@@ -49,11 +49,31 @@ namespace OvCore::ECS::Components
 			SIX_FACES = 6		// Capture all six faces per frame
 		};
 
-		enum class EInfluencePolicy : uint32_t
+		enum class OV_TYPE() EInfluencePolicy : uint32_t
 		{
 			LOCAL,
 			GLOBAL
 		};
+
+        struct OV_TYPE(Record) Settings
+        {
+            OV_FIELD(Serialize, Inspect, Name = "refresh_mode", DisplayName = "Refresh Mode", Validate = "EnumChoice", Order = 0)
+            ERefreshMode refreshMode = ERefreshMode::REALTIME;
+            OV_FIELD(Serialize, Inspect, Name = "capture_speed", DisplayName = "Capture Speed", Validate = "EnumChoice", Order = 1)
+            ECaptureSpeed captureSpeed = ECaptureSpeed::ONE_FACE;
+            OV_FIELD(Serialize, Inspect, Name = "resolution", DisplayName = "Cubemap Resolution", Validate = "PowerOfTwo", Drawer = "PowerOfTwo", Min = 16, Max = 4096, Order = 2)
+            uint32_t resolution = 512;
+            OV_FIELD(Serialize, Inspect, Name = "capture_position", DisplayName = "Capture Position", Step = 0.05, Order = 3)
+            OvMaths::FVector3 capturePosition{0, 0, 0};
+            OV_FIELD(Serialize, Inspect, Name = "brightness", DisplayName = "Brightness", Step = 0.01, Min = 0, Order = 4)
+            float brightness = 1;
+            OV_FIELD(Serialize, Inspect, Name = "influence_policy", DisplayName = "Influence Policy", Validate = "EnumChoice", Order = 5)
+            EInfluencePolicy influencePolicy = EInfluencePolicy::GLOBAL;
+            OV_FIELD(Serialize, Inspect, Name = "influence_size", DisplayName = "Influence Size", Step = 0.05, Min = 0, Order = 6)
+            OvMaths::FVector3 influenceSize{10, 10, 10};
+            OV_FIELD(Serialize, Inspect, Name = "box_projection", DisplayName = "Box Projection", Order = 7)
+            bool boxProjection = false;
+        };
 
 		/**
 		* Constructor
@@ -175,26 +195,17 @@ namespace OvCore::ECS::Components
 		UniformData CaptureUniformData() const;
 
 		/**
-		* Serialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
-		* Deserialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
 		* Defines how the component should be drawn in the inspector
 		* @param p_root
 		*/
 		virtual void OnInspector(OvUI::Internal::WidgetContainer& p_root) override;
 
 	private:
+        friend struct OvReflection::Access<CReflectionProbe>;
+        OV_PROPERTY(Serialize, Inspect, Flatten, Name = "settings", Setter = SetSettings, DisplayName = "Probe Settings")
+        Settings GetSettings() const;
+        void SetSettings(const Settings& settings);
+
 		void _NotifyCubemapComplete();
 		void _NotifyCubemapComplete(bool p_generateMipmaps);
 		void _AllocateResources();

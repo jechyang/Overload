@@ -12,6 +12,7 @@ namespace OvCore::Helpers::ReflectionProperties
         std::function<Result(const std::any&)> write;
         std::string identity;
         bool readOnly = false;
+        std::string label; // Optional instance label, e.g. a collection element index.
     };
     // Caller supplies an epoch that expires before target destruction or detachment.
     // Every invocation checks application Main before touching either target or ticket.

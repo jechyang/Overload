@@ -26,7 +26,7 @@ def value_type(t):
         [str(t["bits"]), str(t["signed"]).lower(), f'Key<{t["value_type"]}>()']) + "}"
 
 
-def emit(schema, directory, *, types=None, dependencies=(), known_types=None):
+def emit(schema, directory, *, types=None, dependencies=(), known_types=None, value_codecs=False, component_adapters=False):
     """Input is trusted output from LibTooling, never unvalidated user C++ snippets."""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
@@ -123,11 +123,11 @@ def emit(schema, directory, *, types=None, dependencies=(), known_types=None):
     array("types", "const TypeDesc*", [f'&TypeOf<::{t["cpp_name"]}>()' for t in types])
     impl += [f"        return registry.RegisterModule({quote(module)}, types);", "    }", "}"]
     header += ["}"]
-    if module == "OvCore":
+    if module == "OvCore" or component_adapters:
         components = sorted((t for t in types if "Component" in t["metadata"]),
                             key=lambda t: (float(t["metadata"].get("Order", "0")), t["id"]))
         impl += ['#include <OvCore/ECS/ComponentFactory.h>', "namespace OvCore::ECS", "{",
-                 "    std::span<const ComponentDesc> GetOvCoreComponents()", "    {"]
+                 f"    std::span<const ComponentDesc> Get{module}Components()", "    {"]
         for t in components:
             cpp = "::" + t["cpp_name"]
             # Compatibility traits are checked against the authoritative annotation;
@@ -140,14 +140,27 @@ def emit(schema, directory, *, types=None, dependencies=(), known_types=None):
         array("components", "ComponentDesc", values)
         impl += ["        return components;", "    }", "}"]
     impl += ['#include "Script.generated.inc"']
-    if module == "OvCore":
-        adapted = {p["type"]["value_type"]: p["type"]["category"] for t in types for p in t["properties"]
-                   if p["type"]["category"] in ("resource-reference", "resource-array", "record-adapter")}
+    if module == "OvCore" or value_codecs:
+        adapted = {}
+        def adapt(value):
+            if value["category"] in ("resource-reference", "resource-array", "record-adapter", "value-array", "value-list"):
+                adapted[value["value_type"]] = value
+            if "element_type" in value:
+                adapt(value["element_type"])
+        for t in types:
+            for p in t["properties"]:
+                adapt(p["type"])
         impl += ['#include <OvCore/Helpers/ReflectionResourceCodecs.h>',
                  '#include <OvCore/Helpers/ReflectionRecordCodecs.h>',
+                 '#include <OvCore/Helpers/ReflectionCollectionCodecs.h>',
                  'namespace OvCore::Helpers::ReflectionProperties', '{',
-                 '    std::span<const ValueCodec> GetOvCoreValueCodecs()', '    {']
-        array("codecs", "ValueCodec", [f'Make{"Record" if adapted[v] == "record-adapter" else "Resource"}Codec<{v}>()' for v in sorted(adapted)])
+                 f'    std::span<const ValueCodec> Get{module}ValueCodecs()', '    {']
+        def codec(v):
+            t = adapted[v]
+            if t["category"] in ("value-array", "value-list"):
+                return f'MakeCollectionCodec<{v}>({value_type(t["element_type"])})'
+            return f'Make{"Record" if t["category"] == "record-adapter" else "Resource"}Codec<{v}>()'
+        array("codecs", "ValueCodec", [codec(v) for v in sorted(adapted)])
         impl += ['        return codecs;', '    }', '}']
     try:
         script.emit(schema, directory, types)

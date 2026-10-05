@@ -87,6 +87,7 @@ namespace OvUI::Widgets
         bool visible = true; // Presentation filters do not invalidate bound controls.
 		bool disabled = false;
 		bool lineBreak = true;
+        bool fullWidth = false; // Break out of a property table for compound controls.
 		bool neverDisabled = false; // provide a way to bypass the "readonly" setting used by a WidgetContainer
 
 	protected:

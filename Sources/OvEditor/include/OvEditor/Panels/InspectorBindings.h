@@ -49,6 +49,21 @@ namespace OvEditor::Panels::InspectorBindings
             }
         }
     };
+    template<> struct Value<OvCore::Helpers::ReflectionProperties::CollectionValue>
+    {
+        using T=OvCore::Helpers::ReflectionProperties::CollectionValue;
+        static bool Equal(const T& a,const T& b) { return a==b; }
+        static T Merge(const T& current,const T&,const T& edited,OvUI::Widgets::AWidget*)
+        { return edited.Merge(OvCore::ECS::GetComponentRegistry().Reflection().Main(),current); }
+        static void MixedAxes(OvUI::Widgets::AWidget* widget,const std::vector<T>& values)
+        {
+            bool mixed=false,mixedValues=false;
+            for (const auto& value:values) { mixedValues |= !(value==values.front());
+                if (!value.ops || !values.front().ops || value.ops->size(value.data)!=values.front().ops->size(values.front().data)) mixed=true; }
+            auto* field=static_cast<OvCore::Helpers::ReflectionProperties::CollectionField*>(widget);
+            field->SetMixedShape(mixed); field->SetMixedValues(mixedValues);
+        }
+    };
 
     inline void Disable(OvUI::Widgets::AWidget& widget)
     {
@@ -143,6 +158,8 @@ namespace OvEditor::Panels::InspectorBindings
             auto* first = widgets.front();
             const auto key = path+std::to_string(i);
             if (auto* text = dynamic_cast<OvUI::Widgets::Texts::TextColored*>(first)) { label = text; continue; }
+            if (dynamic_cast<OvCore::Helpers::ReflectionProperties::CollectionField*>(first))
+            { Bind<OvCore::Helpers::ReflectionProperties::CollectionValue>(widgets,nullptr,ticket,context,key); continue; }
             if (dynamic_cast<OvUI::Internal::WidgetContainer*>(first))
             {
                 std::vector<OvUI::Internal::WidgetContainer*> children;

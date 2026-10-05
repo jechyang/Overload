@@ -91,8 +91,9 @@ namespace OvReflectGen
                 const bool resource = property.type.category == "resource-reference" || property.type.category == "resource-array";
                 if (resource && (!property.metadata.Has("Serialize") || property.metadata.Has("Inspect") || property.metadata.Has("Script")))
                     Error(decl, "resource adapters currently require Serialize only; use the typed asset picker for Inspector");
-                if (property.metadata.Has("ItemName") != (property.type.category == "resource-array"))
-                    Error(decl, "ItemName is required exclusively on fixed resource arrays");
+                const bool collection = property.type.category == "value-array" || property.type.category == "value-list";
+                if (property.metadata.Has("ItemName") != (property.type.category == "resource-array" || collection))
+                    Error(decl, "ItemName is required exclusively on fixed resource arrays or value collections");
             }
             TypeRef Reference(clang::QualType type, const clang::Decl* decl, bool allowVoid = false, bool allowObject = false)
             {
@@ -138,6 +139,35 @@ namespace OvReflectGen
                 {
                     Metadata metadata;
                     if (Annotation(record->getDefinition()) && MetadataFor(record->getDefinition(), "type", metadata) && metadata.Has("Record")) out.category = "record-adapter";
+                }
+                if (out.category.empty()) if (const auto* record = llvm::dyn_cast_or_null<clang::ClassTemplateSpecializationDecl>(value->getAsCXXRecordDecl()))
+                {
+                    const auto name = record->getSpecializedTemplate()->getQualifiedNameAsString();
+                    const auto& args = record->getTemplateArgs();
+                    if ((name == "std::array" || name == "std::vector") && args.size() == 2 && args[0].getKind() == clang::TemplateArgument::Type)
+                    {
+                        const auto item = args[0].getAsType();
+                        const bool array = name == "std::array";
+                        bool valid = !item.isConstQualified() && !item.isVolatileQualified();
+                        if (array) valid &= args[1].getKind() == clang::TemplateArgument::Integral && args[1].getAsIntegral() > 0 && args[1].getAsIntegral() <= 4096;
+                        else
+                        {
+                            const auto* allocator = args[1].getKind() == clang::TemplateArgument::Type ? llvm::dyn_cast_or_null<clang::ClassTemplateSpecializationDecl>(args[1].getAsType()->getAsCXXRecordDecl()) : nullptr;
+                            valid &= allocator && allocator->getSpecializedTemplate()->getQualifiedNameAsString() == "std::allocator" &&
+                                allocator->getTemplateArgs().size() == 1 && context.hasSameType(allocator->getTemplateArgs()[0].getAsType(), item);
+                        }
+                        if (valid)
+                        {
+                            auto element = std::make_shared<TypeRef>(Reference(item, decl));
+                            if (element->category == "bool" || element->category == "integer" || element->category == "float" || element->category == "string" ||
+                                element->category == "enum" || element->category == "value-adapter" || element->category == "record-adapter")
+                            {
+                                out.category = array ? "value-array" : "value-list";
+                                out.element = std::move(element);
+                                if (array) out.capacity = static_cast<unsigned>(args[1].getAsIntegral().getZExtValue());
+                            }
+                        }
+                    }
                 }
                 if (out.category.empty()) Error(decl, "unsupported reflected type: " + out.display);
                 if (value->isBuiltinType() && !value->isVoidType() && !value->isDependentType()) out.bits = static_cast<unsigned>(context.getTypeSize(value));
@@ -194,6 +224,12 @@ namespace OvReflectGen
             void CheckScript(const Metadata& metadata, clang::QualType result, const std::vector<clang::QualType>& arguments, const clang::Decl* decl)
             {
                 if (!metadata.Has("Script")) return;
+                auto collectionValue = [&](clang::QualType value) {
+                    const auto* record = llvm::dyn_cast_or_null<clang::ClassTemplateSpecializationDecl>(value.getNonReferenceType()->getAsCXXRecordDecl());
+                    return record && (record->getSpecializedTemplate()->getQualifiedNameAsString() == "std::array" || record->getSpecializedTemplate()->getQualifiedNameAsString() == "std::vector");
+                };
+                if (collectionValue(result) || std::any_of(arguments.begin(), arguments.end(), collectionValue))
+                    Error(decl, "Collection value adapters cannot export Script signatures");
                 auto recordValue = [&](clang::QualType value) {
                     if (const auto* record = value.getNonReferenceType().getUnqualifiedType()->getAsCXXRecordDecl(); record && record->hasDefinition())
                     {

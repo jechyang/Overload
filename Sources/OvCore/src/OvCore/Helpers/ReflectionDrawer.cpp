@@ -1,4 +1,5 @@
 #include <OvCore/Helpers/ReflectionDrawer.h>
+#include <OvCore/Helpers/ReflectionCollectionField.h>
 #include <OvCore/Helpers/GUIDrawer.h>
 #include <OvCore/ECS/Components/AComponent.h>
 #include <OvTools/Utils/CallbackScope.h>
@@ -48,6 +49,7 @@ namespace OvCore::Helpers::ReflectionProperties
     };
     static std::string Label(const PropertyDesc& property)
     { auto label = Meta(property.Info().metadata, "DisplayName"); return std::string(label.empty() ? property.Info().name : label); }
+    static std::string Label(const Binding& binding) { return binding.label.empty()?Label(*binding.property):binding.label; }
     template<class T> static T Option(const PropertyDesc& property, std::string_view name, T fallback)
     {
         auto text = Meta(property.Info().metadata, name);
@@ -67,7 +69,7 @@ namespace OvCore::Helpers::ReflectionProperties
             if (ticket.expired()) return *last;
             std::any value; auto result = binding.read(value);
             if (result.Ok()) *last = read(value);
-            else w->disabled = true;
+            else if (result.access != Error::WrongThread) w->disabled = true;
             return *last;
         });
         dispatcher.RegisterProvider([ticket, binding, write](T value)
@@ -102,14 +104,14 @@ namespace OvCore::Helpers::ReflectionProperties
             [binding](std::any& value) { auto r = binding.read(value); if (r.Ok()) value = OvMaths::FQuaternion::EulerAngles(std::any_cast<OvMaths::FQuaternion>(value)); return r; },
             [binding](const std::any& value) { return binding.write(OvMaths::FQuaternion(std::any_cast<OvMaths::FVector3>(value))); }, binding.identity, binding.readOnly};
         std::any initial; auto result = converted.read(initial); if (!result.Ok()) return result;
-        GUIDrawer::CreateTitle(root, Label(*binding.property)); Vector<OvMaths::FVector3>(root, converted, initial);
+        GUIDrawer::CreateTitle(root, Label(binding)); Vector<OvMaths::FVector3>(root, converted, initial);
         return result;
     }
     static Result Record(OvUI::Internal::WidgetContainer& root, const Binding& binding, const Registry& registry, std::span<const DrawerHook> hooks)
     {
         const auto* codec = FindValueCodec(*binding.property);
         if (!codec || !codec->recordType || !codec->borrowRecord) return {std::string(binding.property->Info().id), Status::Unsupported};
-        auto& group = root.CreateWidget<OvUI::Widgets::Layout::GroupCollapsable>(Label(*binding.property));
+        auto& group = root.CreateWidget<OvUI::Widgets::Layout::GroupCollapsable>(Label(binding));
         const auto identity = binding.identity.empty() ? std::string(binding.property->Info().id) : binding.identity;
         group.SetID("reflection_record_" + identity);
         group.disabled = binding.readOnly || binding.property->Info().readOnly;
@@ -137,14 +139,29 @@ namespace OvCore::Helpers::ReflectionProperties
         if (binding.property->Info().type.key != Key<OvMaths::FVector4>()) return {std::string(binding.property->Info().id), Status::Unsupported};
         std::any initial; auto result = binding.read(initial); if (!result.Ok()) return result;
         auto convert = [](const std::any& value) { const auto& v = std::any_cast<const OvMaths::FVector4&>(value); return OvUI::Types::Color{v.x, v.y, v.z, v.w}; };
-        GUIDrawer::CreateTitle(root, Label(*binding.property));
+        GUIDrawer::CreateTitle(root, Label(binding));
         auto& widget = root.CreateWidget<OvUI::Widgets::Selection::ColorEdit>(true);
         Connect<OvUI::Types::Color>(widget, binding, convert(initial), convert,
             [](OvUI::Types::Color v) -> std::any { return OvMaths::FVector4{v.r, v.g, v.b, v.a}; });
         return result;
     }
     std::span<const DrawerHook> ComponentDrawers()
-    { static const DrawerHook hooks[]{{"EulerAngles", Euler}, {"Color", Color}}; return hooks; }
+    {
+        static const DrawerHook hooks[]{{"EulerAngles", Euler}, {"Color", Color}, {"PowerOfTwo", [](OvUI::Internal::WidgetContainer& root, const Binding& binding, const Registry&) -> Result {
+            const auto& p = *binding.property;
+            if (p.Info().type.key != Key<uint32_t>()) return {std::string(p.Info().id), Status::Unsupported};
+            std::any initial; auto result = binding.read(initial); if (!result.Ok()) return result;
+            GUIDrawer::CreateTitle(root, Label(binding));
+            auto& widget = root.CreateWidget<OvUI::Widgets::Selection::ComboBox>(-1); widget.choices[-1] = "(Custom value)";
+            const auto minimum = Option<uint32_t>(p, "Min", 1), maximum = Option<uint32_t>(p, "Max", 4096);
+            for (uint32_t value = 1; value && value <= maximum; value <<= 1) if (value >= minimum) widget.choices[static_cast<int>(value)] = std::to_string(value);
+            const auto choices = widget.choices;
+            auto gather = [choices](const std::any& value) { const auto v = std::any_cast<uint32_t>(value); return v <= INT_MAX && choices.contains(static_cast<int>(v)) ? static_cast<int>(v) : -1; };
+            Connect<int>(widget, binding, gather(initial), gather, [choices](int value) -> std::any { return value > 0 && choices.contains(value) ? std::any{static_cast<uint32_t>(value)} : std::any{}; });
+            return result;
+        }}};
+        return hooks;
+    }
     Result Draw(OvUI::Internal::WidgetContainer& root, const Binding& binding, const Registry& registry, std::span<const DrawerHook> hooks)
     {
         const auto& p = *binding.property; const auto& info = p.Info();
@@ -156,7 +173,9 @@ namespace OvCore::Helpers::ReflectionProperties
         }
         std::any initial; auto result = binding.read(initial); if (!result.Ok()) return result;
         if (info.type.category == "record-adapter") return Record(root, binding, registry, hooks);
-        GUIDrawer::CreateTitle(root, Label(p));
+        if (info.type.category == "value-array" || info.type.category == "value-list")
+        { root.CreateWidget<CollectionField>(binding,registry,hooks); return result; }
+        GUIDrawer::CreateTitle(root, Label(binding));
         if (info.type.category == "enum")
         {
             const TypeDesc* type = nullptr;

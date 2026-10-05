@@ -165,6 +165,13 @@ namespace OvCore::Helpers::ReflectionProperties
         if (rule.empty()) return true;
         if (rule == "Positive")
         { if (auto* v = std::any_cast<float>(&value)) return *v > 0; if (auto* v = std::any_cast<double>(&value)) return *v > 0; return false; }
+        if (rule == "PowerOfTwo")
+        {
+            bool valid = false;
+            Dispatch(property, [&]<class T>() { if constexpr (std::is_integral_v<T> && std::is_unsigned_v<T> && !std::is_same_v<T,bool>)
+                if (auto* v = std::any_cast<T>(&value)) valid = *v && !(*v & (*v - 1)); });
+            return valid;
+        }
         if (rule == "EnumChoice")
         {
             const auto* text = std::any_cast<std::string>(&value); if (!text) return false;
@@ -172,6 +179,39 @@ namespace OvCore::Helpers::ReflectionProperties
                 for (const auto& choice : type->Info().enumerators) if (choice.decimalValue == *text) return true;
         }
         return false;
+    }
+    size_t CollectionLimit(const PropertyDesc& property)
+    {
+        auto text = Meta(property.Info().metadata, "MaxItems");
+        size_t limit = 4096;
+        if (!text.empty() && (!Number(text, limit) || !limit || limit > 4096)) return 0;
+        return limit;
+    }
+    bool ReadValueXML(const MainThread& main, const PropertyDesc& property, const tinyxml2::XMLNode& node, std::any& value)
+    {
+        if (!main.IsCurrent()) return false;
+        auto* codec = FindValueCodec(property);
+        return (codec ? codec->read(main, property, node, value, {}) : node.ToElement() && ReadElement(property, *node.ToElement(), value)) && Valid(property, value);
+    }
+    bool WriteValueXML(const MainThread& main, const PropertyDesc& property, tinyxml2::XMLDocument& doc, tinyxml2::XMLNode& node, const std::any& value)
+    {
+        if (!main.IsCurrent() || node.GetDocument() != &doc || !Valid(property, value)) return false;
+        if (auto* codec = FindValueCodec(property)) return codec->write(main, property, doc, node, value, {});
+        std::any checked;
+        if (!Parse(property, Format(value), checked)) return false;
+        auto coordinate = [&](const char* name, float v) { auto* e = doc.NewElement(name); e->SetText(NumberText(v).c_str()); node.InsertEndChild(e); };
+        if (auto* v = std::any_cast<OvMaths::FVector2>(&value)) { coordinate("x",v->x); coordinate("y",v->y); }
+        else if (auto* v = std::any_cast<OvMaths::FVector3>(&value)) { coordinate("x",v->x); coordinate("y",v->y); coordinate("z",v->z); }
+        else if (auto* v = std::any_cast<OvMaths::FVector4>(&value)) { coordinate("x",v->x); coordinate("y",v->y); coordinate("z",v->z); coordinate("w",v->w); }
+        else if (auto* v = std::any_cast<OvMaths::FQuaternion>(&value)) { coordinate("x",v->x); coordinate("y",v->y); coordinate("z",v->z); coordinate("w",v->w); }
+        else
+        {
+            auto text = Format(value);
+            if (std::any_of(text.begin(), text.end(), [](unsigned char c) { return c < 32 && c != 9 && c != 10 && c != 13; })) return false;
+            auto* element = node.ToElement(); if (!element) return false;
+            element->SetText(text.c_str());
+        }
+        return true;
     }
     bool HasSerializedFields(const TypeDesc& type, const tinyxml2::XMLNode& node, std::string_view prefix)
     {

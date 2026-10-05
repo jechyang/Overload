@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,8 @@ namespace OvReflectGen
         std::string display, canonical, valueType, category;
         unsigned bits = 0;
         bool isSigned = false;
+        std::shared_ptr<TypeRef> element;
+        unsigned capacity = 0;
     };
     struct Parameter { std::string name; TypeRef type; };
     struct Method

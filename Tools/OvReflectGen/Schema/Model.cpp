@@ -26,7 +26,7 @@ namespace OvReflectGen
             keys.insert("Thread");
             keys.insert({"Return", "Ownership", "Nullable"});
             if (kind == "method") keys.insert("Overload");
-            if (kind != "method") keys.insert({"DisplayName", "Category", "Min", "Max", "Step", "Drawer", "Order", "Missing", "Default", "ItemName", "Prefix", "Validate"});
+            if (kind != "method") keys.insert({"DisplayName", "Category", "Min", "Max", "Step", "Drawer", "Order", "Missing", "Default", "ItemName", "Prefix", "Validate", "MaxItems"});
             if (kind == "property") keys.insert("Setter");
         }
         size_t i = 0;
@@ -79,7 +79,7 @@ namespace OvReflectGen
                         !std::all_of(value.begin(), value.end(), [](unsigned char c) { return std::isalnum(c) || c == '_'; }))
                         return fail(key + " requires an identifier");
                 }
-                if (key == "Order" || key == "Min" || key == "Max" || key == "Step")
+                if (key == "Order" || key == "Min" || key == "Max" || key == "Step" || key == "MaxItems")
                 {
                     size_t consumed = 0;
                     try { (void)std::stod(value, &consumed); } catch (...) { return fail("invalid number: " + key); }
@@ -208,11 +208,30 @@ namespace OvReflectGen
                 if (property.metadata.Has("Validate"))
                 {
                     const auto rule = property.metadata.Get("Validate");
-                    if (!((rule == "Positive" && property.type.category == "float") || (rule == "EnumChoice" && property.type.category == "enum")))
-                        issues.push_back({property.source, "Validate must be Positive on a float or EnumChoice on an enum"});
+                    if (!((rule == "Positive" && property.type.category == "float") || (rule == "EnumChoice" && property.type.category == "enum") ||
+                        (rule == "PowerOfTwo" && property.type.category == "integer" && !property.type.isSigned)))
+                        issues.push_back({property.source, "Validate must be Positive on a float, EnumChoice on an enum, or PowerOfTwo on an unsigned integer"});
                     if (rule == "Positive" && property.metadata.Has("Default") && std::strtod(property.metadata.Get("Default").c_str(), nullptr) <= 0)
                         issues.push_back({property.source, "Default violates Positive validation"});
+                    if (rule == "PowerOfTwo" && property.metadata.Has("Default"))
+                    {
+                        const auto text = property.metadata.Get("Default"); unsigned long long value{};
+                        auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+                        if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || !value || (value & (value - 1)))
+                            issues.push_back({property.source, "Default violates PowerOfTwo validation"});
+                    }
                 }
+                const bool collection = property.type.category == "value-array" || property.type.category == "value-list";
+                if (property.metadata.Has("MaxItems") != (property.type.category == "value-list"))
+                    issues.push_back({property.source, "MaxItems is required exclusively on dynamic value lists"});
+                if (property.metadata.Has("MaxItems"))
+                {
+                    const auto text = property.metadata.Get("MaxItems"); unsigned value{}; auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+                    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || !value || value > 4096)
+                        issues.push_back({property.source, "MaxItems must be an integer between 1 and 4096"});
+                }
+                if (collection && (property.metadata.Has("Script") || property.metadata.Has("Default") || property.metadata.Has("Min") || property.metadata.Has("Max") || property.metadata.Has("Step") || property.metadata.Has("Validate")))
+                    issues.push_back({property.source, "Collection properties do not support Script, text defaults or scalar range/validation metadata"});
                 if (property.metadata.Has("ItemName"))
                 {
                     const auto name = property.metadata.Get("ItemName");

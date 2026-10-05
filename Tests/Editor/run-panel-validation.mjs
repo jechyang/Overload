@@ -44,14 +44,22 @@ const calls = path.join(output, 'SystemCalls.cpp'), callsObj = path.join(output,
 fs.writeFileSync(calls, original.slice(0,body) + '{ return "' + profile + '"; }' + original.slice(end));
 const bin = path.join(msvc, 'bin/Hostx64/x64');
 const options = ['/nologo','/std:c++20','/EHsc','/MDd','/c', ...includes];
+const fixture = path.join(output,'CollectionFixture');
+run('fixture-generate','C:/Users/Administrator/AppData/Local/Programs/Python/Python312/python.exe',
+  [path.join(root,'Tests/Reflection/Integration/generate_collection_fixture.py'),fixture]);
+const fixtureObjects=[];
+for (const name of ['Production.generated','Reflection.generated','Joined']) {
+  const object=path.join(fixture,name+'.obj'); fixtureObjects.push(object);
+  run('fixture-'+name,path.join(bin,'cl.exe'),[...options,'/I'+fixture,path.join(fixture,name+'.cpp'),'/Fo'+object]);
+}
 run('profile-compile', path.join(bin, 'cl.exe'), [...options, '/UUNICODE', '/U_UNICODE', calls, '/Fo' + callsObj]);
 const obj = path.join(output, 'panels.obj'), exe = path.join(output, 'panels.exe');
-run('test-compile', path.join(bin, 'cl.exe'), [...options, path.join(root, 'Tests/Editor/panel_validation.cpp'), '/Fo' + obj]);
+run('test-compile', path.join(bin, 'cl.exe'), [...options, '/I'+fixture, path.join(root, 'Tests/Editor/panel_validation.cpp'), '/Fo' + obj]);
 const objectsDir = path.join(root, 'Bin-Int/Debug/OvEditor');
 const objects = fs.readdirSync(objectsDir).filter(x => x.endsWith('.obj') && x !== 'Main.obj').map(x => path.join(objectsDir,x));
 const libraries = ['OvReflection','OvCore','OvRendering','OvUI','OvTools','OvMaths','OvAudio','OvDebug','OvPhysics','OvWindowing',
   'assimp','baregl','bullet3','freetype','glfw','ImGui','lua','soloud','tinyxml2','tracy'];
-run('test-link', path.join(bin, 'link.exe'), ['/nologo','/OPT:REF','/OPT:ICF','/OUT:' + exe, obj, callsObj, ...objects,
+run('test-link', path.join(bin, 'link.exe'), ['/nologo','/OPT:REF','/OPT:ICF','/OUT:' + exe, obj, callsObj, ...fixtureObjects,...objects,
   ...libraries.map(x => path.join(root, 'Bin/Debug', x, x + '.lib')),
   ...['opengl32','dbghelp','ws2_32','winmm','imm32','version','user32','gdi32','shell32','ole32','oleaut32','advapi32','comdlg32','uuid'].map(x => x + '.lib')]);
 const data = path.join(output, 'Data'); fs.mkdirSync(data, {recursive:true});

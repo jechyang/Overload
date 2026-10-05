@@ -26,6 +26,17 @@ namespace OvCore::Helpers::ReflectionProperties
         void Require() const; // Component's void serialization API propagates failure.
     };
     struct Pending { const PropertyDesc* property; std::any value; };
+    struct CollectionOps
+    {
+        const PropertyDesc* element;
+        bool dynamic;
+        size_t (*size)(const std::any&);
+        bool (*get)(const std::any&, size_t, std::any&);
+        bool (*set)(std::any&, size_t, const std::any&);
+        bool (*resize)(std::any&, size_t);
+        bool (*erase)(std::any&, size_t);
+        bool (*move)(std::any&, size_t, size_t);
+    };
     struct ValueCodec
     {
         TypeKey key;
@@ -35,6 +46,7 @@ namespace OvCore::Helpers::ReflectionProperties
         bool (*resolve)(const MainThread&, std::any&);
         const TypeDesc* recordType = nullptr;
         std::optional<ObjectRef> (*borrowRecord)(std::any&) = nullptr;
+        const CollectionOps* collection = nullptr;
     };
     // Generated from the actual annotated value types, with exact type keys.
     std::span<const ValueCodec> GetOvCoreValueCodecs();
@@ -43,6 +55,9 @@ namespace OvCore::Helpers::ReflectionProperties
     std::vector<const PropertyDesc*> Properties(const TypeDesc& type, std::string_view capability);
     bool Parse(const PropertyDesc& property, std::string_view text, std::any& value);
     std::string Format(const std::any& value);
+    bool ReadValueXML(const MainThread&, const PropertyDesc&, const tinyxml2::XMLNode&, std::any&);
+    bool WriteValueXML(const MainThread&, const PropertyDesc&, tinyxml2::XMLDocument&, tinyxml2::XMLNode&, const std::any&);
+    size_t CollectionLimit(const PropertyDesc&);
     // Stage performs all parsing before setters; absent fields default to Keep.
     Report Stage(const MainThread& main, ObjectRef object, const TypeDesc& type, const tinyxml2::XMLNode& node, std::vector<Pending>& pending, std::string_view prefix = {});
     bool HasSerializedFields(const TypeDesc& type, const tinyxml2::XMLNode& node, std::string_view prefix = {});

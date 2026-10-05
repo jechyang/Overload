@@ -375,3 +375,46 @@ acceptance must omit it. Engine tests use the normal baregl ResourceExecutor
 in threaded mode, matching Editor/Game initialization. CI runs the non-GPU
 variant; no remote success is implied by local results. See
 CLANG_REFLECTION_R4_VALIDATION.md for evidence and R5 handoff.
+
+## Generated collections and probe settings
+
+Native value arrays/lists now share generated XML and Inspector operations:
+
+~~~cpp
+struct OV_TYPE(Record) Waypoint
+{
+    OV_FIELD(Serialize, Inspect, Step = 0.05) OvMaths::FVector3 position;
+    OV_FIELD(Serialize, Inspect, Step = 0.1) float wait = 1;
+};
+// In an annotated type, with exact Access<T> friendship for private members:
+OV_FIELD(Serialize, Inspect, ItemName = "item") std::array<float, 3> weights;
+OV_FIELD(Serialize, Inspect, ItemName = "waypoint", MaxItems = 64)
+std::vector<Waypoint> waypoints;
+~~~
+
+Fixed arrays require exactly their declared length in XML. Lists require an
+explicit runtime MaxItems limit (1..4096). Supported elements include scalars,
+strings, reflected enums, math values and Records. Inspector provides bounded
+resize, add/remove/duplicate/reorder, 32-item pages and whole-property defaults
+and clipboard. Multi-edit preserves untouched record leaves/math axes; mixed
+lengths can be unified with Size. Collections use the existing scene history.
+Nested collections, custom allocators and collection Script signatures fail
+during Clang analysis. See Schema/PROTOCOL.md for the complete contract.
+
+Reflection Probe now uses a flattened generated settings Record with its eight
+legacy XML keys. Its batch setter rebuilds cubemap resources when resolution or
+buffering changes; invalid power-of-two resolutions/enums fail before changes.
+Capture Now and conditional local-influence controls remain native UI behaviors.
+
+~~~powershell
+python Tests/Reflection/Integration/verify_collection_schema.py
+python Tests/Reflection/Integration/verify_record_schema.py
+python Tests/Reflection/Integration/verify_resource_schema.py
+node Tests/Editor/run-panel-validation.mjs
+~~~
+
+The Editor runner composes a real Clang-generated fixture module with production
+descriptors only in its isolated validation executable. Production generated
+outputs and shipped component menus contain no fixture components. It verifies
+real scene factories, XML, Inspector operations, history and callback lifetimes
+in both default and RenderThread modes, and saves GPU screenshots.

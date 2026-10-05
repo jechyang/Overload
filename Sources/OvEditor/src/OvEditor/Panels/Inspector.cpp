@@ -55,6 +55,7 @@ namespace
     {
         widget.visible = visible;
         if (auto* group = dynamic_cast<Layout::GroupCollapsable*>(&widget)) group->expandForSearch = expand && visible;
+        if (auto* collection=dynamic_cast<OvCore::Helpers::ReflectionProperties::CollectionField*>(&widget)) collection->expandForSearch=expand && visible;
         if (auto* children = dynamic_cast<OvUI::Internal::WidgetContainer*>(&widget))
             for (auto [child, mode] : children->GetWidgets()) SetVisible(*child,visible,expand);
     }
@@ -81,8 +82,10 @@ namespace
                 if (auto* children = dynamic_cast<OvUI::Internal::WidgetContainer*>(widget))
                 {
                     auto* group = dynamic_cast<Layout::GroupCollapsable*>(widget);
-                    widget->visible = FilterProperties(*children,title+(group ? " "+group->name : ""),terms);
+                    auto* collection=dynamic_cast<OvCore::Helpers::ReflectionProperties::CollectionField*>(widget);
+                    widget->visible = FilterProperties(*children,title+(group ? " "+group->name : collection ? " "+collection->Name() : ""),terms);
                     if (group) group->expandForSearch = !terms.empty() && widget->visible;
+                    if (collection) collection->expandForSearch = !terms.empty() && widget->visible;
                     hit |= widget->visible;
                 }
                 else widget->visible = hit;

@@ -123,7 +123,7 @@ namespace OvUI::Widgets::Layout
 
 			for (auto it = m_widgets.begin(); it != m_widgets.end(); ++it)
 			{
-				if (dynamic_cast<Visual::Separator*>(it->first) || dynamic_cast<GroupCollapsable*>(it->first))
+				if (it->first->fullWidth || dynamic_cast<Visual::Separator*>(it->first) || dynamic_cast<GroupCollapsable*>(it->first))
 				{
 					drawTableSegment(segmentBegin, it, segmentIndex++);
 					it->first->Draw();
