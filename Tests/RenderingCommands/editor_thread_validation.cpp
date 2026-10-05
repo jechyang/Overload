@@ -124,6 +124,27 @@ struct ViewsFixture
     }
     ~ViewsFixture(){context.uiManager->SetCanvas(editor.m_canvas);}
 };
+void VerifyEditorRecordingModes(OvEditor::Core::Editor& editor,OvEditor::Core::Context& context,ViewsFixture& fixture)
+{
+    OvTools::Jobs::JobSystem one(1),two(2);
+    std::vector<std::vector<uint8_t>> expected,actual;
+    OnOwner(context,[&](auto&){beforePresent=[&] {
+        actual.clear();for(auto* view:fixture.views){const auto target=view->GetOutputTarget();const auto [w,h]=target.GetSize();actual.emplace_back(size_t(w)*h*4);target.ReadRGBA8(actual.back());}
+        glBindFramebuffer(GL_READ_FRAMEBUFFER,0);actual.emplace_back(960*320*4);glReadPixels(0,0,960,320,GL_RGBA,GL_UNSIGNED_BYTE,actual.back().data());
+    };});
+    for(bool submitted:{false,true}) {
+        if(!submitted&&context.renderThread)continue;
+        editor.SetFrameSubmissionEnabled(submitted);
+        for(auto* jobs:std::array<OvTools::Jobs::JobSystem*,3>{nullptr,&one,&two}) {
+            for(auto* view:fixture.views)view->SetCommandRecordingEnabled(true,jobs);
+            OnOwner(context,[](auto& driver){driver.OnFrameCompleted();glBindFramebuffer(GL_FRAMEBUFFER,0);glDisable(GL_SCISSOR_TEST);glClearColor(.08f,.12f,.18f,1);glClear(GL_COLOR_BUFFER_BIT);});
+            editor.PreUpdate();editor.Update(0);editor.PostUpdate();editor.DrainRenderFrames();
+            if(expected.empty())expected=actual;else Require(actual==expected,"Editor serial/one/two Worker or immediate/submitted product pixels differ");
+        }
+    }
+    OnOwner(context,[](auto&){beforePresent={};});editor.SetFrameSubmissionEnabled(true);
+    std::puts("PASS: actual Editor product graph: serial/one/two Worker exact viewport/UI images, immediate and submitted Main plus Render owner");
+}
 void VerifyEditorOverlap(OvEditor::Core::Editor& editor,OvEditor::Core::Context& context)
 {
     Gate gate;
@@ -231,6 +252,7 @@ int EDITOR_THREAD_TEST_MAIN(int argc,char** argv) try
             if(threaded)Require(captured==expected.at(i),"Editor threaded view/UI pixel mismatch");else expected.push_back(captured);
         }
         OnOwner(context,[](auto&){beforePresent={};});
+        VerifyEditorRecordingModes(editor,context,fixture);
         if(threaded)
         {
             VerifyEditorOverlap(editor,context);

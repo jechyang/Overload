@@ -85,12 +85,6 @@ namespace OvEditor::Core
 		*/
 		void UpdateEditorPanels(float p_deltaTime);
 
-		/**
-		* Render every views (Scene View, Game View, Asset View)
-		* @param p_deltaTime
-		*/
-		void RenderViews(float p_deltaTime);
-
 		// Manual frame handoff accepts the latest result. Product submissions retain
         // a separate interaction/completion entry for every in-flight frame.
 		OvRendering::Data::RenderFrame RecordRenderFrame(float p_deltaTime);
@@ -99,12 +93,6 @@ namespace OvEditor::Core
         void DrainRenderFrames();
         bool IsFrameSubmissionEnabled() const { return m_frameSubmissionEnabled; }
 
-		/**
-		* Render the editor UI using ImGui
-		* @param p_deltaTime
-		*/
-		void RenderEditorUI(float p_deltaTime);
-		
 		/**
 		* Actually render the scene (Buffer swapping)
 		* and clear input events

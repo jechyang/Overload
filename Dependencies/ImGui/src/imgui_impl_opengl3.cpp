@@ -1093,7 +1093,13 @@ void    ImGui_ImplOpenGL3_DestroyDeviceObjects()
     bd->Retained.reset();
     bd->VboHandle = bd->ElementsHandle = bd->ShaderHandle = 0;
 
-    // Destroy all textures
+    ImGui_ImplOpenGL3_DestroyTextures();
+}
+
+void ImGui_ImplOpenGL3_DestroyTextures()
+{
+    // Texture identifiers belong to the active producer renderer. Device
+    // generation is shared by native/retained replay and stays immutable.
     for (ImTextureData* tex : ImGui::GetPlatformIO().Textures)
         if (tex->RefCount == 1)
             ImGui_ImplOpenGL3_DestroyTexture(tex);

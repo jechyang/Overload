@@ -80,6 +80,16 @@ struct Gate
 };
 void VerifyOverlap(OvGame::Core::Game& game, OvGame::Core::Context& context)
 {
+    // FPS text changes after the zero-delta recording matrix. ImGui 1.92 bakes
+    // glyphs lazily: a previously unseen digit legitimately creates a new font
+    // generation on the GL owner. This gate tests steady, already-warm inputs.
+    const auto text=game.m_fpsCounter.m_text.content;
+    game.m_fpsCounter.m_text.content="0123456789 FPS";
+    const auto allocations=game.m_frontend.GetResourcePool()->GetStatistics().allocations;
+    game.PreUpdate();game.Update(0);game.PostUpdate();game.DrainRenderFrames();
+    game.m_fpsCounter.m_text.content=text;
+    Require(game.m_frontend.GetResourcePool()->GetStatistics().allocations==allocations,"Game warm-up unexpectedly allocated pool targets");
+    std::puts("PASS: Game overlap prewarmed actual FPS digit text; unchanged pool allocations");
     Gate gate;
     List commands; commands.Append([&](auto&) { gate.Block(); }); commands.Seal();
     RenderFrame blocker; blocker.Append(std::move(commands)); blocker.Seal();
@@ -135,6 +145,21 @@ void VerifyScopes(OvGame::Core::Context& context)
     catch (const std::runtime_error&) {}
     Require(abandoned.GetState() == List::State::FAILED, "recording unwind left a usable partial scope");
     std::puts("PASS: producer scope recording/cancellation emits no GPU calls; nested consumer failure unwinds and failed recording cannot seal");
+}
+void VerifyGameRecordingModes(OvGame::Core::Game& game,OvGame::Core::Context& context)
+{
+    OvTools::Jobs::JobSystem one(1),two(2);std::vector<uint8_t> expected,actual(320*240*4);
+    OnOwner(context,[&](auto&){beforePresent=[&]{glBindFramebuffer(GL_READ_FRAMEBUFFER,0);glReadPixels(0,0,320,240,GL_RGBA,GL_UNSIGNED_BYTE,actual.data());};});
+    for(bool submitted:{false,true}) {
+        if(!submitted&&context.renderThread)continue;
+        game.SetFrameSubmissionEnabled(submitted);
+        for(auto* jobs:std::array<OvTools::Jobs::JobSystem*,3>{nullptr,&one,&two}) {
+            game.m_renderJobs=jobs;game.PreUpdate();game.Update(0);game.PostUpdate();game.DrainRenderFrames();
+            if(expected.empty())expected=actual;else Require(actual==expected,"Game serial/one/two Worker or immediate/submitted product pixels differ");
+        }
+    }
+    OnOwner(context,[](auto&){beforePresent={};});game.SetFrameSubmissionEnabled(true);
+    std::puts("PASS: actual Game product graph: serial/one/two Worker exact scene/UI images, immediate and submitted Main plus Render owner");
 }
 void SetThreadMode(const std::filesystem::path& project, bool enabled)
 {
@@ -198,6 +223,7 @@ int GAME_THREAD_TEST_MAIN(int argc, char** argv) try
         Require(captured==32 && pending.empty(), "Game lost a presentation");
         for (const auto& completion:completions) Require(completion.Succeeded() && completion.PresentationRequested(), "product frame did not present/retire successfully");
         OnOwner(context, [](auto&) { beforePresent={}; Require(glGetError()==GL_NO_ERROR,"threaded product GL error"); });
+        VerifyGameRecordingModes(game,context);
         if (threaded)
         {
             VerifyScopes(context); VerifyOverlap(game,context);

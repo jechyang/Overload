@@ -16,7 +16,9 @@ void EditorFrameValidation(OvEditor::Core::Editor& editor,OvEditor::Core::Contex
     for(int i=0;i<240;++i)asset.Update(1.f/60);
     auto clear=[&]{context.driver->OnFrameCompleted();glBindFramebuffer(GL_FRAMEBUFFER,0);glDisable(GL_SCISSOR_TEST);glClearColor(.08f,.12f,.18f,1);glClear(GL_COLOR_BUFFER_BIT);};
     auto pixels=[&]{glBindFramebuffer(GL_READ_FRAMEBUFFER,0);const auto [w,h]=context.window->GetFramebufferSize();std::vector<uint8_t> data(size_t(w)*h*4);glReadPixels(0,0,w,h,GL_RGBA,GL_UNSIGNED_BYTE,data.data());return data;};
-    auto immediate=[&]{clear();editor.RenderViews(0);editor.UpdateEditorPanels(0);ui.Render();};
+    // Standalone view calls remain the independent image oracle; production
+    // uses one composed graph for all views and UI in both execution modes.
+    auto immediate=[&]{clear();asset.Update(0);game.Update(0);scene.Update(0);asset.Render();game.Render();scene.Render();editor.UpdateEditorPanels(0);ui.Render();};
     for(int i=0;i<4;++i){clear();ui.Render();}
     for(int i=0;i<4;++i)immediate();
     Require(asset.IsVisible()&&game.IsVisible()&&scene.IsVisible(),"aggregate fixture did not show all three views");

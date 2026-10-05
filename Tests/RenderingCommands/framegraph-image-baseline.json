@@ -5,6 +5,11 @@
       "name": "editor-command-frames.bin",
       "bytes": 460800,
       "sha256": "d9ee1593edaed4bbd991d6341593c79ca5b1a7989a1a74e6090f8b46762ae25a"
+    },
+    {
+      "name": "editor-game.rgba",
+      "bytes": 2449496,
+      "sha256": "cf96081556131b8af84d568b775dee4278e1310e10efa6a317f86904db9fe8ef"
     }
   ]
 }

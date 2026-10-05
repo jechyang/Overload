@@ -50,14 +50,6 @@ namespace OvRendering::Data
         size_t gpuScopesEnd=0;
         std::shared_ptr<RenderCommandList> commandBlock;
     };
-    // External commands appended after the plan's last pass (editor overlay, picking,
-    // final UI). Declared so Validate can cover the full frame resource contract;
-    // the command lists themselves remain owned by the caller.
-    struct ExternalComposition
-    {
-        std::string name;
-        std::vector<ResourceUse> reads, writes;
-    };
     // Fixed GPU order, independent of the order in which CPU view jobs finish.
     // Imported/history availability is supplied only at the owner planning boundary.
     struct RenderPlan
@@ -71,7 +63,6 @@ namespace OvRendering::Data
         ResourceHandle ImportBackbuffer(uint16_t width,uint16_t height,bool initialized);
         std::vector<PlanResource> resources;
         std::vector<RenderPlanPass> passes;
-        std::vector<ExternalComposition> trailing;
         void Validate(std::span<const std::shared_ptr<const RenderSceneSnapshot>> views) const;
         ResourceHandle Handle(size_t index) const;
         const PlanResource& Resolve(ResourceHandle) const;

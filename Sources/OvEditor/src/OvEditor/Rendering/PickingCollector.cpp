@@ -212,7 +212,7 @@ OvRendering::Data::RenderCommandList OvEditor::Rendering::PickingCollector::Extr
     OvCore::Rendering::SceneRenderRequest request,const EditorOverlayRequest& overlay,
     OvRendering::Data::PipelineState state,OvTools::Jobs::JobSystem* jobs)
 {
-    auto frame=m_frontend.ComposeFrame({},{});Build(*frame,request,overlay,state);
-    frame=m_frontend.PrepareFrame(std::move(frame),state,jobs);m_info=frame->GetFrameInfo();
+    auto frame=m_frontend.ComposeFrames({});Build(*frame,request,overlay,state);
+    frame=m_frontend.PrepareFrame(std::move(frame),state,jobs);m_info+=frame->GetFrameInfo();
     return m_frontend.RecordFrame(std::move(frame),jobs,nullptr,true);
 }

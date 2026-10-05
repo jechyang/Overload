@@ -407,47 +407,6 @@ void OvEditor::Core::Editor::UpdateEditorPanels(float p_deltaTime)
 	}
 }
 
-void OvEditor::Core::Editor::RenderViews(float p_deltaTime)
-{
-	auto& assetView = m_panelsManager.GetPanelAs<OvEditor::Panels::AssetView>("Asset View");
-	auto& sceneView = m_panelsManager.GetPanelAs<OvEditor::Panels::SceneView>("Scene View");
-	auto& gameView = m_panelsManager.GetPanelAs<OvEditor::Panels::GameView>("Game View");
-
-	{
-		ZoneScopedN("Editor Views Update");
-
-		if (assetView.IsOpened())
-		{
-			assetView.Update(p_deltaTime);
-		}
-
-        gameView.Update(p_deltaTime);
-
-		if (sceneView.IsOpened())
-		{
-			sceneView.Update(p_deltaTime);
-		}
-	}
-
-	if (assetView.IsOpened() && assetView.IsVisible())
-	{
-		ZoneScopedN("Asset View Rendering");
-		assetView.Render();
-	}
-
-	if (gameView.IsOpened() && gameView.IsVisible())
-	{
-		ZoneScopedN("Game View Rendering");
-		gameView.Render();
-	}
-
-	if (sceneView.IsOpened() && sceneView.IsVisible())
-	{
-		ZoneScopedN("Scene View Rendering");
-		sceneView.Render();
-	}
-}
-
 OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p_deltaTime)
 {
     m_latestFrameCompletion = {};
@@ -535,22 +494,15 @@ bool OvEditor::Core::Editor::CompleteRenderFrame(const OvRendering::Data::Render
     return true;
 }
 
-void OvEditor::Core::Editor::RenderEditorUI(float p_deltaTime)
-{
-	ZoneScopedN("Editor UI Rendering");
-
-	EDITOR_CONTEXT(uiManager)->Render();
-}
-
 void OvEditor::Core::Editor::SetFrameSubmissionEnabled(bool enabled)
 {
     if (m_pendingFrame) throw std::logic_error("Cannot switch Editor submission mode during a frame");
     if (!enabled && m_context.renderThread) throw std::logic_error("Threaded Editor requires command submission");
     DrainRenderFrames();
     for (const auto* name : {"Asset View", "Game View", "Scene View"})
-        m_panelsManager.GetPanelAs<Panels::AView>(name).SetCommandRecordingEnabled(enabled,
-            enabled && m_context.projectSettings.GetOrDefault<bool>("parallel_recording", false) ? m_context.jobSystem.get() : nullptr);
-    m_context.uiManager->SetCommandRecordingEnabled(enabled);
+        m_panelsManager.GetPanelAs<Panels::AView>(name).SetCommandRecordingEnabled(true,
+            m_context.projectSettings.GetOrDefault<bool>("parallel_recording", false) ? m_context.jobSystem.get() : nullptr);
+    m_context.uiManager->SetCommandRecordingEnabled(true);
     m_latestFrameCompletion = {}; m_recordedInteraction.reset();
     m_frameSubmissionEnabled = enabled;
 }

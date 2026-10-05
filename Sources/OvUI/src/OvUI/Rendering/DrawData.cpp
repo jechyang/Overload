@@ -56,6 +56,7 @@ namespace OvUI::Rendering
                 {
                     UnpackState unpack;
                     auto value = std::make_shared<baregl::Texture>(baregl::types::ETextureType::TEXTURE_2D);
+                    // Match the native ImGui backend's upload and sampling format.
                     value->Allocate({.width=width, .height=height,
                         .minFilter=baregl::types::ETextureFilteringMode::LINEAR, .magFilter=baregl::types::ETextureFilteringMode::LINEAR,
                         .horizontalWrap=baregl::types::ETextureWrapMode::CLAMP_TO_EDGE, .verticalWrap=baregl::types::ETextureWrapMode::CLAMP_TO_EDGE,

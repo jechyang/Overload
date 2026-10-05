@@ -106,21 +106,6 @@ CompiledRenderPlan RenderPlan::Compile(std::span<const std::shared_ptr<const Ren
     }
     require(std::all_of(used.begin(), used.end(), [](bool value) { return value; }), "Prepared view has no pass");
     require(gpuScopeDepth==0,"Unfinished GPU scope");
-    for (const auto& step : trailing)
-    {
-        scope="RenderPlan trailing "+step.name;
-        require(!step.name.empty(), "Trailing composition needs a name");
-        for (const auto& use : step.reads)
-        {
-            checkResource(use);
-            require((available[use.resource] & use.subresources) == use.subresources, "Trailing composition input has no producer");
-        }
-        for (const auto& use : step.writes)
-        {
-            checkResource(use);
-            available[use.resource] |= use.subresources;
-        }
-    }
     return CompileAccesses(*this,views);
 }
 
@@ -197,7 +182,6 @@ ResourceHandle RenderPlan::ImportBackbuffer(uint16_t width,uint16_t height,bool 
 void RenderPlan::Append(RenderPlan&& source,size_t viewOffset,size_t viewCount)
 {
     if(&source==this||source.Scope()==Scope()||remaps.contains(source.Scope()))throw std::invalid_argument("RenderPlan: duplicate product fragment scope");
-    if(!source.trailing.empty())throw std::invalid_argument("RenderPlan: product fragment still has opaque trailing composition");
     if(viewScopes.empty()&&viewOffset)viewScopes.resize(viewOffset,Scope());
     if(viewScopes.size()!=viewOffset)throw std::invalid_argument("RenderPlan: fragment view offset mismatch");
     for(size_t i=0;i<viewCount;++i)viewScopes.push_back(source.viewScopes.empty()?source.Scope():source.viewScopes.at(i));
@@ -304,11 +288,10 @@ namespace
     {
         CompiledRenderPlan result;result.scope=plan.Scope();result.lifetimes.resize(plan.resources.size());result.finalVersions.resize(plan.resources.size());
         for(const auto& pass:plan.passes)result.passNames.push_back(pass.name+" (view "+std::to_string(pass.viewId)+")");
-        for(const auto& trailing:plan.trailing)result.passNames.push_back(trailing.name+" (external)");
         std::vector<PlanResourceDesc> descriptors;std::vector<std::vector<Cell>> content;
         for(size_t i=0;i<plan.resources.size();++i)
         {
-            const auto& resource=plan.resources[i]; auto descriptor=resource.descriptor.value_or(PlanResourceDesc::From(resource.storage));
+            const auto& resource=plan.resources[i]; auto descriptor=resource.descriptor?*resource.descriptor:PlanResourceDesc::From(resource.storage);
             result.resourceNames.push_back(resource.name.empty()?"storage "+std::to_string(resource.id):resource.name);
             // Legacy imports include assets with driver-selected formats. They
             // are not pool candidates; strict descriptor checks apply to new APIs.
@@ -393,7 +376,7 @@ namespace
                     }
                 }
                 auto& lifetime=result.lifetimes[index];lifetime.first=std::min(lifetime.first,passIndex);lifetime.last=std::max(lifetime.last,passIndex);
-                if(access.type==ResourceAccessType::Export){lifetime.exported=true;lifetime.last=plan.passes.size()+plan.trailing.size();}
+                if(access.type==ResourceAccessType::Export){lifetime.exported=true;lifetime.last=plan.passes.size();}
                 for(auto cell:cells(access.resource,access.range)) {
                     auto& value=flags[{index,cell}];
                     if(value.write||(write&&value.read))throw std::invalid_argument(scope+"Overlapping accesses; declare attachment Load for blending");
@@ -416,23 +399,7 @@ namespace
             }
             for(size_t i=0;i<written.size();++i)if(written[i])++result.finalVersions[i];
         }
-        for(size_t step=0;step<plan.trailing.size();++step) {
-            const size_t node=plan.passes.size()+step;const auto& trailing=plan.trailing[step];
-            const auto touch=[&](const ResourceUse& use,bool write) {
-                auto& lifetime=result.lifetimes[use.resource];lifetime.first=std::min(lifetime.first,node);lifetime.last=std::max(lifetime.last,node);
-                const auto& desc=descriptors[use.resource];
-                for(unsigned layer=0;layer<desc.layers;++layer)if(use.subresources&(1u<<layer))
-                    for(auto index:cells(plan.Handle(use.resource),{desc.aspect,0,1,static_cast<uint16_t>(layer),1})) {
-                        auto& cell=content[use.resource][index];
-                        if(!cell.initialized)throw std::invalid_argument("RenderPlan trailing "+trailing.name+": uninitialized content/Load");
-                        edge(cell.writer,node,use.resource,DependencyKind::RAW);
-                        if(write) {edge(cell.writer,node,use.resource,DependencyKind::WAW);for(auto reader:cell.readers)edge(reader,node,use.resource,DependencyKind::WAR);cell.writer=node;cell.readers.clear();}
-                        else cell.readers.push_back(node);
-                    }
-            };
-            for(const auto& use:trailing.reads)touch(use,false);for(const auto& use:trailing.writes){touch(use,true);++result.finalVersions[use.resource];}
-        }
-        for(size_t pass=0;pass<plan.passes.size()+plan.trailing.size();++pass) {
+        for(size_t pass=0;pass<plan.passes.size();++pass) {
             uint64_t live=0;for(size_t i=0;i<result.lifetimes.size();++i)if(plan.resources[i].origin==ResourceOrigin::Transient&&result.lifetimes[i].first<=pass&&result.lifetimes[i].last>=pass)live+=result.lifetimes[i].estimatedBytes;
             result.estimatedPeakBytes=std::max(result.estimatedPeakBytes,live);
         }

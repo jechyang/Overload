@@ -41,7 +41,7 @@ std::unique_ptr<SceneFrame> RenderFrontend::PrepareFrame(std::unique_ptr<SceneFr
     OvRendering::Data::PipelineState state, OvTools::Jobs::JobSystem* jobs, const std::atomic_bool* cancel) const
 {
     RequireOwner();
-    if (!frame || !frame->m_prepared.empty()) throw std::invalid_argument("Frame missing or already prepared");
+    if (!frame || frame->m_compiled || !frame->m_prepared.empty()) throw std::invalid_argument("Frame missing or already prepared");
     frame->m_compiled = frame->m_plan.Compile(frame->m_views);
     frame->m_mapping=m_pool->Realize(frame->m_plan,*frame->m_compiled,m_reuse);
     frame->m_prepared = OvRendering::Core::RenderTaskCoordinator::PrepareViews(frame->m_views,state,jobs,cancel);
@@ -86,7 +86,6 @@ std::unique_ptr<SceneFrame> RenderFrontend::ComposeFrames(std::vector<std::uniqu
     RequireOwner();auto frame=std::unique_ptr<SceneFrame>(new SceneFrame);
     for(auto& fragment:fragments) {
         if(!fragment||fragment->m_compiled||!fragment->m_prepared.empty())throw std::invalid_argument("Product composition needs unprepared owned fragments");
-        fragment->m_plan.Validate(fragment->m_views);
         frame->m_plan.Append(std::move(fragment->m_plan),frame->m_views.size(),fragment->m_views.size());
         for(auto& view:fragment->m_views)frame->m_views.push_back(std::move(view));
         frame->m_info+=fragment->m_info;frame->m_commands.AppendRecording(std::move(fragment->m_commands));

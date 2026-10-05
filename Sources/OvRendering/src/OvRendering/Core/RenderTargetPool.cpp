@@ -14,7 +14,7 @@ namespace
     struct TargetEntry
     {
         Data::PlanResourceDesc descriptor;
-        uint64_t serial=0, released=0;
+        uint64_t serial=0, lastUse=0;
         bool leased=false;
         size_t pins=0;
         std::shared_ptr<baregl::Texture> texture;
@@ -73,7 +73,7 @@ struct Core::RenderTargetPool::State
         for(;;) {
             auto oldest=entries.end();
             for(auto it=entries.begin();it!=entries.end();++it)if(!(*it)->leased&&!(*it)->pins&&
-                (oldest==entries.end()||(*it)->released<(*oldest)->released))oldest=it;
+                (oldest==entries.end()||(*it)->lastUse<(*oldest)->lastUse))oldest=it;
             if(oldest==entries.end()||(!closed&&idle<=budget))break;
             idle-=(*oldest)->descriptor.EstimatedBytes();removed.splice(removed.end(),entries,oldest);++totals.evictions;
         }
@@ -88,7 +88,7 @@ struct Core::RenderTargetPool::State
         ~Lease() {
             if(!entry)return;
             std::list<std::shared_ptr<TargetEntry>> removed;
-            {std::lock_guard lock(state->mutex);if(borrowed)--entry->pins;else entry->leased=false;entry->released=++state->clock;
+            {std::lock_guard lock(state->mutex);if(borrowed)--entry->pins;else entry->leased=false;entry->lastUse=++state->clock;
                 if(!entry->leased&&!entry->pins&&!entry->Alive()) {
                     const auto found=std::find(state->entries.begin(),state->entries.end(),entry);
                     if(found!=state->entries.end())removed.splice(removed.end(),state->entries,found);
@@ -170,7 +170,7 @@ std::shared_ptr<const Core::RenderResourceMapping> Core::RenderTargetPool::Reali
     const auto reserve=[&](const Data::PlanResourceDesc& desc,bool leased) {
         auto entry=std::make_shared<TargetEntry>();entry->descriptor=desc;entry->leased=leased;
         pending.push_back(entry);
-        std::lock_guard lock(m_state->mutex);entry->serial=m_state->nextSerial++;m_state->entries.push_back(entry);
+        std::lock_guard lock(m_state->mutex);entry->serial=m_state->nextSerial++;entry->lastUse=++m_state->clock;m_state->entries.push_back(entry);
         return entry;
     };
     try {
@@ -227,6 +227,18 @@ std::shared_ptr<const Core::RenderResourceMapping> Core::RenderTargetPool::Reali
             }
         });
         {std::list<std::shared_ptr<TargetEntry>> removed;std::lock_guard lock(m_state->mutex);
+            // Keep only the spare capacity needed by this graph recent. After a
+            // resize, untouched spares must not be evicted ahead of old sizes on
+            // every retirement. Excess entries retain their original LRU age.
+            if(reuse)for(size_t i=0;i<slots.size();++i) {
+                const auto& desc=slots[i].entry->descriptor;
+                if(std::any_of(slots.begin(),slots.begin()+i,[&](const auto& slot){return slot.entry->descriptor.Compatible(desc);}))continue;
+                size_t needed=static_cast<size_t>(std::count_if(slots.begin(),slots.end(),[&](const auto& slot){return slot.entry->descriptor.Compatible(desc);})) * m_state->frameReserve;
+                for(const auto& entry:m_state->entries)if(!entry->pins&&entry->leased&&entry->descriptor.Compatible(desc)&&needed)--needed;
+                for(const auto& entry:m_state->entries)if(needed&&!entry->pins&&!entry->leased&&entry->Alive()&&entry->descriptor.Compatible(desc)) {
+                    entry->lastUse=++m_state->clock;--needed;
+                }
+            }
             m_state->totals.peakLeasedBytes=std::max(m_state->totals.peakLeasedBytes,m_state->Stats().leasedBytes);removed=m_state->Trim();}
         return std::shared_ptr<const RenderResourceMapping>(new RenderResourceMapping(std::move(storage)));
     }catch(...) {

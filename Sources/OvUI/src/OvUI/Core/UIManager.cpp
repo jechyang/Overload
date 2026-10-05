@@ -223,7 +223,7 @@ void OvUI::Core::UIManager::SetCommandRecordingEnabled(bool p_enabled)
     if (p_enabled)
     {
         auto recorder = std::make_unique<Rendering::DrawDataRecorder>();
-        ImGui_ImplOpenGL3_DestroyDeviceObjects();
+        ImGui_ImplOpenGL3_DestroyTextures();
         baregl::ResourceExecutor::Invoke([] { ImGui_ImplOpenGL3_NewFrame(); });
         m_recorder = std::move(recorder);
     }
@@ -231,7 +231,7 @@ void OvUI::Core::UIManager::SetCommandRecordingEnabled(bool p_enabled)
     {
         m_recorder->ResetFontIdentifiers();
         m_recorder.reset();
-        ImGui_ImplOpenGL3_DestroyDeviceObjects();
+        ImGui_ImplOpenGL3_DestroyTextures();
     }
 }
 

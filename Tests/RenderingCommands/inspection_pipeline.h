@@ -28,28 +28,12 @@ namespace RenderingExamples
             main.pipeline.stages={Opaque};
             if (includeTransparent) main.pipeline.stages.push_back(Transparent);
             if (includeSceneUI) main.pipeline.stages.push_back(SceneUI);
-            std::vector<std::shared_ptr<const RenderSceneSnapshot>> views;
-            views.push_back(frontend.ExtractScene(inspection));
-            views.push_back(frontend.ExtractScene(main));
-            RenderPlan plan;
-            const auto addPass = [&](std::string name,size_t view,baregl::Framebuffer::Snapshot target) {
-                RenderPlanPass pass;
-                pass.name=std::move(name);pass.view=view;pass.viewId=views[view]->GetView().id;
-                pass.stages=views[view]->GetPipeline().stages;pass.target=std::move(target);
-                // Color and depth are separate declared outputs; no one-color assumption.
-                for (const auto& attachment : pass.target->GetTextureAttachments()) if (attachment.writable)
-                {
-                    PlanResource resource;
-                    resource.id=plan.resources.size()+1;resource.sceneGeneration=main.sceneGeneration;
-                    resource.storage=attachment.storage;resource.width=views[view]->GetView().width;
-                    resource.height=views[view]->GetView().height;
-                    pass.writes.push_back({plan.resources.size(),1});plan.resources.push_back(std::move(resource));
-                }
-                plan.passes.push_back(std::move(pass));
-            };
-            addPass("Opaque inspection",0,std::move(inspectionTarget));
-            addPass("Forward preview",1,std::move(mainTarget));
-            return frontend.ComposeFrame(std::move(views),std::move(plan));
+            auto frame=frontend.ComposeFrames({});
+            // AddView declares every color/depth/stencil attachment and actual
+            // material sampler; preparation compiles the complete graph once.
+            frame->AddView(frontend.ExtractScene(inspection),std::move(inspectionTarget),"Opaque inspection");
+            frame->AddView(frontend.ExtractScene(main),std::move(mainTarget),"Forward preview");
+            return frame;
         }
     };
 }

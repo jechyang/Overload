@@ -1,5 +1,6 @@
 #include "product_loop_validation.inl"
 #include <OvUI/Plugins/DDTarget.h>
+#include <unordered_set>
 void EditorProductValidation(OvEditor::Core::Editor& editor,OvEditor::Core::Context& context)
 {
     auto& view=editor.m_panelsManager.GetPanelAs<OvEditor::Panels::GameView>("Game View");
@@ -49,6 +50,12 @@ void EditorInteractionValidation(OvEditor::Core::Editor& editor,OvEditor::Core::
     for(uint32_t y=0;y<h&&!picked;++y)for(uint32_t x=0;x<w&&!picked;++x)
         if(auto result=input->readback->Resolve(scene,x,y))if(auto* actor=std::get_if<OvTools::Utils::OptRef<OvCore::ECS::Actor>>(&*result))
             if(actor->value().GetComponent<CMaterialRenderer>()){picked=actor->value().GetGUID();input->mouse={float(x),float(h-y)};}
+    if(!picked) {
+        const auto p=view.GetCamera()->GetPosition();
+        std::unordered_set<uint32_t> colors;for(size_t i=0;i<input->readback->pixels.size();i+=4)colors.insert(uint32_t(input->readback->pixels[i])|uint32_t(input->readback->pixels[i+1])<<8|uint32_t(input->readback->pixels[i+2])<<16);
+        std::printf("PICKING DIAG: %ux%u camera %f,%f,%f ready=%d scene-match=%d actors=%zu colors=%zu\n",w,h,p.x,p.y,p.z,input->readback->IsReady(),input->readback->scene==scene.GetLifetimeToken(),input->readback->actors.size(),colors.size());
+        for(auto color:colors)std::printf("PICKING COLOR: %u\n",color);
+    }
     Require(picked!=0,"interaction fixture contains no actor pixel");input->pressed=true;input->hovered=true;input->resizing=false;
     view.m_image->GetPlugin<OvUI::Plugins::DDTarget<std::pair<std::string, OvUI::Widgets::Layout::Group*>>>()->DataReceivedEvent.Invoke({":Materials/Default.ovmat",nullptr});Require(input->materialDrop.has_value(),"material drop was not retained with frame");
     auto* renderer=scene.FindActorByGUID(picked)->GetComponent<CMaterialRenderer>();renderer->RemoveMaterialAtIndex(0);

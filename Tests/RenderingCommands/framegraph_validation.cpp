@@ -143,6 +143,26 @@ namespace
             {baregl::ResourceExecutor foreignOwner([&](auto operation){++dispatches;operation();});try{bounded.Realize(plan,compiled);}catch(const std::logic_error&){rejected=true;}}
             Require(rejected&&dispatches==1,"warm pool accepted a foreign producer binding");
         }
+        {
+            unsigned dispatches=0;
+            baregl::ResourceExecutor owner([&](auto operation){
+                ++dispatches;baregl::ResourceExecutor native([](auto operation){operation();});operation();
+            });
+            auto resized=plan;
+            for(auto& resource:resized.resources)resource.descriptor=ColorDesc(32,16);
+            const auto resizedCompiled=resized.Compile();
+            // The budget can retain either the old size plus one small target,
+            // or both current frame sets. Old frames retire after new allocation.
+            OvRendering::Core::RenderTargetPool bounded(ColorDesc().EstimatedBytes()+ColorDesc(32,16).EstimatedBytes());
+            bounded.SetFrameReserve(2);
+            auto old=bounded.Realize(plan,compiled),current=bounded.Realize(resized,resizedCompiled);
+            old.reset();current.reset();
+            {auto warm=bounded.Realize(resized,resizedCompiled);}
+            const auto allocations=bounded.GetStatistics().allocations;const auto ownerWaits=dispatches;
+            for(unsigned i=0;i<8;++i){auto frame=bounded.Realize(resized,resizedCompiled);}
+            Require(bounded.GetStatistics().allocations==allocations&&dispatches==ownerWaits,
+                "resize evicted current spare sets repeatedly despite a sufficient idle budget");
+        }
         auto oldDomainPool=std::make_shared<OvRendering::Core::RenderTargetPool>();auto old=oldDomainPool->Realize(plan,compiled);const auto oldStorage=old->TextureStorage(a);old.reset();
         domain->Close();domain.reset();Require(oldStorage.GetID()==0,"closed domain did not invalidate pooled storage");
         domain=std::make_unique<baregl::DeletionQueue>();bool foreign=false;try{oldDomainPool->Realize(plan,compiled);}catch(...){foreign=true;}Require(foreign,"pool reused a previous context domain");oldDomainPool.reset();

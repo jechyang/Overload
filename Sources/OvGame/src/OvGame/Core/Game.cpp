@@ -121,10 +121,10 @@ void OvGame::Core::Game::Update(float p_deltaTime)
 		#ifdef _DEBUG
 		m_frameInfo.Update(m_renderStats);
 		#endif
-        if(!product)product=m_frontend.ComposeFrame({},{});
+        if(!product)product=m_frontend.ComposeFrames({});
         m_context.uiManager->RecordPlan(product->ComposePlan());
 	}
-    if(!product)product=m_frontend.ComposeFrame({},{});
+    if(!product)product=m_frontend.ComposeFrames({});
     AddWindowPresentation(product->ComposePlan(),m_context.window->GetSize());
     product=m_frontend.PrepareFrame(std::move(product),m_context.driver->CreatePipelineState(),m_renderJobs);
     m_renderStats=product->GetFrameInfo();
@@ -179,8 +179,8 @@ void OvGame::Core::Game::SetFrameSubmissionEnabled(bool enabled)
     if (m_pendingFrame) throw std::logic_error("Cannot switch Game submission mode during a frame");
     if (!enabled && m_context.renderThread) throw std::logic_error("Threaded Game requires command submission");
     DrainRenderFrames();
-    m_renderJobs = enabled && m_context.projectSettings.GetOrDefault<bool>("parallel_recording", false) ? m_context.jobSystem.get() : nullptr;
-    m_context.uiManager->SetCommandRecordingEnabled(enabled);
+    m_renderJobs = m_context.projectSettings.GetOrDefault<bool>("parallel_recording", false) ? m_context.jobSystem.get() : nullptr;
+    m_context.uiManager->SetCommandRecordingEnabled(true);
     m_frameSubmissionEnabled = enabled;
 }
 
@@ -197,7 +197,7 @@ std::unique_ptr<OvCore::Rendering::SceneFrame> OvGame::Core::Game::BuildSceneFra
 {
     using namespace OvRendering::Data;
     auto* scene=m_context.sceneManager.GetCurrentScene();const auto [width,height]=m_context.window->GetSize();
-    auto product=m_frontend.ComposeFrame({},{});
+    auto product=m_frontend.ComposeFrames({});
     if(scene&&width&&height) {
         if(auto camera=scene->FindMainCamera()) {
             OvCore::Rendering::SceneRenderRequest request{{*scene,camera->GetCamera(),width,height,0,0,
@@ -229,13 +229,6 @@ std::unique_ptr<OvCore::Rendering::SceneFrame> OvGame::Core::Game::BuildSceneFra
     }
     return product;
 }
-OvRendering::Data::RenderCommandList OvGame::Core::Game::RecordSceneCommands()
-{
-    auto product=BuildSceneFrame();AddWindowPresentation(product->ComposePlan(),m_context.window->GetSize());
-    product=m_frontend.PrepareFrame(std::move(product),m_context.driver->CreatePipelineState(),m_renderJobs);m_renderStats=product->GetFrameInfo();
-    return m_frontend.RecordFrame(std::move(product),m_renderJobs);
-}
-
 void OvGame::Core::Game::CollectCompletedFrames()
 {
     while (!m_inFlightFrames.empty() && m_inFlightFrames.front().IsRetired())

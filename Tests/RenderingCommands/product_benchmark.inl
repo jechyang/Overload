@@ -130,7 +130,7 @@ namespace Benchmark
     }
     constexpr const char* modes[]{"immediate","commands","threaded"};
 }
-void BenchmarkBeforeSubmit(uint64_t id){Benchmark::Begin(id);}
+void BenchmarkBeforeSubmit(uint64_t id){if(auto* run=Benchmark::active.load();run&&!run->immediate)Benchmark::Begin(id);}
 void BenchmarkBeforeImmediateRender(){if(auto* run=Benchmark::active.load())Benchmark::Begin(run->currentProducer);}
 void BenchmarkAfterPresent(){Benchmark::AfterPresent();}
 void BenchmarkRetired(uint64_t id){Benchmark::Retired(id);}

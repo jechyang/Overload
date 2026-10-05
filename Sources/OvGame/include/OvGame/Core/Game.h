@@ -66,7 +66,6 @@ namespace OvGame::Core
         void DrainRenderFrames();
 
 	private:
-        OvRendering::Data::RenderCommandList RecordSceneCommands();
         std::unique_ptr<OvCore::Rendering::SceneFrame> BuildSceneFrame();
         void CollectCompletedFrames();
         std::deque<OvRendering::Data::RenderFrame::Completion> m_inFlightFrames;

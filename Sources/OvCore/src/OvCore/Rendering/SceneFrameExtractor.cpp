@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <unordered_set>
 using namespace OvCore;
 using namespace OvCore::Rendering;
 using namespace OvRendering;
@@ -72,7 +73,8 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
         frame->m_plan.passes.push_back({std::move(name),index,input.viewId,input.pipeline.stages,std::move(target),std::move(reads),std::move(writes),{}});
         addDepthStencil(frame->m_plan.passes.back());
         auto& pass=frame->m_plan.passes.back();
-        for(const auto& mesh:frame->m_views.back()->GetMeshes())for(const auto& storage:Data::Material::GetPreparedTextureReads(mesh.material)) {
+        std::unordered_set<const Data::Material::SnapshotInput*> materials;
+        for(const auto& mesh:frame->m_views.back()->GetMeshes())if(materials.insert(mesh.material.get()).second)for(const auto& storage:Data::Material::GetPreparedTextureReads(mesh.material)) {
             auto handle=frame->m_plan.Find(storage);const auto desc=Data::PlanResourceDesc::From(storage);
             if(!handle) {handle=frame->m_plan.Import("Material.Sampler",storage,Data::ResourceOrigin::Imported,{{desc.aspect,0,desc.mips,0,desc.layers}});}
             if(std::none_of(pass.accesses.begin(),pass.accesses.end(),[&](const auto& access){return access.resource==*handle&&access.type==Data::ResourceAccessType::Sample;}))
@@ -202,20 +204,6 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
         if (!ui.images.empty() || !ui.meshes.empty())
         {
             UI::RenderResources localResources;
-            std::vector<Data::ResourceUse> reads;
-            const auto addTextureRead = [&](const std::shared_ptr<baregl::Texture>& texture) {
-                if (!texture) return;
-                const auto& desc = texture->GetDesc();
-                const auto resource = addResource(texture, static_cast<uint16_t>(desc.width),
-                    static_cast<uint16_t>(desc.height), 1, 1, Data::ResourceOrigin::Imported);
-                if (std::none_of(reads.begin(), reads.end(), [&](const auto& r) { return r.resource == resource; }))
-                    reads.push_back({resource, 1});
-            };
-            for (const auto& image : ui.images)
-                if (image.texture && image.color.w > 0)
-                    addTextureRead(image.texture);
-            for (const auto& mesh : ui.meshes)
-                addTextureRead(mesh.texture);
             const auto hasSceneUI = std::any_of(ui.images.begin(), ui.images.end(), [](const auto& image) {
                     return image.renderMode != ECS::Components::CCanvas::RenderMode::ScreenSpaceOverlay;
                 }) || std::any_of(ui.meshes.begin(), ui.meshes.end(), [](const auto& mesh) {
@@ -239,23 +227,7 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
             }
         }
     }
-    frame->m_plan.Validate(frame->m_views);
     return frame;
-}
-
-void SceneFrame::DeclareTrailingComposition(std::string name,
-    std::vector<Data::ResourceUse> reads, std::vector<Data::ResourceUse> writes)
-{
-    m_plan.trailing.push_back({std::move(name), std::move(reads), std::move(writes)});
-    m_plan.Validate(m_views);
-}
-
-std::optional<size_t> SceneFrame::FindResource(const baregl::Texture::Snapshot& storage) const
-{
-    const auto id = storage.GetID();
-    for (size_t i = 0; i < m_plan.resources.size(); ++i)
-        if (m_plan.resources[i].storage.GetID() == id) return i;
-    return std::nullopt;
 }
 
 void SceneFrame::AddView(std::shared_ptr<const Data::RenderSceneSnapshot> input,std::optional<baregl::Framebuffer::Snapshot> target,std::string name)
@@ -276,7 +248,8 @@ void SceneFrame::AddView(std::shared_ptr<const Data::RenderSceneSnapshot> input,
             pass.accesses.push_back({handle,{aspect},Data::ResourceAccessType::Attachment,(depth?input->GetView().clearDepth:input->GetView().clearStencil)?Data::AttachmentLoad::Clear:Data::AttachmentLoad::Load});
         }
     }
-    for(const auto& mesh:input->GetMeshes())for(const auto& storage:Data::Material::GetPreparedTextureReads(mesh.material)) {
+    std::unordered_set<const Data::Material::SnapshotInput*> materials;
+    for(const auto& mesh:input->GetMeshes())if(materials.insert(mesh.material.get()).second)for(const auto& storage:Data::Material::GetPreparedTextureReads(mesh.material)) {
         auto handle=m_plan.Find(storage);const auto desc=Data::PlanResourceDesc::From(storage);
         if(!handle)handle=m_plan.Import("Material.Sampler",storage,Data::ResourceOrigin::Imported,{{desc.aspect,0,desc.mips,0,desc.layers}});
         if(std::none_of(pass.accesses.begin(),pass.accesses.end(),[&](const auto& access){return access.resource==*handle;}))

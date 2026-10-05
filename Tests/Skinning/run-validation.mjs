@@ -63,6 +63,13 @@ const mutexDeque = process.argv.includes('--mutex-deque');
 if (uiCommands && (editor || parallel || geometry || asan)) throw Error("--ui-commands runs separately");
 const output = path.join(root, 'Build/JobsValidation/Skinning', config + (framegraph ? '-framegraph' : '') + (framegraphMemory ? '-framegraph-memory' : '') + (editorCamera ? '-editor-camera' : '') + (pipeline ? '-pipeline' : '') + (postprocess ? '-postprocess' : auxiliary ? '-auxiliary' : '') + (bindings ? '-bindings' : stages ? '-stages' : '') + (frontend ? '-frontend' : '') + (parallelRecording ? '-parallel-recording' : '') + (recordingBenchmark ? '-recording-benchmark' : editorBenchmark ? '-editor-benchmark' : editorStress ? '-editor-stress' : editorThread ? '-editor-thread' : '') + (gameBenchmark ? '-game-benchmark' : gameThread ? '-game-thread' : gameFrame ? '-game-frame' : '') + (resourceExecutor ? '-resource-executor' : gpuProfiling ? '-gpu-profiling' : imguiLifetime ? '-imgui-lifetime' : textureRegistry ? '-texture-registry' : resourceLifetime ? '-resource-lifetime' : logDispatch ? '-log-dispatch' : renderThread ? '-render-thread' : renderFrame ? '-render-frame' : uiCommands ? '-ui-commands' : '') + (commandList ? '-command-list' : targetState ? '-target-state' : snapshots ? '-snapshots' : material ? '-material' : geometry ? '-geometry' : '') + (editorUI ? '-editor-ui' : editor ? '-editor' : parallel ? '-parallel' : '') + (productLoop ? '-product-loop' : '') + (mutexDeque ? '-mutex' : '') + (asan ? '-asan' : ''));
 fs.mkdirSync(output, { recursive: true });
+// Standalone project builds can skip the solution's resource publishing step.
+// Always test the checked-in assets, rather than stale Debug/Release shaders.
+for(const area of ['Engine','Editor']) {
+  const source=path.join(root,'Resources',area),destination=path.join(root,'Build',config,'Data',area);
+  fs.cpSync(source,destination,{recursive:true,force:true,filter:(from,to)=>
+    fs.statSync(from).isDirectory()||!fs.existsSync(to)||!fs.readFileSync(from).equals(fs.readFileSync(to))});
+}
 const header = 'Sources/OvCore/include/OvCore/ECS/Components/CSkinnedMeshRenderer.h';
 const source = 'Sources/OvCore/src/OvCore/ECS/Components/CSkinnedMeshRenderer.cpp';
 const vswhere = 'C:/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe';
@@ -178,6 +185,9 @@ function run(file, args, cwd, log, timeout = 120000) {
     fs.writeFileSync(dest, fs.readFileSync(path.join(root, 'Sources/OvGame/include/OvGame/Core/Game.h'), 'utf8').replaceAll('private:', 'public:'));
     const appHeader = path.join(overlay, 'OvGame/Core/Application.h');
     fs.writeFileSync(appHeader, fs.readFileSync(path.join(root, 'Sources/OvGame/include/OvGame/Core/Application.h'), 'utf8').replaceAll('private:', 'public:'));
+    const fpsHeader=path.join(overlay,'OvGame/Utils/FPSCounter.h');
+    fs.mkdirSync(path.dirname(fpsHeader),{recursive:true});
+    fs.writeFileSync(fpsHeader,fs.readFileSync(path.join(root,'Sources/OvGame/include/OvGame/Utils/FPSCounter.h'),'utf8').replaceAll('private:','public:'));
     const original = fs.readFileSync(path.join(root, 'Sources/OvGame/src/OvGame/Core/Context.cpp'), 'utf8');
     const windowCreation = 'window = std::make_unique<OvWindowing::Window>';
     if (!original.includes(windowCreation)) throw Error('Hidden Game window override no longer matches');
@@ -222,9 +232,9 @@ function run(file, args, cwd, log, timeout = 120000) {
     });
     const product = editorBenchmark ? 'Editor' : 'Game';
     copy('Sources/Ov'+product+'/src/Ov'+product+'/Core/'+product+'.cpp', source => {
-      const boundary = editorBenchmark ? '        RenderViews(p_deltaTime);' : '            auto commands=RecordSceneCommands();commands.Execute(*m_context.driver);';
+      const boundary = editorBenchmark ? '        auto immediate=RecordRenderFrame(p_deltaTime);' : '        product=BuildSceneFrame();';
       if (!source.includes(boundary)) throw Error('Immediate benchmark boundary changed');
-      return 'extern void BenchmarkBeforeImmediateRender();\n' + source.replace(boundary,'        BenchmarkBeforeImmediateRender();\n'+boundary);
+      return 'extern void BenchmarkBeforeImmediateRender();\n' + source.replace(boundary,(editorBenchmark?'        BenchmarkBeforeImmediateRender();\n':'        if(!frame)BenchmarkBeforeImmediateRender();\n')+boundary);
     });
   }
   if (frontend || (commandList && !editor && !gameFrame)) {
@@ -359,7 +369,7 @@ function run(file, args, cwd, log, timeout = 120000) {
       pollution: 'new paths: absent/short/stale bindings before replay and between staged draws'  };
     console.log('PASS: 8 cold processes with clean/poisoned explicit bindings, exact serial/Worker pixels and staged draw data; tracing does not change any pixel');
   } else {
-    const stdout = run(exe, [dir], path.join(root,'Build',config), path.join(dir,'run.log'), productBenchmark ? 600000 : (parallelRecording || editorThread) ? 300000 : 120000);
+    const stdout = run(exe, [dir], path.join(root,'Build',config), path.join(dir,'run.log'), productBenchmark ? 600000 : (parallelRecording || editorThread || editorUI) ? 300000 : 120000);
     console.log(stdout.split(/\r?\n/).filter(line => /^(PASS:|Single-instance|BENCH:)/.test(line)).join('\n'));
     manifest.results.push({ variant, stdout });
   }
