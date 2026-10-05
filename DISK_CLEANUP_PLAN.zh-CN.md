@@ -1,8 +1,8 @@
 # Overload 磁盘清理待批准清单
 
-2026-10-05。用户已批准首轮 A+B+D+F+H；预检查发现副本内部 Toolchains
-目录链接后立即停止。删除文件/目录均为 0，未重试。最新剩余状态见
-DISK_CLEANUP_REMAINING.zh-CN.md；其他可选组尚未单独批准。
+2026-10-05。A+B+D+F+H 已按用户后续授权全部删除，副本 Toolchains 链接
+只解除链接本身，主线目标保留。本文件保留原审计依据；最新执行统计见
+DISK_CLEANUP_RESULT.zh-CN.md，剩余可选项见 DISK_CLEANUP_REMAINING.zh-CN.md。
 
 本轮核查时 H 盘剩余约 4.54 GiB，工程可读取文件合计约 38.82 GiB（68,328 个文件）。这里统计文件逻辑字节，
 不等于删除后必然释放的磁盘块；未跟随重解析点。有一个旧 Reflection 临时目录
@@ -114,8 +114,8 @@ Build/Generated 也继续保留。
 
 完整路径与逐项字节数见 Build/FrameGraphValidation/DiskAudit/cleanup-manifest.json；
 副本核查见同目录 copy-audit.json，占用明细见 disk-report.json。
-仅执行用户明确批准的具体组；当前预检查停止，尚未执行任何删除，
-等待用户下一步指示。执行前再次验证绝对路径仍位于主工作区。
+仅执行用户明确批准的具体组。首次预检查曾因链接停止；用户授权只解除链接
+并继续后，A/B/D/F/H 已完成，未删除主线链接目标。C/E/G 仍未删除。
 
 用户追加的 C 盘 .codex 审计已另列于 CODEX_DISK_CLEANUP_PLAN.zh-CN.md：
 可读总量约 15.42 GiB，其中旧测试缓存/运行副本可选清理约 13.16 GiB。
