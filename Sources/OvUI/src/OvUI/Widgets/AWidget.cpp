@@ -66,7 +66,7 @@ void OvUI::Widgets::AWidget::EndDisableOverride()
 
 void OvUI::Widgets::AWidget::Draw()
 {
-	if (enabled)
+	if (enabled && visible)
 	{
 		if (disabled)
 		{

@@ -505,6 +505,8 @@ bool OvEditor::Core::EditorActions::RestoreScene(const SceneSnapshot& snapshot)
     tinyxml2::XMLDocument doc;
     if (doc.Parse(snapshot.xml.c_str()) != tinyxml2::XML_SUCCESS || !doc.RootElement() || !doc.RootElement()->FirstChildElement("scene")) return false;
     const auto source = m_context.sceneManager.GetCurrentSceneSourcePath();
+    auto& inspector = m_panelsManager.GetPanelAs<Panels::Inspector>("Inspector");
+    const auto lockedTargets = inspector.GetLockedTargetGUIDs();
     m_restoringHistory = true;
     bool restored = false;
     try
@@ -512,9 +514,10 @@ bool OvEditor::Core::EditorActions::RestoreScene(const SceneSnapshot& snapshot)
         // Drop all property bindings once before reconstructing a large selection.
         // Otherwise each destructor would rebuild the remaining selection.
         UnselectActor();
+        inspector.SetLocked(false);
         restored = m_context.sceneManager.LoadSceneFromMemory(doc);
         if (!source.empty()) m_context.sceneManager.StoreCurrentSceneSourcePath(source);
-        if (restored) RestoreSelection(snapshot.selection);
+        if (restored) { RestoreSelection(snapshot.selection); inspector.RestoreLockedTargets(lockedTargets); }
     }
     catch (...) { m_restoringHistory = false; throw; }
     m_restoringHistory = false;
@@ -541,7 +544,7 @@ bool OvEditor::Core::EditorActions::Redo()
 
 std::vector<OvCore::ECS::Actor*> OvEditor::Core::EditorActions::GetSelectedActors() const
 {
-    auto targets = m_panelsManager.GetPanelAs<Panels::Inspector>("Inspector").GetTargetActors();
+    auto targets = m_panelsManager.GetPanelAs<Panels::Inspector>("Inspector").GetSelectedActors();
     std::erase_if(targets, [](auto* actor) { return !actor->IsAlive(); });
     return targets;
 }
@@ -1233,12 +1236,14 @@ void OvEditor::Core::EditorActions::StopPlaying()
 		SetEditorMode(EEditorMode::EDIT);
 		bool loadedFromDisk = m_context.sceneManager.IsCurrentSceneLoadedFromDisk();
 		std::string sceneSourcePath = m_context.sceneManager.GetCurrentSceneSourcePath();
+        auto& inspector = m_panelsManager.GetPanelAs<Panels::Inspector>("Inspector");
+        const auto lockedTargets = inspector.GetLockedTargetGUIDs();
 
 
 		OVASSERT(m_sceneBackup.operator bool(), "No scene backup to restore");
 
 		m_restoringHistory = true;
-        try { UnselectActor(); m_context.sceneManager.LoadSceneFromMemory(*m_sceneBackup); }
+        try { UnselectActor(); inspector.SetLocked(false); m_context.sceneManager.LoadSceneFromMemory(*m_sceneBackup); }
         catch (...) { m_restoringHistory = false; throw; }
         m_restoringHistory = false;
 		if (loadedFromDisk)
@@ -1246,6 +1251,7 @@ void OvEditor::Core::EditorActions::StopPlaying()
 		m_sceneBackup.reset();
 		EDITOR_PANEL(Panels::SceneView, "Scene View").Focus();
         RestoreSelection(m_playSelection);
+        inspector.RestoreLockedTargets(lockedTargets);
         m_playSelection.clear();
 	}
 }
@@ -1613,12 +1619,12 @@ void OvEditor::Core::EditorActions::UnselectActor()
 
 bool OvEditor::Core::EditorActions::IsAnyActorSelected() const
 {
-	return EDITOR_PANEL(Panels::Inspector, "Inspector").GetTargetActor().has_value();
+    return !GetSelectedActors().empty();
 }
 
 OvCore::ECS::Actor& OvEditor::Core::EditorActions::GetSelectedActor() const
 {
-	return EDITOR_PANEL(Panels::Inspector, "Inspector").GetTargetActor().value();
+    return *GetSelectedActors().at(0);
 }
 
 void OvEditor::Core::EditorActions::MoveToTarget(OvCore::ECS::Actor& p_target)

@@ -69,12 +69,12 @@ namespace OvUI::Widgets::Layout
 					{
 						if (counter == 0)
 						{
-							// Skip the row entirely if all its widgets are disabled
+							// Skip the row if none of its widgets can be drawn.
 							bool allDisabled = true;
 							auto lookahead = it;
 							for (size_t k = 0; k < _Size && lookahead != p_end; ++k, ++lookahead)
 							{
-								if (lookahead->first->enabled)
+								if (lookahead->first->enabled && lookahead->first->visible)
 								{
 									allDisabled = false;
 									break;

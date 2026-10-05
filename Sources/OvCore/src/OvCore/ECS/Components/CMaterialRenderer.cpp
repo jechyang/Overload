@@ -140,10 +140,11 @@ void OvCore::ECS::Components::CMaterialRenderer::OnSerialize(tinyxml2::XMLDocume
 	tinyxml2::XMLNode* materialsNode = p_doc.NewElement("materials");
 	p_node->InsertEndChild(materialsNode);
 
-	auto modelRenderer = owner.GetComponent<CModelRenderer>();
-	uint8_t elementsToSerialize = modelRenderer->GetModel() ? (uint8_t)std::min(modelRenderer->GetModel()->GetMaterialNames().size(), (size_t)kMaxMaterialCount) : 0;
-
-	for (uint8_t i = 0; i < elementsToSerialize; ++i)
+    // Preserve authored slots even without a model, including gaps between them.
+    // Trailing nulls are cleared on load and do not need to inflate scene history.
+    size_t materialCount = m_materials.size();
+    while (materialCount && !m_materials[materialCount - 1]) --materialCount;
+	for (size_t i = 0; i < materialCount; ++i)
 	{
 		OvCore::Helpers::Serializer::SerializeMaterial(p_doc, materialsNode, "material", m_materials[i]);
 	}
@@ -156,14 +157,16 @@ void OvCore::ECS::Components::CMaterialRenderer::OnDeserialize(tinyxml2::XMLDocu
 	tinyxml2::XMLNode* materialsRoot = p_node->FirstChildElement("materials");
 	if (materialsRoot)
 	{
+        m_materials.fill(nullptr);
 		tinyxml2::XMLElement* currentMaterial = materialsRoot->FirstChildElement("material");
 
 		uint8_t materialIndex = 0;
 
-		while (currentMaterial)
+		while (currentMaterial && materialIndex < kMaxMaterialCount)
 		{
-			if (auto material = Global::ServiceLocator::Get<ResourceManagement::MaterialManager>()[currentMaterial->GetText()])
-				m_materials[materialIndex] = material;
+            if (const auto* path = currentMaterial->GetText(); path && *path && std::string_view(path) != "?")
+                if (auto material = Global::ServiceLocator::Get<ResourceManagement::MaterialManager>()[path])
+                    m_materials[materialIndex] = material;
 
 			currentMaterial = currentMaterial->NextSiblingElement("material");
 			++materialIndex;

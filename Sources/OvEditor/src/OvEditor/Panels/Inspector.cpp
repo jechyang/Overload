@@ -8,6 +8,9 @@
 #include <format>
 #include <ranges>
 #include <string>
+#include <cctype>
+#include <sstream>
+#include <tinyxml2.h>
 
 #include <OvCore/ECS/Components/CTransform.h>
 #include <OvCore/ECS/ComponentRegistry.h>
@@ -33,6 +36,82 @@ using namespace OvCore::ECS;
 using namespace OvCore::ECS::Components;
 using namespace OvUI::Widgets;
 
+namespace
+{
+    class InspectorToolbar final : public AWidget
+    {
+    public:
+        explicit InspectorToolbar(std::function<void()> draw) : m_draw(std::move(draw)) {}
+    private:
+        void _Draw_Impl() override { m_draw(); }
+        std::function<void()> m_draw;
+    };
+    std::string Lower(std::string value)
+    {
+        for (auto& c : value) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return value;
+    }
+    void SetVisible(AWidget& widget, bool visible)
+    {
+        widget.visible = visible;
+        if (auto* children = dynamic_cast<OvUI::Internal::WidgetContainer*>(&widget))
+            for (auto [child, mode] : children->GetWidgets()) SetVisible(*child,visible);
+    }
+    bool FilterProperties(OvUI::Internal::WidgetContainer& root, const std::string& context,
+        const std::vector<std::string>& terms)
+    {
+        const auto matches = [&](const std::string& text) {
+            const auto lower = Lower(text);
+            return std::all_of(terms.begin(),terms.end(),[&](const auto& term) { return lower.find(term) != std::string::npos; });
+        };
+        if (matches(context))
+        {
+            for (auto [widget, mode] : root.GetWidgets()) SetVisible(*widget,true);
+            return true;
+        }
+        bool any = false;
+        std::vector<AWidget*> block;
+        std::string title = context;
+        const auto flush = [&] {
+            if (block.empty()) return;
+            bool hit = matches(title);
+            for (auto* widget : block)
+            {
+                if (auto* children = dynamic_cast<OvUI::Internal::WidgetContainer*>(widget))
+                {
+                    const auto* group = dynamic_cast<Layout::GroupCollapsable*>(widget);
+                    widget->visible = FilterProperties(*children,title+(group ? " "+group->name : ""),terms);
+                    hit |= widget->visible;
+                }
+                else widget->visible = hit;
+            }
+            for (auto* widget : block)
+                if (!dynamic_cast<OvUI::Internal::WidgetContainer*>(widget)) widget->visible = hit;
+            any |= hit; block.clear();
+        };
+        for (auto [widget, mode] : root.GetWidgets())
+        {
+            if (auto* label = dynamic_cast<Texts::TextColored*>(widget))
+            { flush(); title = context+" "+label->content; }
+            if (dynamic_cast<Visual::Separator*>(widget))
+            { flush(); widget->visible = false; title = context; continue; }
+            block.push_back(widget);
+        }
+        flush(); return any;
+    }
+    AComponent* FindComponent(Actor& actor, const std::string& type)
+    {
+        for (auto& component : actor.GetComponents()) if (component->GetTypeName() == type) return component.get();
+        return nullptr;
+    }
+    std::string ComponentXML(AComponent& component)
+    {
+        tinyxml2::XMLDocument doc; auto* data = doc.NewElement("data"); doc.InsertEndChild(data);
+        component.OnSerialize(doc,data); tinyxml2::XMLPrinter printer(nullptr,true); doc.Print(&printer);
+        return printer.CStr();
+    }
+}
+
 OvEditor::Panels::Inspector::Inspector(
 	const std::string& p_title,
 	bool p_opened,
@@ -43,18 +122,31 @@ OvEditor::Panels::Inspector::Inspector(
     if (!m_callbacks.defer) m_callbacks.defer = [](std::function<void()> action) { EDITOR_EXEC(DelayAction(std::move(action))); };
     if (!m_callbacks.selected) m_callbacks.selected = [](Actor& actor) { EDITOR_EVENT(ActorSelectedEvent).Invoke(actor); };
     if (!m_callbacks.unselected) m_callbacks.unselected = [](Actor& actor) { EDITOR_EVENT(ActorUnselectedEvent).Invoke(actor); };
+    CreateWidget<InspectorToolbar>([this] { _DrawToolbar(); });
+    m_searchStatus = &CreateWidget<Texts::TextDisabled>(); m_searchStatus->enabled = false;
 	m_emptyState = &CreateWidget<Layout::Group>();
 	m_emptyState->CreateWidget<Texts::Text>("No entity selected");
 	m_emptyState->CreateWidget<Texts::TextDisabled>("Select an entity in the Hierarchy or Scene View.");
 	m_emptyState->CreateWidget<Texts::TextDisabled>("Double-click a Hierarchy entry to frame it.");
 	m_content = &CreateWidget<Layout::Group>();
+    if (auto* actions = OvCore::Global::ServiceLocator::TryGet<OvEditor::Core::EditorActions>())
+    {
+        m_sceneManager = &actions->GetContext().sceneManager;
+        m_sceneUnloadListener = m_sceneManager->SceneUnloadEvent += [this] { m_locked = false; _ClearTargets(); UnFocus(); };
+    }
 
 	m_destroyedListener = Actor::DestroyedEvent += [this](Actor& destroyed) {
-        if (std::find(m_targets.begin(), m_targets.end(), &destroyed) != m_targets.end())
+        if (std::find(m_selection.begin(),m_selection.end(),&destroyed) != m_selection.end())
         {
-            auto remaining = m_targets;
+            auto remaining = m_selection;
             std::erase(remaining, &destroyed);
             FocusActors(remaining);
+        }
+        if (std::find(m_targets.begin(),m_targets.end(),&destroyed) != m_targets.end())
+        {
+            auto remaining = m_targets; std::erase(remaining,&destroyed);
+            if (remaining.empty()) { m_locked = false; _SetTargets(m_selection); }
+            else _SetTargets(remaining);
         }
     };
 }
@@ -62,7 +154,10 @@ OvEditor::Panels::Inspector::Inspector(
 OvEditor::Panels::Inspector::~Inspector()
 {
 	Actor::DestroyedEvent -= m_destroyedListener;
+    if (m_sceneManager) m_sceneManager->SceneUnloadEvent -= m_sceneUnloadListener;
+	m_locked = false;
 	UnFocus();
+    _ClearTargets();
 }
 
 void OvEditor::Panels::Inspector::FocusActor(Actor& target)
@@ -75,10 +170,20 @@ void OvEditor::Panels::Inspector::FocusActors(const std::vector<Actor*>& targets
     std::vector<Actor*> unique;
     for (auto* actor : targets)
         if (actor && actor->IsAlive() && std::find(unique.begin(), unique.end(), actor) == unique.end()) unique.push_back(actor);
-    if (unique == m_targets) return;
-    UnFocus();
-    if (unique.empty()) return;
-    m_targets = std::move(unique);
+    if (unique == m_selection) return;
+    auto* previous = m_selection.empty() ? nullptr : m_selection.front();
+    m_selection = unique;
+    if (previous) m_callbacks.unselected(*previous);
+    if (!m_locked) _SetTargets(unique);
+    if (!m_selection.empty()) m_callbacks.selected(*m_selection.front());
+}
+
+void OvEditor::Panels::Inspector::_SetTargets(const std::vector<Actor*>& targets)
+{
+    if (targets == m_targets) return;
+    _ClearTargets();
+    if (targets.empty()) return;
+    m_targets = targets;
     m_targetActor = *m_targets.front();
     for (auto* actor : m_targets)
     {
@@ -89,7 +194,6 @@ void OvEditor::Panels::Inspector::FocusActors(const std::vector<Actor*>& targets
             actor->BehaviourRemovedEvent += [this](auto&) { _QueueRefresh(); }});
     }
     _Populate();
-    m_callbacks.selected(m_targetActor.value());
 }
 
 void OvEditor::Panels::Inspector::_Draw_Impl()
@@ -102,6 +206,11 @@ void OvEditor::Panels::Inspector::_Draw_Impl()
 }
 
 void OvEditor::Panels::Inspector::UnFocus()
+{
+    FocusActors({});
+}
+
+void OvEditor::Panels::Inspector::_ClearTargets()
 {
     m_emptyState->enabled = true;
     m_focusCallbacks.Invalidate();
@@ -122,17 +231,148 @@ void OvEditor::Panels::Inspector::UnFocus()
     m_targetListeners.clear();
     m_targets.clear();
     m_batchControls.clear();
+    m_sections.clear();
 
 	m_content->RemoveAllWidgets();
 
-	m_callbacks.unselected(m_targetActor.value());
-
 	m_targetActor.reset();
+    m_searchStatus->enabled = false;
 }
 
 OvTools::Utils::OptRef<Actor> OvEditor::Panels::Inspector::GetTargetActor() const
 {
 	return m_targetActor;
+}
+
+void OvEditor::Panels::Inspector::SetLocked(bool locked)
+{
+    if (locked == m_locked || (locked && m_targets.empty())) return;
+    m_locked = locked;
+    if (!locked) _SetTargets(m_selection);
+}
+
+std::vector<uint64_t> OvEditor::Panels::Inspector::GetLockedTargetGUIDs() const
+{
+    std::vector<uint64_t> result;
+    if (m_locked) for (auto* actor : m_targets) if (actor->IsAlive()) result.push_back(actor->GetGUID());
+    return result;
+}
+
+void OvEditor::Panels::Inspector::RestoreLockedTargets(const std::vector<uint64_t>& guids)
+{
+    std::vector<Actor*> targets;
+    if (m_sceneManager && m_sceneManager->GetCurrentScene())
+        for (auto guid : guids) if (auto* actor = m_sceneManager->GetCurrentScene()->FindActorByGUID(guid)) targets.push_back(actor);
+    if (targets.empty()) { SetLocked(false); return; }
+    _SetTargets(targets); m_locked = true;
+}
+
+void OvEditor::Panels::Inspector::_DrawToolbar()
+{
+    const float scale = OVUI_SCALE;
+    ImGui::PushID(this); ImGui::PushID("InspectorToolbar");
+    ImGui::BeginDisabled(m_targets.empty());
+    if (ImGui::Button(m_locked ? "Locked" : "Lock",{64*scale,0})) SetLocked(!m_locked);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Keep inspecting these entities while selecting others in the scene");
+    ImGui::EndDisabled(); ImGui::SameLine(0,6*scale);
+    char search[256]{}; std::copy_n(m_searchFilter.data(),std::min(m_searchFilter.size(),sizeof(search)-1),search);
+    ImGui::SetNextItemWidth(std::max(70*scale,ImGui::GetContentRegionAvail().x-28*scale));
+    if (ImGui::InputTextWithHint("##Search","Search components / properties",search,sizeof(search))) SetSearchFilter(search);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Search names, or combine words such as camera far");
+    ImGui::SameLine(0,4*scale);
+    if (ImGui::Button("x##ClearSearch",{24*scale,0})) SetSearchFilter("");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Clear Inspector search");
+    if (m_locked)
+    {
+        ImGui::TextDisabled("Inspecting: %s",m_targetActor->GetName().c_str());
+        if (m_targets.size() > 1) { ImGui::SameLine(); ImGui::TextDisabled("(+%zu)",m_targets.size()-1); }
+    }
+    ImGui::Separator(); ImGui::PopID(); ImGui::PopID();
+}
+
+void OvEditor::Panels::Inspector::SetSearchFilter(const std::string& filter)
+{
+    if (filter == m_searchFilter) return;
+    m_searchFilter = filter; _ApplySearchFilter();
+}
+
+void OvEditor::Panels::Inspector::_ApplySearchFilter()
+{
+    std::vector<std::string> terms;
+    std::istringstream input(Lower(m_searchFilter)); std::string word;
+    while (input >> word) terms.push_back(word);
+    size_t matches = 0;
+    for (auto* section : m_sections)
+    {
+        section->visible = FilterProperties(*section,section->name,terms);
+        section->expandForSearch = !terms.empty() && section->visible;
+        matches += section->visible ? 1 : 0;
+    }
+    m_searchStatus->enabled = !terms.empty() && !m_targets.empty();
+    m_searchStatus->content = matches ? std::to_string(matches)+(matches == 1 ? " matching section" : " matching sections") : "No matching components or properties";
+}
+
+bool OvEditor::Panels::Inspector::CopyComponentValues(const std::string& type)
+{
+    if (!m_targetActor || !m_targetActor->IsAlive()) return false;
+    auto* component = FindComponent(m_targetActor.value(),type);
+    if (!component) return false;
+    m_clipboardXML = ComponentXML(*component); m_clipboardType = type;
+    return true;
+}
+
+bool OvEditor::Panels::Inspector::CanPasteComponentValues(const std::string& type) const
+{
+    return !m_clipboardXML.empty() && type == m_clipboardType && !m_targets.empty() &&
+        std::all_of(m_targets.begin(),m_targets.end(),[&](auto* actor) { return actor->IsAlive() && FindComponent(*actor,type); });
+}
+
+bool OvEditor::Panels::Inspector::_ApplyComponentValues(const std::string& type, const std::string& xml, const std::string& label)
+{
+    if (m_targets.empty()) return false;
+    std::vector<AComponent*> targets;
+    for (auto* actor : m_targets)
+    {
+        if (!actor->IsAlive()) return false;
+        auto* component = FindComponent(*actor,type); if (!component) return false;
+        targets.push_back(component);
+    }
+    tinyxml2::XMLDocument doc;
+    if (doc.Parse(xml.c_str()) != tinyxml2::XML_SUCCESS || !doc.FirstChildElement("data")) return false;
+    EDITOR_EXEC(CommitSceneEdit(true)); EDITOR_EXEC(BeginSceneEdit(label));
+    // Deserialize on the existing instances so native component references and
+    // actor identity/parenting survive the operation. Scene history owns undo.
+    for (auto* component : targets) component->OnDeserialize(doc,doc.FirstChildElement("data"));
+    _QueueRefresh(); EDITOR_EXEC(CommitSceneEdit(true)); return true;
+}
+
+bool OvEditor::Panels::Inspector::PasteComponentValues(const std::string& type)
+{
+    return CanPasteComponentValues(type) && _ApplyComponentValues(type,m_clipboardXML,"Paste component values");
+}
+
+bool OvEditor::Panels::Inspector::ResetComponentValues(const std::string& type)
+{
+    const auto* description = GetComponentRegistry().Find(type);
+    if (!description || m_targets.empty()) return false;
+    bool playing = false; Actor defaults(0,"Component defaults","",playing); defaults.SetActive(false);
+    auto* component = description->DeserializeComponent(defaults);
+    return component && _ApplyComponentValues(type,ComponentXML(*component),"Reset component values");
+}
+
+void OvEditor::Panels::Inspector::_AttachComponentMenu(Layout::GroupCollapsable& header, const std::string& type)
+{
+    header.contextMenu = [this,type,ticket = m_viewCallbacks.Ticket()] {
+        if (ticket.expired()) return;
+        if (ImGui::MenuItem("Copy component values")) CopyComponentValues(type);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Copy values from the primary inspected entity");
+        if (ImGui::MenuItem("Paste component values",nullptr,false,CanPasteComponentValues(type)))
+            m_callbacks.defer([this,type,ticket] { if (!ticket.expired()) PasteComponentValues(type); });
+        ImGui::Separator();
+        if (ImGui::MenuItem("Reset component"))
+            m_callbacks.defer([this,type,ticket] { if (!ticket.expired()) ResetComponentValues(type); });
+    };
 }
 
 void OvEditor::Panels::Inspector::_Populate()
@@ -151,6 +391,7 @@ void OvEditor::Panels::Inspector::_Populate()
 	_PopulateActorBehaviours();
 	m_content->CreateWidget<Visual::Separator>();
 	_DrawAddSection();
+    _ApplySearchFilter();
 }
 
 void OvEditor::Panels::Inspector::_PopulateActorInfo()
@@ -183,6 +424,7 @@ void OvEditor::Panels::Inspector::_PopulateActorInfo()
     if (m_targets.size() > 1) return;
 
 	auto& identity = m_content->CreateWidget<Layout::GroupCollapsable>("Identity & Prefab");
+    m_sections.push_back(&identity);
 	identity.SetID("inspector_identity");
 	identity.defaultExpanded = false;
 	auto& identityColumns = identity.CreateWidget<Layout::Columns<2>>();
@@ -369,6 +611,8 @@ void OvEditor::Panels::Inspector::_DrawAddSection()
 void OvEditor::Panels::Inspector::_DrawComponent(AComponent& p_component, int p_index, int p_total)
 {
 	auto& header = m_content->CreateWidget<Layout::GroupCollapsable>(p_component.GetName());
+    m_sections.push_back(&header);
+    _AttachComponentMenu(header,p_component.GetTypeName());
 	header.SetID("inspector_component_" + p_component.GetName());
 	const bool isTransform = dynamic_cast<CTransform*>(&p_component) != nullptr;
 	header.closable = !isTransform;
@@ -428,6 +672,7 @@ void OvEditor::Panels::Inspector::_DrawBehaviour(Behaviour& p_behaviour, int p_i
 	const auto simpleName = identity.type.substr(identity.type.find_last_of(".+") + 1);
 	auto& header = m_content->CreateWidget<Layout::GroupCollapsable>(p_behaviour.Identity().backend == "lua" ?
 		std::filesystem::path(p_behaviour.name).replace_extension().string() : simpleName + " (Script)");
+    m_sections.push_back(&header);
 	header.SetID("inspector_behaviour_" + identity.Key());
 	if (identity.backend == "csharp") header.tooltip = identity.type + "\n" + identity.assembly;
 	header.closable = true;
@@ -489,6 +734,7 @@ void OvEditor::Panels::Inspector::Refresh()
 	{
 		m_content->RemoveAllWidgets();
         m_batchControls.clear();
+        m_sections.clear();
 		_Populate();
 	}
 }

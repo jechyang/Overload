@@ -45,6 +45,8 @@ namespace OvUI::Widgets::Layout
 		bool closable = false;
 		bool opened = true;
 		bool defaultExpanded = true;
+        bool expandForSearch = false;
+        std::function<void()> contextMenu;
 		bool reorderable = false;
 		bool canMoveUp = true;
 		bool canMoveDown = true;

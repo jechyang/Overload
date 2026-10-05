@@ -13,25 +13,39 @@
 OvUI::Widgets::Layout::GroupCollapsable::GroupCollapsable(const std::string & p_name) :
 	name(p_name)
 {
+    m_autoExecutePlugins = false;
 }
 
 void OvUI::Widgets::Layout::GroupCollapsable::_Draw_Impl()
 {
 	bool previouslyOpened = opened;
+    const auto label = name + "###" + m_widgetID;
+    auto* storage = ImGui::GetStateStorage();
+    const auto id = ImGui::GetID(label.c_str());
+    const int previousExpansion = storage->GetInt(id,defaultExpanded ? 1 : 0);
+    if (expandForSearch) ImGui::SetNextItemOpen(true,ImGuiCond_Always);
 
 	// Stable explicit IDs preserve expansion across Inspector rebuilds and keep
 	// equally named script/component sections independent.
-	bool isOpen = ImGui::CollapsingHeader((name + "###" + m_widgetID).c_str(), closable ? &opened : nullptr,
+	bool isOpen = ImGui::CollapsingHeader(label.c_str(), closable ? &opened : nullptr,
 		defaultExpanded ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None);
+    if (expandForSearch) storage->SetInt(id,previousExpansion);
+    const ImVec2 headerMin = ImGui::GetItemRectMin();
+    const ImVec2 headerMax = ImGui::GetItemRectMax();
+    ExecutePlugins(Plugins::EPluginExecutionContext::WIDGET);
+
+    // Capture the header item before drawing actions or child property controls.
+    if (contextMenu && ImGui::BeginPopupContextItem(("context" + m_widgetID).c_str()))
+    {
+        contextMenu(); ImGui::EndPopup();
+    }
 
 	EndDisableOverride(); // Early end disable override group so that children are not affected
 
-	if (reorderable || !actions.empty())
+	if (reorderable || !actions.empty() || contextMenu)
 	{
-		const ImVec2 headerMin = ImGui::GetItemRectMin();
-		const ImVec2 headerMax = ImGui::GetItemRectMax();
 		const float bSize = headerMax.y - headerMin.y;
-		const float rightEdge = closable ? (headerMax.x - bSize) : headerMax.x;
+		const float rightEdge = (closable ? (headerMax.x - bSize) : headerMax.x) - (contextMenu ? bSize : 0);
 		const ImVec2 savedCursor = ImGui::GetCursorPos();
 
 		// Keep original vertical padding so arrow buttons fill the header height exactly
@@ -40,6 +54,11 @@ void OvUI::Widgets::Layout::GroupCollapsable::_Draw_Impl()
 		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0, 0, 0, 0});
 		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_HeaderHovered));
 		ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
+        if (contextMenu)
+        {
+            ImGui::SetCursorScreenPos({rightEdge,headerMin.y});
+            if (ImGui::Button(("...##menu"+m_widgetID).c_str(),{bSize,bSize})) ImGui::OpenPopup(("context"+m_widgetID).c_str());
+        }
 
 		if (reorderable)
 		{

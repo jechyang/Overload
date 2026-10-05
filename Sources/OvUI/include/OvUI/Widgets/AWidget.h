@@ -84,6 +84,7 @@ namespace OvUI::Widgets
 	public:
 		std::string tooltip;
 		bool enabled = true;
+        bool visible = true; // Presentation filters do not invalidate bound controls.
 		bool disabled = false;
 		bool lineBreak = true;
 		bool neverDisabled = false; // provide a way to bypass the "readonly" setting used by a WidgetContainer
