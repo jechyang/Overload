@@ -2,6 +2,7 @@
 #include <OvCore/Helpers/ReflectionDrawer.h>
 #include <OvTools/Utils/CallbackScope.h>
 #include <OvUI/Widgets/DataWidget.h>
+#include <imgui.h>
 
 namespace OvCore::Helpers::ReflectionProperties
 {
@@ -33,11 +34,21 @@ namespace OvCore::Helpers::ReflectionProperties
         bool Erase(size_t);
         bool Move(size_t,size_t);
         bool Duplicate(size_t);
+        static constexpr size_t NoSelection = size_t(-1);
+        size_t SelectedIndex() const { return m_selected; }
+        // Geometry from the last rendered frame, for Inspector navigation/automation.
+        struct Rect { ImVec2 min{}, max{}; };
+        struct RowLayout { size_t index; Rect row, handle; };
+        struct Layout { Rect header, size, add, remove; std::vector<RowLayout> rows; };
+        const Layout& LastLayout() const { return m_layout; }
     protected:
         void _Draw_Impl() override;
     private:
         bool Edit(std::function<bool(std::any&)>, bool structural);
         void Rebuild();
+        void DrawRows(size_t);
+        void DrawFooter(size_t);
+        void DrawItemMenu(size_t, size_t);
         Binding m_binding;
         const Registry& m_registry;
         std::vector<DrawerHook> m_hooks;
@@ -45,6 +56,9 @@ namespace OvCore::Helpers::ReflectionProperties
         std::string m_name, m_seen;
         OvTools::Utils::CallbackScope m_scope, m_items;
         size_t m_page = 0;
+        size_t m_selected = NoSelection;
+        uint64_t m_dragOwner = 0, m_itemEpoch = 0;
+        Layout m_layout;
         std::array<char,32> m_sizeText{};
         size_t m_lastSize = size_t(-1);
         bool m_rebuild = false, m_mixedShape = false;

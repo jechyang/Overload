@@ -398,6 +398,11 @@ strings, reflected enums, math values and Records. Inspector provides bounded
 resize, add/remove/duplicate/reorder, 32-item pages and whole-property defaults
 and clipboard. Multi-edit preserves untouched record leaves/math axes; mixed
 lengths can be unified with Size. Collections use the existing scene history.
+The collection drawer uses compact rows with grip-based drag ordering, selection,
+foldable Records, an independent header Size input, a persistent footer with
+plus/minus controls, and right-click item actions. Large pages scroll inside the
+list so the footer remains reachable. Escape cancels dragging and item menus;
+stale/cross-list payloads cannot reorder another collection.
 Nested collections, custom allocators and collection Script signatures fail
 during Clang analysis. See Schema/PROTOCOL.md for the complete contract.
 
