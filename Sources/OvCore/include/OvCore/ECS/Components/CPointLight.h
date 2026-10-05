@@ -41,16 +41,19 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns the light constant
 		*/
+		OV_PROPERTY(Setter = SetConstant, Name = "constant", Serialize, Thread = Main, Order = 2)
 		float GetConstant() const;
 
 		/**
 		* Returns the light linear
 		*/
+		OV_PROPERTY(Setter = SetLinear, Name = "linear", Serialize, Thread = Main, Order = 3)
 		float GetLinear() const;
 
 		/**
 		* Returns the light quadratic
 		*/
+		OV_PROPERTY(Setter = SetQuadratic, Name = "quadratic", Serialize, Thread = Main, Order = 4)
 		float GetQuadratic() const;
 
 		/**
@@ -70,20 +73,6 @@ namespace OvCore::ECS::Components
 		* @param p_quadratic
 		*/
 		void SetQuadratic(float p_quadratic);
-
-		/**
-		* Serialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
-		* Deserialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
 
 		/**
 		* Defines how the component should be drawn in the inspector

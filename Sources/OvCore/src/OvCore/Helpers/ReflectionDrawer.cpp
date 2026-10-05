@@ -1,5 +1,6 @@
 #include <OvCore/Helpers/ReflectionDrawer.h>
 #include <OvCore/Helpers/GUIDrawer.h>
+#include <OvCore/ECS/Components/AComponent.h>
 #include <OvTools/Utils/CallbackScope.h>
 #include <OvUI/Widgets/Selection/CheckBox.h>
 #include <OvUI/Widgets/Selection/ComboBox.h>
@@ -10,6 +11,33 @@
 
 namespace OvCore::Helpers::ReflectionProperties
 {
+    Report DrawComponent(OvUI::Internal::WidgetContainer& root, ECS::Components::AComponent& component)
+    {
+        const auto& components = ECS::GetComponentRegistry();
+        const auto& registry = components.Reflection();
+        if (!registry.Main().IsCurrent()) return {{{"component", Status::AccessDenied, Error::WrongThread}}};
+        const auto* description = components.Find(component.GetTypeName());
+        if (!description || !description->Borrow(component)) return {{{"component", Status::Unsupported}}};
+        auto ticket = component.InspectorTicket();
+        Report report;
+        for (auto* property : Properties(*description->type, "Inspect"))
+        {
+            auto access = [target = &component, description, property, ticket, main = &registry.Main()](std::any* output, const std::any* input) -> Result
+            {
+                Result result{std::string(property->Info().id)};
+                if (!main->IsCurrent()) return {result.property, Status::AccessDenied, Error::WrongThread};
+                if (ticket.expired()) return {result.property, Status::Expired};
+                auto object = description->Borrow(*target);
+                if (!object) return {result.property, Status::AccessDenied, Error::WrongObjectType};
+                auto error = output ? property->ReadValue(*main, *object, *output) : property->WriteValue(*main, *object, *input);
+                return {result.property, error == Error::None ? Status::Applied : error == Error::ReadOnly ? Status::ReadOnly : Status::AccessDenied, error};
+            };
+            Binding binding{property, [access](std::any& value) { return access(&value, nullptr); }, [access](const std::any& value) { return access(nullptr, &value); }};
+            report.fields.push_back(Draw(root, binding, registry, ComponentDrawers()));
+        }
+        return report;
+    }
+
     struct Lease final : OvUI::Plugins::IPlugin
     {
         OvTools::Utils::CallbackScope scope;

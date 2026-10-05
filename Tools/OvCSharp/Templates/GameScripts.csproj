@@ -13,4 +13,5 @@
     <Compile Include="Assets/**/*.cs" Exclude="Assets/**/bin/**;Assets/**/obj/**;Assets/**/.overload/**" />
     <ProjectReference Include="@ENGINE@/Sources/OvManaged/Overload.ScriptCore/Overload.ScriptCore.csproj" />
   </ItemGroup>
+  <Import Project="@ENGINE@/Sources/OvManaged/Serialization.targets" Condition="'$(CustomAfterMicrosoftCommonTargets)' == '' and '$(OverloadFieldSchemaImported)' != 'true'" />
 </Project>

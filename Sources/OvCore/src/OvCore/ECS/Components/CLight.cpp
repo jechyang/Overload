@@ -44,22 +44,6 @@ void OvCore::ECS::Components::CLight::SetIntensity(float p_intensity)
 	m_data.intensity = p_intensity;
 }
 
-void OvCore::ECS::Components::CLight::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	using namespace OvCore::Helpers;
-
-	Serializer::SerializeVec3(p_doc, p_node, "color", m_data.color);
-	Serializer::SerializeFloat(p_doc, p_node, "intensity", m_data.intensity);
-}
-
-void OvCore::ECS::Components::CLight::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	using namespace OvCore::Helpers;
-
-	Serializer::DeserializeVec3(p_doc, p_node, "color", m_data.color);
-	Serializer::DeserializeFloat(p_doc, p_node, "intensity", m_data.intensity);
-}
-
 void OvCore::ECS::Components::CLight::OnInspector(OvUI::Internal::WidgetContainer& p_root)
 {
 	using namespace OvCore::Helpers;

@@ -60,28 +60,6 @@ void OvCore::ECS::Components::CPointLight::SetQuadratic(float p_quadratic)
 	m_data.quadratic = p_quadratic;
 }
 
-void OvCore::ECS::Components::CPointLight::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	using namespace OvCore::Helpers;
-
-	CLight::OnSerialize(p_doc, p_node);
-
-	Serializer::SerializeFloat(p_doc, p_node, "constant", m_data.constant);
-	Serializer::SerializeFloat(p_doc, p_node, "linear", m_data.linear);
-	Serializer::SerializeFloat(p_doc, p_node, "quadratic", m_data.quadratic);
-}
-
-void OvCore::ECS::Components::CPointLight::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	using namespace OvCore::Helpers;
-
-	CLight::OnDeserialize(p_doc, p_node);
-
-	Serializer::DeserializeFloat(p_doc, p_node, "constant", m_data.constant);
-	Serializer::DeserializeFloat(p_doc, p_node, "linear", m_data.linear);
-	Serializer::DeserializeFloat(p_doc, p_node, "quadratic", m_data.quadratic);
-}
-
 void OvCore::ECS::Components::CPointLight::OnInspector(OvUI::Internal::WidgetContainer& p_root)
 {
 	using namespace OvCore::Helpers;

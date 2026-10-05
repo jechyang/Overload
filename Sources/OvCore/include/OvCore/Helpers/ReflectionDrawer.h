@@ -35,6 +35,7 @@ namespace OvCore::Helpers::ReflectionProperties
     struct DrawerHook { std::string_view id; CustomDrawer draw; };
     Result Draw(OvUI::Internal::WidgetContainer& root, const Binding& binding, const Registry& registry, std::span<const DrawerHook> hooks = {});
     std::span<const DrawerHook> ComponentDrawers();
+    Report DrawComponent(OvUI::Internal::WidgetContainer& root, ECS::Components::AComponent& component);
     template<class T> Report DrawComponent(OvUI::Internal::WidgetContainer& root, T& component)
     {
         const auto& registry = ECS::GetComponentRegistry().Reflection(); Report report;

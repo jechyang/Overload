@@ -45,6 +45,7 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns true if the light should cast shadows
 		*/
+		OV_PROPERTY(Setter = SetCastShadows, Name = "cast_shadows", Serialize, Thread = Main, Order = 2, Missing = Default, Default = "false")
 		bool GetCastShadows() const;
 
 		/**
@@ -56,6 +57,7 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns the area size of the shadow
 		*/
+		OV_PROPERTY(Setter = SetShadowAreaSize, Name = "shadow_area_size", Serialize, Thread = Main, Order = 3, Missing = Default, Default = "0")
 		float GetShadowAreaSize() const;
 
 		/**
@@ -67,6 +69,7 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns true if the light position should snap to the camera position
 		*/
+		OV_PROPERTY(Setter = SetShadowFollowCamera, Name = "shadow_follow_camera", Serialize, Thread = Main, Order = 4, Missing = Default, Default = "false")
 		bool GetShadowFollowCamera() const;
 
 		/**
@@ -79,21 +82,8 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns the shadow map resolution
 		*/
+		OV_PROPERTY(Setter = SetShadowMapResolution, Name = "shadow_map_resolution", Serialize, Thread = Main, Order = 5, Missing = Default, Default = "0")
 		uint32_t GetShadowMapResolution() const;
-
-		/**
-		* Serialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
-		* Deserialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
 
 		/**
 		* Defines how the component should be drawn in the inspector

@@ -24,7 +24,7 @@ project "OvReflectionGen"
     cleancommands { python .. ' "' .. path.join(root, "Tools/OvReflectGen/reflection.py") .. '" clean --config %{cfg.buildcfg}' }
 group ""
 
-for _, name in ipairs({ "OvMaths", "OvCore", "OvEditor", "OvGame" }) do
+for _, name in ipairs({ "OvMaths", "OvPhysics", "OvRendering", "OvCore", "OvEditor", "OvGame" }) do
     project(name)
     filter {}
     dependson { "OvReflectionGen" }
@@ -33,7 +33,7 @@ for _, name in ipairs({ "OvMaths", "OvCore", "OvEditor", "OvGame" }) do
 end
 
 -- Known aggregate names are listed even on a clean checkout; no generated glob.
-for _, name in ipairs({ "OvMaths", "OvCore" }) do
+for _, name in ipairs({ "OvMaths", "OvPhysics", "OvRendering", "OvCore" }) do
     project(name)
     filter {}
     for _, config in ipairs(configs) do

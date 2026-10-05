@@ -36,11 +36,13 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns light color
 		*/
+		OV_PROPERTY(Setter = SetColor, Name = "color", Serialize, Thread = Main, Order = 0)
 		const OvMaths::FVector3& GetColor() const;
 
 		/**
 		* Returns light intensity
 		*/
+		OV_PROPERTY(Setter = SetIntensity, Name = "intensity", Serialize, Thread = Main, Order = 1)
 		float GetIntensity() const;
 
 		/**
@@ -54,20 +56,6 @@ namespace OvCore::ECS::Components
 		* @param p_intensity
 		*/
 		void SetIntensity(float p_intensity);
-
-		/**
-		* Serialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
-		* Deserialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
 
 		/**
 		* Defines how the component should be drawn in the inspector

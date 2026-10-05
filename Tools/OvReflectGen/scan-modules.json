@@ -2,6 +2,16 @@
   "version": 1,
   "modules": [
     {
+      "name": "OvPhysics",
+      "headers": ["OvPhysics/Entities/PhysicalObject.h"],
+      "types": ["OvPhysics::Entities::PhysicalObject::ECollisionDetectionMode"]
+    },
+    {
+      "name": "OvRendering",
+      "headers": ["OvRendering/Settings/EProjectionMode.h"],
+      "types": ["OvRendering::Settings::EProjectionMode"]
+    },
+    {
       "name": "OvMaths",
       "headers": [
         "OvMaths/FVector3.h"

@@ -80,32 +80,6 @@ void OvCore::ECS::Components::CSpotLight::SetOuterCutoff(float p_outerCutoff)
 	m_data.outerCutoff = p_outerCutoff;
 }
 
-void OvCore::ECS::Components::CSpotLight::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	using namespace OvCore::Helpers;
-
-	CLight::OnSerialize(p_doc, p_node);
-
-	Serializer::SerializeFloat(p_doc, p_node, "constant", m_data.constant);
-	Serializer::SerializeFloat(p_doc, p_node, "linear", m_data.linear);
-	Serializer::SerializeFloat(p_doc, p_node, "quadratic", m_data.quadratic);
-	Serializer::SerializeFloat(p_doc, p_node, "cutoff", m_data.cutoff);
-	Serializer::SerializeFloat(p_doc, p_node, "outercutoff", m_data.outerCutoff);
-}
-
-void OvCore::ECS::Components::CSpotLight::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	using namespace OvCore::Helpers;
-
-	CLight::OnDeserialize(p_doc, p_node);
-
-	Serializer::DeserializeFloat(p_doc, p_node, "constant", m_data.constant);
-	Serializer::DeserializeFloat(p_doc, p_node, "linear", m_data.linear);
-	Serializer::DeserializeFloat(p_doc, p_node, "quadratic", m_data.quadratic);
-	Serializer::DeserializeFloat(p_doc, p_node, "cutoff", m_data.cutoff);
-	Serializer::DeserializeFloat(p_doc, p_node, "outercutoff", m_data.outerCutoff);
-}
-
 void OvCore::ECS::Components::CSpotLight::OnInspector(OvUI::Internal::WidgetContainer& p_root)
 {
 	using namespace OvCore::Helpers;

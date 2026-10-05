@@ -47,6 +47,24 @@ namespace OvReflectGen
                 return true;
             }
 
+            bool VisitEnumDecl(clang::EnumDecl* decl)
+            {
+                if (!decl->isThisDeclarationADefinition() || decl->isImplicit()) return true;
+                const auto name = decl->getQualifiedNameAsString();
+                if (!m_expected.count(name) || !m_seen.insert(name).second) return true;
+                const auto location = m_context.getSourceManager().getPresumedLoc(decl->getLocation());
+                if (location.isInvalid()) return true;
+                AnalyzedType type;
+                type.cppName = name;
+                type.kind = decl->isScoped() ? "enum_class" : "enum";
+                type.source = std::filesystem::path(location.getFilename()).lexically_normal()
+                    .lexically_relative(std::filesystem::path(m_root).lexically_normal()).generic_string();
+                type.line = location.getLine();
+                type.column = location.getColumn();
+                m_report.types.push_back(std::move(type));
+                return true;
+            }
+
         private:
             AnalysisReport& m_report;
             const std::set<std::string>& m_expected;

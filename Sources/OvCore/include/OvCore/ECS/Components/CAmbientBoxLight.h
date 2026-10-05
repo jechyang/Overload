@@ -39,6 +39,7 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns the size of the box
 		*/
+		OV_PROPERTY(Setter = SetSize, Name = "size", Serialize, Thread = Main, Order = 2, Missing = Default, Default = "0,0,0")
 		OvMaths::FVector3 GetSize() const;
 
 		/**
@@ -46,20 +47,6 @@ namespace OvCore::ECS::Components
 		* @param p_size
 		*/
 		void SetSize(const OvMaths::FVector3& p_size);
-
-		/**
-		* Serialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
-		* Deserialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
 
 		/**
 		* Defines how the component should be drawn in the inspector

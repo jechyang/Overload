@@ -44,20 +44,6 @@ OvMaths::FVector3 OvCore::ECS::Components::CPhysicalBox::GetSize() const
 	return GetPhysicalObjectAs<PhysicalBox>().GetSize();
 }
 
-void OvCore::ECS::Components::CPhysicalBox::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	CPhysicalObject::OnSerialize(p_doc, p_node);
-
-	Helpers::ReflectionProperties::Serialize(ECS::GetComponentRegistry().Reflection().Main(), OvReflection::ObjectRef::From(*this), OvReflection::TypeOf<CPhysicalBox>(), p_doc, *p_node).Require();
-}
-
-void OvCore::ECS::Components::CPhysicalBox::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	CPhysicalObject::OnDeserialize(p_doc, p_node);
-
-	Helpers::ReflectionProperties::Deserialize(ECS::GetComponentRegistry().Reflection().Main(), OvReflection::ObjectRef::From(*this), OvReflection::TypeOf<CPhysicalBox>(), *p_node).Require();
-}
-
 void OvCore::ECS::Components::CPhysicalBox::OnInspector(OvUI::Internal::WidgetContainer & p_root)
 {
 	CPhysicalObject::OnInspector(p_root);

@@ -45,27 +45,6 @@ void OvCore::ECS::Components::CAmbientBoxLight::SetSize(const OvMaths::FVector3&
 	m_data.quadratic = p_size.z;
 }
 
-void OvCore::ECS::Components::CAmbientBoxLight::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	using namespace OvCore::Helpers;
-
-	CLight::OnSerialize(p_doc, p_node);
-
-	Serializer::SerializeVec3(p_doc, p_node, "size", { m_data.constant, m_data.linear, m_data.quadratic });
-}
-
-void OvCore::ECS::Components::CAmbientBoxLight::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	using namespace OvCore::Helpers;
-
-	CLight::OnDeserialize(p_doc, p_node);
-
-	OvMaths::FVector3 size = Serializer::DeserializeVec3(p_doc, p_node, "size");
-	m_data.constant = size.x;
-	m_data.linear = size.y;
-	m_data.quadratic = size.z;
-}
-
 void OvCore::ECS::Components::CAmbientBoxLight::OnInspector(OvUI::Internal::WidgetContainer& p_root)
 {
 	using namespace OvCore::Helpers;

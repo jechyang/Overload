@@ -1,6 +1,7 @@
 #pragma once
 
 #include <OvReflection/Reflection.h>
+#include <optional>
 
 namespace OvCore::ECS
 {
@@ -19,14 +20,17 @@ namespace OvCore::ECS
         // Archive creation deliberately retains Actor::AddComponent<T> semantics,
         // including archives with more than one kind of physical component.
         Components::AComponent* DeserializeComponent(Actor& actor) const;
+        std::optional<OvReflection::ObjectRef> Borrow(Components::AComponent& component) const;
     private:
         template<class T, bool Existing> friend ComponentDesc MakeComponentDesc(const OvReflection::TypeDesc&);
         using Acquire = Components::AComponent* (*)(Actor&);
         using CanAdd = bool (*)(const Actor&);
-        ComponentDesc(const OvReflection::TypeDesc* description, Acquire acquire, CanAdd canAdd)
-            : type(description), m_acquire(acquire), m_canAdd(canAdd) {}
+        using BorrowObject = std::optional<OvReflection::ObjectRef> (*)(Components::AComponent&);
+        ComponentDesc(const OvReflection::TypeDesc* description, Acquire acquire, CanAdd canAdd, BorrowObject borrow)
+            : type(description), m_acquire(acquire), m_canAdd(canAdd), m_borrow(borrow) {}
         Acquire m_acquire;
         CanAdd m_canAdd;
+        BorrowObject m_borrow;
     };
 
     class ComponentRegistry final

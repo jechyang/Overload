@@ -69,24 +69,6 @@ uint32_t OvCore::ECS::Components::CDirectionalLight::GetShadowMapResolution() co
 	return m_data.shadowMapResolution;
 }
 
-void OvCore::ECS::Components::CDirectionalLight::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	CLight::OnSerialize(p_doc, p_node);
-	OvCore::Helpers::Serializer::SerializeBoolean(p_doc, p_node, "cast_shadows", m_data.castShadows);
-	OvCore::Helpers::Serializer::SerializeFloat(p_doc, p_node, "shadow_area_size", m_data.shadowAreaSize);
-	OvCore::Helpers::Serializer::SerializeBoolean(p_doc, p_node, "shadow_follow_camera", m_data.shadowFollowCamera);
-	OvCore::Helpers::Serializer::SerializeInt(p_doc, p_node, "shadow_map_resolution", m_data.shadowMapResolution);
-}
-
-void OvCore::ECS::Components::CDirectionalLight::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	CLight::OnDeserialize(p_doc, p_node);
-	m_data.castShadows = OvCore::Helpers::Serializer::DeserializeBoolean(p_doc, p_node, "cast_shadows");
-	m_data.shadowAreaSize = OvCore::Helpers::Serializer::DeserializeFloat(p_doc, p_node, "shadow_area_size");
-	m_data.shadowFollowCamera = OvCore::Helpers::Serializer::DeserializeBoolean(p_doc, p_node, "shadow_follow_camera");
-	m_data.shadowMapResolution = OvCore::Helpers::Serializer::DeserializeInt(p_doc, p_node, "shadow_map_resolution");
-}
-
 void OvCore::ECS::Components::CDirectionalLight::OnInspector(OvUI::Internal::WidgetContainer& p_root)
 {
 	CLight::OnInspector(p_root);

@@ -33,7 +33,7 @@ public static unsafe partial class Bootstrap
         internal uint Size, Flags; internal ulong Token; internal uint Tag, Auxiliary;
         internal Utf8 Id, Name, Display; internal uint AliasCount, Reserved;
     }
-    private sealed record ProjectField(ulong Token, string Id, string Name, List<string> Aliases, uint Tag, uint Auxiliary, FieldInfo Field);
+    private sealed record ProjectField(ulong Token, string Id, string Name, List<string> Aliases, uint Tag, uint Auxiliary, GeneratedFieldDescriptor Field);
     private static ulong nextField;
     private static readonly Dictionary<nuint, FieldResult> FieldResults = new();
     private static readonly Dictionary<nuint, FieldValue> FieldValues = new();
@@ -45,15 +45,12 @@ public static unsafe partial class Bootstrap
     {
         List<ProjectField> fields = new(); HashSet<string> keys = new(StringComparer.Ordinal);
         for (Type? t = type; t != null && t != typeof(Behaviour); t = t.BaseType)
-        foreach (FieldInfo f in t.GetFields(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly).OrderBy(f => f.MetadataToken)) {
-            if (f.IsStatic || f.IsInitOnly || f.IsLiteral || f.IsDefined(typeof(NonSerializedAttribute)) ||
-                (!f.IsPublic && !f.IsDefined(typeof(SerializeFieldAttribute)))) continue;
+        foreach (var f in GeneratedFieldSchema.DeclaredFields(t)) {
             var (tag, auxiliary) = DescribeField(f.FieldType);
             if (tag == 0) { Log($"UnsupportedField: {type.FullName}.{f.Name} ({f.FieldType.FullName}); serialized data retained"); continue; }
             if (tag == 24) _ = ReferenceType(f.FieldType);
-            string id = f.GetCustomAttribute<FieldIdAttribute>()?.Id ?? f.Name; IdentityText(id);
-            List<string> aliases = f.GetCustomAttributes<FormerlySerializedAsAttribute>().Select(a => a.Name).ToList();
-            if (id != f.Name && !aliases.Contains(f.Name, StringComparer.Ordinal)) aliases.Add(f.Name);
+            string id = f.Id; IdentityText(id);
+            List<string> aliases = new(f.Aliases);
             foreach (string key in new[] { id }.Concat(aliases)) {
                 IdentityText(key); Require(keys.Add(key), Status.DuplicateIdentity, $"Duplicate field ID/alias {type.FullName}.{key}");
             }
@@ -68,7 +65,7 @@ public static unsafe partial class Bootstrap
         ProjectType type = FindType(s, token); Require(index < type.Fields.Count, Status.FieldNotFound, "Field index out of range");
         ProjectField f = type.Fields[(int)index];
         FieldResult r = new() { Size = 80, Token = f.Token, Tag = f.Tag, Auxiliary = f.Auxiliary, AliasCount = (uint)f.Aliases.Count };
-        try { r.Id = Allocate(f.Id); r.Name = Allocate(f.Name); r.Display = Allocate(f.Field.GetCustomAttribute<InspectorNameAttribute>()?.DisplayName ?? f.Name); FieldResults.Add((nuint)r.Id.Data, r); *p = r; }
+        try { r.Id = Allocate(f.Id); r.Name = Allocate(f.Name); r.Display = Allocate(f.Field.DisplayName); FieldResults.Add((nuint)r.Id.Data, r); *p = r; }
         catch { Free(r.Id); Free(r.Name); Free(r.Display); throw; }
     }
     private static void ReleaseFieldResult(FieldResult* p) {
@@ -81,7 +78,7 @@ public static unsafe partial class Bootstrap
         Require(p != null, Status.InvalidArgument, "Null value output"); *p = default;
         Instance i = FindInstance(s,id); Require(!i.Destroyed, Status.InvalidLifecycle, "Destroyed instance");
         ProjectField f = FindField(i.Type,token);
-        object? value = f.Field.GetValue(i.Value); // Only cached fields, never property getters.
+        object? value = f.Field.Read(i.Value); // Generated field access, never property getters.
         FieldValue r = PackField(f.Field.FieldType, value, out string text);
         // Even scalar/empty-string results own a unique zero-length allocation receipt.
         r.Text = Allocate(text);
@@ -104,7 +101,7 @@ public static unsafe partial class Bootstrap
         Instance i = FindInstance(s,id); Require(!i.Destroyed && !i.Faulted, Status.InstanceFaulted, "Destroyed/faulted instance");
         ProjectField f = FindField(i.Type,token);
         object? value = UnpackField(f.Field.FieldType, p);
-        f.Field.SetValue(i.Value,value);
+        f.Field.Write(i.Value,value);
         if (i.Value is EventSystems.UIBehaviour ui) ui.MarkDirtyFromHost();
     }
 }

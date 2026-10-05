@@ -53,26 +53,14 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns the radius of the capsule shape
 		*/
+		OV_PROPERTY(Setter = SetRadius, Name = "radius", Serialize, Thread = Main, Order = 8, Missing = Default, Default = "0")
 		float GetRadius() const;
 
 		/**
 		* Returns the height of the capsule shape
 		*/
+		OV_PROPERTY(Setter = SetHeight, Name = "height", Serialize, Thread = Main, Order = 9, Missing = Default, Default = "0")
 		float GetHeight() const;
-
-		/**
-		* Serialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
-		* Deserialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
 
 		/**
 		* Defines how the component should be drawn in the inspector

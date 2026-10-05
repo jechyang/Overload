@@ -57,7 +57,7 @@ try {
     // The R6 generator owns its own cross-process lock; shared generated source is immutable on no-change builds.
     run(options.python,[path.join(root,'Tools/OvReflectGen/reflection.py'),'ensure','--config',configuration]);
     const inputFiles=()=>[...files(project,projectCache).filter(p=>/\.(cs|csproj|props|targets|json|config)$/i.test(p)),
-      ...files(path.join(root,'Sources/OvManaged')).filter(p=>/\.(cs|csproj|json|config)$/i.test(p)),
+      ...files(path.join(root,'Sources/OvManaged')).filter(p=>/\.(cs|csproj|props|targets|json|config)$/i.test(p)),
       path.join(root,'Build/Generated/Reflection/x86_64-pc-windows-msvc',configuration,'OvCore/Script.generated.cs'),
       path.join(root,'global.json'),path.join(root,'Tools/OvCSharp/toolchain.lock.json'),
       path.join(root,'Scripts/Windows/BuildCSharp.mjs'),path.join(root,'Scripts/Windows/CSharpBuildTools.mjs'),fileURLToPath(import.meta.url)];

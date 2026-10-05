@@ -79,7 +79,6 @@ namespace OvCore::ECS::Components
 		*/
 		void SetLocalScale(struct OvMaths::FVector3 p_newScale);
 
-
 		/**
 		* Set the position of the transform in world space
 		* @param p_newPosition
@@ -194,20 +193,6 @@ namespace OvCore::ECS::Components
 		* Return the transform local right
 		*/
 		OvMaths::FVector3 GetLocalRight() const;
-
-		/**
-		* Serialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
-		* Deserialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
 
 		/**
 		* Defines how the component should be drawn in the inspector

@@ -1,0 +1,7 @@
+<Project>
+  <!-- The editor also applies this to existing projects, which need no csproj migration. -->
+  <ItemGroup Condition="'$(OverloadGenerateFieldSchema)' != 'false' and '$(MSBuildProjectName)' != 'Overload.SerializationGenerator' and '$(MSBuildProjectName)' != 'Overload.ManagedHost' and '$(MSBuildProjectName)' != 'Overload.ScriptCore'">
+    <ProjectReference Include="$(MSBuildThisFileDirectory)Overload.SerializationGenerator/Overload.SerializationGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <PropertyGroup><OverloadFieldSchemaImported>true</OverloadFieldSchemaImported></PropertyGroup>
+</Project>

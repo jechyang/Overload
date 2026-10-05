@@ -60,7 +60,8 @@ try {
   if (run('sdk-version', ['--version']).trim() !== lock.sdk_version) throw new Error('Selected SDK differs from lock.');
   const properties = ['--artifacts-path', artifacts, '-p:Configuration=' + configuration, '-p:ReflectionConfiguration=' + configuration,
     '-p:UseSharedCompilation=false', '-p:UseHostCompilerIfAvailable=false', '-p:SkipCompilerExecution=false',
-    '-p:CscToolPath=' + path.join(root, 'Tools/OvCSharp'), '-p:CscToolExe=csc-dotnet.cmd'];
+    '-p:CscToolPath=' + path.join(root, 'Tools/OvCSharp'), '-p:CscToolExe=csc-dotnet.cmd',
+    '-p:CustomAfterMicrosoftCommonTargets=' + path.join(root, 'Sources/OvManaged/Serialization.targets')];
   if (output) properties.push('-p:OutputPath=' + output.replaceAll('\\', '/') + '/');
   if (configuration === 'Publish') properties.push('-p:Optimize=true', '-p:DebugType=portable');
   if (define) properties.push('-p:DefineConstants=' + define);

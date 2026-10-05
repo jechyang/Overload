@@ -8,6 +8,7 @@
 
 #include <any>
 #include <memory>
+#include <OvReflection/Annotations.h>
 
 #include <OvMaths/FTransform.h>
 #include <OvTools/Eventing/Event.h>
@@ -32,7 +33,7 @@ namespace OvPhysics::Entities
 		/**
 		* Defines some collision detection modes that a physical object can have
 		*/
-		enum class ECollisionDetectionMode
+		enum class OV_TYPE() ECollisionDetectionMode
 		{
 			DISCRETE,
 			CONTINUOUS

@@ -41,24 +41,6 @@ void OvCore::ECS::Components::CAmbientSphereLight::SetRadius(float p_radius)
 	m_data.constant = p_radius;
 }
 
-void OvCore::ECS::Components::CAmbientSphereLight::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	using namespace OvCore::Helpers;
-
-	CLight::OnSerialize(p_doc, p_node);
-
-	Serializer::SerializeFloat(p_doc, p_node, "radius", m_data.constant);
-}
-
-void OvCore::ECS::Components::CAmbientSphereLight::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	using namespace OvCore::Helpers;
-
-	CLight::OnDeserialize(p_doc, p_node);
-
-	Serializer::DeserializeFloat(p_doc, p_node, "radius", m_data.constant);
-}
-
 void OvCore::ECS::Components::CAmbientSphereLight::OnInspector(OvUI::Internal::WidgetContainer& p_root)
 {
 	using namespace OvCore::Helpers;

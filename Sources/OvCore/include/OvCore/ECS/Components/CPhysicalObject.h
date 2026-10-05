@@ -48,21 +48,25 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns the mass of the physical object
 		*/
+		OV_PROPERTY(Setter = SetMass, Name = "mass", Serialize, Thread = Main, Order = 3, Missing = Default, Default = "0")
 		float GetMass() const;
 
 		/**
 		* Returns the collision detection mode of the physical object
 		*/
+		OV_PROPERTY(Setter = SetCollisionDetectionMode, Name = "collision_mode", Serialize, Thread = Main, Order = 7, Missing = Default, Default = "0")
 		OvPhysics::Entities::PhysicalObject::ECollisionDetectionMode GetCollisionDetectionMode() const;
 
 		/**
 		* Returns the bounciness of the physical object
 		*/
+		OV_PROPERTY(Setter = SetBounciness, Name = "bounciness", Serialize, Thread = Main, Order = 2, Missing = Default, Default = "0")
 		float GetBounciness() const;
 
 		/**
 		* Returns the friction of the physical object
 		*/
+		OV_PROPERTY(Setter = SetFriction, Name = "friction", Serialize, Thread = Main, Order = 4, Missing = Default, Default = "0")
 		float GetFriction()	const;
 
 		/**
@@ -78,21 +82,25 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns the linear factor of the physical object
 		*/
+		OV_PROPERTY(Setter = SetLinearFactor, Name = "linear_factor", Serialize, Thread = Main, Order = 5, Missing = Default, Default = "0,0,0")
 		OvMaths::FVector3 GetLinearFactor()	const;
 
 		/**
 		* Returns the angular factor of the physical object
 		*/
+		OV_PROPERTY(Setter = SetAngularFactor, Name = "angular_factor", Serialize, Thread = Main, Order = 6, Missing = Default, Default = "0,0,0")
 		OvMaths::FVector3 GetAngularFactor() const;
 
 		/**
 		* Returns true if the physical object is a trigger
 		*/
+		OV_PROPERTY(Setter = SetTrigger, Name = "is_trigger", Serialize, Thread = Main, Order = 0, Missing = Default, Default = "false")
 		bool IsTrigger() const;
 
 		/**
 		* Returns true if the physical object is kinematic
 		*/
+		OV_PROPERTY(Setter = SetKinematic, Name = "is_kinematic", Serialize, Thread = Main, Order = 1, Missing = Default, Default = "false")
 		bool IsKinematic() const;
 
 		/**
@@ -165,20 +173,6 @@ namespace OvCore::ECS::Components
 		* @param p_activationState
 		*/
 		void SetActivationState(OvPhysics::Entities::PhysicalObject::EActivationState p_activationState);
-
-		/**
-		* Serialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
-		* Deserialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
 
 		/**
 		* Defines how the component should be drawn in the inspector

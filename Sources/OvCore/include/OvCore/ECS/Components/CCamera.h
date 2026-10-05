@@ -93,41 +93,49 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns the fov of the camera
 		*/
+		OV_PROPERTY(Setter = SetFov, Name = "fov", Serialize, Thread = Main, Order = 0, Missing = Default, Default = "0")
 		float GetFov() const;
 
         /**
         * Returns the size of the camera
         */
+		OV_PROPERTY(Setter = SetSize, Name = "size", Serialize, Thread = Main, Order = 1, Missing = Default, Default = "0")
         float GetSize() const;
 
 		/**
 		* Returns the near of the camera
 		*/
+		OV_PROPERTY(Setter = SetNear, Name = "near", Serialize, Thread = Main, Order = 2, Missing = Default, Default = "0")
 		float GetNear() const;
 
 		/**
 		* Returns the far of the camera
 		*/
+		OV_PROPERTY(Setter = SetFar, Name = "far", Serialize, Thread = Main, Order = 3, Missing = Default, Default = "0")
 		float GetFar() const;
 
 		/**
 		* Returns the clear color of the camera
 		*/
+		OV_PROPERTY(Setter = SetClearColor, Name = "clear_color", Serialize, Thread = Main, Order = 4, Missing = Default, Default = "0,0,0")
 		const OvMaths::FVector3& GetClearColor() const;
 
 		/**
 		* Returns true if the frustum geometry culling is enabled
 		*/
+		OV_PROPERTY(Setter = SetFrustumGeometryCulling, Name = "frustum_geometry_culling", Serialize, Thread = Main, Order = 5, Missing = Default, Default = "false")
 		bool HasFrustumGeometryCulling() const;
 
 		/**
 		* Returns true if the frustum light culling is enabled
 		*/
+		OV_PROPERTY(Setter = SetFrustumLightCulling, Name = "frustum_light_culling", Serialize, Thread = Main, Order = 6, Missing = Default, Default = "false")
 		bool HasFrustumLightCulling() const;
 
         /**
         * Returns the current projection mode
         */
+		OV_PROPERTY(Setter = SetProjectionMode, Name = "projection_mode", Serialize, Thread = Main, Order = 7)
         OvRendering::Settings::EProjectionMode GetProjectionMode() const;
 
 		/**
@@ -135,20 +143,6 @@ namespace OvCore::ECS::Components
 		*/
 		OvRendering::Entities::Camera& GetCamera();
 		const OvRendering::Entities::Camera& GetCamera() const;
-
-		/**
-		* Serialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
-		* Deserialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
 
 		/**
 		* Defines how the component should be drawn in the inspector

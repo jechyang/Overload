@@ -25,6 +25,11 @@ namespace OvCore::ECS
                 else if constexpr (std::is_base_of_v<Components::CPhysicalObject, T>)
                     return !actor.GetComponent<Components::CPhysicalObject>();
                 else return !actor.GetComponent<T>();
+            },
+            [](Components::AComponent& component) -> std::optional<OvReflection::ObjectRef>
+            {
+                if (auto* typed = dynamic_cast<T*>(&component)) return OvReflection::ObjectRef::From(*typed);
+                return std::nullopt;
             }};
     }
 }

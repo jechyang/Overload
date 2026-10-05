@@ -4,7 +4,6 @@
 * @licence: MIT
 */
 
-
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/ECS/Components/CPhysicalSphere.h>
 
@@ -42,20 +41,6 @@ void OvCore::ECS::Components::CPhysicalSphere::SetRadius(float p_radius)
 float OvCore::ECS::Components::CPhysicalSphere::GetRadius() const
 {
 	return GetPhysicalObjectAs<PhysicalSphere>().GetRadius();
-}
-
-void OvCore::ECS::Components::CPhysicalSphere::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	CPhysicalObject::OnSerialize(p_doc, p_node);
-
-	Helpers::Serializer::SerializeFloat(p_doc, p_node, "radius", GetRadius());
-}
-
-void OvCore::ECS::Components::CPhysicalSphere::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	CPhysicalObject::OnDeserialize(p_doc, p_node);
-
-	SetRadius(Helpers::Serializer::DeserializeFloat(p_doc, p_node, "radius"));
 }
 
 void OvCore::ECS::Components::CPhysicalSphere::OnInspector(OvUI::Internal::WidgetContainer & p_root)

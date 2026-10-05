@@ -55,9 +55,14 @@ installation's real diaguids.lib. The downloaded package is not modified.
 ## Inputs and outputs
 
 [scan-modules.json](scan-modules.json) is the explicit module/header list:
-OvMaths scans FVector3; OvCore scans CPhysicalBox and CTransform. Each module
+OvMaths scans FVector3; OvPhysics and OvRendering scan their reflected enums;
+OvCore scans the registered component headers. Each module
 gets one isolated translation unit per configuration, with completeness checks
 for expected definitions. R2 annotates FVector3 and CPhysicalBox.Size.
+
+The current annotation-driven serialization workflow, C# generator integration,
+compatibility rules and validation commands are described in
+[SERIALIZATION.zh-CN.md](SERIALIZATION.zh-CN.md).
 
 The optional --reflection-config-out option wraps VS2022's onProject callback
 and reads the already baked Premake configurations. This retains inherited

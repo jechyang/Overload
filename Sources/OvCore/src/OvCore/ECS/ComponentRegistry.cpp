@@ -1,5 +1,7 @@
 #include <OvCore/ECS/ComponentRegistry.h>
 #include "OvCore/Reflection.generated.h"
+#include "OvPhysics/Reflection.generated.h"
+#include "OvRendering/Reflection.generated.h"
 #include <stdexcept>
 
 namespace OvCore::ECS
@@ -9,6 +11,8 @@ namespace OvCore::ECS
         using namespace OvReflection;
         if (RegisterBuiltinTypes(m_reflection) != Error::None ||
             RegisterOvMathsTypes(m_reflection) != Error::None ||
+            RegisterOvPhysicsTypes(m_reflection) != Error::None ||
+            RegisterOvRenderingTypes(m_reflection) != Error::None ||
             RegisterOvCoreTypes(m_reflection) != Error::None ||
             m_reflection.Freeze() != Error::None)
             throw std::logic_error("Native reflection registration failed");
@@ -34,6 +38,12 @@ namespace OvCore::ECS
         for (const auto& item : type->Info().metadata)
             if (item.key == "DisplayName") return item.value;
         return type->Info().cppName;
+    }
+
+    std::optional<OvReflection::ObjectRef> ComponentDesc::Borrow(Components::AComponent& component) const
+    {
+        if (!GetComponentRegistry().Reflection().Main().IsCurrent()) return std::nullopt;
+        return m_borrow(component);
     }
 
     bool ComponentDesc::IsAddable(const Actor& actor) const

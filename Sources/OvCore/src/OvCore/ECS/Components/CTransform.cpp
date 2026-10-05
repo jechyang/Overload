@@ -159,16 +159,6 @@ OvMaths::FVector3 OvCore::ECS::Components::CTransform::GetLocalRight() const
 	return m_transform.GetLocalRight();
 }
 
-void OvCore::ECS::Components::CTransform::OnSerialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
-{
-    Helpers::ReflectionProperties::Serialize(ECS::GetComponentRegistry().Reflection().Main(), OvReflection::ObjectRef::From(*this), OvReflection::TypeOf<CTransform>(), doc, *node).Require();
-}
-
-void OvCore::ECS::Components::CTransform::OnDeserialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node)
-{
-    Helpers::ReflectionProperties::Deserialize(ECS::GetComponentRegistry().Reflection().Main(), OvReflection::ObjectRef::From(*this), OvReflection::TypeOf<CTransform>(), *node, Helpers::ReflectionProperties::ComponentHooks()).Require();
-}
-
 void OvCore::ECS::Components::CTransform::OnInspector(OvUI::Internal::WidgetContainer& root)
 {
     Helpers::ReflectionProperties::DrawComponent(root, *this).Require();

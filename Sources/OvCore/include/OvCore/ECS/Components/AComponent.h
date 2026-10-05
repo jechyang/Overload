@@ -33,6 +33,12 @@ namespace OvCore::ECS::Components
 		*/
 		virtual ~AComponent();
 
+        // Annotated components inherit the generated property codec. Specialized
+        // resource/collection codecs can still override these entry points.
+        void OnSerialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node) override;
+        void OnDeserialize(tinyxml2::XMLDocument& doc, tinyxml2::XMLNode* node) override;
+        void OnInspector(OvUI::Internal::WidgetContainer& root) override;
+
 		/**
 		* Called when the scene start right before OnStart
 		* It allows you to apply prioritized game logic on scene start

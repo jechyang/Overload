@@ -37,14 +37,19 @@ public static unsafe partial class Bootstrap
         }
         return (0, 0);
     }
-    private static FieldInfo[] RecordFields(Type type) => type.GetFields(BindingFlags.Public | BindingFlags.Instance)
-        .Where(f => !f.IsInitOnly && !f.IsDefined(typeof(NonSerializedAttribute))).OrderBy(f => f.Name, StringComparer.Ordinal).ToArray();
+    private static GeneratedFieldDescriptor[] RecordFields(Type type) {
+        var fields = new List<GeneratedFieldDescriptor>();
+        for (Type? owner = type; owner != null && owner != typeof(object); owner = owner.BaseType)
+            foreach (var field in GeneratedFieldSchema.DeclaredFields(owner))
+                if (field.IsPublic) fields.Add(field);
+        return fields.OrderBy(f => f.Name, StringComparer.Ordinal).ToArray();
+    }
     private static string WriteRecord(Type type, object? value, int depth) {
         Require(depth < MaxCollectionDepth, Status.InvalidArgument, "Record nesting exceeds limit");
         var root = new XElement("record", new XAttribute("schema", type.FullName!), new XAttribute("null", value == null ? "1" : "0"));
         object defaults = Activator.CreateInstance(type)!;
         foreach (var field in RecordFields(type)) {
-            var node = CollectionItem("member", field.FieldType, field.GetValue(value ?? defaults), depth + 1);
+            var node = CollectionItem("member", field.FieldType, field.Read(value ?? defaults), depth + 1);
             node.Add(new XAttribute("name", field.Name)); root.Add(node);
         }
         string result = root.ToString(SaveOptions.DisableFormatting);
@@ -62,7 +67,7 @@ public static unsafe partial class Bootstrap
         for (int i = 0; i < fields.Length; ++i) {
             Require(nodes[i].Name == "member" && (string?)nodes[i].Attribute("name") == fields[i].Name, Status.FieldTypeMismatch, "Record field mismatch");
             var item = new XElement(nodes[i]); item.Attribute("name")!.Remove();
-            fields[i].SetValue(result, ReadCollectionItem(item, fields[i].FieldType, depth + 1));
+            fields[i].Write(result, ReadCollectionItem(item, fields[i].FieldType, depth + 1));
         }
         return (string?)root.Attribute("null") == "1" && !type.IsValueType ? null : result;
     }
