@@ -7,6 +7,7 @@
 #pragma once
 
 #include <OvReflection/Annotations.h>
+#include <OvCore/Resources/ResourceReference.h>
 
 #include <cstdint>
 #include <optional>
@@ -31,7 +32,7 @@ namespace OvCore::ECS::Components
 	/**
 	* Component responsible for skeletal animation playback and skinning data generation.
 	*/
-	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CSkinnedMeshRenderer", DisplayName = "Skinned Mesh Renderer", Order = 11) CSkinnedMeshRenderer : public AComponent
+	class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CSkinnedMeshRenderer", DisplayName = "Skinned Mesh Renderer", Order = 11, DeserializeHook = "SkinnedMeshState") CSkinnedMeshRenderer : public AComponent
 	{
 	public:
 		/**
@@ -54,6 +55,8 @@ namespace OvCore::ECS::Components
 		* Called by the model renderer when its model changes
 		*/
 		void NotifyModelChanged();
+		// Rebuild animation bindings once after the generated property batch.
+		void RestoreAnimationState();
 
 		/**
 		* Returns true if the component has a valid skinning palette ready for rendering
@@ -268,19 +271,6 @@ namespace OvCore::ECS::Components
 		*/
 		void OnUpdate(float p_deltaTime) override;
 
-		/**
-		* Serialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
-		* Deserialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
 
 		/**
 		* Draw component inspector widgets
@@ -333,17 +323,31 @@ namespace OvCore::ECS::Components
 		void UpdatePlayback(float p_deltaTime);
 
 	private:
+		friend struct OvReflection::Access<CSkinnedMeshRenderer>;
+        OV_PROPERTY(Serialize, Name = "animation_source", Setter = SetSerializedAnimationSource, Missing = Default, Default = "?", Order = 6)
+        Resources::ResourceReference<OvRendering::Resources::Model> GetSerializedAnimationSource() const;
+        void SetSerializedAnimationSource(const Resources::ResourceReference<OvRendering::Resources::Model>& value);
+        OV_PROPERTY(Serialize, Name = "animation", Setter = SetSerializedAnimation, Order = 7)
+        std::string GetSerializedAnimation() const;
+        void SetSerializedAnimation(const std::string& name);
+        std::string m_animationSourcePath;
 		const OvRendering::Resources::Model* m_model = nullptr;
 		OvRendering::Resources::Model* m_animationSourceModel = nullptr;
 		OvTools::Eventing::Event<> m_animationSourceChangedEvent;
 
+		OV_FIELD(Serialize, Name = "playing", Order = 0)
 		bool m_playing = true;
+		OV_FIELD(Serialize, Name = "looping", Order = 1)
 		bool m_looping = true;
+		OV_FIELD(Serialize, Name = "playback_speed", Order = 2)
 		float m_playbackSpeed = 1.0f;
+		OV_FIELD(Serialize, Name = "mesh_bounds_scale", Order = 3)
 		float m_meshBoundsScale = 1.5f;
+		OV_FIELD(Serialize, Name = "pose_eval_rate", Order = 4)
 		float m_poseEvaluationRate = 60.0f;
 		float m_poseEvaluationAccumulator = 0.0f;
 
+		OV_FIELD(Serialize, Name = "time_ticks", Order = 5)
 		float m_currentTimeTicks = 0.0f;
 		std::optional<uint32_t> m_animationIndex = std::nullopt;
 		std::string m_deserializedAnimationName;

@@ -26,6 +26,8 @@ float GetIntensity() const;
 
 本次迁入统一入口的组件为 Transform、Camera、物理 Box/Sphere/Capsule、
 Point/Spot/Directional/Ambient Box/Ambient Sphere Light，以及其物理、灯光基类。
+Model Renderer、Audio Source、Material Renderer 和 Skinned Mesh Renderer
+也使用默认入口，不再逐字段手写 XML。
 旧 XML 键名保留，基类属性仅写一次。加载会先解析并验证全部属性，再调用
 setter；非法输入不会先改动前面的字段。
 
@@ -35,9 +37,32 @@ setter；非法输入不会先改动前面的字段。
 自定义加载钩子一次性应用 TRS，保留旧场景的零缩放行为。
 `Id`/`Alias` 可保留属性改名的兼容关系，详细约束见 [协议](Schema/PROTOCOL.md)。
 
-音频/模型资源引用、材质槽、动画、后处理设置及原生 UI 的特殊数据仍保留
-各自的自定义编解码器；这批尚未全部迁成注解。新增类似数据应复用资源或
-集合的编解码适配，不应序列化进程内指针。
+资源使用有类型的 `Resources::ResourceReference<T>` 值适配：
+
+```cpp
+OV_PROPERTY(Serialize, Name = "model", Setter = SetSerializedModel,
+            Missing = Default, Default = "?", Order = 0)
+Resources::ResourceReference<OvRendering::Resources::Model> GetSerializedModel() const;
+```
+
+Clang 校验实际模板类型；生成器按属性类型生成编解码适配表。支持
+Model、Material、Sound、Texture、Shader 引用以及容量 1–4096 的
+`std::array<ResourceReference<T>, N>`。数组必须指定 `ItemName = "material"`
+这样的子元素名；`std::vector`、裸指针及其他类型不会被默默当成资源。
+资源值目前只允许 `Serialize`；Inspector 使用带组件存活凭证和主线程检查的
+`DrawResourceReference<T>`，沿用已有选择器和拖放操作。
+
+XML 仍保存资源路径，空引用写 `?`。找不到资源时保留路径，重载场景可以
+再次解析；显式清除引用才删除路径。材质槽保留空位、顺序和最后一个非空
+槽之前的全部项，不依赖当前模型；缺少列表保留原值，空列表清除全部槽。
+超出 255 槽、错误子元素、非法字段值都会中止整批加载。所有 XML 先验证，
+之后统一通过资源管理器解析，最后才写入组件。路径输入限制为 4096 字节。
+资源管理器继续负责所有权和渲染线程资源调度。
+
+动画的播放、循环、速度、包围盒倍率、求值频率、时间、资源和片段名都由
+注解生成。`SkinnedMeshState` 加载钩子在属性恢复后统一规范化并重建骨骼
+绑定，避免每恢复一个字段就重建状态。后处理、Reflection Probe 和原生 UI
+的特殊设置仍保留自定义编解码，尚未全部迁入注解。
 
 普通项目构建会先运行 `OvReflectionGen`。手动仅构建某个库时先执行：
 
@@ -84,10 +109,13 @@ Editor 的 `BuildGameScripts`/`BuildCSharp` 自动向现有工程注入分析器
 ```powershell
 node Tests/Scripting/Integration/verify_generated_fields.mjs --native
 node Tests/Editor/run-panel-validation.mjs
+python Tests/Reflection/Integration/verify_resource_schema.py
 ```
 
 前者验证真实 Roslyn 生成物、私有和继承字段、稳定身份、结构体、数组、
 64 位枚举、编译错误、旧程序集兼容和程序集卸载，并通过真实原生宿主验证
 场景/Prefab 保存加载、字段改名、缺失脚本数据保留与 Inspector。
 后者在普通与独立渲染线程下运行真实 Editor 面板，并覆盖 C++ 组件的 XML
-往返、旧字段名、继承去重、缺省策略、失败时不调用 setter 和过期回调。
+往返、旧字段名、继承去重、缺省策略、失败时不调用 setter 和过期回调，
+以及实际模型/音频资源、缺失路径、材质槽边界和动画恢复。
+Clang 专项验证检查资源模板类型、子元素名、数组容量和非法注解的诊断。

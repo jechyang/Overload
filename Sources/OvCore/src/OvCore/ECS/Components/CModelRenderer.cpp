@@ -6,6 +6,7 @@
 
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/ECS/Components/CModelRenderer.h>
+#include <OvCore/Helpers/ReflectionResourceCodecs.h>
 #include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
 
 #include <OvUI/Plugins/DDTarget.h>
@@ -39,6 +40,7 @@ std::string OvCore::ECS::Components::CModelRenderer::GetTypeName()
 void OvCore::ECS::Components::CModelRenderer::SetModel(OvRendering::Resources::Model* p_model)
 {
 	m_model = p_model;
+	m_modelPath.clear();
 	m_modelChangedEvent.Invoke();
 }
 
@@ -67,30 +69,12 @@ void OvCore::ECS::Components::CModelRenderer::SetCustomBoundingSphere(const OvRe
 	m_customBoundingSphere = p_boundingSphere;
 }
 
-void OvCore::ECS::Components::CModelRenderer::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	OvCore::Helpers::Serializer::SerializeModel(p_doc, p_node, "model", m_model);
-	OvCore::Helpers::Serializer::SerializeInt(p_doc, p_node, "frustum_behaviour", reinterpret_cast<int&>(m_frustumBehaviour));
-	OvCore::Helpers::Serializer::SerializeVec3(p_doc, p_node, "custom_bounding_sphere_position", m_customBoundingSphere.position);
-	OvCore::Helpers::Serializer::SerializeFloat(p_doc, p_node, "custom_bounding_sphere_radius", m_customBoundingSphere.radius);
-}
-
-void OvCore::ECS::Components::CModelRenderer::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode* p_node)
-{
-	OvRendering::Resources::Model* model = nullptr;
-	OvCore::Helpers::Serializer::DeserializeModel(p_doc, p_node, "model", model);
-	SetModel(model);
-
-	OvCore::Helpers::Serializer::DeserializeInt(p_doc, p_node, "frustum_behaviour", reinterpret_cast<int&>(m_frustumBehaviour));
-	OvCore::Helpers::Serializer::DeserializeVec3(p_doc, p_node, "custom_bounding_sphere_position", m_customBoundingSphere.position);
-	OvCore::Helpers::Serializer::DeserializeFloat(p_doc, p_node, "custom_bounding_sphere_radius", m_customBoundingSphere.radius);
-}
-
 void OvCore::ECS::Components::CModelRenderer::OnInspector(OvUI::Internal::WidgetContainer& p_root)
 {
 	using namespace OvCore::Helpers;
 
-	GUIDrawer::DrawMesh(p_root, "Model", m_model, &m_modelChangedEvent);
+	ReflectionProperties::DrawResourceReference<OvRendering::Resources::Model>(p_root, "Model", InspectorTicket(),
+        [this] { return GetSerializedModel(); }, [this](const auto& value) { SetSerializedModel(value); }, OvTools::Utils::PathParser::EFileType::MODEL);
 
 	GUIDrawer::CreateTitle(p_root, "Frustum Culling Behaviour");
 	auto& boundingMode = p_root.CreateWidget<OvUI::Widgets::Selection::ComboBox>(0);
@@ -118,3 +102,12 @@ void OvCore::ECS::Components::CModelRenderer::OnInspector(OvUI::Internal::Widget
 
 	centerLabel.enabled = centerWidget.enabled = radiusLabel.enabled = radiusWidget.enabled = m_frustumBehaviour == EFrustumBehaviour::CUSTOM_BOUNDS;
 }
+
+OvCore::Resources::ResourceReference<OvRendering::Resources::Model> OvCore::ECS::Components::CModelRenderer::GetSerializedModel() const
+{ return Resources::ResourceReference<OvRendering::Resources::Model>::From(m_model, m_modelPath); }
+void OvCore::ECS::Components::CModelRenderer::SetSerializedModel(const Resources::ResourceReference<OvRendering::Resources::Model>& value)
+{ SetModel(value.resource); m_modelPath = value.path; }
+OvMaths::FVector3 OvCore::ECS::Components::CModelRenderer::GetSerializedBoundsPosition() const { return m_customBoundingSphere.position; }
+void OvCore::ECS::Components::CModelRenderer::SetSerializedBoundsPosition(const OvMaths::FVector3& value) { m_customBoundingSphere.position = value; }
+float OvCore::ECS::Components::CModelRenderer::GetSerializedBoundsRadius() const { return m_customBoundingSphere.radius; }
+void OvCore::ECS::Components::CModelRenderer::SetSerializedBoundsRadius(float value) { m_customBoundingSphere.radius = value; }

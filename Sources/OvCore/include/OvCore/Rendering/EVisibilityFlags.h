@@ -7,10 +7,11 @@
 #pragma once
 
 #include <cstdint>
+#include <OvReflection/Annotations.h>
 
 namespace OvCore::Rendering
 {
-	enum class EVisibilityFlags : uint32_t
+	enum class OV_TYPE() EVisibilityFlags : uint32_t
 	{
 		NONE = 0,
 		GEOMETRY = 1 << 0,

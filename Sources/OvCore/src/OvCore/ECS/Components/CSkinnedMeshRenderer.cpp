@@ -19,6 +19,7 @@
 #include <OvCore/SceneSystem/Scene.h>
 #include <OvCore/ECS/Components/CModelRenderer.h>
 #include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
+#include <OvCore/Helpers/ReflectionResourceCodecs.h>
 #include <OvCore/Helpers/GUIDrawer.h>
 #include <OvCore/Helpers/Serializer.h>
 #include <OvDebug/Logger.h>
@@ -433,6 +434,7 @@ float OvCore::ECS::Components::CSkinnedMeshRenderer::GetTime() const
 
 void OvCore::ECS::Components::CSkinnedMeshRenderer::SetAnimationSourceModel(OvRendering::Resources::Model* p_model)
 {
+	m_animationSourcePath.clear();
 	if (m_animationSourceModel == p_model)
 	{
 		return;
@@ -918,35 +920,6 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::UpdateBatch(
 	}
 }
 
-void OvCore::ECS::Components::CSkinnedMeshRenderer::OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node)
-{
-	OvCore::Helpers::Serializer::SerializeBoolean(p_doc, p_node, "playing", m_playing);
-	OvCore::Helpers::Serializer::SerializeBoolean(p_doc, p_node, "looping", m_looping);
-	OvCore::Helpers::Serializer::SerializeFloat(p_doc, p_node, "playback_speed", m_playbackSpeed);
-	OvCore::Helpers::Serializer::SerializeFloat(p_doc, p_node, "mesh_bounds_scale", m_meshBoundsScale);
-	OvCore::Helpers::Serializer::SerializeFloat(p_doc, p_node, "pose_eval_rate", m_poseEvaluationRate);
-	OvCore::Helpers::Serializer::SerializeFloat(p_doc, p_node, "time_ticks", m_currentTimeTicks);
-	OvCore::Helpers::Serializer::SerializeModel(p_doc, p_node, "animation_source", m_animationSourceModel);
-	OvCore::Helpers::Serializer::SerializeString(p_doc, p_node, "animation", GetActiveAnimationName().value_or(std::string{}));
-}
-
-void OvCore::ECS::Components::CSkinnedMeshRenderer::OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node)
-{
-	OvCore::Helpers::Serializer::DeserializeBoolean(p_doc, p_node, "playing", m_playing);
-	OvCore::Helpers::Serializer::DeserializeBoolean(p_doc, p_node, "looping", m_looping);
-	OvCore::Helpers::Serializer::DeserializeFloat(p_doc, p_node, "playback_speed", m_playbackSpeed);
-	OvCore::Helpers::Serializer::DeserializeFloat(p_doc, p_node, "mesh_bounds_scale", m_meshBoundsScale);
-	OvCore::Helpers::Serializer::DeserializeFloat(p_doc, p_node, "pose_eval_rate", m_poseEvaluationRate);
-	OvCore::Helpers::Serializer::DeserializeFloat(p_doc, p_node, "time_ticks", m_currentTimeTicks);
-	OvCore::Helpers::Serializer::DeserializeModel(p_doc, p_node, "animation_source", m_animationSourceModel);
-	OvCore::Helpers::Serializer::DeserializeString(p_doc, p_node, "animation", m_deserializedAnimationName);
-	SetMeshBoundsScale(m_meshBoundsScale);
-	m_poseEvaluationRate = std::max(0.0f, m_poseEvaluationRate);
-	m_poseEvaluationAccumulator = 0.0f;
-
-	NotifyModelChanged();
-}
-
 void OvCore::ECS::Components::CSkinnedMeshRenderer::OnInspector(OvUI::Internal::WidgetContainer& p_root)
 {
 	SyncWithModel();
@@ -969,7 +942,8 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::OnInspector(OvUI::Internal::
 		std::max(GetAnimationDurationSeconds(), 3600.0f)
 	);
 
-	GUIDrawer::DrawMesh(p_root, "Animation Source", m_animationSourceModel, &m_animationSourceChangedEvent);
+	ReflectionProperties::DrawResourceReference<OvRendering::Resources::Model>(p_root, "Animation Source", InspectorTicket(),
+        [this] { return GetSerializedAnimationSource(); }, [this](const auto& value) { SetAnimationSourceModel(value.resource); m_animationSourcePath = value.path; }, OvTools::Utils::PathParser::EFileType::MODEL);
 
 	GUIDrawer::CreateTitle(p_root, "Active Animation");
 	const int currentAnimIndex = GetActiveAnimationIndex().has_value() ? static_cast<int>(*GetActiveAnimationIndex()) : -1;
@@ -1357,4 +1331,18 @@ void OvCore::ECS::Components::CSkinnedMeshRenderer::UpdatePlayback(float p_delta
 			m_playing = false;
 		}
 	}
+}
+
+OvCore::Resources::ResourceReference<OvRendering::Resources::Model> OvCore::ECS::Components::CSkinnedMeshRenderer::GetSerializedAnimationSource() const
+{ return Resources::ResourceReference<OvRendering::Resources::Model>::From(m_animationSourceModel, m_animationSourcePath); }
+void OvCore::ECS::Components::CSkinnedMeshRenderer::SetSerializedAnimationSource(const Resources::ResourceReference<OvRendering::Resources::Model>& value)
+{ m_animationSourceModel = value.resource; m_animationSourcePath = value.path; }
+std::string OvCore::ECS::Components::CSkinnedMeshRenderer::GetSerializedAnimation() const { return GetActiveAnimationName().value_or(m_deserializedAnimationName); }
+void OvCore::ECS::Components::CSkinnedMeshRenderer::SetSerializedAnimation(const std::string& name) { m_deserializedAnimationName = name; }
+void OvCore::ECS::Components::CSkinnedMeshRenderer::RestoreAnimationState()
+{
+    SetMeshBoundsScale(m_meshBoundsScale);
+    m_poseEvaluationRate = std::max(0.0f, m_poseEvaluationRate);
+    m_poseEvaluationAccumulator = 0.0f;
+    NotifyModelChanged();
 }

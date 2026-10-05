@@ -24,12 +24,23 @@ namespace OvCore::Helpers::ReflectionProperties
         void Require() const; // Component's void serialization API propagates failure.
     };
     struct Pending { const PropertyDesc* property; std::any value; };
+    struct ValueCodec
+    {
+        TypeKey key;
+        bool (*parse)(std::string_view, std::any&);
+        bool (*read)(const PropertyDesc&, const tinyxml2::XMLElement&, std::any&);
+        bool (*write)(const PropertyDesc&, tinyxml2::XMLDocument&, tinyxml2::XMLElement&, const std::any&);
+        bool (*resolve)(const MainThread&, std::any&);
+    };
+    // Generated from the actual annotated value types, with exact type keys.
+    std::span<const ValueCodec> GetOvCoreValueCodecs();
     std::string_view Meta(std::span<const Metadata> metadata, std::string_view key);
     std::vector<const PropertyDesc*> Properties(const TypeDesc& type, std::string_view capability);
     bool Parse(const PropertyDesc& property, std::string_view text, std::any& value);
     std::string Format(const std::any& value);
     // Stage performs all parsing before setters; absent fields default to Keep.
     Report Stage(const MainThread& main, ObjectRef object, const TypeDesc& type, const tinyxml2::XMLNode& node, std::vector<Pending>& pending);
+    Report Apply(const MainThread& main, ObjectRef object, std::vector<Pending>& pending, Report report);
     using SerializeHook = Report (*)(const MainThread&, ObjectRef, const TypeDesc&, tinyxml2::XMLDocument&, tinyxml2::XMLNode&);
     using DeserializeHook = Report (*)(const MainThread&, ObjectRef, const TypeDesc&, const tinyxml2::XMLNode&);
     struct Hooks { std::string_view id; SerializeHook serialize = nullptr; DeserializeHook deserialize = nullptr; };

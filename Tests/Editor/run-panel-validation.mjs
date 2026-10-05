@@ -58,6 +58,12 @@ const data = path.join(output, 'Data'); fs.mkdirSync(data, {recursive:true});
 for (const name of ['Engine','Editor'])
   if (!fs.existsSync(path.join(data,name))) fs.symlinkSync(path.join(root,'Resources',name), path.join(data,name), 'junction');
 const project = path.join(data, 'User'); fs.mkdirSync(path.join(project, 'Assets'), {recursive:true});
+// Valid PCM fixture exercises the production sound loader without playback.
+const tone = Buffer.alloc(52); tone.write('RIFF'); tone.writeUInt32LE(44,4); tone.write('WAVEfmt ',8);
+tone.writeUInt32LE(16,16); tone.writeUInt16LE(1,20); tone.writeUInt16LE(1,22);
+tone.writeUInt32LE(8000,24); tone.writeUInt32LE(16000,28); tone.writeUInt16LE(2,32); tone.writeUInt16LE(16,34);
+tone.write('data',36); tone.writeUInt32LE(8,40);
+fs.writeFileSync(path.join(project, 'Assets/ReflectionTone.wav'), tone);
 fs.writeFileSync(path.join(project, 'Assets/spawn.lua'), `local Script = { spawned = false }
 function Script:OnUpdate(dt)
   if not self.spawned then

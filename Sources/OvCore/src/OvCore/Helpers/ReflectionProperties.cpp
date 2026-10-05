@@ -1,6 +1,7 @@
 #include <OvCore/Helpers/ReflectionProperties.h>
 #include <OvCore/Helpers/Serializer.h>
 #include <OvCore/ECS/Components/CTransform.h>
+#include <OvCore/ECS/Components/CSkinnedMeshRenderer.h>
 #include <OvCore/Reflection.generated.h>
 #include <algorithm>
 #include <cmath>
@@ -53,6 +54,11 @@ namespace OvCore::Helpers::ReflectionProperties
             return true;
         }
     }
+    static const ValueCodec* Codec(const PropertyDesc& property)
+    {
+        for (const auto& codec : GetOvCoreValueCodecs()) if (codec.key == property.Info().type.key) return &codec;
+        return nullptr;
+    }
     static bool EnumDecimal(const PropertyDesc& property, std::string_view text, std::string& output)
     {
         // Find enum's real underlying facts in the application registry in the UI;
@@ -65,6 +71,7 @@ namespace OvCore::Helpers::ReflectionProperties
     }
     bool Parse(const PropertyDesc& property, std::string_view text, std::any& value)
     {
+        if (auto* codec = Codec(property)) return codec->parse(text, value);
         bool valid = false;
         Dispatch(property, [&]<class T>()
         {
@@ -119,6 +126,7 @@ namespace OvCore::Helpers::ReflectionProperties
     }
     static bool ReadElement(const PropertyDesc& property, const tinyxml2::XMLElement& element, std::any& value)
     {
+        if (auto* codec = Codec(property)) return codec->read(property, element, value);
         if (auto* v = std::any_cast<OvMaths::FVector3>(&value))
         {
             for (auto [name, field] : {std::pair{"x", &v->x}, {"y", &v->y}, {"z", &v->z}})
@@ -189,6 +197,14 @@ namespace OvCore::Helpers::ReflectionProperties
             if (auto error = property->ReadValue(main, object, value); error != Error::None) result = {result.property, Status::AccessDenied, error};
             else
             {
+                if (auto* codec = Codec(*property))
+                {
+                    auto* element = doc.NewElement(std::string(property->Info().name).c_str());
+                    staging->InsertEndChild(element);
+                    if (!codec->write(*property, doc, *element, value)) result.status = Status::Invalid;
+                    report.fields.push_back(result);
+                    continue;
+                }
                 std::any checked;
                 if (!Parse(*property, Format(value), checked))
                 { report.fields.push_back({result.property, Status::Invalid}); continue; }
@@ -218,6 +234,25 @@ namespace OvCore::Helpers::ReflectionProperties
         }
         std::vector<Pending> pending; auto report = Stage(main, object, type, node, pending);
         if (!report.Ok()) return report;
+        return Apply(main, object, pending, std::move(report));
+    }
+    Report Apply(const MainThread& main, ObjectRef object, std::vector<Pending>& pending, Report report)
+    {
+        if (!report.Ok()) return report;
+        // Resource lookup happens only after every XML value has been validated.
+        // Resolve the complete batch before publishing any component property.
+        for (auto& entry : pending)
+        {
+            try
+            {
+                if (auto* codec = Codec(*entry.property); codec && !codec->resolve(main, entry.value))
+                { report.fields.push_back({std::string(entry.property->Info().id), Status::Invalid}); return report; }
+                if (auto error = entry.property->ValidateValue(entry.value); error != Error::None)
+                { report.fields.push_back({std::string(entry.property->Info().id), Status::Invalid, error}); return report; }
+            }
+            catch (const std::exception&)
+            { report.fields.push_back({std::string(entry.property->Info().id), Status::Invalid}); return report; }
+        }
         for (const auto& entry : pending)
             if (auto error = entry.property->WriteValue(main, object, entry.value); error != Error::None)
             { report.fields.push_back({std::string(entry.property->Info().id), Status::AccessDenied, error}); break; }
@@ -242,5 +277,20 @@ namespace OvCore::Helpers::ReflectionProperties
         return report;
     }
     std::span<const Hooks> ComponentHooks()
-    { static const Hooks hooks[]{{"TransformTRS", nullptr, TransformTRS}}; return hooks; }
+    {
+        static const Hooks hooks[]{
+            {"TransformTRS", nullptr, TransformTRS},
+            {"SkinnedMeshState", nullptr, [](const MainThread& main, ObjectRef object, const TypeDesc& type, const tinyxml2::XMLNode& node)
+            {
+                if (!main.IsCurrent()) return Report{{{std::string(type.Info().id), Status::AccessDenied, Error::WrongThread}}};
+                auto* renderer = object.MutableAs<ECS::Components::CSkinnedMeshRenderer>();
+                if (!renderer) return Report{{{std::string(type.Info().id), Status::AccessDenied, Error::WrongObjectType}}};
+                std::vector<Pending> pending; auto report = Stage(main, object, type, node, pending);
+                report = Apply(main, object, pending, std::move(report));
+                if (report.Ok()) renderer->RestoreAnimationState();
+                return report;
+            }}
+        };
+        return hooks;
+    }
 }

@@ -23,7 +23,11 @@ static void ValidateGeneratedSerialization(OvEditor::Core::Context& context)
         {"CSpotLight", {"color", "intensity", "constant", "linear", "quadratic", "cutoff", "outercutoff"}},
         {"CDirectionalLight", {"color", "intensity", "cast_shadows", "shadow_area_size", "shadow_follow_camera", "shadow_map_resolution"}},
         {"CAmbientBoxLight", {"color", "intensity", "size"}},
-        {"CAmbientSphereLight", {"color", "intensity", "radius"}}
+        {"CAmbientSphereLight", {"color", "intensity", "radius"}},
+        {"CModelRenderer", {"model", "frustum_behaviour", "custom_bounding_sphere_position", "custom_bounding_sphere_radius"}},
+        {"CMaterialRenderer", {"materials", "visibility_flags"}},
+        {"CAudioSource", {"autoplay", "spatial", "volume", "pan", "looped", "pitch", "attenuation_threshold", "audio_clip"}},
+        {"CSkinnedMeshRenderer", {"playing", "looping", "playback_speed", "mesh_bounds_scale", "pose_eval_rate", "time_ticks", "animation_source", "animation"}}
     };
     for (const auto& [name, keys] : expected)
     {

@@ -10,6 +10,7 @@
 
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
+#include <OvCore/Helpers/ReflectionResourceCodecs.h>
 #include <OvCore/ECS/Components/CModelRenderer.h>
 #include <OvCore/Global/ServiceLocator.h>
 #include <OvCore/Helpers/GUIDrawer.h>
@@ -61,13 +62,14 @@ std::string OvCore::ECS::Components::CMaterialRenderer::GetTypeName()
 
 void OvCore::ECS::Components::CMaterialRenderer::FillWithMaterial(OvCore::Resources::Material & p_material)
 {
-	for (uint8_t i = 0; i < m_materials.size(); ++i)
-		m_materials[i] = &p_material;
+	m_materials.fill(&p_material);
+	m_materialPaths.fill({});
 }
 
 void OvCore::ECS::Components::CMaterialRenderer::SetMaterialAtIndex(uint8_t p_index, OvCore::Resources::Material& p_material)
 {
 	m_materials[p_index] = &p_material;
+	m_materialPaths[p_index].clear();
 }
 
 OvCore::Resources::Material* OvCore::ECS::Components::CMaterialRenderer::GetMaterialAtIndex(uint8_t p_index)
@@ -79,7 +81,8 @@ void OvCore::ECS::Components::CMaterialRenderer::RemoveMaterialAtIndex(uint8_t p
 {
 	if (p_index < m_materials.size())
 	{
-		m_materials[p_index] = nullptr;;
+		m_materials[p_index] = nullptr;
+		m_materialPaths[p_index].clear();
 	}
 }
 
@@ -87,13 +90,13 @@ void OvCore::ECS::Components::CMaterialRenderer::RemoveMaterialByInstance(OvCore
 {
 	for (uint8_t i = 0; i < m_materials.size(); ++i)
 		if (m_materials[i] == &p_instance)
-			m_materials[i] = nullptr;
+			RemoveMaterialAtIndex(i);
 }
 
 void OvCore::ECS::Components::CMaterialRenderer::RemoveAllMaterials()
 {
-	for (uint8_t i = 0; i < m_materials.size(); ++i)
-		m_materials[i] = nullptr;
+	m_materials.fill(nullptr);
+	m_materialPaths.fill({});
 }
 
 const OvMaths::FMatrix4 & OvCore::ECS::Components::CMaterialRenderer::GetUserMatrix() const
@@ -135,47 +138,6 @@ float OvCore::ECS::Components::CMaterialRenderer::GetUserMatrixElement(uint32_t 
 		return 0.0f;
 }
 
-void OvCore::ECS::Components::CMaterialRenderer::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	tinyxml2::XMLNode* materialsNode = p_doc.NewElement("materials");
-	p_node->InsertEndChild(materialsNode);
-
-    // Preserve authored slots even without a model, including gaps between them.
-    // Trailing nulls are cleared on load and do not need to inflate scene history.
-    size_t materialCount = m_materials.size();
-    while (materialCount && !m_materials[materialCount - 1]) --materialCount;
-	for (size_t i = 0; i < materialCount; ++i)
-	{
-		OvCore::Helpers::Serializer::SerializeMaterial(p_doc, materialsNode, "material", m_materials[i]);
-	}
-
-	OvCore::Helpers::Serializer::SerializeUint32(p_doc, p_node, "visibility_flags", reinterpret_cast<uint32_t&>(m_visibilityFlags));
-}
-
-void OvCore::ECS::Components::CMaterialRenderer::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XMLNode * p_node)
-{
-	tinyxml2::XMLNode* materialsRoot = p_node->FirstChildElement("materials");
-	if (materialsRoot)
-	{
-        m_materials.fill(nullptr);
-		tinyxml2::XMLElement* currentMaterial = materialsRoot->FirstChildElement("material");
-
-		uint8_t materialIndex = 0;
-
-		while (currentMaterial && materialIndex < kMaxMaterialCount)
-		{
-            if (const auto* path = currentMaterial->GetText(); path && *path && std::string_view(path) != "?")
-                if (auto material = Global::ServiceLocator::Get<ResourceManagement::MaterialManager>()[path])
-                    m_materials[materialIndex] = material;
-
-			currentMaterial = currentMaterial->NextSiblingElement("material");
-			++materialIndex;
-		}
-	}
-
-	OvCore::Helpers::Serializer::DeserializeUint32(p_doc, p_node, "visibility_flags", reinterpret_cast<uint32_t&>(m_visibilityFlags));
-}
-
 void OvCore::ECS::Components::CMaterialRenderer::OnInspector(OvUI::Internal::WidgetContainer & p_root)
 {
 	using namespace OvCore::Helpers;
@@ -202,7 +164,9 @@ void OvCore::ECS::Components::CMaterialRenderer::OnInspector(OvUI::Internal::Wid
 	for (uint8_t i = 0; i < kMaxMaterialCount; ++i)
 	{
 		const size_t before = p_root.GetWidgets().size();
-		GUIDrawer::DrawMaterial(p_root, "Material", m_materials[i], nullptr);
+        ReflectionProperties::DrawResourceReference<Resources::Material>(p_root, "Material", InspectorTicket(),
+            [this, i] { return Resources::ResourceReference<Resources::Material>::From(m_materials[i], m_materialPaths[i]); },
+            [this, i](const auto& value) { m_materials[i] = value.resource; m_materialPaths[i] = value.path; }, OvTools::Utils::PathParser::EFileType::MATERIAL);
 		auto& widgets = p_root.GetWidgets();
 		m_materialFields[i] = { widgets[before].first, widgets[before + 1].first };
 		m_materialFields[i][0]->enabled = false;
@@ -265,7 +229,7 @@ void OvCore::ECS::Components::CMaterialRenderer::FillWithEmbeddedMaterials(bool 
 	for (uint8_t i = 0; i < materialCount; ++i)
 	{
 		auto* currentMaterial = GetMaterialAtIndex(i);
-		const bool shouldOverride = p_overwriteExisting || !currentMaterial;
+		const bool shouldOverride = p_overwriteExisting || (!currentMaterial && m_materialPaths[i].empty());
 		if (!shouldOverride)
 		{
 			continue;
@@ -308,3 +272,14 @@ void OvCore::ECS::Components::CMaterialRenderer::FillWithEmbeddedMaterials(bool 
 	}
 }
 
+
+OvCore::ECS::Components::CMaterialRenderer::SerializedMaterialList OvCore::ECS::Components::CMaterialRenderer::GetSerializedMaterials() const
+{
+    SerializedMaterialList values{};
+    for (size_t i = 0; i < values.size(); ++i) values[i] = Resources::ResourceReference<Resources::Material>::From(m_materials[i], m_materialPaths[i]);
+    return values;
+}
+void OvCore::ECS::Components::CMaterialRenderer::SetSerializedMaterials(const SerializedMaterialList& values)
+{
+    for (size_t i = 0; i < values.size(); ++i) { m_materials[i] = values[i].resource; m_materialPaths[i] = values[i].path; }
+}

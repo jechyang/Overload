@@ -7,6 +7,7 @@
 #pragma once
 
 #include <OvReflection/Annotations.h>
+#include <OvCore/Resources/ResourceReference.h>
 
 #include <OvAudio/Entities/AudioSource.h>
 #include <OvTools/Eventing/Event.h>
@@ -94,26 +95,31 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns true if the audio source should call "Play" OnEnable
 		*/
+		OV_PROPERTY(Serialize, Name = "autoplay", Setter = SetAutoplay, Order = 0)
 		bool IsAutoplayed() const;
 
 		/**
 		* Returns the audio source volume
 		*/
+		OV_PROPERTY(Serialize, Name = "volume", Setter = SetVolume, Order = 2, Missing = Default, Default = "0")
 		float GetVolume() const;
 
 		/**
 		* Returns the audio source pan (Left / Right)
 		*/
+		OV_PROPERTY(Serialize, Name = "pan", Setter = SetPan, Order = 3, Missing = Default, Default = "0")
 		float GetPan() const;
 
 		/**
 		* Returns if the audio source is looping
 		*/
+		OV_PROPERTY(Serialize, Name = "looped", Setter = SetLooped, Order = 4, Missing = Default, Default = "false")
 		bool IsLooped() const;
 
 		/**
 		* Returns the audio source pitch (= frequency or playback speed)
 		*/
+		OV_PROPERTY(Serialize, Name = "pitch", Setter = SetPitch, Order = 5, Missing = Default, Default = "0")
 		float GetPitch() const;
 
 		/**
@@ -124,11 +130,13 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns true if the audio source is spatialized
 		*/
+		OV_PROPERTY(Serialize, Name = "spatial", Setter = SetSpatial, Order = 1, Missing = Default, Default = "false")
 		bool IsSpatial() const;
 
 		/**
 		* Returns the audio source attenuation threshold (Minimum distance before applying sound attenuation)
 		*/
+		OV_PROPERTY(Serialize, Name = "attenuation_threshold", Setter = SetAttenuationThreshold, Order = 6, Missing = Default, Default = "0")
 		float GetAttenuationThreshold() const;
 
 		/**
@@ -151,19 +159,6 @@ namespace OvCore::ECS::Components
 		*/
 		void Stop();
 
-		/**
-		* Serialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
-		* Deserialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
 
 		/**
 		* Defines how the component should be drawn in the inspector
@@ -176,6 +171,11 @@ namespace OvCore::ECS::Components
 		virtual void OnDisable() override;
 
 	private:
+        friend struct OvReflection::Access<CAudioSource>;
+        OV_PROPERTY(Serialize, Name = "audio_clip", Setter = SetSerializedSound, Missing = Default, Default = "?", Order = 7)
+        Resources::ResourceReference<OvAudio::Resources::Sound> GetSerializedSound() const;
+        void SetSerializedSound(const Resources::ResourceReference<OvAudio::Resources::Sound>& value);
+        std::string m_soundPath;
 		OvAudio::Resources::Sound* m_sound = nullptr;
 		OvAudio::Entities::AudioSource m_audioSource;
 		bool m_autoPlay = false;

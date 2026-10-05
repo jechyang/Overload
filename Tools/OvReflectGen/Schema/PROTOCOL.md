@@ -131,11 +131,11 @@ tokens is promised: the annotation string preserves the written arguments.
 | Target | Flags | Value keys besides Id/Alias/Name |
 |---|---|---|
 | Type | Component | DisplayName, Category, Order, Factory, Lookup, SerializeHook, DeserializeHook |
-| Field | Serialize, Inspect, Script, ReadOnly | Thread, DisplayName, Category, Min, Max, Step, Drawer, Order, Missing, Default, Return, Ownership, Nullable |
+| Field | Serialize, Inspect, Script, ReadOnly | Thread, DisplayName, Category, Min, Max, Step, Drawer, Order, Missing, Default, ItemName, Return, Ownership, Nullable |
 | Property getter | Serialize, Inspect, Script, ReadOnly | Field keys plus Setter |
 | Method | Script | Thread, Return, Ownership, Nullable, Overload |
 
-Id/Alias/Name/DisplayName/Category/Drawer/SerializeHook/DeserializeHook/Default take strings. Alias may repeat, but its
+Id/Alias/Name/DisplayName/Category/Drawer/SerializeHook/DeserializeHook/Default/ItemName take strings. Alias may repeat, but its
 values must be unique. Order/Min/Max/Step take finite numbers and are metadata
 only. Setter/Factory/Lookup/Thread/Missing/Return/Ownership/Nullable take identifiers.
 Overload takes a quoted canonical signature. R6 Script boundary policies require
@@ -346,3 +346,31 @@ authority, weak epochs, typed calls, exact overloads, string ownership, ABI hash
 collectible assembly restrictions, example project and executable verification.
 Box.Size and Transform position/rotation/scale opt in explicitly; TranslateLocal
 is the production method pilot. R6 does not replace existing Lua or host Behaviours.
+
+## Generated component resource adapters
+
+- `ResourceReference<T>` is recognized semantically as `resource-reference` only
+  for the supported Model/Material/Sound/Texture/Shader resource classes. Bare
+  pointers do not become serializable handles. `std::array<ResourceReference<T>, N>`
+  has category `resource-array`, requires `ItemName` (an ASCII XML identifier), and
+  has compile-time capacity 1–4096. Other containers and element types fail.
+- These adapters currently require Serialize without Script/Inspect; typed asset
+  pickers supply the Inspector workflow and guarded callbacks. The emitter builds
+  OvCore's immutable ValueCodec table from the actual property value types. XML
+  and manager dependencies stay in OvCore, outside the standard-only runtime.
+- Resource values retain an unresolved path alongside the borrowed manager-owned
+  pointer. XML writes the current asset path or `?`; missing assets keep their
+  identity across saves. Explicit assignment/clear removes the previous identity.
+  Reference defaults permit only empty/`?`, never implicit resource loads.
+- Array codecs preserve holes and indices, trim only trailing empty references,
+  reject unexpected child names/non-whitespace text/overflow, and clear all slots
+  for an explicit empty list. Missing = Keep preserves the complete previous list.
+  Input identities are bounded to 4096 bytes and reject control characters.
+- Stage validates the complete XML batch before any resource lookup. Apply resolves
+  all resource values before invoking any property setter. Invalid input or lookup
+  exceptions leave component properties unchanged; manager cache changes and
+  arbitrary setter exceptions are not rolled back.
+- Model, Audio, Material and SkinnedMesh components inherit the default component
+  codecs with their legacy keys. SkinnedMeshState performs one final animation
+  normalization/rebuild after the generated batch. Remaining custom native UI,
+  probe and postprocess codecs are documented in SERIALIZATION.zh-CN.md.

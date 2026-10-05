@@ -25,7 +25,7 @@ namespace OvReflectGen
             keys.insert("Thread");
             keys.insert({"Return", "Ownership", "Nullable"});
             if (kind == "method") keys.insert("Overload");
-            if (kind != "method") keys.insert({"DisplayName", "Category", "Min", "Max", "Step", "Drawer", "Order", "Missing", "Default"});
+            if (kind != "method") keys.insert({"DisplayName", "Category", "Min", "Max", "Step", "Drawer", "Order", "Missing", "Default", "ItemName"});
             if (kind == "property") keys.insert("Setter");
         }
         size_t i = 0;
@@ -70,7 +70,7 @@ namespace OvReflectGen
                     value = text.substr(begin, i - begin);
                 }
                 if (value.empty() && key != "Default") return fail("empty metadata value: " + key);
-                if ((key == "Id" || key == "Alias" || key == "Name" || key == "DisplayName" || key == "Category" || key == "Drawer" || key == "SerializeHook" || key == "DeserializeHook" || key == "Default" || key == "Overload") && !quoted)
+                if ((key == "Id" || key == "Alias" || key == "Name" || key == "DisplayName" || key == "Category" || key == "Drawer" || key == "SerializeHook" || key == "DeserializeHook" || key == "Default" || key == "Overload" || key == "ItemName") && !quoted)
                     return fail(key + " requires a quoted string");
                 if (key == "Setter" || key == "Factory" || key == "Lookup" || key == "Thread" || key == "Missing" || key == "Return" || key == "Ownership" || key == "Nullable")
                 {
@@ -120,6 +120,7 @@ namespace OvReflectGen
     static bool ValidDefault(const TypeRef& type, std::string_view text, const Schema& schema)
     {
         if (type.category == "string") return true;
+        if (type.category == "resource-reference") return text.empty() || text == "?";
         const auto first = text.find_first_not_of(" \t\r\n");
         if (first == text.npos) return false;
         text = text.substr(first, text.find_last_not_of(" \t\r\n") - first + 1);
@@ -184,6 +185,13 @@ namespace OvReflectGen
             for (const auto& property : type.properties)
             {
                 aliases(property);
+                if (property.metadata.Has("ItemName"))
+                {
+                    const auto name = property.metadata.Get("ItemName");
+                    if (name.empty() || !std::isalpha(static_cast<unsigned char>(name.front())) ||
+                        !std::all_of(name.begin(), name.end(), [](unsigned char c) { return std::isalnum(c) || c == '_'; }))
+                        issues.push_back({property.source, "ItemName must be an ASCII XML identifier"});
+                }
                 if (property.metadata.Has("Default") && !ValidDefault(property.type, property.metadata.Get("Default"), schema))
                     issues.push_back({property.source, "Default does not match property value type/range"});
                 TypeRef rangeType = property.type;

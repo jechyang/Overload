@@ -63,6 +63,36 @@ namespace OvReflectGen
                 return true;
             }
             std::string Spelling(clang::QualType type) { return type.getAsString(policy); }
+            bool ResourceReference(clang::QualType value)
+            {
+                if (value.isConstQualified() || value.isVolatileQualified()) return false;
+                const auto* record = llvm::dyn_cast_or_null<clang::ClassTemplateSpecializationDecl>(value->getAsCXXRecordDecl());
+                if (!record || record->getSpecializedTemplate()->getQualifiedNameAsString() != "OvCore::Resources::ResourceReference" ||
+                    record->getTemplateArgs().size() != 1 || record->getTemplateArgs()[0].getKind() != clang::TemplateArgument::Type) return false;
+                const auto argument = record->getTemplateArgs()[0].getAsType();
+                if (argument.isConstQualified() || argument.isVolatileQualified()) return false;
+                const auto* resource = argument->getAsCXXRecordDecl();
+                if (!resource) return false;
+                const auto name = resource->getQualifiedNameAsString();
+                return name == "OvRendering::Resources::Model" || name == "OvRendering::Resources::Texture" ||
+                    name == "OvRendering::Resources::Shader" || name == "OvCore::Resources::Material" || name == "OvAudio::Resources::Sound";
+            }
+            bool ResourceArray(clang::QualType value)
+            {
+                const auto* record = llvm::dyn_cast_or_null<clang::ClassTemplateSpecializationDecl>(value->getAsCXXRecordDecl());
+                if (!record || record->getSpecializedTemplate()->getQualifiedNameAsString() != "std::array" || record->getTemplateArgs().size() != 2) return false;
+                const auto& item = record->getTemplateArgs()[0]; const auto& count = record->getTemplateArgs()[1];
+                return item.getKind() == clang::TemplateArgument::Type && ResourceReference(item.getAsType()) &&
+                    count.getKind() == clang::TemplateArgument::Integral && count.getAsIntegral() > 0 && count.getAsIntegral() <= 4096;
+            }
+            void CheckResourceProperty(const Property& property, const clang::Decl* decl)
+            {
+                const bool resource = property.type.category == "resource-reference" || property.type.category == "resource-array";
+                if (resource && (!property.metadata.Has("Serialize") || property.metadata.Has("Inspect") || property.metadata.Has("Script")))
+                    Error(decl, "resource adapters currently require Serialize only; use the typed asset picker for Inspector");
+                if (property.metadata.Has("ItemName") != (property.type.category == "resource-array"))
+                    Error(decl, "ItemName is required exclusively on fixed resource arrays");
+            }
             TypeRef Reference(clang::QualType type, const clang::Decl* decl, bool allowVoid = false, bool allowObject = false)
             {
                 TypeRef out;
@@ -88,6 +118,8 @@ namespace OvReflectGen
                     if (!definition || !Annotation(definition)) Error(decl, "enum value type requires a complete OV_TYPE declaration");
                 }
                 else if (out.valueType == "OvMaths::FVector3" || out.valueType == "OvMaths::FQuaternion") out.category = "value-adapter";
+                else if (ResourceReference(value)) out.category = "resource-reference";
+                else if (ResourceArray(value)) out.category = "resource-array";
                 else if (const auto* record = value->getAsCXXRecordDecl(); record && record->getQualifiedNameAsString() == "std::basic_string")
                 {
                     // Recognize the actual std::string specialization, not arbitrary containers or wide strings.
@@ -185,6 +217,7 @@ namespace OvReflectGen
                 out.readOnly = out.metadata.Has("ReadOnly") || field->getType().isConstQualified();
                 out.source = Location(field);
                 out.type = Reference(field->getType(), field, false, out.metadata.Has("Script"));
+                CheckResourceProperty(out, field);
                 CheckScript(out.metadata, field->getType(), {}, field);
                 type.properties.push_back(std::move(out));
             }
@@ -209,6 +242,7 @@ namespace OvReflectGen
                 out.access = Access(getter);
                 out.source = Location(getter);
                 out.type = Reference(getter->getReturnType(), getter, false, out.metadata.Has("Script"));
+                CheckResourceProperty(out, getter);
                 CheckScript(out.metadata, getter->getReturnType(), {}, getter);
                 out.readOnly = out.metadata.Has("ReadOnly");
                 if (out.readOnly && out.metadata.Has("Setter")) Error(getter, "ReadOnly property cannot specify Setter");

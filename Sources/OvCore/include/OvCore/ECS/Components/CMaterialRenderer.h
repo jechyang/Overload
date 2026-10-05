@@ -7,6 +7,7 @@
 #pragma once
 
 #include <OvReflection/Annotations.h>
+#include <OvCore/Resources/ResourceReference.h>
 
 #include <array>
 
@@ -124,6 +125,7 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns the visibility flags
 		*/
+		OV_PROPERTY(Serialize, Name = "visibility_flags", Setter = SetVisibilityFlags, Order = 1)
 		OvCore::Rendering::EVisibilityFlags GetVisibilityFlags() const;
 
 		/**
@@ -132,19 +134,6 @@ namespace OvCore::ECS::Components
 		*/
 		bool HasVisibilityFlags(OvCore::Rendering::EVisibilityFlags p_flags) const;
 
-		/**
-		* Serialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
-		* Deserialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
 
 		/**
 		* Defines how the component should be drawn in the inspector
@@ -153,6 +142,12 @@ namespace OvCore::ECS::Components
 		virtual void OnInspector(OvUI::Internal::WidgetContainer& p_root) override;
 
 	private:
+        friend struct OvReflection::Access<CMaterialRenderer>;
+        using SerializedMaterialList = std::array<Resources::ResourceReference<Resources::Material>, kMaxMaterialCount>;
+        OV_PROPERTY(Serialize, Name = "materials", Setter = SetSerializedMaterials, ItemName = "material", Order = 0)
+        SerializedMaterialList GetSerializedMaterials() const;
+        void SetSerializedMaterials(const SerializedMaterialList& value);
+        std::array<std::string, kMaxMaterialCount> m_materialPaths;
 		MaterialList m_materials;
 		MaterialField m_materialFields;
 		OvMaths::FMatrix4 m_userMatrix;

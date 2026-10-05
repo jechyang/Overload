@@ -7,6 +7,7 @@
 #pragma once
 
 #include <OvReflection/Annotations.h>
+#include <OvCore/Resources/ResourceReference.h>
 
 #include <OvRendering/Geometry/Vertex.h>
 #include <OvRendering/Resources/Model.h>
@@ -26,7 +27,7 @@ namespace OvCore::ECS::Components
 		/**
 		* Defines how the model renderer bounding sphere should be interpreted
 		*/
-		enum class EFrustumBehaviour
+		enum class OV_TYPE() EFrustumBehaviour
 		{
 			DISABLED = 0,
 			DEPRECATED_MODEL_BOUNDS = 1, // This is not used anymore, but the enum value is kept for compatibility
@@ -70,6 +71,7 @@ namespace OvCore::ECS::Components
 		/**
 		* Returns the current bounding mode
 		*/
+		OV_PROPERTY(Serialize, Name = "frustum_behaviour", Setter = SetFrustumBehaviour, Order = 1)
 		EFrustumBehaviour GetFrustumBehaviour() const;
 
 		/**
@@ -83,19 +85,6 @@ namespace OvCore::ECS::Components
 		*/
 		void SetCustomBoundingSphere(const OvRendering::Geometry::BoundingSphere& p_boundingSphere);
 
-		/**
-		* Serialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
-
-		/**
-		* Deserialize the component
-		* @param p_doc
-		* @param p_node
-		*/
-		virtual void OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node) override;
 
 		/**
 		* Defines how the component should be drawn in the inspector
@@ -104,6 +93,17 @@ namespace OvCore::ECS::Components
 		virtual void OnInspector(OvUI::Internal::WidgetContainer& p_root) override;
 
 	private:
+        friend struct OvReflection::Access<CModelRenderer>;
+        OV_PROPERTY(Serialize, Name = "model", Setter = SetSerializedModel, Missing = Default, Default = "?", Order = 0)
+        Resources::ResourceReference<OvRendering::Resources::Model> GetSerializedModel() const;
+        void SetSerializedModel(const Resources::ResourceReference<OvRendering::Resources::Model>& value);
+        OV_PROPERTY(Serialize, Name = "custom_bounding_sphere_position", Setter = SetSerializedBoundsPosition, Order = 2)
+        OvMaths::FVector3 GetSerializedBoundsPosition() const;
+        void SetSerializedBoundsPosition(const OvMaths::FVector3& value);
+        OV_PROPERTY(Serialize, Name = "custom_bounding_sphere_radius", Setter = SetSerializedBoundsRadius, Order = 3)
+        float GetSerializedBoundsRadius() const;
+        void SetSerializedBoundsRadius(float value);
+        std::string m_modelPath;
 		OvRendering::Resources::Model* m_model = nullptr;
 		OvTools::Eventing::Event<> m_modelChangedEvent;
 		OvRendering::Geometry::BoundingSphere m_customBoundingSphere = { {}, 1.0f };

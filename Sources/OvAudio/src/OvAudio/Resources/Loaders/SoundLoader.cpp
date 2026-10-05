@@ -11,7 +11,8 @@
 OvAudio::Resources::Sound* OvAudio::Resources::Loaders::SoundLoader::Create(const std::string& p_filepath)
 {
 	std::unique_ptr<SoLoud::Wav> wav = std::make_unique<SoLoud::Wav>();
-	wav->load(p_filepath.c_str());
+	if (wav->load(p_filepath.c_str()) != SoLoud::SO_NO_ERROR)
+		return nullptr;
 	return new Sound(p_filepath, std::move(wav));
 }
 

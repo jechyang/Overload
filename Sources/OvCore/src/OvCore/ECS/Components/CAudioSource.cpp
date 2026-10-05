@@ -7,6 +7,7 @@
 #include <OvAudio/Core/AudioEngine.h>
 
 #include <OvCore/ECS/Components/CAudioSource.h>
+#include <OvCore/Helpers/ReflectionResourceCodecs.h>
 #include <OvCore/ECS/Actor.h>
 #include <OvCore/Global/ServiceLocator.h>
 #include <OvCore/SceneSystem/SceneManager.h>
@@ -33,6 +34,7 @@ std::string OvCore::ECS::Components::CAudioSource::GetTypeName()
 void OvCore::ECS::Components::CAudioSource::SetSound(OvAudio::Resources::Sound* p_sound)
 {
 	m_sound = p_sound;
+	m_soundPath.clear();
 }
 
 void OvCore::ECS::Components::CAudioSource::SetAutoplay(bool p_autoplay)
@@ -139,40 +141,13 @@ void OvCore::ECS::Components::CAudioSource::Stop()
 		m_audioSource.Stop();
 }
 
-void OvCore::ECS::Components::CAudioSource::OnSerialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node)
-{
-	using namespace OvCore::Helpers;
-
-	Serializer::SerializeBoolean(p_doc, p_node, "autoplay", m_autoPlay);
-	Serializer::SerializeBoolean(p_doc, p_node, "spatial", IsSpatial());
-	Serializer::SerializeFloat(p_doc, p_node, "volume", GetVolume());
-	Serializer::SerializeFloat(p_doc, p_node, "pan", GetPan());
-	Serializer::SerializeBoolean(p_doc, p_node, "looped", IsLooped());
-	Serializer::SerializeFloat(p_doc, p_node, "pitch", GetPitch());
-	Serializer::SerializeFloat(p_doc, p_node, "attenuation_threshold", GetAttenuationThreshold());
-	Serializer::SerializeSound(p_doc, p_node, "audio_clip", m_sound);
-}
-
-void OvCore::ECS::Components::CAudioSource::OnDeserialize(tinyxml2::XMLDocument& p_doc, tinyxml2::XMLNode* p_node)
-{
-	using namespace OvCore::Helpers;
-
-	Serializer::DeserializeBoolean(p_doc, p_node, "autoplay", m_autoPlay);
-	SetSpatial(Serializer::DeserializeBoolean(p_doc, p_node, "spatial"));
-	SetVolume(Serializer::DeserializeFloat(p_doc, p_node, "volume"));
-	SetPan(Serializer::DeserializeFloat(p_doc, p_node, "pan"));
-	SetLooped(Serializer::DeserializeBoolean(p_doc, p_node, "looped"));
-	SetPitch(Serializer::DeserializeFloat(p_doc, p_node, "pitch"));
-	SetAttenuationThreshold(Serializer::DeserializeFloat(p_doc, p_node, "attenuation_threshold"));
-	Serializer::DeserializeSound(p_doc, p_node, "audio_clip", m_sound);
-}
-
 void OvCore::ECS::Components::CAudioSource::OnInspector(OvUI::Internal::WidgetContainer& p_root)
 {
 	using namespace OvAudio::Entities;
 	using namespace OvCore::Helpers;
 
-	GUIDrawer::DrawSound(p_root, "Sound", m_sound);
+	ReflectionProperties::DrawResourceReference<OvAudio::Resources::Sound>(p_root, "Sound", InspectorTicket(),
+        [this] { return GetSerializedSound(); }, [this](const auto& value) { SetSerializedSound(value); }, OvTools::Utils::PathParser::EFileType::SOUND);
 	GUIDrawer::DrawBoolean(p_root, "Auto-play", m_autoPlay);
 	GUIDrawer::DrawScalar<float>(p_root, "Volume", std::bind(&CAudioSource::GetVolume, this), std::bind(&CAudioSource::SetVolume, this, std::placeholders::_1), 0.01f, 0.0f, 1.0f);
 	GUIDrawer::DrawScalar<float>(p_root, "Pan", std::bind(&CAudioSource::GetPan, this), std::bind(&CAudioSource::SetPan, this, std::placeholders::_1), 0.01f, -1.0f, 1.0f);
@@ -230,3 +205,8 @@ void OvCore::ECS::Components::CAudioSource::OnDisable()
 {
 	m_audioSource.Stop();
 }
+
+OvCore::Resources::ResourceReference<OvAudio::Resources::Sound> OvCore::ECS::Components::CAudioSource::GetSerializedSound() const
+{ return Resources::ResourceReference<OvAudio::Resources::Sound>::From(m_sound, m_soundPath); }
+void OvCore::ECS::Components::CAudioSource::SetSerializedSound(const Resources::ResourceReference<OvAudio::Resources::Sound>& value)
+{ SetSound(value.resource); m_soundPath = value.path; }
