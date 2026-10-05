@@ -654,6 +654,10 @@ void OvEditor::Panels::Inspector::_DrawComponent(AComponent& p_component, int p_
 	columns.SetID("comp_" + p_component.GetName());
 	columns.widths[0] = 140 * OVUI_SCALE;
 	p_component.OnInspector(columns);
+    if (isTransform)
+        for (auto [widget, mode] : columns.GetWidgets())
+            if (auto* vector = dynamic_cast<Drags::DragMultipleScalars<float,3>*>(widget); vector && vector->showProportionalLock)
+                vector->proportionalLink = &m_proportionalScale;
     std::vector<OvUI::Internal::WidgetContainer*> roots{&columns};
     for (size_t i = 1; i < m_targets.size(); ++i)
         for (const auto& component : m_targets[i]->GetComponents())

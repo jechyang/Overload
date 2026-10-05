@@ -6,6 +6,7 @@
 #include <OvUI/Widgets/InputFields/AssetField.h>
 #include <OvUI/Widgets/InputFields/ActorField.h>
 #include <OvUI/Types/Color.h>
+#include <OvUI/Widgets/Drags/DragMultipleScalars.h>
 #include <array>
 #include <typeinfo>
 
@@ -16,16 +17,35 @@ namespace OvEditor::Panels::InspectorBindings
     template<class T> struct Value
     {
         static bool Equal(T a, T b) { return a == b; }
-        static T Merge(T, T, T edited) { return edited; }
+        static T Merge(T, T, T edited, OvUI::Widgets::AWidget*) { return edited; }
+        static void MixedAxes(OvUI::Widgets::AWidget*, const std::vector<T>&) {}
     };
     template<class T, size_t N> struct Value<std::array<T, N>>
     {
         static bool Equal(const std::array<T, N>& a, const std::array<T, N>& b) { return a == b; }
-        static std::array<T, N> Merge(std::array<T, N> current, const std::array<T, N>& before, const std::array<T, N>& edited)
+        static std::array<T, N> Merge(std::array<T, N> current, const std::array<T, N>& before,
+            const std::array<T, N>& edited, OvUI::Widgets::AWidget* widget)
         {
+            if (auto* field = dynamic_cast<OvUI::Widgets::Drags::DragMultipleScalars<T,N>*>(widget))
+                for (size_t i=0;i<N;++i) if (field->editedAxes[i])
+                {
+                    if (field->proportionalEdit) return field->ProportionalValue(current,i,edited[i]);
+                    // An explicit axis reset/type applies even when the primary
+                    // actor already has this value and secondary actors differ.
+                    current[i] = edited[i];
+                }
             // Changing X must preserve each target's unrelated Y/Z values.
             for (size_t i = 0; i < N; ++i) if (before[i] != edited[i]) current[i] = edited[i];
             return current;
+        }
+        static void MixedAxes(OvUI::Widgets::AWidget* widget, const std::vector<std::array<T,N>>& values)
+        {
+            if (auto* field = dynamic_cast<OvUI::Widgets::Drags::DragMultipleScalars<T,N>*>(widget))
+            {
+                field->mixedAxes.fill(false);
+                for (const auto& value : values) for (size_t i=0;i<N;++i)
+                    field->mixedAxes[i] = field->mixedAxes[i] || value[i] != values.front()[i];
+            }
         }
     };
 
@@ -53,27 +73,33 @@ namespace OvEditor::Panels::InspectorBindings
         const auto title = label ? label->content : std::string{};
         auto before = std::make_shared<T>(primary->Gather());
         auto* widget = widgets.front();
+        if (auto* numeric = dynamic_cast<OvUI::Widgets::Drags::INumericField*>(widget); numeric && label)
+            label->AddPlugin<OvUI::Plugins::NumericLabelDrag>(*numeric,*widget);
         primary->ReplaceBinding(
             [copies, before, label, title, ticket, widget]() -> T
             {
                 if (ticket.expired()) return {};
-                *before = copies->front().Gather();
+                std::vector<T> values;
+                for (auto& binding : *copies) values.push_back(binding.Gather());
+                *before = values.front();
                 bool mixed = false;
-                for (auto& binding : *copies) mixed |= !Value<T>::Equal(*before, binding.Gather());
+                for (const auto& value : values) mixed |= !Value<T>::Equal(*before,value);
+                Value<T>::MixedAxes(widget,values);
+                if (auto* numeric = dynamic_cast<OvUI::Widgets::Drags::INumericField*>(widget)) numeric->SetMixed(mixed);
                 if (label) label->content = title + (mixed ? " (Mixed)" : "");
                 if (copies->size() > 1) widget->tooltip = mixed
                     ? "Mixed values. Editing applies to all selected entities. Unedited vector axes are preserved."
                     : "Editing applies to all selected entities.";
                 return *before;
             },
-            [copies, before, ticket](T edited)
+            [copies, before, ticket, widget](T edited)
             {
                 if (ticket.expired()) return;
                 EDITOR_EXEC(BeginSceneEdit(copies->size() > 1 ? "Edit selection properties" : "Edit properties"));
                 for (auto& binding : *copies)
                 {
                     if (ticket.expired()) break;
-                    auto value = copies->size() > 1 ? Value<T>::Merge(binding.Gather(), *before, edited) : edited;
+                    auto value = copies->size() > 1 ? Value<T>::Merge(binding.Gather(), *before, edited,widget) : edited;
                     binding.NotifyChange(); binding.Provide(value);
                 }
             });

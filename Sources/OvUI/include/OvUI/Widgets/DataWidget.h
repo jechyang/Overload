@@ -41,7 +41,7 @@ namespace OvUI::Widgets
 	template<typename T>
 	inline void DataWidget<T>::Draw()
 	{
-		if (enabled)
+		if (enabled && visible)
 		{
 			TRY_GATHER(T, m_data);
 			AWidget::Draw();

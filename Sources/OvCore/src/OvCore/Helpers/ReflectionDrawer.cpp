@@ -60,6 +60,8 @@ namespace OvCore::Helpers::ReflectionProperties
         auto& p = *binding.property;
         auto& widget = root.CreateWidget<OvUI::Widgets::Drags::DragMultipleScalars<float, count>>(ImGuiDataType_Float,
             Option(p, "Min", GUIDrawer::_MIN_FLOAT), Option(p, "Max", GUIDrawer::_MAX_FLOAT), 0.f, Option(p, "Step", 1.f), "", "%.3f");
+        widget.axisLabels = count == 3;
+        if (p.Info().name == "scale") { widget.axisResetValue = 1.f; widget.showProportionalLock = true; }
         Connect<Array>(widget, binding, toArray(initial), toArray, fromArray);
     }
     static Result Euler(OvUI::Internal::WidgetContainer& root, const Binding& binding, const Registry&)

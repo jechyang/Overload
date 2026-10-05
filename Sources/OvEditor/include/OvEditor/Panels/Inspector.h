@@ -107,6 +107,7 @@ namespace OvEditor::Panels
         std::vector<OvCore::ECS::Actor*> m_targets;
         std::vector<OvCore::ECS::Actor*> m_selection;
         bool m_locked = false;
+        bool m_proportionalScale = false;
         std::string m_searchFilter, m_clipboardType, m_clipboardXML;
         std::vector<OvUI::Widgets::Layout::GroupCollapsable*> m_sections;
         OvUI::Widgets::Texts::TextDisabled* m_searchStatus = nullptr;

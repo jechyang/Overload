@@ -53,6 +53,7 @@ template<class T> static std::vector<T*> Widgets(OvUI::Internal::WidgetContainer
 #include "game_preview_validation.h"
 #include "display_validation.h"
 #include "inspector_workflow_validation.h"
+#include "numeric_workflow_validation.h"
 
 int wmain(int argc, wchar_t** argv)
 {
@@ -206,6 +207,7 @@ int wmain(int argc, wchar_t** argv)
         ValidateSceneDisplay(context, editor, actions);
         ui.SetCanvas(canvas);
         ValidateInspectorWorkflow(context, actions, hierarchy, inspector, draw);
+        ValidateNumericWorkflow(context, actions, inspector, draw);
         auto& demo = actions.CreateEmptyActor(true, nullptr, "Player");
         demo.SetTag("Gameplay"); demo.AddComponent<OvCore::ECS::Components::CPointLight>();
         auto& cameraRig = context.sceneManager.GetCurrentScene()->CreateActor("Camera Rig");
