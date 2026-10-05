@@ -69,6 +69,7 @@ namespace baregl
 		* Returns the width of the framebuffer
 		*/
 		uint16_t GetHeight() const;
+        types::EInternalFormat GetFormat() const { return m_format; }
 
 	private:
 		uint16_t m_width = 0;

@@ -42,7 +42,7 @@ std::unique_ptr<SceneFrame> RenderFrontend::PrepareFrame(std::unique_ptr<SceneFr
 {
     RequireOwner();
     if (!frame || !frame->m_prepared.empty()) throw std::invalid_argument("Frame missing or already prepared");
-    frame->m_plan.Validate(frame->m_views);
+    frame->m_compiled = frame->m_plan.Compile(frame->m_views);
     frame->m_prepared = OvRendering::Core::RenderTaskCoordinator::PrepareViews(frame->m_views,state,jobs,cancel);
     for(const auto& prepared:frame->m_prepared)for(const auto& draw:prepared->GetDraws())
     {
@@ -56,12 +56,17 @@ OvRendering::Data::RenderCommandList RenderFrontend::RecordFrame(std::unique_ptr
 {
     RequireOwner();
     if (!frame || frame->m_prepared.size() != frame->m_views.size()) throw std::invalid_argument("Frame not prepared");
-    frame->m_plan.Validate(frame->m_views);
+    if (!frame->m_compiled) throw std::invalid_argument("Frame plan was not compiled before recording");
     std::vector<std::optional<baregl::Framebuffer::Snapshot>> targets(frame->m_views.size());
-    for (const auto& pass : frame->m_plan.passes) targets[pass.view] = pass.target;
+    for (const auto& pass : frame->m_plan.passes) if(pass.view!=OvRendering::Data::RenderPlanPass::NoView) targets[pass.view] = pass.target;
     auto blocks = OvRendering::Core::RenderTaskCoordinator::RecordViews(frame->m_prepared,targets,m_recorder,jobs,cancel);
     for (const auto& pass : frame->m_plan.passes)
     {
+        if(pass.view==OvRendering::Data::RenderPlanPass::NoView)
+        {
+            frame->m_commands.AppendDeferred(pass.operation);
+            continue;
+        }
         frame->m_commands.Append(std::move(blocks[pass.view]));
         if (frame->m_postProcessAfterView == pass.view)
             frame->m_commands.Append(std::move(*frame->m_postProcessCommands));

@@ -44,11 +44,15 @@ namespace baregl
 	struct Texture::Storage
 	{
 		uint32_t id = 0;
+        data::TextureDesc desc;
+        types::ETextureType type=types::ETextureType::TEXTURE_2D;
 		ResourceLifetime lifetime{ResourceKind::TEXTURE};
 	};
 
 	uint32_t Texture::Snapshot::GetID() const { return m_storage && m_storage->lifetime.IsContextAlive() ? m_storage->id : 0; }
 	bool Texture::Snapshot::HasOwnerQueue() const { return m_storage && m_storage->lifetime.HasOwnerQueue(); }
+    data::TextureDesc Texture::Snapshot::GetDesc() const { return m_storage ? m_storage->desc : data::TextureDesc{}; }
+    types::ETextureType Texture::Snapshot::GetType() const { return m_storage ? m_storage->type : types::ETextureType::TEXTURE_2D; }
 	Texture::Snapshot Texture::RetainStorage() const { return Snapshot(m_storage); }
 
 	Texture::Texture(types::ETextureType p_type, std::string_view p_debugName) :
@@ -59,6 +63,7 @@ namespace baregl
 			glCreateTextures(m_type, 1, &m_storage->id);
 			m_storage->lifetime.Adopt(m_storage->id);
 			m_id = m_storage->id;
+            m_storage->type=p_type;
 			m_debugName = p_debugName;
 			NOTIFY_TEXTURE_CREATED;
 		});
@@ -160,6 +165,8 @@ namespace baregl
 			}
 
 			m_allocated = true;
+            m_storage->desc=desc;
+            if (m_storage->desc.mutableDesc) m_storage->desc.mutableDesc->data=nullptr;
 			NOTIFY_TEXTURE_UPDATED;
 		});
 	}

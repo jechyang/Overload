@@ -37,6 +37,9 @@ namespace baregl
 			Snapshot() = default;
 			uint32_t GetID() const;
 			bool HasOwnerQueue() const;
+            bool operator==(const Snapshot& other) const { return m_storage == other.m_storage; }
+            data::TextureDesc GetDesc() const;
+            types::ETextureType GetType() const;
 		};
 		Snapshot RetainStorage() const;
 

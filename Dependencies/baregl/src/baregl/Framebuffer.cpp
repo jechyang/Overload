@@ -264,6 +264,15 @@ namespace baregl
 					(m_data->drawBuffer && key == GL_COLOR_ATTACHMENT0 + *m_data->drawBuffer)});
 		return result;
 	}
+    std::vector<Framebuffer::Snapshot::RenderbufferAttachmentInfo> Framebuffer::Snapshot::GetRenderbufferAttachments() const
+    {
+        std::vector<RenderbufferAttachmentInfo> result;
+        if (!m_data) return result;
+        for (const auto& [key,attachment] : m_data->attachments)
+            if (const auto* storage=std::get_if<std::shared_ptr<Renderbuffer>>(&attachment))
+                result.push_back({*storage,utils::ValueToEnum<types::EFramebufferAttachment>(key)});
+        return result;
+    }
 
 	void Framebuffer::Snapshot::Bind() const
 	{

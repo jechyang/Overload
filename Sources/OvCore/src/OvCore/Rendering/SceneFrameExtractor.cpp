@@ -49,6 +49,17 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
         return writes;
     };
     SceneRenderExtractor::MaterialCache materialCache;
+    const auto addDepthStencil = [&](Data::RenderPlanPass& pass) {
+        if(!pass.target) return;
+        const auto& view=frame->m_views[pass.view]->GetView();
+        for(const auto& attachment:pass.target->GetRenderbufferAttachments()) {
+            const auto handle=frame->m_plan.Import("ViewDepthStencil",attachment.storage,Data::ResourceOrigin::CurrentFrame);
+            const bool depth=attachment.attachment==baregl::types::EFramebufferAttachment::DEPTH;
+            const auto aspect=depth?Data::ResourceAspect::Depth:Data::ResourceAspect::Stencil;
+            const bool clear=depth?view.clearDepth:view.clearStencil;
+            pass.accesses.push_back({handle,{aspect},Data::ResourceAccessType::Attachment,clear?Data::AttachmentLoad::Clear:Data::AttachmentLoad::Load});
+        }
+    };
     const auto addView = [&](const SceneRenderRequest& input, std::optional<baregl::Framebuffer::Snapshot> target,
         std::string name, std::vector<Data::ResourceUse> reads, std::vector<Data::ResourceUse> writes,
         std::span<const Data::ReflectionProbeInput> probes = {}) -> Data::RenderPlanPass& {
@@ -56,6 +67,7 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
         const auto index = frame->m_views.size();
         frame->m_views.push_back(std::move(scene));
         frame->m_plan.passes.push_back({std::move(name),index,input.viewId,input.pipeline.stages,std::move(target),std::move(reads),std::move(writes),{}});
+        addDepthStencil(frame->m_plan.passes.back());
         return frame->m_plan.passes.back();
     };
     std::vector<Data::ResourceUse> mainReads;
@@ -217,6 +229,7 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
                 frame->m_plan.passes.push_back({"CanvasUI", frame->m_views.size(), sceneUI->GetView().id,
                     {Data::RenderStage::SceneUI}, request.target, reads, addTargetWrites(request.target, main.width, main.height), {}});
                 frame->m_views.push_back(std::move(sceneUI));
+                addDepthStencil(frame->m_plan.passes.back());
             }
             if (hasOverlay)
             {
@@ -224,6 +237,7 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
                 frame->m_plan.passes.push_back({"OverlayUI", frame->m_views.size(), overlay->GetView().id,
                     {Data::RenderStage::OverlayUI}, request.target, std::move(reads), addTargetWrites(request.target, main.width, main.height), {}});
                 frame->m_views.push_back(std::move(overlay));
+                addDepthStencil(frame->m_plan.passes.back());
             }
         }
     }

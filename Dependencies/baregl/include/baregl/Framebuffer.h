@@ -135,6 +135,12 @@ namespace baregl
 			};
 			// CPU-only attachment metadata for explicit resource validation.
 			std::vector<TextureAttachmentInfo> GetTextureAttachments() const;
+            struct RenderbufferAttachmentInfo
+            {
+                std::shared_ptr<const Renderbuffer> storage;
+                types::EFramebufferAttachment attachment;
+            };
+            std::vector<RenderbufferAttachmentInfo> GetRenderbufferAttachments() const;
 			// CPU-only selection for recorded passes; leaves the source FBO unchanged.
 			Snapshot WithDrawBuffer(std::optional<uint32_t> p_index) const;
 			// Color blit of this snapshot into the default back buffer. Execution stays

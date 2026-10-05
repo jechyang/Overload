@@ -38,6 +38,7 @@ namespace OvCore::Rendering
         SceneFrame() = default;
         OvRendering::Data::FrameInfo m_info;
         OvRendering::Data::RenderPlan m_plan;
+        std::optional<OvRendering::Data::CompiledRenderPlan> m_compiled;
         std::vector<std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot>> m_views;
         std::vector<std::shared_ptr<const OvRendering::Data::PreparedFrameData>> m_prepared;
         // Registers histories before speculative owner state advances. Destruction,
