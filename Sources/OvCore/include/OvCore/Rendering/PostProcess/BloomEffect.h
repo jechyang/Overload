@@ -8,7 +8,6 @@
 
 #include <OvCore/Rendering/PostProcess/AEffect.h>
 #include <OvRendering/Data/Material.h>
-#include <baregl/Framebuffer.h>
 
 namespace OvCore::Rendering::PostProcess
 {
@@ -42,7 +41,6 @@ namespace OvCore::Rendering::PostProcess
 		* @param p_renderer
 		*/
         BloomEffect();
-        void Prepare(uint16_t width,uint16_t height,const BloomSettings&);
 
 		/**
 		* Returns true if the effect is applicable with the given settings.
@@ -62,14 +60,12 @@ namespace OvCore::Rendering::PostProcess
 		virtual void Draw(
             OvRendering::Core::FullscreenCommandRecorder& recorder,
 			OvRendering::Data::PipelineState p_pso,
-			baregl::Framebuffer& p_src,
-			baregl::Framebuffer& p_dst,
+			OvRendering::Data::ResourceHandle p_src,
+			OvRendering::Data::ResourceHandle p_dst,
 			const EffectSettings& p_settings
 		) override;
 
 	private:
-		std::array<baregl::Framebuffer, BloomConstants::kMaxPassCount> m_bloomSamplingBuffers;
-		baregl::Framebuffer m_bloomOutputBuffer;
 		OvRendering::Data::Material m_downsamplingMaterial;
 		OvRendering::Data::Material m_upsamplingMaterial;
 		OvRendering::Data::Material m_bloomMaterial;

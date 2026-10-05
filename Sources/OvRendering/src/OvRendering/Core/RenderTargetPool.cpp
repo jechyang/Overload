@@ -95,6 +95,8 @@ struct Core::RenderResourceMapping::Storage
         std::string name;
         baregl::Texture::Snapshot imported;
         std::shared_ptr<TargetEntry> target;
+        std::shared_ptr<baregl::Texture> owner;
+        std::optional<baregl::Framebuffer::Snapshot> importedTarget;
     };
     // Leases outlive every mapping entry and are released after its snapshots.
     std::vector<std::shared_ptr<void>> leases;
@@ -135,6 +137,7 @@ std::shared_ptr<const Core::RenderResourceMapping> Core::RenderTargetPool::Reali
         std::vector<size_t> order;
         for(size_t i=0;i<plan.resources.size();++i) {
             const auto& resource=plan.resources[i];storage->resources[i]={resource.generation,resource.name,resource.storage,{}};
+            storage->resources[i].owner=resource.textureOwner;storage->resources[i].importedTarget=resource.importedTarget;
             if(resource.origin==Data::ResourceOrigin::Transient&&compiled.lifetimes[i].first!=size_t(-1))order.push_back(i);
         }
         std::stable_sort(order.begin(),order.end(),[&](size_t a,size_t b){return compiled.lifetimes[a].first<compiled.lifetimes[b].first;});
@@ -175,11 +178,17 @@ std::shared_ptr<baregl::Texture> Core::RenderResourceMapping::Texture(Data::Reso
 {
     const auto& resource=m_storage->Resolve(handle);
     if(resource.target&&resource.target->texture)return resource.target->texture;
+    if(resource.owner) {
+        if(resource.owner->RetainStorage()!=resource.imported)
+            throw std::invalid_argument("FrameGraph mapping: imported texture owner changed storage generation");
+        return resource.owner;
+    }
     throw std::invalid_argument("FrameGraph mapping: no owned texture binding");
 }
 baregl::Framebuffer::Snapshot Core::RenderResourceMapping::Target(Data::ResourceHandle handle,uint16_t layer) const
 {
     const auto& resource=m_storage->Resolve(handle);
+    if(resource.importedTarget&&layer==0)return *resource.importedTarget;
     if(!resource.target||layer>=resource.target->snapshots.size())throw std::invalid_argument("FrameGraph mapping: invalid target/layer");
     return resource.target->snapshots[layer];
 }

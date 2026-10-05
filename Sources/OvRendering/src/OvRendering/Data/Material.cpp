@@ -877,6 +877,30 @@ OvRendering::Data::Material::PreparedSnapshot OvRendering::Data::Material::Prepa
     return result;
 }
 
+OvRendering::Data::Material::PreparedSnapshot OvRendering::Data::Material::RebindPreparedTextures(
+    const PreparedSnapshot& input,const std::unordered_map<std::string,std::shared_ptr<baregl::Texture>>& bindings)
+{
+    if(!input)throw std::invalid_argument("Missing logical material input");
+    auto result=std::make_shared<SnapshotInput>();result->program=input->program;result->version=input->version;
+    result->properties.reserve(input->properties.size());size_t replaced=0;
+    for(const auto& property:input->properties) {
+        const auto binding=bindings.find(*property->name);
+        if(binding==bindings.end()){result->properties.push_back(property);continue;}
+        const auto info=result->program->GetUniformInfo(*property->name);
+        using enum baregl::types::EUniformType;
+        if(!binding->second||!info||
+            (info->get().type!=SAMPLER_2D&&info->get().type!=SAMPLER_CUBE)||
+            (binding->second->GetType()==baregl::types::ETextureType::TEXTURE_CUBE)!=(info->get().type==SAMPLER_CUBE))
+            throw std::invalid_argument("Logical texture differs from shader sampler");
+        auto replacement=std::make_shared<SnapshotInput::Property>();
+        replacement->name=property->name;replacement->overridden=property->overridden;
+        replacement->texture=binding->second;replacement->value=binding->second.get();
+        result->properties.push_back(std::move(replacement));++replaced;
+    }
+    if(replaced!=bindings.size())throw std::invalid_argument("Logical texture binding has no active shader sampler");
+    return result;
+}
+
 std::shared_ptr<const OvRendering::Data::Material::Snapshot> OvRendering::Data::Material::EncodeSnapshot(const PreparedSnapshot& p_input)
 {
     ZoneScopedN("Encode Draw Snapshot");

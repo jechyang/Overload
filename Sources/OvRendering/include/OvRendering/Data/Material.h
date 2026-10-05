@@ -155,6 +155,8 @@ namespace OvRendering::Data
             const PreparedSnapshot& p_previous, bool p_uploadStable, bool p_uploadSingleUse,
             bool p_consumeSingleUse = true, const PropertyOverrides& p_overrides = {});
         static std::shared_ptr<const Snapshot> EncodeSnapshot(const PreparedSnapshot& p_input);
+        static PreparedSnapshot RebindPreparedTextures(const PreparedSnapshot&,
+            const std::unordered_map<std::string,std::shared_ptr<baregl::Texture>>&);
 
 		// CPU recording consumes used single-use properties only after the entire
 		// packet is ready. Failure leaves them unchanged and issues no GL calls.

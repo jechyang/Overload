@@ -57,24 +57,44 @@ int main(int argc, char** argv)
         };
         sample("context");
         {
+            const bool sharedMode=GetEnvironmentVariableA("OV_FRAMEGRAPH_MEMORY_SHARED64",nullptr,0)>0;
+            const uint64_t budget=sharedMode?64ull*1024*1024:256ull*1024*1024;
+            std::vector<std::shared_ptr<OvRendering::Core::RenderTargetPool>> pools;
+            const auto sharedPool=sharedMode?std::make_shared<OvRendering::Core::RenderTargetPool>(budget):nullptr;
+            std::ofstream(output/"pool-mode.txt")<<(sharedMode?"shared pool, 64 MiB idle budget":"per-viewport pools, default 256 MiB idle budget each")<<'\n';
+            std::ofstream poolReport(output/"pool.csv");poolReport<<"phase,allocations,hits,aliases,evictions,idleBytes,leasedBytes,peakLeasedBytes\n";
+            const auto samplePool=[&](const char* phase) {
+                OvRendering::Core::RenderTargetPool::Statistics total;
+                for(const auto& pool:pools) {
+                    const auto s=pool->GetStatistics();total.allocations+=s.allocations;total.hits+=s.hits;total.aliases+=s.aliases;
+                    total.evictions+=s.evictions;total.idleBytes+=s.idleBytes;total.leasedBytes+=s.leasedBytes;total.peakLeasedBytes+=s.peakLeasedBytes;
+                    Require(s.leasedBytes==0&&s.idleBytes<=budget,"retired effects exceed pool idle budget");
+                }
+                poolReport<<phase<<','<<total.allocations<<','<<total.hits<<','<<total.aliases<<','<<total.evictions<<','<<total.idleBytes<<','<<total.leasedBytes<<','<<total.peakLeasedBytes<<'\n';poolReport.flush();
+            };
             std::array<std::unique_ptr<OvCore::Rendering::PostProcess::PostProcessPipeline>,3> pipelines;
-            for(auto& pipeline:pipelines) pipeline=std::make_unique<OvCore::Rendering::PostProcess::PostProcessPipeline>();
-            sample("three-cold-pipelines");
+            for(auto& pipeline:pipelines) {
+                auto pool=sharedMode?sharedPool:std::make_shared<OvRendering::Core::RenderTargetPool>(budget);
+                if(!sharedMode||pools.empty())pools.push_back(pool);
+                pipeline=std::make_unique<OvCore::Rendering::PostProcess::PostProcessPipeline>();pipeline->SetResourcePool(pool);
+            }
+            sample("three-cold-pipelines");samplePool("three-cold-pipelines");
             baregl::Framebuffer target("MemoryTarget"); OvCore::Rendering::FramebufferUtil::SetupFramebuffer(target,1920,1080,false,false,false);
             const float initialColor[]={.4f,.8f,1.5f,1};glClearNamedFramebufferfv(target.GetID(),GL_COLOR,0,initialColor);
             OvCore::Rendering::PostProcess::PostProcessSnapshot settings;
             settings.exposure.enabled=settings.bloom.enabled=settings.tonemapping.enabled=settings.fxaa.enabled=false;
             for(auto& pipeline:pipelines) { auto commands=pipeline->Record(settings,target,driver.CreatePipelineState()); commands.Execute(driver); }
-            sample("three-disabled-1080p");
+            sample("three-disabled-1080p");samplePool("three-disabled-1080p");
             settings.bloom.enabled=true;
             for(auto& pipeline:pipelines) { auto commands=pipeline->Record(settings,target,driver.CreatePipelineState()); commands.Execute(driver); }
-            sample("three-bloom-1080p");
+            sample("three-bloom-1080p");samplePool("three-bloom-1080p");
             settings.exposure.enabled=true; settings.exposure.progressive=false;
             for(auto& pipeline:pipelines) { auto commands=pipeline->Record(settings,target,driver.CreatePipelineState()); commands.Execute(driver); }
-            sample("three-exposure-bloom-1080p");
+            sample("three-exposure-bloom-1080p");samplePool("three-exposure-bloom-1080p");
             settings.exposure.enabled=settings.bloom.enabled=false;
             for(auto& pipeline:pipelines) { auto commands=pipeline->Record(settings,target,driver.CreatePipelineState()); commands.Execute(driver); }
-            sample("disabled-after-enabled");
+            sample("disabled-after-enabled");samplePool("disabled-after-enabled");
+            for(const auto& pool:pools)pool->SetIdleBudget(0);sample("idle-cache-trimmed");samplePool("idle-cache-trimmed");
         }
         sample("released");
         Require(glGetError()==GL_NO_ERROR,"memory measurement issued invalid GL operations");

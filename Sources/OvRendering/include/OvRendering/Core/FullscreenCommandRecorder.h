@@ -23,16 +23,17 @@ namespace OvRendering::Core
     public:
         FullscreenCommandRecorder(Data::RenderPlan& plan, Data::RenderCommandList& commands, FullscreenCommandResources& resources);
         const Data::FrameInfo& GetFrameInfo() const { return m_info; }
-        void Blit(Data::PipelineState state, baregl::Framebuffer& source, baregl::Framebuffer& target,
-            Data::Material& material, Settings::EBlitFlags flags = Settings::EBlitFlags::DEFAULT);
-        void BlitWithRetainedTextures(Data::PipelineState state, baregl::Framebuffer& source,
-            baregl::Framebuffer& target, Data::Material& material, Settings::EBlitFlags flags,
-            std::span<const std::shared_ptr<baregl::Texture>> textures);
+        struct SamplerBinding {std::string name;Data::ResourceHandle resource;bool singleUse=false;};
+        Data::ResourceHandle ImportTarget(baregl::Framebuffer&,Data::ResourceOrigin=Data::ResourceOrigin::CurrentFrame,bool initialized=false);
+        Data::ResourceHandle CreateTransient(std::string,const baregl::data::TextureDesc&);
+        Data::ResourceHandle CreateTransient(std::string,uint16_t width,uint16_t height,bool mipmaps=false);
+        std::pair<uint16_t,uint16_t> GetSize(Data::ResourceHandle) const;
+        void Blit(Data::PipelineState,Data::ResourceHandle source,Data::ResourceHandle target,
+            Data::Material&,Settings::EBlitFlags=Settings::EBlitFlags::DEFAULT,std::span<const SamplerBinding> bindings={});
         bool UseRenderHistory(Data::RenderCommandList::History& history) { return m_commands.UseHistory(history); }
         void SetPassName(std::string name) { m_passName=std::move(name); }
-        void RegisterHistoryTexture(const std::shared_ptr<baregl::Texture>& texture,bool initialized);
-        void ClearColor(baregl::Framebuffer&,const OvMaths::FVector4& color);
-        void GenerateMipmaps(const std::shared_ptr<baregl::Texture>&);
+        void ClearColor(Data::ResourceHandle,const OvMaths::FVector4& color);
+        void GenerateMipmaps(Data::ResourceHandle);
         class PlanGpuScope
         {
         public:
@@ -49,7 +50,6 @@ namespace OvRendering::Core
         Data::RenderCommandList& m_commands;
         Data::RenderPlan& m_plan;
         std::string m_passName="Blit";
-        Data::ResourceHandle TextureHandle(const std::shared_ptr<baregl::Texture>&,bool initialized=false);
         Data::FrameInfo m_info;
         FullscreenCommandResources& m_resources;
         std::optional<Data::MaterialSignatureSet> m_signature;

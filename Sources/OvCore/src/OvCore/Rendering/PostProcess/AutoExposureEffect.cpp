@@ -15,7 +15,6 @@ constexpr uint32_t kLuminanceBufferResolution = 1024;
 constexpr uint32_t kExposureBufferResolution = 1;
 
 OvCore::Rendering::PostProcess::AutoExposureEffect::AutoExposureEffect() :
-	m_luminanceBuffer{ "Luminance" },
 	m_exposurePingPongBuffer{ "Exposure" }
 {
 	for (auto& buffer : m_exposurePingPongBuffer.GetFramebuffers())
@@ -28,14 +27,6 @@ OvCore::Rendering::PostProcess::AutoExposureEffect::AutoExposureEffect() :
 		);
 	}
 
-	FramebufferUtil::SetupFramebuffer(
-		m_luminanceBuffer,
-		kLuminanceBufferResolution,
-		kLuminanceBufferResolution,
-		false, false,
-		true // <-- use mipmaps
-	);
-
 	m_luminanceMaterial.SetShader(OVSERVICE(OvCore::ResourceManagement::ShaderManager)[":Shaders\\PostProcess\\Luminance.ovfx"]);
 	m_exposureMaterial.SetShader(OVSERVICE(OvCore::ResourceManagement::ShaderManager)[":Shaders\\PostProcess\\AutoExposure.ovfx"]);
 	m_compensationMaterial.SetShader(OVSERVICE(OvCore::ResourceManagement::ShaderManager)[":Shaders\\PostProcess\\ApplyExposure.ovfx"]);
@@ -44,8 +35,8 @@ OvCore::Rendering::PostProcess::AutoExposureEffect::AutoExposureEffect() :
 void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
     OvRendering::Core::FullscreenCommandRecorder& recorder,
 	OvRendering::Data::PipelineState p_pso,
-	baregl::Framebuffer& p_src,
-	baregl::Framebuffer& p_dst,
+	OvRendering::Data::ResourceHandle p_src,
+	OvRendering::Data::ResourceHandle p_dst,
 	const EffectSettings& p_settings
 )
 {
@@ -61,13 +52,14 @@ void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
         m_exposurePingPongBuffer.Reset();
     }
 
+	const auto luminance=recorder.CreateTransient("Exposure.Luminance",kLuminanceBufferResolution,kLuminanceBufferResolution,true);
+
 	// Luminance calculation
 	m_luminanceMaterial.SetProperty("_CenterWeightBias", autoExposureSettings.centerWeightBias, true);
     recorder.SetPassName("Exposure.Luminance");
-	recorder.Blit(p_pso, p_src, m_luminanceBuffer, m_luminanceMaterial,
+	recorder.Blit(p_pso, p_src, luminance, m_luminanceMaterial,
 		OvRendering::Settings::EBlitFlags::DEFAULT & ~OvRendering::Settings::EBlitFlags::RESIZE_DST_TO_MATCH_SRC);
-	const auto luminanceTex = m_luminanceBuffer.GetAttachment<baregl::Texture>(baregl::types::EFramebufferAttachment::COLOR);
-    recorder.SetPassName("Exposure.LuminanceMipmaps");recorder.GenerateMipmaps(m_luminanceBuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR));
+    recorder.SetPassName("Exposure.LuminanceMipmaps");recorder.GenerateMipmaps(luminance);
 
 	float elapsedTime = 1.0f;
 	auto currentTime = std::chrono::high_resolution_clock::now();
@@ -79,15 +71,12 @@ void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
 	}
 	m_previousTime = currentTime;
 
-	auto& previousExposure = m_exposurePingPongBuffer[0];
-	auto& currentExposure = m_exposurePingPongBuffer[1];
-    recorder.RegisterHistoryTexture(previousExposure.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR),!m_firstFrame);
-    recorder.RegisterHistoryTexture(currentExposure.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR),false);
+	const auto previousExposure = recorder.ImportTarget(m_exposurePingPongBuffer[0],OvRendering::Data::ResourceOrigin::History,!m_firstFrame);
+	const auto currentExposure = recorder.ImportTarget(m_exposurePingPongBuffer[1],OvRendering::Data::ResourceOrigin::History,false);
     if(m_firstFrame) {recorder.SetPassName("Exposure.InitializeHistory");recorder.ClearColor(previousExposure,{1,1,1,1});}
 	++m_exposurePingPongBuffer;
 
 	// Exposure adaptation
-	m_exposureMaterial.SetProperty("_LuminanceTexture", &luminanceTex.value().get(), true);
 	m_exposureMaterial.SetProperty("_MinLuminanceEV", autoExposureSettings.minLuminanceEV, true);
 	m_exposureMaterial.SetProperty("_MaxLuminanceEV", autoExposureSettings.maxLuminanceEV, true);
 	m_exposureMaterial.SetProperty("_ExposureCompensationEV", autoExposureSettings.exposureCompensationEV, true);
@@ -95,16 +84,14 @@ void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
 	m_exposureMaterial.SetProperty("_Progressive", static_cast<int>(autoExposureSettings.progressive && !m_firstFrame), true);
 	m_exposureMaterial.SetProperty("_SpeedUp", autoExposureSettings.speedUp, true);
 	m_exposureMaterial.SetProperty("_SpeedDown", autoExposureSettings.speedDown, true);
-	const std::array luminanceOwners{m_luminanceBuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)};
-    recorder.SetPassName("Exposure.Adaptation");recorder.BlitWithRetainedTextures(p_pso, previousExposure, currentExposure, m_exposureMaterial,
-		OvRendering::Settings::EBlitFlags::DEFAULT, luminanceOwners);
+	const std::array luminanceBindings{OvRendering::Core::FullscreenCommandRecorder::SamplerBinding{"_LuminanceTexture",luminance,true}};
+    recorder.SetPassName("Exposure.Adaptation");recorder.Blit(p_pso, previousExposure, currentExposure, m_exposureMaterial,
+		OvRendering::Settings::EBlitFlags::DEFAULT, luminanceBindings);
 
 	// Apply the exposure to the final image
-	const auto exposureTex = currentExposure.GetAttachment<baregl::Texture>(baregl::types::EFramebufferAttachment::COLOR);
-	m_compensationMaterial.SetProperty("_ExposureTexture", &exposureTex.value().get(), true);
-	const std::array exposureOwners{currentExposure.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)};
-    recorder.SetPassName("Exposure.Apply");recorder.BlitWithRetainedTextures(p_pso, p_src, p_dst, m_compensationMaterial,
-		OvRendering::Settings::EBlitFlags::DEFAULT, exposureOwners);
+	const std::array exposureBindings{OvRendering::Core::FullscreenCommandRecorder::SamplerBinding{"_ExposureTexture",currentExposure,true}};
+    recorder.SetPassName("Exposure.Apply");recorder.Blit(p_pso, p_src, p_dst, m_compensationMaterial,
+		OvRendering::Settings::EBlitFlags::DEFAULT, exposureBindings);
 
 	m_firstFrame = false;
 }

@@ -63,8 +63,8 @@ namespace OvCore::Rendering::PostProcess
 		virtual void Draw(
             OvRendering::Core::FullscreenCommandRecorder& recorder,
 			OvRendering::Data::PipelineState p_pso,
-			baregl::Framebuffer& p_src,
-			baregl::Framebuffer& p_dst,
+			OvRendering::Data::ResourceHandle p_src,
+			OvRendering::Data::ResourceHandle p_dst,
 			const EffectSettings& p_settings
 		) override;
 

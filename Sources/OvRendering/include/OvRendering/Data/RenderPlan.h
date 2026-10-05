@@ -24,6 +24,8 @@ namespace OvRendering::Data
         std::shared_ptr<const baregl::Renderbuffer> renderbuffer;
         std::vector<ResourceRange> initialized;
         uint32_t generation=1;
+        std::shared_ptr<baregl::Texture> textureOwner;
+        std::optional<baregl::Framebuffer::Snapshot> importedTarget;
     };
     struct ResourceUse { size_t resource = 0; uint8_t subresources = 1; };
     struct RenderPlanPass

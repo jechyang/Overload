@@ -7,7 +7,6 @@
 #include <cmath>
 
 #include <OvCore/Global/ServiceLocator.h>
-#include <OvCore/Rendering/FramebufferUtil.h>
 #include <OvCore/Rendering/PostProcess/BloomEffect.h>
 #include <OvCore/ResourceManagement/ShaderManager.h>
 #include <OvRendering/Utils/Profiling.h>
@@ -43,35 +42,12 @@ namespace
 	{
 		uint16_t width;
 		uint16_t height;
-		baregl::Framebuffer& target;
+		OvRendering::Data::ResourceHandle target;
 	};
 }
 
-OvCore::Rendering::PostProcess::BloomEffect::BloomEffect() :
-	m_bloomSamplingBuffers{
-		baregl::Framebuffer{"BloomSamplingBuffer0"},
-		baregl::Framebuffer{"BloomSamplingBuffer1"},
-		baregl::Framebuffer{"BloomSamplingBuffer2"},
-		baregl::Framebuffer{"BloomSamplingBuffer3"},
-		baregl::Framebuffer{"BloomSamplingBuffer4"},
-		baregl::Framebuffer{"BloomSamplingBuffer5"},
-		baregl::Framebuffer{"BloomSamplingBuffer6"},
-		baregl::Framebuffer{"BloomSamplingBuffer7"},
-		baregl::Framebuffer{"BloomSamplingBuffer8"},
-		baregl::Framebuffer{"BloomSamplingBuffer9"}
-	},
-	m_bloomOutputBuffer{ "BloomOutputBuffer" }
+OvCore::Rendering::PostProcess::BloomEffect::BloomEffect()
 {
-	// Prepare sampling buffers (for downsampling and upsampling).
-	// We don't use a ping-pong buffer here, since we need to keep all the intermediate results.
-	for (auto& buffer : m_bloomSamplingBuffers)
-	{
-		FramebufferUtil::SetupFramebuffer(buffer, kBloomTextureDesc, false, false);
-	}
-
-	// Prepare bloom output buffer.
-	FramebufferUtil::SetupFramebuffer(m_bloomOutputBuffer, kBloomTextureDesc, false, false);
-
 	auto& shaderManager = OVSERVICE(OvCore::ResourceManagement::ShaderManager);
 
 	m_downsamplingMaterial.SetShader(shaderManager[":Shaders\\PostProcess\\BloomDownsampling.ovfx"]);
@@ -97,19 +73,11 @@ bool OvCore::Rendering::PostProcess::BloomEffect::IsApplicable(const EffectSetti
 		AEffect::IsApplicable(p_settings) &&
 		bloomSettings.intensity > 0.0f;
 }
-void OvCore::Rendering::PostProcess::BloomEffect::Prepare(uint16_t width,uint16_t height,const BloomSettings& settings)
-{
-    const auto preferred=static_cast<uint32_t>(std::clamp(settings.passes,static_cast<int>(BloomConstants::kMinPassCount),static_cast<int>(BloomConstants::kMaxPassCount)));
-    const auto count=std::min(preferred,std::max(BloomConstants::kMinPassCount,static_cast<uint32_t>(std::log2(std::max(width,height)))));
-    m_bloomOutputBuffer.Resize(width,height);
-    for(uint32_t i=0;i<count;++i)m_bloomSamplingBuffers[i].Resize(std::max<uint16_t>(1,width>>(i+1)),std::max<uint16_t>(1,height>>(i+1)));
-}
-
 void OvCore::Rendering::PostProcess::BloomEffect::Draw(
     OvRendering::Core::FullscreenCommandRecorder& recorder,
 	OvRendering::Data::PipelineState p_pso,
-	baregl::Framebuffer& p_src,
-	baregl::Framebuffer& p_dst,
+	OvRendering::Data::ResourceHandle p_src,
+	OvRendering::Data::ResourceHandle p_dst,
 	const EffectSettings& p_settings
 )
 {
@@ -118,7 +86,7 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 
 	using enum OvRendering::Settings::EBlitFlags;
 
-	const auto [refX, refY] = p_src.GetSize();
+	const auto [refX, refY] = recorder.GetSize(p_src);
 
 	OVASSERT(refX > 0 && refY > 0, "Invalid source framebuffer size");
 
@@ -141,17 +109,21 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 		// so we essentially get half the resolution each time.
 		const uint16_t width = std::max<uint16_t>(1, refX >> (i + 1));
 		const uint16_t height = std::max<uint16_t>(1, refY >> (i + 1));
-		auto& target = m_bloomSamplingBuffers[i];
+		auto descriptor=kBloomTextureDesc;descriptor.width=width;descriptor.height=height;
+		const auto target=recorder.CreateTransient("Bloom.Mip"+std::to_string(i),descriptor);
 		bloomMips.emplace_back(width, height, target);
 	}
 
+	auto outputDesc=kBloomTextureDesc;outputDesc.width=refX;outputDesc.height=refY;
+	const auto bloomOutput=recorder.CreateTransient("Bloom.Output",outputDesc);
+
 	// First we want to copy the input image to another buffer to avoid modifying the original image.
 	// This could also be made into a filtering pass, so we can exclude low luminance pixels.
-    recorder.SetPassName("Bloom.InputBlit");recorder.Blit(p_pso, p_src, m_bloomOutputBuffer, m_blitMaterial);
+    recorder.SetPassName("Bloom.InputBlit");recorder.Blit(p_pso, p_src, bloomOutput, m_blitMaterial);
 
 	auto downsamplingPass = [&](
-		baregl::Framebuffer& p_src,
-		baregl::Framebuffer& p_dst,
+		OvRendering::Data::ResourceHandle p_src,
+		OvRendering::Data::ResourceHandle p_dst,
 		const OvMaths::FVector2& p_srcRes 
 	) {
 		m_downsamplingMaterial.SetProperty("_InputResolution", p_srcRes, true);
@@ -161,7 +133,7 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 
 	// First downsample pass, using karis average filter
 	m_downsamplingMaterial.SetFeatures({ "KARIS_AVERAGE" });
-	downsamplingPass(m_bloomOutputBuffer, bloomMips[0].target, {
+	downsamplingPass(bloomOutput, bloomMips[0].target, {
 		static_cast<float>(refX),
 		static_cast<float>(refY)
 	});
@@ -190,8 +162,8 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 	m_upsamplingMaterial.SetProperty("_FilterRadius", BloomConstants::kFilterRadius, true);
 
 	auto upsamplingPass = [&](
-		baregl::Framebuffer& p_src,
-		baregl::Framebuffer& p_dst
+		OvRendering::Data::ResourceHandle p_src,
+		OvRendering::Data::ResourceHandle p_dst
 	) {
         recorder.SetPassName("Bloom.UpsampleLoadBlend");
 		recorder.Blit(upsamplingPSO, p_src, p_dst, m_upsamplingMaterial, (DEFAULT & ~RESIZE_DST_TO_MATCH_SRC) | USE_MATERIAL_STATE_MASK);
@@ -203,12 +175,10 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 		upsamplingPass(bloomMips[i].target, bloomMips[i - 1].target);
 	}
 
-	upsamplingPass(bloomMips[0].target, m_bloomOutputBuffer);
+	upsamplingPass(bloomMips[0].target, bloomOutput);
 
 	// Final pass, interpolate bloom result with the input image
-	const auto bloomTex = m_bloomOutputBuffer.GetAttachment<baregl::Texture>(baregl::types::EFramebufferAttachment::COLOR);
-	m_bloomMaterial.SetProperty("_BloomTexture", &bloomTex.value().get());
 	m_bloomMaterial.SetProperty("_BloomStrength", std::min(bloomSettings.intensity * 0.04f, 1.0f));
-	const std::array bloomOwners{m_bloomOutputBuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)};
-    recorder.SetPassName("Bloom.Composite");recorder.BlitWithRetainedTextures(p_pso, p_src, p_dst, m_bloomMaterial, DEFAULT, bloomOwners);
+    const std::array bloomBindings{OvRendering::Core::FullscreenCommandRecorder::SamplerBinding{"_BloomTexture",bloomOutput}};
+    recorder.SetPassName("Bloom.Composite");recorder.Blit(p_pso,p_src,p_dst,m_bloomMaterial,DEFAULT,bloomBindings);
 }

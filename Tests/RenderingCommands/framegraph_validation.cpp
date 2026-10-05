@@ -208,6 +208,8 @@ namespace
         OvCore::ResourceManagement::ShaderManager shaders;const auto assets=std::filesystem::current_path()/"Data/Engine";
         shaders.ProvideAssetPaths(assets,assets);ServiceLocator::Provide(shaders);
         OvCore::Rendering::PostProcess::PostProcessPipeline pipeline;
+        auto postPool=std::make_shared<OvRendering::Core::RenderTargetPool>();
+        pipeline.SetResourcePool(postPool);
         baregl::Framebuffer target;OvCore::Rendering::FramebufferUtil::SetupFramebuffer(target,96,64,false,false,false);
         std::ofstream dump(output/"postprocess-plan.txt");
         for(const auto size:{std::pair<uint16_t,uint16_t>{1,1},{1,32},{63,17},{96,64}})for(unsigned mask=0;mask<16;++mask)
@@ -219,7 +221,12 @@ namespace
             RenderPlan plan;plan.Import("input",target.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)->RetainStorage(),ResourceOrigin::Imported,{{}});
             RenderCommandList commands;pipeline.Build(plan,commands,settings,target,driver.CreatePipelineState());const auto compiled=plan.Compile();
             Require(plan.passes.front().name=="PostProcess.InputBlit"&&plan.passes.back().name=="PostProcess.OutputBlit","postprocess lost entry/exit blits");
-            if(!mask)Require(plan.passes.size()==2,"disabled effects still emit nodes");
+            if(!mask) {
+                Require(plan.passes.size()==2&&plan.resources.size()==2,"disabled effects still emit nodes/resources");
+                Require(plan.resources[1].origin==ResourceOrigin::Transient,"postprocess still owns a ping-pong cache");
+            }
+            for(const auto& resource:plan.resources)if(resource.origin!=ResourceOrigin::Imported&&resource.origin!=ResourceOrigin::History)
+                Require(resource.origin==ResourceOrigin::Transient&&!resource.storage.GetID(),"effect scratch storage was allocated during Build");
             bool bloomLoad=false,luminanceMip=false;
             for(const auto& pass:plan.passes) {
                 Require(pass.view==RenderPlanPass::NoView&&!pass.accesses.empty(),"postprocess still needs implicit views/undeclared access");
@@ -231,12 +238,43 @@ namespace
             }
             Require(bloomLoad==settings.bloom.enabled&&luminanceMip==settings.exposure.enabled,"effect node declarations differ from enabled settings");
             dump<<"size="<<size.first<<'x'<<size.second<<" mask="<<mask<<'\n'<<compiled.Dump();
-            plan.RecordOperations(commands);commands.Seal();RenderFrame frame;frame.Append(std::move(commands));frame.Seal();frame.Submit(driver);frame.Wait();frame.GetCompletion().RethrowIfFailed();
+            auto mapping=postPool->Realize(plan,compiled);plan.RecordOperations(commands,{},std::move(mapping));commands.Seal();RenderFrame frame;frame.Append(std::move(commands));frame.Seal();frame.Submit(driver);frame.Wait();frame.GetCompletion().RethrowIfFailed();
             std::vector<float> pixels(size_t(size.first)*size.second*4);const auto texture=target.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR);
             glGetTextureImage(texture->GetID(),0,GL_RGBA,GL_FLOAT,static_cast<GLsizei>(pixels.size()*sizeof(float)),pixels.data());
             Require(std::all_of(pixels.begin(),pixels.end(),[](float value){return std::isfinite(value);})&&glGetError()==GL_NO_ERROR,"postprocess boundary produced invalid pixels/GL state");
+            // Disable both interval aliasing and inter-frame reuse on the same algorithms.
+            glClearNamedFramebufferfv(target.GetID(),GL_COLOR,0,color);
+            auto diagnostic=pipeline.Record(settings,target,driver.CreatePipelineState(),false);diagnostic.Execute(driver);
+            std::vector<float> reference(pixels.size());
+            glGetTextureImage(texture->GetID(),0,GL_RGBA,GL_FLOAT,static_cast<GLsizei>(reference.size()*sizeof(float)),reference.data());
+            Require(std::memcmp(pixels.data(),reference.data(),pixels.size()*sizeof(float))==0,"pooled postprocess differs from no-reuse output");
+            const auto allocations=postPool->GetStatistics().allocations;
+            glClearNamedFramebufferfv(target.GetID(),GL_COLOR,0,color);
+            auto warm=pipeline.Record(settings,target,driver.CreatePipelineState());warm.Execute(driver);
+            Require(postPool->GetStatistics().allocations==allocations&&postPool->GetStatistics().leasedTargets==0,"warm effect chain allocated or retained a retired lease");
         }
-        std::cout<<"PASS: 16 postprocess effect combinations x 1x1/thin/odd/normal extents, Bloom pass bounds/Load blending, explicit luminance mip/history nodes and finite GL output\n";
+        // A viewport resize/destruction must not mutate a submitted effect chain.
+        OvCore::Rendering::PostProcess::PostProcessSnapshot settings;
+        settings.exposure.enabled=false;settings.bloom.enabled=true;settings.tonemapping.enabled=true;settings.fxaa.enabled=true;
+        const float color[]={.4f,.8f,1.5f,1};
+        glClearNamedFramebufferfv(target.GetID(),GL_COLOR,0,color);
+        auto referenceCommands=pipeline.Record(settings,target,driver.CreatePipelineState(),false);referenceCommands.Execute(driver);
+        std::vector<uint8_t> expected(96*64*4);target.RecordTarget().ReadRGBA8(expected);
+        glClearNamedFramebufferfv(target.GetID(),GL_COLOR,0,color);
+        const auto frozenOutput=target.RecordTarget();
+        auto old=pipeline.Record(settings,target,driver.CreatePipelineState());
+        RenderFrame inFlight;inFlight.Append(std::move(old));inFlight.Seal();inFlight.Submit(driver);
+        const auto pinned=postPool->GetStatistics();Require(pinned.leasedTargets>0,"submitted effect targets escaped their GPU lease");
+        target.Resize(48,32);glClearNamedFramebufferfv(target.GetID(),GL_COLOR,0,color);
+        const auto before=postPool->GetStatistics().allocations;
+        auto canceled=pipeline.Record(settings,target,driver.CreatePipelineState());
+        Require(postPool->GetStatistics().allocations>before,"resized effect chain reused incompatible/in-flight targets");
+        canceled.Cancel();Require(postPool->GetStatistics().leasedTargets==pinned.leasedTargets,"cancel released another frame's effect lease");
+        inFlight.Wait();inFlight.GetCompletion().RethrowIfFailed();
+        std::vector<uint8_t> actual(expected.size());frozenOutput.ReadRGBA8(actual);
+        Require(actual==expected&&postPool->GetStatistics().leasedTargets==0,"resized viewport corrupted frozen output or retained retired effects");
+        std::cout<<"PASS: effect output survives in-flight viewport resize; cancellation preserves older GPU leases\n";
+        std::cout<<"PASS: 16 postprocess effect combinations x 1x1/thin/odd/normal extents, Bloom pass bounds/Load blending, explicit luminance mip/history nodes, exact no-reuse pixels and warm zero allocation\n";
     }
 }
 int main(int argc,char** argv) try
