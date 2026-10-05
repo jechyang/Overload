@@ -41,7 +41,8 @@ namespace OvCore::Rendering::PostProcess
 		* Constructor of the BloomEffect class
 		* @param p_renderer
 		*/
-		BloomEffect();
+        BloomEffect();
+        void Prepare(uint16_t width,uint16_t height,const BloomSettings&);
 
 		/**
 		* Returns true if the effect is applicable with the given settings.

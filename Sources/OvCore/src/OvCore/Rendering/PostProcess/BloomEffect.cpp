@@ -97,6 +97,13 @@ bool OvCore::Rendering::PostProcess::BloomEffect::IsApplicable(const EffectSetti
 		AEffect::IsApplicable(p_settings) &&
 		bloomSettings.intensity > 0.0f;
 }
+void OvCore::Rendering::PostProcess::BloomEffect::Prepare(uint16_t width,uint16_t height,const BloomSettings& settings)
+{
+    const auto preferred=static_cast<uint32_t>(std::clamp(settings.passes,static_cast<int>(BloomConstants::kMinPassCount),static_cast<int>(BloomConstants::kMaxPassCount)));
+    const auto count=std::min(preferred,std::max(BloomConstants::kMinPassCount,static_cast<uint32_t>(std::log2(std::max(width,height)))));
+    m_bloomOutputBuffer.Resize(width,height);
+    for(uint32_t i=0;i<count;++i)m_bloomSamplingBuffers[i].Resize(std::max<uint16_t>(1,width>>(i+1)),std::max<uint16_t>(1,height>>(i+1)));
+}
 
 void OvCore::Rendering::PostProcess::BloomEffect::Draw(
     OvRendering::Core::FullscreenCommandRecorder& recorder,
@@ -135,13 +142,12 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 		const uint16_t width = std::max<uint16_t>(1, refX >> (i + 1));
 		const uint16_t height = std::max<uint16_t>(1, refY >> (i + 1));
 		auto& target = m_bloomSamplingBuffers[i];
-		target.Resize(width, height);
 		bloomMips.emplace_back(width, height, target);
 	}
 
 	// First we want to copy the input image to another buffer to avoid modifying the original image.
 	// This could also be made into a filtering pass, so we can exclude low luminance pixels.
-	recorder.Blit(p_pso, p_src, m_bloomOutputBuffer, m_blitMaterial);
+    recorder.SetPassName("Bloom.InputBlit");recorder.Blit(p_pso, p_src, m_bloomOutputBuffer, m_blitMaterial);
 
 	auto downsamplingPass = [&](
 		baregl::Framebuffer& p_src,
@@ -149,6 +155,7 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 		const OvMaths::FVector2& p_srcRes 
 	) {
 		m_downsamplingMaterial.SetProperty("_InputResolution", p_srcRes, true);
+        recorder.SetPassName("Bloom.Downsample");
 		recorder.Blit(p_pso, p_src, p_dst, m_downsamplingMaterial, DEFAULT & ~RESIZE_DST_TO_MATCH_SRC);
 	};
 
@@ -186,6 +193,7 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 		baregl::Framebuffer& p_src,
 		baregl::Framebuffer& p_dst
 	) {
+        recorder.SetPassName("Bloom.UpsampleLoadBlend");
 		recorder.Blit(upsamplingPSO, p_src, p_dst, m_upsamplingMaterial, (DEFAULT & ~RESIZE_DST_TO_MATCH_SRC) | USE_MATERIAL_STATE_MASK);
 	};
 
@@ -202,5 +210,5 @@ void OvCore::Rendering::PostProcess::BloomEffect::Draw(
 	m_bloomMaterial.SetProperty("_BloomTexture", &bloomTex.value().get());
 	m_bloomMaterial.SetProperty("_BloomStrength", std::min(bloomSettings.intensity * 0.04f, 1.0f));
 	const std::array bloomOwners{m_bloomOutputBuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)};
-	recorder.BlitWithRetainedTextures(p_pso, p_src, p_dst, m_bloomMaterial, DEFAULT, bloomOwners);
+    recorder.SetPassName("Bloom.Composite");recorder.BlitWithRetainedTextures(p_pso, p_src, p_dst, m_bloomMaterial, DEFAULT, bloomOwners);
 }

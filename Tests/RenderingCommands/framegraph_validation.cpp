@@ -42,6 +42,7 @@ namespace
         reject([](auto& p){p.passes[1].accesses[1].resource=p.passes[1].accesses[0].resource;},"attachment sample feedback accepted");
         reject([](auto& p){p.passes[0].after={1};},"fixed-order explicit cycle accepted");
         reject([](auto& p){p.passes[1].operation={};},"unowned operation accepted");
+        reject([](auto& p){p.passes[1].gpuScopesEnd=1;},"unbalanced GPU scope accepted before recording");
         // Clear a destination, then load/blend without sampling that attachment.
         auto blend=plan;blend.passes.push_back(Node("blend",{{b,{},ResourceAccessType::Attachment,AttachmentLoad::Load}}));
         const auto blendCompiled=blend.Compile();Require(std::any_of(blendCompiled.dependencies.begin(),blendCompiled.dependencies.end(),[](auto e){return e.kind==DependencyKind::WAR;}),"WAR edge missing");
@@ -85,8 +86,46 @@ namespace
         Require(a==b&&a[0]>0&&glGetError()==GL_NO_ERROR,"independent copy output/lifetime failure");
         std::cout<<"PASS: view-independent owned GL copy executes through Compose/Prepare/Record/RenderFrame after source resize/destruction; duplicate imports normalize\n";
     }
+    void PostProcessValidation(const std::filesystem::path& output)
+    {
+        OvWindowing::Settings::DeviceSettings ds;ds.contextMajorVersion=4;ds.contextMinorVersion=5;
+        OvWindowing::Context::Device device(ds);OvWindowing::Settings::WindowSettings ws;ws.visible=false;ws.focused=false;ws.width=96;ws.height=64;ws.samples=1;
+        OvWindowing::Window window(device,ws);window.MakeCurrentContext();OvRendering::Context::Driver driver(OvRendering::Settings::DriverSettings{true});
+        OvCore::ResourceManagement::ShaderManager shaders;const auto assets=std::filesystem::current_path()/"Data/Engine";
+        shaders.ProvideAssetPaths(assets,assets);ServiceLocator::Provide(shaders);
+        OvCore::Rendering::PostProcess::PostProcessPipeline pipeline;
+        baregl::Framebuffer target;OvCore::Rendering::FramebufferUtil::SetupFramebuffer(target,96,64,false,false,false);
+        std::ofstream dump(output/"postprocess-plan.txt");
+        for(const auto size:{std::pair<uint16_t,uint16_t>{1,1},{1,32},{63,17},{96,64}})for(unsigned mask=0;mask<16;++mask)
+        {
+            target.Resize(size.first,size.second);const float color[]={.4f,.8f,1.5f,1};glClearNamedFramebufferfv(target.GetID(),GL_COLOR,0,color);
+            OvCore::Rendering::PostProcess::PostProcessSnapshot settings;
+            settings.exposure.enabled=(mask&1)!=0;settings.exposure.progressive=false;settings.bloom.enabled=(mask&2)!=0;
+            settings.bloom.passes=(mask&4)?10:1;settings.tonemapping.enabled=(mask&4)!=0;settings.fxaa.enabled=(mask&8)!=0;
+            RenderPlan plan;plan.Import("input",target.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)->RetainStorage(),ResourceOrigin::Imported,{{}});
+            RenderCommandList commands;pipeline.Build(plan,commands,settings,target,driver.CreatePipelineState());const auto compiled=plan.Compile();
+            Require(plan.passes.front().name=="PostProcess.InputBlit"&&plan.passes.back().name=="PostProcess.OutputBlit","postprocess lost entry/exit blits");
+            if(!mask)Require(plan.passes.size()==2,"disabled effects still emit nodes");
+            bool bloomLoad=false,luminanceMip=false;
+            for(const auto& pass:plan.passes) {
+                Require(pass.view==RenderPlanPass::NoView&&!pass.accesses.empty(),"postprocess still needs implicit views/undeclared access");
+                if(pass.name=="Bloom.UpsampleLoadBlend") {
+                    bloomLoad=true;const auto writes=std::find_if(pass.accesses.begin(),pass.accesses.end(),[](const auto& access){return access.type==ResourceAccessType::Attachment;});
+                    Require(writes!=pass.accesses.end()&&writes->load==AttachmentLoad::Load&&!writes->fullCoverage,"Bloom additive accumulation did not Load existing content");
+                }
+                if(pass.name=="Exposure.LuminanceMipmaps")luminanceMip=true;
+            }
+            Require(bloomLoad==settings.bloom.enabled&&luminanceMip==settings.exposure.enabled,"effect node declarations differ from enabled settings");
+            dump<<"size="<<size.first<<'x'<<size.second<<" mask="<<mask<<'\n'<<compiled.Dump();
+            plan.RecordOperations(commands);commands.Seal();RenderFrame frame;frame.Append(std::move(commands));frame.Seal();frame.Submit(driver);frame.Wait();frame.GetCompletion().RethrowIfFailed();
+            std::vector<float> pixels(size_t(size.first)*size.second*4);const auto texture=target.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR);
+            glGetTextureImage(texture->GetID(),0,GL_RGBA,GL_FLOAT,static_cast<GLsizei>(pixels.size()*sizeof(float)),pixels.data());
+            Require(std::all_of(pixels.begin(),pixels.end(),[](float value){return std::isfinite(value);})&&glGetError()==GL_NO_ERROR,"postprocess boundary produced invalid pixels/GL state");
+        }
+        std::cout<<"PASS: 16 postprocess effect combinations x 1x1/thin/odd/normal extents, Bloom pass bounds/Load blending, explicit luminance mip/history nodes and finite GL output\n";
+    }
 }
 int main(int argc,char** argv) try
 {
-    Require(argc==2,"expected evidence directory");ContractValidation(argv[1]);OperationValidation();return 0;
+    Require(argc==2,"expected evidence directory");ContractValidation(argv[1]);OperationValidation();PostProcessValidation(argv[1]);return 0;
 }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}

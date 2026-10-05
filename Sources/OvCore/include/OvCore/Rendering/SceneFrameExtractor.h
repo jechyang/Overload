@@ -44,8 +44,6 @@ namespace OvCore::Rendering
         // Registers histories before speculative owner state advances. Destruction,
         // cancellation, Prepare/Record/Execute failure all invalidate the same epoch.
         OvRendering::Data::RenderCommandList m_commands;
-        std::optional<size_t> m_postProcessAfterView;
-        std::unique_ptr<OvRendering::Data::RenderCommandList> m_postProcessCommands;
     };
     class SceneFrameExtractor final
     {

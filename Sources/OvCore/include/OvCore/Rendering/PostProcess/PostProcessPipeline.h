@@ -10,6 +10,8 @@ namespace OvCore::Rendering::PostProcess
         const OvRendering::Data::FrameInfo& GetFrameInfo() const { return m_info; }
         OvRendering::Data::RenderCommandList Record(const PostProcessSnapshot& settings,
             baregl::Framebuffer& target, OvRendering::Data::PipelineState state);
+        void Build(OvRendering::Data::RenderPlan&,OvRendering::Data::RenderCommandList& history,
+            const PostProcessSnapshot&,baregl::Framebuffer&,OvRendering::Data::PipelineState);
     private:
         OvRendering::Core::FullscreenCommandResources m_fullscreenResources;
         OvRendering::Data::FrameInfo m_info;

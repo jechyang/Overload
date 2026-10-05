@@ -130,10 +130,10 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
                 camera.SetRotation(OvMaths::FQuaternion{rotations[face]});
                 SceneRenderRequest capture{{main.scene,camera,width,height,viewId(),generation,main.elapsedTime}};
                 capture.pipeline.stages = {Data::RenderStage::ReflectionCapture}; capture.includeUI = false;
-                auto& pass = addView(capture,target.RecordTarget().WithDrawBuffer(face),"ReflectionCapture",{},{{resource,uint8_t(1u<<face)}});
+                addView(capture,target.RecordTarget().WithDrawBuffer(face),"ReflectionCapture",{},{{resource,uint8_t(1u<<face)}});
                 if (face == 5)
                 {
-                    pass.generateMipmaps = texture;
+                    frame->m_plan.GenerateMipmaps("Reflection.Mipmaps",texture);
                     probe->_NotifyCubemapComplete(false);
                 }
             }
@@ -175,13 +175,7 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
         std::erase(geometry.pipeline.stages,Data::RenderStage::SceneUI);
         auto mainWrites = addTargetWrites(request.target, main.width, main.height);
         addView(geometry,request.target,"MainView",mainReads,mainWrites,probes);
-        auto& mainPass = frame->m_plan.passes.back();
-        mainPass.postProcessAfter = true;
-        // Post-process blits through private ping-pong: sequential read then write.
-        mainPass.postProcessReads = mainWrites;
-        mainPass.postProcessWrites = mainWrites;
-        frame->m_postProcessAfterView = frame->m_views.size()-1;
-        frame->m_postProcessCommands = std::make_unique<Data::RenderCommandList>(request.postProcess->Record(*settings,*request.postProcessTarget,request.postProcessState));
+        request.postProcess->Build(frame->m_plan,frame->m_commands,*settings,*request.postProcessTarget,request.postProcessState);
         frame->m_info=request.postProcess->GetFrameInfo();
         if (main.includeUI && std::find(main.pipeline.stages.begin(),main.pipeline.stages.end(),Data::RenderStage::SceneUI) != main.pipeline.stages.end())
         {

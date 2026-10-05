@@ -25,5 +25,5 @@ void OvCore::Rendering::PostProcess::FXAAEffect::Draw(
 	ZoneScoped;
 	OV_GPU_ZONE(recorder, "FXAAEffect");
 
-	recorder.Blit(p_pso, p_src, p_dst, m_material);
+    recorder.SetPassName("FXAA");recorder.Blit(p_pso, p_src, p_dst, m_material);
 }

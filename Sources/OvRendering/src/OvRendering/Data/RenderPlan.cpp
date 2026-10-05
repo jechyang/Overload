@@ -6,6 +6,7 @@
 #include <atomic>
 #include <map>
 #include <limits>
+#include <OvRendering/Utils/Profiling.h>
 using namespace OvRendering::Data;
 namespace { CompiledRenderPlan CompileAccesses(const RenderPlan&,std::span<const std::shared_ptr<const RenderSceneSnapshot>>); }
 RenderPlan::RenderPlan() { static std::atomic_uint64_t next{1}; m_scope=next++; }
@@ -44,13 +45,16 @@ CompiledRenderPlan RenderPlan::Compile(std::span<const std::shared_ptr<const Ren
         return resource;
     };
     std::vector<bool> used(views.size());
+    size_t gpuScopeDepth=0;
     for (const auto& pass : passes)
     {
         scope="RenderPlan pass "+pass.name+" (view "+std::to_string(pass.viewId)+")";
+        require(std::all_of(pass.gpuScopesBegin.begin(),pass.gpuScopesBegin.end(),[](const auto* source){return source!=nullptr;}),"GPU scope needs static source metadata");
+        gpuScopeDepth+=pass.gpuScopesBegin.size();require(pass.gpuScopesEnd<=gpuScopeDepth,"Unmatched GPU scope");gpuScopeDepth-=pass.gpuScopesEnd;
         if (pass.view==RenderPlanPass::NoView)
         {
             require(!pass.name.empty()&&bool(pass.operation),"Independent pass needs an owned operation");
-            require(pass.stages.empty()&&pass.reads.empty()&&pass.writes.empty()&&!pass.postProcessAfter&&!pass.generateMipmaps,"Independent pass uses view-specific fields");
+            require(pass.stages.empty()&&pass.reads.empty()&&pass.writes.empty(),"Independent pass uses view-specific fields");
             for(const auto& access:pass.accesses)
                 if((access.type==ResourceAccessType::Attachment||access.type==ResourceAccessType::CopyDestination||access.type==ResourceAccessType::MipmapDestination)&&
                     (access.fullCoverage||access.load==AttachmentLoad::Clear)&&access.store==AttachmentStore::Store&&access.range.firstMip==0)
@@ -96,33 +100,9 @@ CompiledRenderPlan RenderPlan::Compile(std::span<const std::shared_ptr<const Ren
             require((attached & use.subresources) == use.subresources, "Wrong output attachment or cubemap face");
             available[use.resource] |= use.subresources;
         }
-        if (pass.postProcessAfter)
-        {
-            require(pass.target.has_value() && std::find(pass.stages.begin(),pass.stages.end(),RenderStage::SceneUI)==pass.stages.end(), "Post-process output must precede SceneUI");
-            require(!pass.postProcessReads.empty() && !pass.postProcessWrites.empty(), "Post-process requires declared input/output resources");
-            // Sequential blit through private ping-pong: a resource may be read then written.
-            for (const auto& use : pass.postProcessReads)
-            {
-                const auto& resource = checkUse(use);
-                require((available[use.resource] & use.subresources) == use.subresources, "Post-process input has no producer");
-            }
-            for (const auto& use : pass.postProcessWrites)
-            {
-                const auto& resource = checkUse(use);
-                require(resource.width == view.GetView().width && resource.height == view.GetView().height, "Post-process output dimensions differ from view");
-                available[use.resource] |= use.subresources;
-            }
-        }
-        else
-            require(pass.postProcessReads.empty() && pass.postProcessWrites.empty(), "Post-process resources without postProcessAfter");
-        if (pass.generateMipmaps)
-        {
-            const auto id = pass.generateMipmaps->RetainStorage().GetID();
-            const auto found = std::find_if(resources.begin(), resources.end(), [&](const auto& r) { return r.storage.GetID() == id; });
-            require(found != resources.end() && found->subresources == 63 && available[found - resources.begin()] == 63, "Mipmaps require all six valid faces");
-        }
     }
     require(std::all_of(used.begin(), used.end(), [](bool value) { return value; }), "Prepared view has no pass");
+    require(gpuScopeDepth==0,"Unfinished GPU scope");
     for (const auto& step : trailing)
     {
         scope="RenderPlan trailing "+step.name;
@@ -188,6 +168,42 @@ ResourceHandle RenderPlan::Import(std::string name,std::shared_ptr<const baregl:
     PlanResource resource;resource.id=resources.size()+1;resource.name=std::move(name);resource.renderbuffer=std::move(storage);resource.descriptor=desc;
     resource.width=static_cast<uint16_t>(desc.texture.width);resource.height=static_cast<uint16_t>(desc.texture.height);resource.origin=origin;resource.initialized=std::move(initialized);
     resources.push_back(std::move(resource));return Handle(resources.size()-1);
+}
+std::optional<ResourceHandle> RenderPlan::Find(const baregl::Texture::Snapshot& storage) const
+{
+    for(size_t i=0;i<resources.size();++i)if(resources[i].storage==storage)return Handle(i);
+    return {};
+}
+void RenderPlan::GenerateMipmaps(std::string name,const std::shared_ptr<baregl::Texture>& texture)
+{
+    if(!texture)throw std::invalid_argument("RenderPlan: missing mipmap texture");
+    const auto found=Find(texture->RetainStorage());if(!found)throw std::invalid_argument("RenderPlan: mipmap resource was not declared");
+    const auto desc=PlanResourceDesc::From(texture->RetainStorage());
+    RenderPlanPass pass;pass.view=RenderPlanPass::NoView;pass.name=std::move(name);
+    pass.accesses.push_back({*found,{desc.aspect,0,1,0,desc.layers},ResourceAccessType::MipmapSource});
+    if(desc.mips>1)pass.accesses.push_back({*found,{desc.aspect,1,static_cast<uint16_t>(desc.mips-1),0,desc.layers},ResourceAccessType::MipmapDestination,AttachmentLoad::DontCare,AttachmentStore::Store,true});
+    pass.operation=[texture] {return [texture](auto&) {texture->GenerateMipmaps();};};passes.push_back(std::move(pass));
+}
+void RenderPlan::RecordOperations(RenderCommandList& commands,std::span<RenderCommandList> blocks) const
+{
+    std::vector<std::pair<size_t,const tracy::SourceLocationData*>> scopes;
+    for(const auto& pass:passes)
+    {
+        for(const auto* source:pass.gpuScopesBegin)scopes.emplace_back(commands.GetPendingCount(),source);
+        if(pass.view==RenderPlanPass::NoView)commands.AppendDeferred(pass.operation);
+        else {if(pass.view>=blocks.size())throw std::invalid_argument("RenderPlan: missing recorded view block");commands.Append(std::move(blocks[pass.view]));}
+        for(size_t i=0;i<pass.gpuScopesEnd;++i) {
+            if(scopes.empty())throw std::invalid_argument("RenderPlan: unmatched GPU scope");
+            const auto [first,source]=scopes.back();scopes.pop_back();
+            commands.WrapOperations(first,[source](auto& driver,const auto& operations) {
+#ifdef TRACY_ENABLE
+                tracy::GpuCtxScope scope(source,true);
+#endif
+                for(const auto& operation:operations)operation(driver);
+            });
+        }
+    }
+    if(!scopes.empty())throw std::invalid_argument("RenderPlan: unfinished GPU scope");
 }
 namespace
 {
@@ -269,7 +285,7 @@ namespace
                     for(const auto& other:accesses)if(other.resource==access.resource&&IsWrite(other.type)&&access.type==ResourceAccessType::CopySource)throw std::invalid_argument(scope+"copy source aliases destination");
                 }
                 if(access.type==ResourceAccessType::MipmapSource||access.type==ResourceAccessType::MipmapDestination)
-                    if(desc.kind==PlanResourceKind::Renderbuffer||desc.mips<2||access.range.layerCount!=desc.layers||access.range.firstLayer!=0||
+                    if(desc.kind==PlanResourceKind::Renderbuffer||access.range.layerCount!=desc.layers||access.range.firstLayer!=0||
                         (access.type==ResourceAccessType::MipmapSource?(access.range.firstMip!=0||access.range.mipCount!=1):(access.range.firstMip!=1||access.range.mipCount!=desc.mips-1)))
                         throw std::invalid_argument(scope+"mipmap operation must cover actual GL levels and all cube faces");
                 if(access.type==ResourceAccessType::Sample)

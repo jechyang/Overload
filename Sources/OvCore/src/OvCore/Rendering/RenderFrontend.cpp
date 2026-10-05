@@ -60,19 +60,7 @@ OvRendering::Data::RenderCommandList RenderFrontend::RecordFrame(std::unique_ptr
     std::vector<std::optional<baregl::Framebuffer::Snapshot>> targets(frame->m_views.size());
     for (const auto& pass : frame->m_plan.passes) if(pass.view!=OvRendering::Data::RenderPlanPass::NoView) targets[pass.view] = pass.target;
     auto blocks = OvRendering::Core::RenderTaskCoordinator::RecordViews(frame->m_prepared,targets,m_recorder,jobs,cancel);
-    for (const auto& pass : frame->m_plan.passes)
-    {
-        if(pass.view==OvRendering::Data::RenderPlanPass::NoView)
-        {
-            frame->m_commands.AppendDeferred(pass.operation);
-            continue;
-        }
-        frame->m_commands.Append(std::move(blocks[pass.view]));
-        if (frame->m_postProcessAfterView == pass.view)
-            frame->m_commands.Append(std::move(*frame->m_postProcessCommands));
-        if (pass.generateMipmaps)
-            frame->m_commands.Append([texture=pass.generateMipmaps](auto&) { texture->GenerateMipmaps(); });
-    }
+    frame->m_plan.RecordOperations(frame->m_commands,blocks);
     frame->m_commands.Seal();
     return std::move(frame->m_commands);
 }
@@ -83,9 +71,6 @@ std::unique_ptr<SceneFrame> RenderFrontend::ComposeFrame(
 {
     RequireOwner();
     plan.Validate(views);
-    for (const auto& pass : plan.passes)
-        if (pass.postProcessAfter)
-            throw std::invalid_argument("ComposeFrame: post-processing requires the SceneFrame extraction owner");
     for (const auto& resource : plan.resources)
         if (resource.origin == OvRendering::Data::ResourceOrigin::History)
             throw std::invalid_argument("ComposeFrame: temporal resources require the SceneFrame extraction owner");

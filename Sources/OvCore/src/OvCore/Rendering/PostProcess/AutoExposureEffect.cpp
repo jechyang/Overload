@@ -62,12 +62,12 @@ void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
     }
 
 	// Luminance calculation
-	m_luminanceBuffer.Resize(kLuminanceBufferResolution, kLuminanceBufferResolution);
 	m_luminanceMaterial.SetProperty("_CenterWeightBias", autoExposureSettings.centerWeightBias, true);
+    recorder.SetPassName("Exposure.Luminance");
 	recorder.Blit(p_pso, p_src, m_luminanceBuffer, m_luminanceMaterial,
 		OvRendering::Settings::EBlitFlags::DEFAULT & ~OvRendering::Settings::EBlitFlags::RESIZE_DST_TO_MATCH_SRC);
 	const auto luminanceTex = m_luminanceBuffer.GetAttachment<baregl::Texture>(baregl::types::EFramebufferAttachment::COLOR);
-	recorder.SubmitRenderOperation([texture = m_luminanceBuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)](auto&) { texture->GenerateMipmaps(); });
+    recorder.SetPassName("Exposure.LuminanceMipmaps");recorder.GenerateMipmaps(m_luminanceBuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR));
 
 	float elapsedTime = 1.0f;
 	auto currentTime = std::chrono::high_resolution_clock::now();
@@ -81,6 +81,9 @@ void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
 
 	auto& previousExposure = m_exposurePingPongBuffer[0];
 	auto& currentExposure = m_exposurePingPongBuffer[1];
+    recorder.RegisterHistoryTexture(previousExposure.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR),!m_firstFrame);
+    recorder.RegisterHistoryTexture(currentExposure.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR),false);
+    if(m_firstFrame) {recorder.SetPassName("Exposure.InitializeHistory");recorder.ClearColor(previousExposure,{1,1,1,1});}
 	++m_exposurePingPongBuffer;
 
 	// Exposure adaptation
@@ -93,14 +96,14 @@ void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
 	m_exposureMaterial.SetProperty("_SpeedUp", autoExposureSettings.speedUp, true);
 	m_exposureMaterial.SetProperty("_SpeedDown", autoExposureSettings.speedDown, true);
 	const std::array luminanceOwners{m_luminanceBuffer.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)};
-	recorder.BlitWithRetainedTextures(p_pso, previousExposure, currentExposure, m_exposureMaterial,
+    recorder.SetPassName("Exposure.Adaptation");recorder.BlitWithRetainedTextures(p_pso, previousExposure, currentExposure, m_exposureMaterial,
 		OvRendering::Settings::EBlitFlags::DEFAULT, luminanceOwners);
 
 	// Apply the exposure to the final image
 	const auto exposureTex = currentExposure.GetAttachment<baregl::Texture>(baregl::types::EFramebufferAttachment::COLOR);
 	m_compensationMaterial.SetProperty("_ExposureTexture", &exposureTex.value().get(), true);
 	const std::array exposureOwners{currentExposure.RetainTextureAttachment(baregl::types::EFramebufferAttachment::COLOR)};
-	recorder.BlitWithRetainedTextures(p_pso, p_src, p_dst, m_compensationMaterial,
+    recorder.SetPassName("Exposure.Apply");recorder.BlitWithRetainedTextures(p_pso, p_src, p_dst, m_compensationMaterial,
 		OvRendering::Settings::EBlitFlags::DEFAULT, exposureOwners);
 
 	m_firstFrame = false;

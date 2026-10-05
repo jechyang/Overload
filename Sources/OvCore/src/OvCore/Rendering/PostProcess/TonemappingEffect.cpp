@@ -31,5 +31,5 @@ void OvCore::Rendering::PostProcess::TonemappingEffect::Draw(
 	m_tonemappingMaterial.SetProperty("_Exposure", tonemappingSettings.exposure, true);
 	m_tonemappingMaterial.SetProperty("_Mode", static_cast<int>(tonemappingSettings.mode), true);
 	m_tonemappingMaterial.SetProperty("_GammaCorrection", static_cast<int>(tonemappingSettings.gammaCorrection), true);
-	recorder.Blit(p_pso, p_src, p_dst, m_tonemappingMaterial);
+    recorder.SetPassName("Tonemapping");recorder.Blit(p_pso, p_src, p_dst, m_tonemappingMaterial);
 }

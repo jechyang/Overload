@@ -56,7 +56,7 @@ void PipelineValidation(const std::filesystem::path& dir)
             auto frame=pipeline.Extract(frontend,request,camera,a,b);
             Require(frame->GetPlan().passes.size()==2&&frame->GetViews().size()==2,"custom pipeline lost view/pass requirements");
             const auto frozenViews=std::vector(frame->GetViews().begin(),frame->GetViews().end());
-            const std::array<std::string_view,7> diagnostics={"missing view","Missing producer","Wrong View/Stage","dimensions differ","Unknown pass resource","post-processing requires","temporal resources require"};
+            const std::array<std::string_view,7> diagnostics={"missing view","Missing producer","Wrong View/Stage","dimensions differ","Unknown pass resource","Independent pass needs","temporal resources require"};
             for(unsigned fault=0;fault<diagnostics.size();++fault)
             {
                 auto invalid=frame->GetPlan();
@@ -67,12 +67,12 @@ void PipelineValidation(const std::filesystem::path& dir)
                 if(fault==4)invalid.passes[0].writes={{invalid.resources.size(),1}};
                 if(fault==5)
                 {
-                    invalid.passes[0].postProcessAfter=true;
-                    invalid.passes[0].postProcessReads=invalid.passes[0].writes;
-                    invalid.passes[0].postProcessWrites=invalid.passes[0].writes;
+                    invalid.passes[0].view=OvRendering::Data::RenderPlanPass::NoView;
+                    invalid.passes[0].stages.clear();invalid.passes[0].reads.clear();invalid.passes[0].writes.clear();
+                    invalid.passes[0].operation={};
                 }
                 if(fault==6)invalid.resources[0].origin=OvRendering::Data::ResourceOrigin::History;
-                bool rejected=false;try{frontend.ComposeFrame(frozenViews,std::move(invalid));}catch(const std::invalid_argument& e){const std::string_view message=e.what();rejected=message.find(diagnostics[fault])!=message.npos && message.find(fault<5?"RenderPlan pass":"ComposeFrame")!=message.npos;}
+                bool rejected=false;try{frontend.ComposeFrame(frozenViews,std::move(invalid));}catch(const std::invalid_argument& e){const std::string_view message=e.what();rejected=message.find(diagnostics[fault])!=message.npos && message.find(fault<6?"RenderPlan pass":"ComposeFrame")!=message.npos;}
                 Require(rejected,"invalid custom pipeline was accepted without a diagnostic");
             }
             pipeline.includeTransparent=!pipeline.includeTransparent;pipeline.includeSceneUI=!pipeline.includeSceneUI;

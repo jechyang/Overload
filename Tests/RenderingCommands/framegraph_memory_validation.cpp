@@ -61,6 +61,7 @@ int main(int argc, char** argv)
             for(auto& pipeline:pipelines) pipeline=std::make_unique<OvCore::Rendering::PostProcess::PostProcessPipeline>();
             sample("three-cold-pipelines");
             baregl::Framebuffer target("MemoryTarget"); OvCore::Rendering::FramebufferUtil::SetupFramebuffer(target,1920,1080,false,false,false);
+            const float initialColor[]={.4f,.8f,1.5f,1};glClearNamedFramebufferfv(target.GetID(),GL_COLOR,0,initialColor);
             OvCore::Rendering::PostProcess::PostProcessSnapshot settings;
             settings.exposure.enabled=settings.bloom.enabled=settings.tonemapping.enabled=settings.fxaa.enabled=false;
             for(auto& pipeline:pipelines) { auto commands=pipeline->Record(settings,target,driver.CreatePipelineState()); commands.Execute(driver); }

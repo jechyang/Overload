@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+namespace tracy { struct SourceLocationData; }
 
 namespace OvRendering::Data
 {
@@ -33,19 +34,13 @@ namespace OvRendering::Data
         std::vector<RenderStage> stages;
         std::optional<baregl::Framebuffer::Snapshot> target;
         std::vector<ResourceUse> reads, writes;
-        // An explicit post-write operation, executed after the final cube face.
-        std::shared_ptr<baregl::Texture> generateMipmaps;
-        // Fixed full-screen sequence after this view, before the following SceneUI view.
-        bool postProcessAfter = false;
-        // Explicit post-process I/O when postProcessAfter is set. The sequence blits
-        // through private ping-pong buffers, so the same resource may appear in both
-        // lists as sequential read-then-write rather than simultaneous feedback.
-        std::vector<ResourceUse> postProcessReads, postProcessWrites;
         // A view-independent operation owns immutable inputs. Encoding can run
         // after resource preparation without touching a Material, ECS or panel.
         RenderCommandList::OperationFactory operation;
         std::vector<ResourceAccess> accesses;
         std::vector<size_t> after;
+        std::vector<const tracy::SourceLocationData*> gpuScopesBegin;
+        size_t gpuScopesEnd=0;
     };
     // External commands appended after the plan's last pass (editor overlay, picking,
     // final UI). Declared so Validate can cover the full frame resource contract;
@@ -71,6 +66,9 @@ namespace OvRendering::Data
             std::vector<ResourceRange> initialized={});
         ResourceHandle Import(std::string name,std::shared_ptr<const baregl::Renderbuffer>,ResourceOrigin,
             std::vector<ResourceRange> initialized={});
+        std::optional<ResourceHandle> Find(const baregl::Texture::Snapshot&) const;
+        void GenerateMipmaps(std::string name,const std::shared_ptr<baregl::Texture>&);
+        void RecordOperations(RenderCommandList&,std::span<RenderCommandList> viewBlocks={}) const;
         CompiledRenderPlan Compile(std::span<const std::shared_ptr<const RenderSceneSnapshot>> views={}) const;
         uint64_t Scope() const { return m_scope; }
     private:
