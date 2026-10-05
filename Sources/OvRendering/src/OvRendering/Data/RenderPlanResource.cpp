@@ -69,7 +69,7 @@ std::string CompiledRenderPlan::Dump() const
 {
     std::ostringstream output; output<<"scope="<<scope<<" estimatedPeakBytes="<<estimatedPeakBytes<<'\n';
     for(size_t i=0;i<passNames.size();++i)output<<"pass "<<i<<" "<<passNames[i]<<'\n';
-    for(size_t i=0;i<lifetimes.size();++i)output<<"resource "<<i<<" "<<resourceNames[i]<<" first="<<lifetimes[i].first<<" last="<<lifetimes[i].last<<" bytes="<<lifetimes[i].estimatedBytes<<'\n';
+    for(size_t i=0;i<lifetimes.size();++i)output<<"resource "<<i<<" "<<resourceNames[i]<<" first="<<lifetimes[i].first<<" last="<<lifetimes[i].last<<" bytes="<<lifetimes[i].estimatedBytes<<" exported="<<lifetimes[i].exported<<" version="<<finalVersions[i]<<'\n';
     for(const auto& edge:dependencies)output<<"dependency "<<edge.before<<" -> "<<edge.after<<" resource="<<edge.resource<<" kind="<<int(edge.kind)<<'\n';
     return output.str();
 }

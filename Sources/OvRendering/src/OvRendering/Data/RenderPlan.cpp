@@ -219,7 +219,7 @@ namespace
     struct AccessFlags { bool read=false,write=false,initialize=false,discard=false; };
     CompiledRenderPlan CompileAccesses(const RenderPlan& plan,std::span<const std::shared_ptr<const RenderSceneSnapshot>> views)
     {
-        CompiledRenderPlan result;result.scope=plan.Scope();result.lifetimes.resize(plan.resources.size());
+        CompiledRenderPlan result;result.scope=plan.Scope();result.lifetimes.resize(plan.resources.size());result.finalVersions.resize(plan.resources.size());
         for(const auto& pass:plan.passes)result.passNames.push_back(pass.name+" (view "+std::to_string(pass.viewId)+")");
         for(const auto& trailing:plan.trailing)result.passNames.push_back(trailing.name+" (external)");
         std::vector<PlanResourceDesc> descriptors;std::vector<std::vector<Cell>> content;
@@ -281,6 +281,7 @@ namespace
             for(const auto& access:accesses)
             {
                 const auto& resource=plan.Resolve(access.resource);const size_t index=access.resource.index;const auto& desc=descriptors[index];
+                if(access.expectedVersion&&*access.expectedVersion!=result.finalVersions[index])throw std::invalid_argument(scope+"Stale content version: "+resource.name);
                 const bool write=IsWrite(access.type);
                 if(access.type==ResourceAccessType::Sample&&!desc.sampleable)throw std::invalid_argument(scope+"resource cannot be sampled");
                 if(access.type==ResourceAccessType::Attachment&&!desc.attachment)throw std::invalid_argument(scope+"resource cannot be attached");
@@ -308,28 +309,34 @@ namespace
                         if(std::none_of(attached.begin(),attached.end(),[&](const auto& a){return a.writable&&a.storage==resource.storage&&(!a.layer||(access.range.firstLayer==*a.layer&&access.range.layerCount==1));}))throw std::invalid_argument(scope+"Wrong texture attachment/face");
                     }
                 }
-                auto& lifetime=result.lifetimes[index];lifetime.first=std::min(lifetime.first,passIndex);lifetime.last=passIndex;
+                auto& lifetime=result.lifetimes[index];lifetime.first=std::min(lifetime.first,passIndex);lifetime.last=std::max(lifetime.last,passIndex);
+                if(access.type==ResourceAccessType::Export){lifetime.exported=true;lifetime.last=plan.passes.size()+plan.trailing.size();}
                 for(auto cell:cells(access.resource,access.range)) {
-                    auto& value=flags[{index,cell}];value.read|=!write||(access.type==ResourceAccessType::Attachment&&access.load==AttachmentLoad::Load);
+                    auto& value=flags[{index,cell}];
+                    if(value.write||(write&&value.read))throw std::invalid_argument(scope+"Overlapping accesses; declare attachment Load for blending");
+                    value.read|=!write||(access.type==ResourceAccessType::Attachment&&access.load==AttachmentLoad::Load);
                     value.write|=write;value.discard|=write&&access.store==AttachmentStore::Discard;
                     value.initialize|=write&&(access.fullCoverage||(access.type==ResourceAccessType::Attachment&&access.load==AttachmentLoad::Clear));
                 }
             }
+            std::vector<bool> written(plan.resources.size());
             for(const auto& [key,value]:flags)
             {
                 auto& cell=content[key.first][key.second];
                 if(value.read) { if(!cell.initialized)throw std::invalid_argument(scope+"Missing producer/uninitialized Load or discarded content: "+plan.resources[key.first].name);edge(cell.writer,passIndex,key.first,DependencyKind::RAW);cell.readers.push_back(passIndex); }
                 if(value.write) {
+                    written[key.first]=true;
                     edge(cell.writer,passIndex,key.first,DependencyKind::WAW);
                     for(auto reader:cell.readers)edge(reader,passIndex,key.first,DependencyKind::WAR);
                     cell.readers.clear();cell.writer=passIndex;cell.initialized=!value.discard&&(cell.initialized||value.initialize);
                 }
             }
+            for(size_t i=0;i<written.size();++i)if(written[i])++result.finalVersions[i];
         }
         for(size_t step=0;step<plan.trailing.size();++step) {
             const size_t node=plan.passes.size()+step;const auto& trailing=plan.trailing[step];
             const auto touch=[&](const ResourceUse& use,bool write) {
-                auto& lifetime=result.lifetimes[use.resource];lifetime.first=std::min(lifetime.first,node);lifetime.last=node;
+                auto& lifetime=result.lifetimes[use.resource];lifetime.first=std::min(lifetime.first,node);lifetime.last=std::max(lifetime.last,node);
                 const auto& desc=descriptors[use.resource];
                 for(unsigned layer=0;layer<desc.layers;++layer)if(use.subresources&(1u<<layer))
                     for(auto index:cells(plan.Handle(use.resource),{desc.aspect,0,1,static_cast<uint16_t>(layer),1})) {
@@ -340,7 +347,7 @@ namespace
                         else cell.readers.push_back(node);
                     }
             };
-            for(const auto& use:trailing.reads)touch(use,false);for(const auto& use:trailing.writes)touch(use,true);
+            for(const auto& use:trailing.reads)touch(use,false);for(const auto& use:trailing.writes){touch(use,true);++result.finalVersions[use.resource];}
         }
         for(size_t pass=0;pass<plan.passes.size()+plan.trailing.size();++pass) {
             uint64_t live=0;for(size_t i=0;i<result.lifetimes.size();++i)if(plan.resources[i].origin==ResourceOrigin::Transient&&result.lifetimes[i].first<=pass&&result.lifetimes[i].last>=pass)live+=result.lifetimes[i].estimatedBytes;

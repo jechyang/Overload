@@ -81,6 +81,10 @@ namespace
             result->clear();RenderCommandList list;plan.RecordOperations(list,{},noReuse);noReuse.reset();list.Seal();list.Execute(driver);Require(*result==golden,"reuse/no-reuse GL images differ");}
         auto overlap=plan;overlap.passes[2].accesses.push_back({a,{},ResourceAccessType::Sample});
         {auto map=pool->Realize(overlap,overlap.Compile());Require(map->TextureStorage(a)!=map->TextureStorage(b),"same-pass read/write lifetimes were aliased");}
+        auto exported=plan;exported.passes[1].accesses[0].type=ResourceAccessType::Export;
+        const auto exportCompiled=exported.Compile();
+        Require(exportCompiled.lifetimes[a.index].exported&&exportCompiled.lifetimes[a.index].last==exported.passes.size(),"exported target lifetime ended at its export node");
+        {auto map=pool->Realize(exported,exportCompiled);Require(map->TextureStorage(a)!=map->TextureStorage(b),"exported target was aliased by a later temporary");}
         auto incompatible=plan;incompatible.resources[b.index].descriptor->texture.minFilter=baregl::types::ETextureFilteringMode::NEAREST;
         {auto map=pool->Realize(incompatible,incompatible.Compile());Require(map->TextureStorage(a)!=map->TextureStorage(b),"incompatible sampler state was reused");}
         for(unsigned difference=0;difference<4;++difference) {
@@ -129,6 +133,7 @@ namespace
         plan.passes.push_back(Node("sample",{{a,{},ResourceAccessType::Sample},write}));
         plan.passes.push_back(Node("readback",{{b,{},ResourceAccessType::Readback}}));
         const auto compiled=plan.Compile();Require(compiled.lifetimes[0].first==0&&compiled.lifetimes[0].last==1&&compiled.lifetimes[1].first==1&&compiled.lifetimes[1].last==2,"fixed resource lifetimes incorrect");
+        Require(compiled.finalVersions==std::vector<uint32_t>({1,1}),"content versions did not advance once per writing pass");
         Require(compiled.estimatedPeakBytes==2*64*32*16&&compiled.dependencies.size()==2,"fixed RAW dependencies/peak incorrect");
         std::ofstream(output/"compiled-plan.txt")<<compiled.Dump();
         const auto reject=[&](auto change,const char* label) {auto invalid=plan;change(invalid);bool rejected=false;try{invalid.Compile();}catch(const std::invalid_argument&){rejected=true;}Require(rejected,label);};
@@ -144,6 +149,9 @@ namespace
         reject([](auto& p){p.passes[0].after={1};},"fixed-order explicit cycle accepted");
         reject([](auto& p){p.passes[1].operation={};},"unowned operation accepted");
         reject([](auto& p){p.passes[1].gpuScopesEnd=1;},"unbalanced GPU scope accepted before recording");
+        reject([](auto& p){p.passes[1].accesses[0].expectedVersion=0;},"stale content version accepted");
+        {auto current=plan;current.passes[1].accesses[0].expectedVersion=1;current.Compile();}
+        reject([](auto& p){p.passes[0].accesses.push_back(p.passes[0].accesses[0]);},"overlapping writes accepted");
         // Clear a destination, then load/blend without sampling that attachment.
         auto blend=plan;blend.passes.push_back(Node("blend",{{b,{},ResourceAccessType::Attachment,AttachmentLoad::Load}}));
         const auto blendCompiled=blend.Compile();Require(std::any_of(blendCompiled.dependencies.begin(),blendCompiled.dependencies.end(),[](auto e){return e.kind==DependencyKind::WAR;}),"WAR edge missing");
@@ -159,6 +167,11 @@ namespace
         renderbuffers.passes.push_back(Node("clear-depth",{{d,{ResourceAspect::DepthStencil},ResourceAccessType::Attachment,AttachmentLoad::Clear}}));
         renderbuffers.passes.push_back(Node("bad-sample",{{d,{ResourceAspect::Depth},ResourceAccessType::Sample}}));
         bool badSample=false;try{renderbuffers.Compile();}catch(const std::invalid_argument&){badSample=true;}Require(badSample,"renderbuffer accepted as sampler");
+        RenderPlan aspects;const auto stencil=aspects.CreateTransient("depth/stencil",depth);
+        aspects.passes.push_back(Node("clear-depth",{{stencil,{ResourceAspect::Depth},ResourceAccessType::Attachment,AttachmentLoad::Clear}}));
+        aspects.passes.push_back(Node("load-stencil",{{stencil,{ResourceAspect::Stencil},ResourceAccessType::Attachment,AttachmentLoad::Load}}));
+        bool missingStencil=false;try{aspects.Compile();}catch(const std::invalid_argument&){missingStencil=true;}Require(missingStencil,"clearing depth initialized independent stencil content");
+        aspects.passes[0].accesses[0].range.aspect=ResourceAspect::DepthStencil;aspects.Compile();
         std::cout<<"PASS: framegraph fixed order, scoped/generation handles, RAW/WAR/WAW, Load/Clear/Discard, partial writes, aspect/mip/layer, cube mips, feedback and cycles\n";
     }
     void OperationValidation()

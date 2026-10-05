@@ -138,10 +138,10 @@ std::shared_ptr<const Core::RenderResourceMapping> Core::RenderTargetPool::Reali
             if(resource.origin==Data::ResourceOrigin::Transient&&compiled.lifetimes[i].first!=size_t(-1))order.push_back(i);
         }
         std::stable_sort(order.begin(),order.end(),[&](size_t a,size_t b){return compiled.lifetimes[a].first<compiled.lifetimes[b].first;});
-        struct Slot {std::shared_ptr<TargetEntry> entry;size_t last;};std::vector<Slot> slots;
+        struct Slot {std::shared_ptr<TargetEntry> entry;size_t last;bool exported;};std::vector<Slot> slots;
         for(auto index:order) {
             const auto& desc=*plan.resources[index].descriptor;const auto& life=compiled.lifetimes[index];
-            auto slot=reuse?std::find_if(slots.begin(),slots.end(),[&](const auto& slot){return slot.last<life.first&&slot.entry->descriptor.Compatible(desc);}):slots.end();
+            auto slot=reuse&&!life.exported?std::find_if(slots.begin(),slots.end(),[&](const auto& slot){return !slot.exported&&slot.last<life.first&&slot.entry->descriptor.Compatible(desc);}):slots.end();
             if(slot!=slots.end()) {
                 storage->resources[index].target=slot->entry;slot->last=life.last;
                 std::lock_guard lock(m_state->mutex);++m_state->totals.aliases;continue;
@@ -158,7 +158,7 @@ std::shared_ptr<const Core::RenderResourceMapping> Core::RenderTargetPool::Reali
                 std::lock_guard lock(m_state->mutex);entry->serial=m_state->nextSerial++;
                 m_state->entries.push_back(entry);entry->leased=true;lease->entry=entry;++m_state->totals.allocations;
             }
-            storage->leases.push_back(std::move(lease));slots.push_back({entry,life.last});storage->resources[index].target=entry;
+            storage->leases.push_back(std::move(lease));slots.push_back({entry,life.last,life.exported});storage->resources[index].target=entry;
             {std::lock_guard lock(m_state->mutex);m_state->totals.peakLeasedBytes=std::max(m_state->totals.peakLeasedBytes,m_state->Stats().leasedBytes);}
         }
         return std::shared_ptr<const RenderResourceMapping>(new RenderResourceMapping(std::move(storage)));

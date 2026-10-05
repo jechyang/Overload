@@ -51,14 +51,17 @@ namespace OvRendering::Data
         bool fullCoverage=false;
         std::array<float,4> clearColor{};
         float clearDepth=1; uint32_t clearStencil=0;
+        // Optional assertion of the resource content version before this pass.
+        std::optional<uint32_t> expectedVersion;
     };
     enum class DependencyKind { RAW, WAR, WAW, Explicit };
     struct PlanDependency { size_t before=0,after=0,resource=0; DependencyKind kind=DependencyKind::RAW; };
-    struct ResourceLifetime { size_t first=size_t(-1),last=0; uint64_t estimatedBytes=0; };
+    struct ResourceLifetime { size_t first=size_t(-1),last=0; uint64_t estimatedBytes=0; bool exported=false; };
     struct CompiledRenderPlan
     {
         std::vector<PlanDependency> dependencies;
         std::vector<ResourceLifetime> lifetimes;
+        std::vector<uint32_t> finalVersions;
         uint64_t scope=0;
         std::vector<std::string> resourceNames,passNames;
         uint64_t estimatedPeakBytes=0;
