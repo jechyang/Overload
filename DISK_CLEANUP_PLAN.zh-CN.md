@@ -1,6 +1,8 @@
 # Overload 磁盘清理待批准清单
 
-2026-10-05。状态：仅审计和列清单，尚未删除任何项目。
+2026-10-05。用户已批准首轮 A+B+D+F+H；预检查发现副本内部 Toolchains
+目录链接后立即停止。删除文件/目录均为 0，未重试。最新剩余状态见
+DISK_CLEANUP_REMAINING.zh-CN.md；其他可选组尚未单独批准。
 
 本轮核查时 H 盘剩余约 4.54 GiB，工程可读取文件合计约 38.82 GiB（68,328 个文件）。这里统计文件逻辑字节，
 不等于删除后必然释放的磁盘块；未跟随重解析点。有一个旧 Reflection 临时目录
@@ -82,7 +84,9 @@ Publish 中间输出可重新编译。保留 Bin/Publish 和 Build/Publish 中�
 
 脚本扫描时发现部分 Scripting 测试目录是指向 C 盘历史证据目录的 Junction，
 另有资源目录指向主工作区 Resources。这些链接及其目标不在删除清单中，
-也未计入可释放的 H 盘空间。逐项核查未发现跨工作区路径、父子重复计数或硬链接候选。
+也未计入可释放的 H 盘空间。逐文件候选未发现跨工作区路径、父子重复计数或硬链接候选。
+后续删除预检查发现 A 组副本内部 Build/Toolchains 是指向主线 Build/Toolchains
+的 Junction，故立即停止；该链接目标未计入副本大小，不能递归进入目标删除。
 
 ## E/G：低优先级可选项，合计约 2.49 GiB
 
@@ -110,7 +114,8 @@ Build/Generated 也继续保留。
 
 完整路径与逐项字节数见 Build/FrameGraphValidation/DiskAudit/cleanup-manifest.json；
 副本核查见同目录 copy-audit.json，占用明细见 disk-report.json。
-用户明确同意具体组后才执行删除；执行前再次验证绝对路径仍位于主工作区。
+仅执行用户明确批准的具体组；当前预检查停止，尚未执行任何删除，
+等待用户下一步指示。执行前再次验证绝对路径仍位于主工作区。
 
 用户追加的 C 盘 .codex 审计已另列于 CODEX_DISK_CLEANUP_PLAN.zh-CN.md：
 可读总量约 15.42 GiB，其中旧测试缓存/运行副本可选清理约 13.16 GiB。

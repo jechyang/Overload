@@ -1,6 +1,8 @@
 # C 盘 .codex 磁盘清理待批准清单
 
-2026-10-05。仅审计和列清单，尚未删除。根目录：
+2026-10-05。用户已批准 I/J；H 盘删除预检查发现目录链接后整体停止，
+本清单仍未删除任何文件，也未重试。最新剩余状态见
+DISK_CLEANUP_REMAINING.zh-CN.md。根目录：
 `C:\Users\Administrator\.codex`。
 
 可读取内容合计约 **15.42 GiB / 49,396 个文件**，其中 visualizations 约
@@ -101,7 +103,8 @@ OpenAI Docs 确认 [.codex 是本地配置与状态目录](https://learn.chatgpt
 完整逐文件待批准清单：`Build/FrameGraphValidation/DiskAudit/codex-cleanup-manifest.json`；
 占用统计：同目录 codex-disk-report.json。所有候选均在 C 盘 .codex 范围内，
 未纳入 Junction、跨目录目标或硬链接文件。文件可能继续被其他任务更新，
-执行前需重新核对路径、大小、修改时间与使用状态。当前尚未获得删除授权。
+执行前需重新核对路径、大小、修改时间与使用状态。I/J 已批准但尚未执行；
+K/L/M 尚未单独批准。删除保持停止，等待用户下一步指示。
 
 与 H 盘清单合并：首轮 H 盘 A+B+D+F+H **18.77 GiB**，C 盘 I+J **9.84 GiB**，
 合计约 **28.61 GiB**。若再选择 C 盘 K，合计约 **31.93 GiB**；
