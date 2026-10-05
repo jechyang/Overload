@@ -6,6 +6,7 @@
 
 #pragma once
 #include <OvTools/Utils/CallbackScope.h>
+#include <OvEditor/Panels/InspectorPropertyContext.h>
 
 #include <OvRendering/Resources/Loaders/TextureLoader.h>
 
@@ -95,6 +96,7 @@ namespace OvEditor::Panels
         bool _ApplyComponentValues(const std::string& type, const std::string& xml, const std::string& label);
         void _QueueRefresh();
         void _InvalidateView();
+        InspectorBindings::PropertyContext _PropertyContext(const InspectorBindings::PropertyDefaults* defaults = nullptr);
 		void _PopulateActorInfo();
 		void _PopulateActorComponents();
 		void _PopulateActorBehaviours();
@@ -109,6 +111,8 @@ namespace OvEditor::Panels
         bool m_locked = false;
         bool m_proportionalScale = false;
         std::string m_searchFilter, m_clipboardType, m_clipboardXML;
+        InspectorBindings::PropertyClipboard m_propertyClipboard;
+        std::map<std::string,InspectorBindings::PropertyDefaults> m_propertyDefaults;
         std::vector<OvUI::Widgets::Layout::GroupCollapsable*> m_sections;
         OvUI::Widgets::Texts::TextDisabled* m_searchStatus = nullptr;
         OvCore::SceneSystem::SceneManager* m_sceneManager = nullptr;

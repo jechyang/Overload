@@ -7,6 +7,7 @@
 #include <OvUI/Widgets/InputFields/ActorField.h>
 #include <OvUI/Types/Color.h>
 #include <OvUI/Widgets/Drags/DragMultipleScalars.h>
+#include <OvEditor/Panels/InspectorPropertyMenu.h>
 #include <array>
 #include <typeinfo>
 
@@ -58,7 +59,8 @@ namespace OvEditor::Panels::InspectorBindings
     }
 
     template<class T> bool Bind(const std::vector<OvUI::Widgets::AWidget*>& widgets,
-        OvUI::Widgets::Texts::Text* label, std::weak_ptr<const bool> ticket)
+        OvUI::Widgets::Texts::Text* label, std::weak_ptr<const bool> ticket,
+        PropertyContext context, const std::string& path)
     {
         using Dispatcher = OvUI::Plugins::DataDispatcher<T>;
         auto* primary = widgets.front()->GetPlugin<Dispatcher>();
@@ -75,6 +77,7 @@ namespace OvEditor::Panels::InspectorBindings
         auto* widget = widgets.front();
         if (auto* numeric = dynamic_cast<OvUI::Widgets::Drags::INumericField*>(widget); numeric && label)
             label->AddPlugin<OvUI::Plugins::NumericLabelDrag>(*numeric,*widget);
+        AttachPropertyMenu<T>(widgets,copies,label,ticket,std::move(context),path);
         primary->ReplaceBinding(
             [copies, before, label, title, ticket, widget]() -> T
             {
@@ -124,7 +127,8 @@ namespace OvEditor::Panels::InspectorBindings
     }
 
     inline void Connect(const std::vector<OvUI::Internal::WidgetContainer*>& roots,
-        std::weak_ptr<const bool> ticket, OvUI::Widgets::Texts::Text* inheritedLabel = nullptr)
+        std::weak_ptr<const bool> ticket, PropertyContext context = {},
+        OvUI::Widgets::Texts::Text* inheritedLabel = nullptr, const std::string& path = "")
     {
         if (!SameShape(roots))
         {
@@ -137,12 +141,13 @@ namespace OvEditor::Panels::InspectorBindings
             std::vector<OvUI::Widgets::AWidget*> widgets;
             for (auto* root : roots) widgets.push_back(root->GetWidgets()[i].first);
             auto* first = widgets.front();
+            const auto key = path+std::to_string(i);
             if (auto* text = dynamic_cast<OvUI::Widgets::Texts::TextColored*>(first)) { label = text; continue; }
             if (dynamic_cast<OvUI::Internal::WidgetContainer*>(first))
             {
                 std::vector<OvUI::Internal::WidgetContainer*> children;
                 for (auto* widget : widgets) children.push_back(dynamic_cast<OvUI::Internal::WidgetContainer*>(widget));
-                Connect(children, ticket, label); continue;
+                Connect(children, ticket, context, label,ChildPropertyPath(*first,key)); continue;
             }
             // Asset pickers and custom action buttons can bypass dispatchers;
             // never silently apply these to only the primary target.
@@ -152,12 +157,12 @@ namespace OvEditor::Panels::InspectorBindings
                 if (roots.size() > 1) Disable(*first);
                 continue;
             }
-            const bool bound = Bind<bool>(widgets, label, ticket) || Bind<int>(widgets, label, ticket) ||
-                Bind<unsigned int>(widgets, label, ticket) || Bind<int64_t>(widgets, label, ticket) ||
-                Bind<uint64_t>(widgets, label, ticket) || Bind<float>(widgets, label, ticket) || Bind<double>(widgets, label, ticket) ||
-                Bind<std::string>(widgets, label, ticket) || Bind<OvUI::Types::Color>(widgets, label, ticket) ||
-                Bind<std::array<float, 2>>(widgets, label, ticket) || Bind<std::array<float, 3>>(widgets, label, ticket) ||
-                Bind<std::array<float, 4>>(widgets, label, ticket);
+            const bool bound = Bind<bool>(widgets, label, ticket,context,key) || Bind<int>(widgets, label, ticket,context,key) ||
+                Bind<unsigned int>(widgets, label, ticket,context,key) || Bind<int64_t>(widgets, label, ticket,context,key) ||
+                Bind<uint64_t>(widgets, label, ticket,context,key) || Bind<float>(widgets, label, ticket,context,key) || Bind<double>(widgets, label, ticket,context,key) ||
+                Bind<std::string>(widgets, label, ticket,context,key) || Bind<OvUI::Types::Color>(widgets, label, ticket,context,key) ||
+                Bind<std::array<float, 2>>(widgets, label, ticket,context,key) || Bind<std::array<float, 3>>(widgets, label, ticket,context,key) ||
+                Bind<std::array<float, 4>>(widgets, label, ticket,context,key);
             if (!bound && roots.size() > 1 && !dynamic_cast<OvUI::Widgets::Texts::Text*>(first)) Disable(*first);
         }
     }

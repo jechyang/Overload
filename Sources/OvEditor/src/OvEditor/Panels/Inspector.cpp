@@ -375,6 +375,13 @@ void OvEditor::Panels::Inspector::_AttachComponentMenu(Layout::GroupCollapsable&
     };
 }
 
+OvEditor::Panels::InspectorBindings::PropertyContext OvEditor::Panels::Inspector::_PropertyContext(
+    const InspectorBindings::PropertyDefaults* defaults)
+{
+    return {&m_propertyClipboard,defaults,m_callbacks.defer,
+        [this,ticket = m_viewCallbacks.Ticket()] { if (!ticket.expired()) _QueueRefresh(); }};
+}
+
 void OvEditor::Panels::Inspector::_Populate()
 {
     m_emptyState->enabled = false;
@@ -420,7 +427,8 @@ void OvEditor::Panels::Inspector::_PopulateActorInfo()
         populate(*controls, *m_targets[i]);
         roots.push_back(controls.get()); m_batchControls.push_back(std::move(controls));
     }
-    InspectorBindings::Connect(roots, ticket);
+    static const InspectorBindings::PropertyDefaults actorDefaults{{"3/Tag",std::string{}},{"5/Active",true}};
+    InspectorBindings::Connect(roots, ticket,_PropertyContext(&actorDefaults));
     if (m_targets.size() > 1) return;
 
 	auto& identity = m_content->CreateWidget<Layout::GroupCollapsable>("Identity & Prefab");
@@ -667,7 +675,21 @@ void OvEditor::Panels::Inspector::_DrawComponent(AComponent& p_component, int p_
                 component->OnInspector(*controls); roots.push_back(controls.get());
                 m_batchControls.push_back(std::move(controls)); break;
             }
-    InspectorBindings::Connect(roots, m_viewCallbacks.Ticket());
+    // Snapshot native constructor defaults once per component type. Only owned
+    // property values survive the temporary actor and its Inspector bindings.
+    const auto type = p_component.GetTypeName();
+    auto [entry,fresh] = m_propertyDefaults.try_emplace(type);
+    if (fresh)
+        if (const auto* description = GetComponentRegistry().Find(type))
+        {
+            bool playing = false; Actor owner(0,"Property defaults","",playing); owner.SetActive(false);
+            if (auto* component = description->DeserializeComponent(owner))
+            {
+                OvUI::Internal::WidgetContainer controls; component->OnInspector(controls);
+                InspectorBindings::CapturePropertyDefaults(controls,entry->second);
+            }
+        }
+    InspectorBindings::Connect(roots, m_viewCallbacks.Ticket(),_PropertyContext(&entry->second));
 }
 
 void OvEditor::Panels::Inspector::_DrawBehaviour(Behaviour& p_behaviour, int p_index, int p_total)
@@ -727,7 +749,7 @@ void OvEditor::Panels::Inspector::_DrawBehaviour(Behaviour& p_behaviour, int p_i
         m_targets[i]->GetBehaviour(p_behaviour.Identity())->OnInspector(*controls);
         roots.push_back(controls.get()); m_batchControls.push_back(std::move(controls));
     }
-    InspectorBindings::Connect(roots, m_viewCallbacks.Ticket());
+    InspectorBindings::Connect(roots, m_viewCallbacks.Ticket(),_PropertyContext());
 }
 
 void OvEditor::Panels::Inspector::Refresh()
