@@ -12,6 +12,7 @@
 #pragma warning(pop)
 #include <fstream>
 #include "s4_fields_helpers.h"
+#include "s4_collection_ui_validation.h"
 #pragma warning(pop)
 using OvCore::Scripting::ScriptIdentity;
 static std::string PathUtf8(const std::filesystem::path& p) { const auto s=p.u8string();return {reinterpret_cast<const char*>(s.data()),s.size()}; }
@@ -91,6 +92,7 @@ int wmain(int argc,wchar_t** argv) {
         InspectorEdit(b,"7");Require(b.ManagedDefault("speed")->scalar.float32_value==2,"constructor default stays separate from Inspector override");
         Require(b.SetManagedFieldOverride("speed",false) && Read(b,"speed").scalar.float32_value==2 && !b.HasManagedFieldOverride("speed"),"reset restores default and clears explicit override");
         InspectorEdit(b,"7");Require(Read(b,"ConstructorOrdinal").scalar.int32_value==1,"repeated Inspector/default reads never construct extra instances");
+        ValidateManagedListUI(b,engine,project.parent_path());
         Set(b,"RenameMe","123");Set(b,"ChangeMe","456");Set(b,"DeleteMe","9223372036854775807");
         auto& child=scene.CreateActor("internal");child.SetParent(actor);auto& external=scene.CreateActor("external");
         Set(b,"Target",std::to_string(child.GetGUID()));Set(b,"External",std::to_string(external.GetGUID()));

@@ -15,6 +15,7 @@
 #include <OvCore/ECS/Components/CTransform.h>
 #include <OvCore/ECS/ComponentRegistry.h>
 #include <OvCore/Helpers/GUIDrawer.h>
+#include <OvCore/Helpers/ManagedFieldInput.h>
 #include <OvCore/Helpers/GUIHelpers.h>
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Core/EditorResources.h>
@@ -98,6 +99,8 @@ namespace
         {
             if (auto* label = dynamic_cast<Texts::TextColored*>(widget))
             { flush(); title = context+" "+label->content; }
+            if (auto* managed=dynamic_cast<OvCore::Helpers::ManagedFieldInput*>(widget); managed && managed->composite)
+            { flush(); title=context+" "+managed->displayName; }
             if (dynamic_cast<Visual::Separator*>(widget))
             { flush(); widget->visible = false; title = context; continue; }
             block.push_back(widget);

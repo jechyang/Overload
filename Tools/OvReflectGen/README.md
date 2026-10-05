@@ -403,6 +403,11 @@ foldable Records, an independent header Size input, a persistent footer with
 plus/minus controls, and right-click item actions. Large pages scroll inside the
 list so the footer remains reachable. Escape cancels dragging and item menus;
 stale/cross-list payloads cannot reorder another collection.
+Native and C# adapters share OvUI's ReorderableList presentation. Managed arrays
+and List<T> support bounded resizing, null creation, nested lists and record
+foldouts through the existing typed host codec. Continuous text input keeps its
+focus after managed XML normalization. Managed multi-selection remains subject
+to its existing restrictions. See INSPECTOR_MANAGED_LIST_UX_VALIDATION.zh-CN.md.
 Nested collections, custom allocators and collection Script signatures fail
 during Clang analysis. See Schema/PROTOCOL.md for the complete contract.
 

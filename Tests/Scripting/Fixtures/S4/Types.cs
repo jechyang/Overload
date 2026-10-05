@@ -6,6 +6,12 @@ namespace S4;
 public enum Signed : sbyte { Min = sbyte.MinValue, Max = sbyte.MaxValue }
 public enum Unsigned : ulong { Min = 0, Max = ulong.MaxValue }
 public abstract class BaseFields : Behaviour { [SerializeField] private int inherited = 31; public int CheckInherited() => inherited; }
+[Serializable] public class Parameters
+{
+    public Vector3 Offset=new(1,2,3);
+    public System.Collections.Generic.List<int> Values=new(){4,5};
+    public float Weight=1;
+}
 [ScriptId("s4-matrix")]
 public class Matrix : BaseFields
 {
@@ -26,6 +32,12 @@ public class Matrix : BaseFields
     public int Property => throw new Exception("Property getter must never run");
     public System.Collections.Generic.Dictionary<int,int> Unsupported = new();
     public string? NullText;
+    public int[] Numbers={1,2,3};
+    public System.Collections.Generic.List<string> Labels=new(){"one","two"};
+    public System.Collections.Generic.List<Unsigned> Modes=new(){Unsigned.Max,Unsigned.Min};
+    public System.Collections.Generic.List<System.Collections.Generic.List<int>> Nested=new(){new(){4,5},new(){6}};
+    public System.Collections.Generic.List<Parameters> Entries=new(){new(),new(){Weight=2}};
+    public System.Collections.Generic.List<int>? NullList;
 #if RENAMED
     [FormerlySerializedAs("RenameMe")] public int Renamed = 3;
     public string ChangeMe = "new type default";

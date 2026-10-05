@@ -6,11 +6,14 @@
 #include <OvUI/Widgets/InputFields/InputText.h>
 #include <OvUI/Widgets/Selection/CheckBox.h>
 #include <OvUI/Widgets/Texts/Text.h>
+#include <OvUI/Widgets/Texts/TextColored.h>
 #include <tinyxml2.h>
 #include <algorithm>
 #include <cfloat>
 #include <cstring>
 #include <imgui.h>
+#include <imgui_internal.h>
+#include <OvUI/Styling/Style.h>
 #include <OvCore/Helpers/ManagedFieldInput.h>
 #include <OvCore/Helpers/InspectorLabel.h>
 #include <OvCore/Helpers/GUIHelpers.h>
@@ -20,11 +23,11 @@
 
 using namespace OvCore::Scripting;
 namespace {
-    class ManagedFieldLabel final : public OvUI::Widgets::Texts::Text {
+    class ManagedFieldLabel final : public OvUI::Widgets::Texts::TextColored {
     public:
-        using Text::Text;
+        using TextColored::TextColored;
     protected:
-        void _Draw_Impl() override { ImGui::AlignTextToFramePadding(); Text::_Draw_Impl(); }
+        void _Draw_Impl() override { ImGui::AlignTextToFramePadding(); TextColored::_Draw_Impl(); }
     };
     // The Inspector may switch to another Actor without redrawing this Behaviour.
     // Widget destruction must invalidate copied/deferred events independently of attachment lifetime.
@@ -88,35 +91,6 @@ namespace {
         value.text=Record(*doc.RootElement());
     }
     int ResizeCompositeText(ImGuiInputTextCallbackData* data){auto& value=*static_cast<std::string*>(data->UserData);value.resize(data->BufTextLen);data->Buf=value.data();return 0;}
-    bool DrawComposite(ManagedFieldValue& value,int depth=0) {
-        if(depth>=8||value.text.size()>ManagedFieldValue::MaxTextBytes){ImGui::TextDisabled("Field limit exceeded");return false;}
-        tinyxml2::XMLDocument doc;if(doc.Parse(value.text.c_str())!=tinyxml2::XML_SUCCESS||!doc.RootElement()){ImGui::TextDisabled("Invalid field data");return false;}
-        auto* root=doc.RootElement();bool changed=false;bool list=std::string_view(root->Name())=="list";
-        if(root->Attribute("null","1")){if(ImGui::Button("Create value")){root->SetAttribute("null","0");changed=true;}else return false;}
-        int index=0;
-        for(auto* node=root->FirstChildElement();node&&index<1024;){auto* next=node->NextSiblingElement();
-            if(list&&std::string_view(node->Name())=="default"){node=next;continue;}
-            ImGui::PushID(index);std::string label=list?"Element "+std::to_string(index):(node->Attribute("name")?node->Attribute("name"):"Field");
-            if(auto item=CompositeItem(*node)){
-                bool edited=false;
-                if(item->tag==OVCS_FIELD_COLLECTION||item->tag==OVCS_FIELD_RECORD){if(ImGui::TreeNode(label.c_str())){edited=DrawComposite(*item,depth+1);ImGui::TreePop();}}
-                else if(item->tag==OVCS_FIELD_BOOL){bool on=item->scalar.boolean!=0;edited=ImGui::Checkbox(label.c_str(),&on);item->scalar.boolean=on;}
-                else if(item->tag==OVCS_FIELD_COMPONENT_REF||item->tag==OVCS_FIELD_ACTOR_REF)edited=ImGui::InputScalar(label.c_str(),ImGuiDataType_U64,&item->scalar.actor_guid);
-                else {
-                    std::string text=item->Display();text.reserve(std::max(size_t(128),text.size()+1));
-                    if(ImGui::InputText(label.c_str(),text.data(),text.capacity()+1,ImGuiInputTextFlags_CallbackResize,ResizeCompositeText,&text)){
-                        text.resize(std::strlen(text.c_str()));if(auto parsed=ManagedFieldValue::Parse(item->tag,item->auxiliary,text)){*item=*parsed;edited=true;}
-                    }
-                }
-                if(edited){StoreCompositeItem(*node,*item);changed=true;}
-            }
-            if(list){ImGui::SameLine();if(ImGui::SmallButton("Remove")){root->DeleteChild(node);changed=true;}}
-            ImGui::PopID();node=next;++index;
-        }
-        if(list&&index<1024&&ImGui::Button("Add element")){if(auto* prototype=root->FirstChildElement("default")){auto* node=prototype->DeepClone(&doc)->ToElement();node->SetName("item");root->InsertEndChild(node);changed=true;}}
-        if(changed){auto text=Record(*root);if(text.size()>ManagedFieldValue::MaxTextBytes)return false;value.text=std::move(text);}
-        return changed;
-    }
     bool Matches(const ManagedField& f,const char* id) { return id && (f.id==id || std::find(f.aliases.begin(),f.aliases.end(),id)!=f.aliases.end()); }
 }
 namespace OvCore::ECS::Components {
@@ -227,17 +201,22 @@ void Behaviour::InspectManagedFields(OvUI::Internal::WidgetContainer& root)
     std::weak_ptr<const bool> lifetime = m_managedUi;
     for (const auto& field : m_script->ManagedFields()) {
         const auto label = !field.displayName.empty() && field.displayName != field.name ? field.displayName : Helpers::InspectorLabel(field.name);
-        auto& title = root.CreateWidget<ManagedFieldLabel>(label);
-        title.tooltip = field.name + "\nRight-click the value to reset to its script default.";
+        const bool composite=field.tag==OVCS_FIELD_COLLECTION || field.tag==OVCS_FIELD_RECORD;
+        auto* title=composite?nullptr:&root.CreateWidget<ManagedFieldLabel>(label);
+        if (title) title->tooltip = field.name + "\nRight-click the value to reset to its script default.";
         if (!m_script->ReadManagedField(field.token)) {
-            auto& unavailable = root.CreateWidget<Texts::Text>("Unavailable");
+            auto& unavailable = root.CreateWidget<Texts::Text>(composite ? label + ": Unavailable" : "Unavailable");
+            unavailable.fullWidth = composite;
             unavailable.tooltip = "This value cannot be edited. Saved data is preserved; see Console for details.";
             continue;
         }
-        std::weak_ptr<const bool> widgets = title.AddPlugin<FieldWidgetsLifetime>().token;
-        auto valid = [lifetime, widgets] { return !lifetime.expired() && !widgets.expired(); };
         auto& input = root.CreateWidget<Helpers::ManagedFieldInput>();
+        std::weak_ptr<const bool> widgets = input.AddPlugin<FieldWidgetsLifetime>().token;
+        auto valid = [lifetime, widgets] { return !lifetime.expired() && !widgets.expired(); };
         input.fieldId = field.id;
+        input.displayName=label; input.composite=composite; input.fullWidth=composite;
+        input.SetID("managed_field_"+m_identity.Key()+"/"+field.id);
+        input.overridden=[this,valid,id=field.id] { return valid() && HasManagedFieldOverride(id); };
         input.read = [this,valid,token=field.token]() -> std::optional<ManagedFieldValue> {
             return valid() ? m_script->ReadManagedField(token) : std::nullopt;
         };
@@ -246,7 +225,7 @@ void Behaviour::InspectManagedFields(OvUI::Internal::WidgetContainer& root)
         };
         input.ValueChangedEvent += commit;
         input.reset = [this,valid,id=field.id] { if (valid()) SetManagedFieldOverride(id,false); };
-        title.AddPlugin<OvUI::Plugins::DataDispatcher<std::string>>().RegisterGatherer([this,valid,label,id=field.id] {
+        if (title) title->AddPlugin<OvUI::Plugins::DataDispatcher<std::string>>().RegisterGatherer([this,valid,label,id=field.id] {
             return valid() && HasManagedFieldOverride(id) ? label + " *" : label;
         });
         if (field.tag == OVCS_FIELD_ACTOR_REF || field.tag == OVCS_FIELD_COMPONENT_REF) {
@@ -299,6 +278,152 @@ void Behaviour::InspectManagedFields(OvUI::Internal::WidgetContainer& root)
 }
 }
 
+bool OvCore::Helpers::ManagedFieldInput::DrawCompositeScalar(ManagedFieldValue& value)
+{
+    bool changed=false;
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    switch (value.tag)
+    {
+    case OVCS_FIELD_BOOL: { bool on=value.scalar.boolean!=0; changed=ImGui::Checkbox("##value",&on); value.scalar.boolean=on; break; }
+    case OVCS_FIELD_INT8: changed=ImGui::InputScalar("##value",ImGuiDataType_S8,&value.scalar.int8_value); break;
+    case OVCS_FIELD_UINT8: changed=ImGui::InputScalar("##value",ImGuiDataType_U8,&value.scalar.uint8_value); break;
+    case OVCS_FIELD_INT16: changed=ImGui::InputScalar("##value",ImGuiDataType_S16,&value.scalar.int16_value); break;
+    case OVCS_FIELD_UINT16: changed=ImGui::InputScalar("##value",ImGuiDataType_U16,&value.scalar.uint16_value); break;
+    case OVCS_FIELD_INT32: changed=ImGui::DragScalar("##value",ImGuiDataType_S32,&value.scalar.int32_value,1); break;
+    case OVCS_FIELD_UINT32: changed=ImGui::DragScalar("##value",ImGuiDataType_U32,&value.scalar.uint32_value,1); break;
+    case OVCS_FIELD_INT64: case OVCS_FIELD_ENUM_INT64: changed=ImGui::InputScalar("##value",ImGuiDataType_S64,&value.scalar.int64_value); break;
+    case OVCS_FIELD_UINT64: case OVCS_FIELD_ENUM_UINT64: changed=ImGui::InputScalar("##value",ImGuiDataType_U64,&value.scalar.uint64_value); break;
+    case OVCS_FIELD_ACTOR_REF: case OVCS_FIELD_COMPONENT_REF: changed=ImGui::InputScalar("##value",ImGuiDataType_U64,&value.scalar.actor_guid); break;
+    case OVCS_FIELD_FLOAT32: changed=ImGui::DragScalar("##value",ImGuiDataType_Float,&value.scalar.float32_value,.05f,nullptr,nullptr,"%.6g"); break;
+    case OVCS_FIELD_FLOAT64: changed=ImGui::DragScalar("##value",ImGuiDataType_Double,&value.scalar.float64_value,.05f,nullptr,nullptr,"%.6g"); break;
+    case OVCS_FIELD_COLOR: changed=ImGui::ColorEdit4("##value",value.scalar.float_values,ImGuiColorEditFlags_Float|ImGuiColorEditFlags_HDR); break;
+    case OVCS_FIELD_VECTOR2: case OVCS_FIELD_VECTOR3: case OVCS_FIELD_VECTOR4: case OVCS_FIELD_QUATERNION: case OVCS_FIELD_RECT: case OVCS_FIELD_RECT_OFFSET:
+    {
+        const int count=value.tag==OVCS_FIELD_VECTOR2?2:value.tag==OVCS_FIELD_VECTOR3?3:4;
+        const float width=std::max(1.f,(ImGui::GetContentRegionAvail().x-ImGui::GetStyle().ItemInnerSpacing.x*(count-1))/count);
+        ImGui::BeginGroup();
+        for (int i=0;i<count;++i)
+        {
+            if (i) ImGui::SameLine(0,ImGui::GetStyle().ItemInnerSpacing.x);
+            ImGui::PushID(i); ImGui::SetNextItemWidth(width);
+            if (value.tag==OVCS_FIELD_RECT_OFFSET) changed|=ImGui::InputScalar("##axis",ImGuiDataType_S32,&value.scalar.int32_values[i]);
+            else changed|=ImGui::DragFloat("##axis",&value.scalar.float_values[i],.025f,0,0,"%.3f");
+            if (ImGui::IsItemActive()) m_activeCompositeInput=ImGui::GetItemID();
+            ImGui::PopID();
+        }
+        ImGui::EndGroup(); break;
+    }
+    default:
+    {
+        std::string text=value.Display(); text.reserve(std::max(size_t(128),text.size()+1));
+        if (ImGui::InputText("##value",text.data(),text.capacity()+1,ImGuiInputTextFlags_CallbackResize,ResizeCompositeText,&text))
+        {
+            text.resize(std::strlen(text.c_str()));
+            if (auto parsed=ManagedFieldValue::Parse(value.tag,value.auxiliary,text)) { value=*parsed; changed=true; }
+        }
+        break;
+    }
+    }
+    if (ImGui::IsItemActive()) m_activeCompositeInput=ImGui::GetItemID();
+    return changed;
+}
+bool OvCore::Helpers::ManagedFieldInput::DrawComposite(ManagedFieldValue& value,const std::string& path,const std::string& label,int depth)
+{
+    if (depth>=8 || value.text.size()>ManagedFieldValue::MaxTextBytes) { ImGui::TextDisabled("Field limit exceeded"); return false; }
+    tinyxml2::XMLDocument doc;
+    if (doc.Parse(value.text.c_str())!=tinyxml2::XML_SUCCESS || !doc.RootElement()) { ImGui::TextDisabled("Invalid field data"); return false; }
+    auto* root=doc.RootElement(); const bool list=std::string_view(root->Name())=="list";
+    if (!list && std::string_view(root->Name())!="record") { ImGui::TextDisabled("Invalid composite field"); return false; }
+    std::vector<tinyxml2::XMLElement*> nodes;
+    for (auto* node=root->FirstChildElement(list?"item":"member");node;node=node->NextSiblingElement(list?"item":"member")) nodes.push_back(node);
+    if (nodes.size()>1024) { ImGui::TextDisabled("Collection length exceeds limit"); return false; }
+    bool changed=false,structural=false;
+    ImGui::PushID(path.c_str());
+    auto headerActions=[&]
+    {
+        if (path!="root" || !ImGui::BeginPopupContextItem("field_actions")) return;
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+        if (ImGui::MenuItem("Reset to Script Default") && reset) reset();
+        ImGui::EndPopup();
+    };
+    auto element=[&](size_t index)
+    {
+        auto* node=nodes[index]; auto item=CompositeItem(*node);
+        if (!item) { ImGui::TextDisabled("Invalid item"); return; }
+        const auto name=list?"Element "+std::to_string(index):InspectorLabel(node->Attribute("name")?node->Attribute("name"):"Field");
+        const auto childPath=path+"/"+(list?std::to_string(index):std::string(node->Attribute("name")?node->Attribute("name"):"Field"));
+        bool edited=false;
+        if (item->tag==OVCS_FIELD_COLLECTION || item->tag==OVCS_FIELD_RECORD) edited=DrawComposite(*item,childPath,name,depth+1);
+        else
+        {
+            ImGui::PushStyleVar(ImGuiStyleVar_CellPadding,{0,2*OVUI_SCALE});
+            if (ImGui::BeginTable("element",2,ImGuiTableFlags_NoSavedSettings|ImGuiTableFlags_SizingStretchProp))
+            {
+                ImGui::TableSetupColumn("label",ImGuiTableColumnFlags_WidthFixed,(list?90:150)*OVUI_SCALE);
+                ImGui::TableSetupColumn("value",ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableNextRow(); ImGui::TableSetColumnIndex(0); ImGui::AlignTextToFramePadding();
+                ImGui::TextDisabled("%s",name.c_str()); ImGui::TableSetColumnIndex(1);
+                edited=DrawCompositeScalar(*item); ImGui::EndTable();
+            }
+            ImGui::PopStyleVar();
+        }
+        if (edited) { StoreCompositeItem(*node,*item); changed=true; }
+    };
+    if (list)
+    {
+        auto& state=m_lists.try_emplace(path).first->second;
+        OvUI::Widgets::Layout::ReorderableList::Model model;
+        model.name=label; model.limit=1024; model.readOnly=disabled;
+        model.emptyText=root->Attribute("null","1")?"List is null. Use + or Size to create it.":"List is empty";
+        model.count=[&] { size_t count=0; for (auto* node=root->FirstChildElement("item");node;node=node->NextSiblingElement("item")) ++count; return count; };
+        auto canGrow=[&](size_t delta)
+        {
+            if (Record(*root).size()+delta<=ManagedFieldValue::MaxTextBytes) return true;
+            m_compositeError="Encoded field exceeds 64 KiB"; return false;
+        };
+        model.resize=[&](size_t count)
+        {
+            if (structural) return false;
+            const auto size=nodes.size(); auto* prototype=root->FirstChildElement("default");
+            if (count>1024 || !prototype || (count==size && !root->Attribute("null","1"))) return false;
+            if (count>size && !canGrow((count-size)*Record(*prototype).size())) return false;
+            if (count<size) for (size_t i=count;i<size;++i) root->DeleteChild(nodes[i]);
+            else for (size_t i=size;i<count;++i) { auto* item=prototype->DeepClone(&doc)->ToElement(); item->SetName("item"); root->InsertEndChild(item); }
+            root->SetAttribute("null","0"); changed=structural=true; return true;
+        };
+        model.erase=[&](size_t index) { if (structural || index>=nodes.size()) return false; root->DeleteChild(nodes[index]); changed=structural=true; return true; };
+        model.duplicate=[&](size_t index)
+        {
+            if (structural || index>=nodes.size() || nodes.size()>=1024 || !canGrow(Record(*nodes[index]).size())) return false;
+            root->InsertAfterChild(nodes[index],nodes[index]->DeepClone(&doc)); changed=structural=true; return true;
+        };
+        model.move=[&](size_t from,size_t to)
+        {
+            if (structural || from==to || from>=nodes.size() || to>=nodes.size()) return false;
+            auto order=nodes; auto* moving=order[from]; order.erase(order.begin()+from); order.insert(order.begin()+to,moving);
+            for (auto* node:order) root->InsertEndChild(node);
+            changed=structural=true; return true;
+        };
+        model.drawElement=element; model.header=headerActions; model.stopDrawing=[&] { return structural; };
+        state.Draw(model);
+    }
+    else
+    {
+        const bool open=ImGui::CollapsingHeader((label+"###record").c_str(),depth==0?ImGuiTreeNodeFlags_DefaultOpen:ImGuiTreeNodeFlags_None);
+        headerActions();
+        if (open)
+        {
+            if (root->Attribute("null","1")) { if (ImGui::Button("Create value")) { root->SetAttribute("null","0"); changed=true; } }
+            else for (size_t index=0;index<nodes.size();++index) { ImGui::PushID(static_cast<int>(index)); element(index); ImGui::PopID(); }
+        }
+    }
+    ImGui::PopID();
+    if (!changed) return false;
+    auto text=Record(*root);
+    if (text.size()>ManagedFieldValue::MaxTextBytes) { m_compositeError="Encoded field exceeds 64 KiB"; return false; }
+    value.text=std::move(text); return true;
+}
+
 int OvCore::Helpers::ManagedFieldInput::ResizeText(ImGuiInputTextCallbackData* data)
 {
     auto& text = *static_cast<std::string*>(data->UserData);
@@ -316,7 +441,18 @@ void OvCore::Helpers::ManagedFieldInput::_Draw_Impl()
     ImGui::SetNextItemWidth(-FLT_MIN);
     bool changed = false;
     switch (value.tag) {
-    case OVCS_FIELD_COLLECTION: case OVCS_FIELD_RECORD: changed=DrawComposite(value);break;
+    case OVCS_FIELD_COLLECTION: case OVCS_FIELD_RECORD:
+        if (m_compositeSeen!=value.text)
+        {
+            for (auto& [path,state]:m_lists) { (void)path; state.Invalidate(); }
+            if (m_activeCompositeInput && GImGui->ActiveId==m_activeCompositeInput) ImGui::ClearActiveID();
+            m_compositeError.clear();
+        }
+        m_activeCompositeInput=0;
+        changed=DrawComposite(value,"root",displayName+(overridden && overridden()?" *":""));
+        m_compositeSeen=value.text;
+        if (!m_compositeError.empty()) ImGui::TextColored({1,.45f,.35f,1},"%s",m_compositeError.c_str());
+        break;
     case OVCS_FIELD_BOOL: {
         bool enabled = value.scalar.boolean != 0;
         changed = ImGui::Checkbox("##value",&enabled); value.scalar.boolean = enabled ? 1 : 0; break;
@@ -391,8 +527,15 @@ void OvCore::Helpers::ManagedFieldInput::_Draw_Impl()
         break;
     }
     }
-    if (changed) ValueChangedEvent.Invoke(value);
-    if (ImGui::BeginPopupContextItem("field_actions")) {
+    if (changed)
+    {
+        ValueChangedEvent.Invoke(value);
+        // The host normalizes XML and hex casing. Compare subsequent external
+        // updates with its accepted snapshot, so our own edit keeps input focus.
+        if ((value.tag==OVCS_FIELD_COLLECTION || value.tag==OVCS_FIELD_RECORD) && read)
+            if (auto live=read(); live && live->tag==value.tag) m_compositeSeen=live->text;
+    }
+    if (value.tag!=OVCS_FIELD_COLLECTION && value.tag!=OVCS_FIELD_RECORD && ImGui::BeginPopupContextItem("field_actions")) {
         if (ImGui::MenuItem("Reset to Script Default") && reset) { reset(); m_textActive=false; }
         if (value.tag == OVCS_FIELD_ACTOR_REF || value.tag == OVCS_FIELD_ASSET_REF || value.tag == OVCS_FIELD_COMPONENT_REF) {
             if (ImGui::MenuItem("Clear Reference")) {
