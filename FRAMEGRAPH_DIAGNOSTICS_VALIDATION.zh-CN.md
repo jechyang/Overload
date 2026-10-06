@@ -14,6 +14,11 @@
   下方显示该版本的生产/消费 Pass；悬浮链路显示输入/输出版本和 mip/layer 范围。
   布局依据画布宽高在每侧 1–3 列中选择节点最大的方案；长标题限制在节点内，完整
   名称可悬浮查看，下方关联按钮按可用宽度换行。
+  有成功计时样本后可开启 GPU heat：自动冻结实际测量的计划并聚焦最慢 Pass。
+  Pass 填充由蓝色到橙红色表示相对耗时，按整份测量计划的最大值归一化，筛选和
+  聚焦不改变颜色尺度；节点显示毫秒和总和占比，选中边框与资源/依赖边颜色保留。
+  悬浮或选择节点可查看测量帧与耗时，GPU hotspots 返回该样本的列表。
+  取消 Freeze plan 恢复实时计划并移除热力着色；没有对应样本的计划保持普通颜色。
 - Passes：按产品计划顺序列出 Pass，查看资源访问、mip/layer 范围、附件
   Load/Store、传入和传出的 RAW/WAR/WAW/显式顺序依赖；点击资源或依赖跳转。
 - Resources：查看来源、尺寸、格式、估算字节、最终内容版本、存活区间，以及
@@ -33,6 +38,8 @@
   按住鼠标期间保持列表数据稳定，防止新样本重排热点导致点击取消。
   结果标注实际测量的 frame/snapshot/scope；冻结后 resize 不改变已有结果。
   关闭采样释放查询池，已显示的值可继续查看；关闭面板释放所有诊断值。
+  Show GPU heat 从列表直接定位到测量图的最慢 Pass；Pass 详情中的同名按钮
+  可定位当前 Pass，在资源版本流和 Pass 依赖图之间切换仍保留该次测量。
 - 支持名称筛选和只看 transient。未命名的导入附件按首次使用的 Pass 和用途
   显示名称。筛选后详情跟随可见项；空结果不会继续显示不匹配的详情。
 - Freeze plan 固定当前计划。取消冻结后恢复采集；冻结期间池计数仍保持更新。
@@ -90,6 +97,10 @@ GPU 计时默认关闭，与诊断计划的采集开关独立。每个 Pass 两�
 一次性预览转换插在 Pass 区间之外，也不计入 Pass 总和。空 Pass 仍可能显示
 查询开销；profiling 本身存在开销。结果与其自身的计划一起保留，不把老帧
 的数组套在新的计划上；点击热点时冻结这一份实际测量的图。
+热力图只使用与显示计划相同的不可变快照对象；即使新图的 Pass 数量相同，也不会
+继承旧耗时。显示热力图不创建新的 GPU 查询、纹理、资源副本或采样历史。
+普通图的筛选、缩放、选中边框、资源版本和读写链路保留，颜色尺度使用整图最大
+Pass 耗时，不代表 GPU 利用率或 CPU 时间。全部为零时仍可查看零值，不发生除零。
 
 打开面板才在 PrepareFrame 末尾复制诊断值，冻结后停止采集；关闭时释放面板值，
 在同一次产品录制中关闭 Frontend 采集并释放其值。关闭状态不查询池统计，不复制
@@ -139,6 +150,9 @@ node Tests/Skinning/run-validation.mjs Debug --framegraph-editor --framegraph-ba
    执行一次、冻结值由无 GL Worker 读取、域重建、Worker 删除和产品像素不变。
    Main/Render 两种编辑器模式实际操作采样开关、点击最慢行冻结测量图、
    resize、切回计划顺序、关闭采样和面板；暖机不分配，F0 图像基线不变。
+   GPU heat 验证两种实际画布的原生窗口像素：最慢 Pass 着暖色、停用后恢复原色，
+   资源颜色不变；实际 ImGui 按钮切换与节点点击、同规模不同图拒绝旧样本、测量图
+   恢复、冻结 resize、返回热点列表及取消冻结恢复实时计划，产品视口像素不变。
 1. 预览在 alias 覆盖前得到指定 v1/v2 内容；RGB/Red/Alpha、24 个 cube
    face/mip、深度比较模式覆盖、depth/stencil renderbuffer resolve、R32F、
    HDR 控制和尺寸上限。拒绝未初始化 v0、Discard、过期选择和无效范围；
@@ -179,7 +193,7 @@ node Tests/Skinning/run-validation.mjs Debug --framegraph-editor --framegraph-ba
 - `Build/JobsValidation/Skinning/{Debug,Release}-framegraph-command-list/current/`
 - `Build/JobsValidation/Skinning/{Debug,Release}-pipeline-command-list/current/`
 - `Build/JobsValidation/Skinning/{Debug,Release}-framegraph-editor-command-list-editor-ui/current/`
-  的 `run.log`、`framegraph-{main,render}-{passes,resources,preview-color,timings,timings-pass,timings-order}.rgba`、尺寸文件；
+  的 `run.log`、`framegraph-{main,render}-{passes,resources,preview-color,timings,timings-pass,timings-order,gpu-heat-resources,gpu-heat-dependencies}.rgba`、尺寸文件；
   生成的 PNG 用于视觉检查。
 - 相应入口目录的 `result.json`，诊断面板结果含 `framegraphEditor: true`，
   `framegraphComparison.files` 记录两份 F0 检查。

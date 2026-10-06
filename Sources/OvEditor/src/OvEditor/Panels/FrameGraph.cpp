@@ -88,6 +88,18 @@ namespace
         float r,g,b;ImGui::ColorConvertHSVtoRGB(float(id%13)/13.f,.55f,.8f,r,g,b);
         return ImGui::GetColorU32(ImVec4(r,g,b,1));
     }
+    ImU32 GpuHeatColor(uint64_t ns,uint64_t maximum)
+    {
+        const float cost=maximum?std::clamp(float(double(ns)/maximum),0.f,1.f):0;
+        const ImVec4 low={.13f,.23f,.29f,1},middle={.55f,.40f,.17f,1},high={.71f,.24f,.18f,1};
+        const auto a=cost<.5f?low:middle,b=cost<.5f?middle:high;const float t=cost<.5f?cost*2:(cost-.5f)*2;
+        return ImGui::GetColorU32(ImVec4(a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,a.z+(b.z-a.z)*t,1));
+    }
+    std::string GpuCostText(const FrameGraphGpuTimings& timings,size_t pass)
+    {
+        const auto ns=timings.passNanoseconds[pass];
+        return std::format("{:.3f} ms | {:.1f}%",ns/1e6,timings.totalNanoseconds?double(ns)*100/timings.totalNanoseconds:0);
+    }
     void Lifetime(const FrameGraphDiagnostics::Resource& resource,size_t passes)
     {
         const auto& life=resource.lifetime;
@@ -108,7 +120,7 @@ OvEditor::Panels::FrameGraph::FrameGraph(const std::string& title,bool opened,co
 {
     minSize={520,360};CreateWidget<Contents>([this]{DrawContents();});
     CloseEvent += [this]{RequireUIThread();m_snapshot.reset();m_graphNodes.clear();m_graphEdges.clear();m_frozen=false;m_graphFit=true;
-        m_previewRequest.reset();m_previewTicket.reset();m_previewImage.reset();m_previewStatus.clear();m_previewSequence=0;m_gpuTimings.reset();m_captureGpuTimings=false;};
+        m_previewRequest.reset();m_previewTicket.reset();m_previewImage.reset();m_previewStatus.clear();m_previewSequence=0;m_gpuTimings.reset();m_captureGpuTimings=false;m_graphGpuHeat=false;};
 }
 void OvEditor::Panels::FrameGraph::RequireUIThread() const
 {
@@ -178,10 +190,61 @@ void OvEditor::Panels::FrameGraph::QueuePreview()
 void OvEditor::Panels::FrameGraph::SelectPass(size_t index){m_selectedPass=index;m_flowSelectionIsResource=false;m_requestedTab=0;m_filter[0]=0;}
 void OvEditor::Panels::FrameGraph::SelectResource(size_t index){m_selectedResource=index;m_selectedVersion=m_snapshot->resources[index].finalVersion;m_flowSelectionIsResource=true;m_requestedTab=1;m_filter[0]=0;}
 
+const FrameGraphGpuTimings* OvEditor::Panels::FrameGraph::MatchingGpuTimings() const
+{
+    return m_gpuTimings&&m_snapshot&&!m_snapshot->passes.empty()&&m_gpuTimings->graph==m_snapshot&&m_gpuTimings->passNanoseconds.size()==m_snapshot->passes.size()?m_gpuTimings.get():nullptr;
+}
+bool OvEditor::Panels::FrameGraph::FreezeMeasuredPlan(size_t pass)
+{
+    if(!m_gpuTimings||!m_gpuTimings->graph||m_gpuTimings->graph->passes.empty()||m_gpuTimings->passNanoseconds.size()!=m_gpuTimings->graph->passes.size())return false;
+    m_snapshot=m_gpuTimings->graph;m_frozen=true;m_graphFit=true;
+    m_selectedPass=std::min(pass,m_snapshot->passes.size()-1);m_flowSelectionIsResource=false;
+    if(m_selectedResource>=m_snapshot->resources.size())m_selectedResource=0;
+    if(!m_snapshot->resources.empty())m_selectedVersion=std::min(m_selectedVersion,m_snapshot->resources[m_selectedResource].finalVersion);
+    return true;
+}
+void OvEditor::Panels::FrameGraph::ShowGpuHeat(size_t pass)
+{
+    if(!FreezeMeasuredPlan(pass))return;
+    m_graphGpuHeat=true;m_graphFocus=true;m_filter[0]=0;m_requestedTab=2;
+}
+void OvEditor::Panels::FrameGraph::DrawGpuHeatControls()
+{
+    const bool available=m_gpuTimings&&m_gpuTimings->graph&&!m_gpuTimings->graph->passes.empty()&&m_gpuTimings->passNanoseconds.size()==m_gpuTimings->graph->passes.size();
+    ImGui::BeginDisabled(!available);
+    if(ImGui::Checkbox("GPU heat",&m_graphGpuHeat)&&m_graphGpuHeat) {
+        const auto& costs=m_gpuTimings->passNanoseconds;
+        ShowGpuHeat(static_cast<size_t>(std::max_element(costs.begin(),costs.end())-costs.begin()));
+    }
+    ImGui::EndDisabled();
+    if(ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))ImGui::SetTooltip(available?
+        "Freeze the measured plan and focus its slowest Pass. Colors scale to the most expensive Pass in the whole plan; resources keep their own colors.":"Enable Capture GPU timings in Timings first.");
+    ImGui::SameLine();if(ImGui::SmallButton("GPU hotspots"))m_requestedTab=4;
+    if(!m_graphGpuHeat)return;
+    const auto* timings=MatchingGpuTimings();
+    if(!timings) {
+        ImGui::TextDisabled("This plan has no matching GPU sample.");
+        ImGui::SameLine();ImGui::BeginDisabled(!available);
+        if(ImGui::SmallButton("Use measured plan"))ShowGpuHeat(m_selectedPass);
+        ImGui::EndDisabled();return;
+    }
+    const auto maximum=*std::max_element(timings->passNanoseconds.begin(),timings->passNanoseconds.end());
+    ImGui::TextColored(ImVec4(.40f,.75f,.95f,1),"Low");ImGui::SameLine();
+    ImGui::TextColored(ImVec4(1,.48f,.35f,1),"High");ImGui::SameLine();
+    ImGui::TextDisabled("Max %.3f ms | sum %.3f ms | frame %llu",maximum/1e6,timings->totalNanoseconds/1e6,timings->frameID);
+}
+void OvEditor::Panels::FrameGraph::DrawPassGpuTiming(size_t pass)
+{
+    if(const auto* timings=MatchingGpuTimings()) {
+        ImGui::Text("GPU %s | frame %llu",GpuCostText(*timings,pass).c_str(),timings->frameID);
+        if(ImGui::SmallButton("GPU hotspots"))m_requestedTab=4;
+    }
+}
+
 void OvEditor::Panels::FrameGraph::DrawContents()
 {
     RequireUIThread();
-    ImGui::Checkbox("Freeze plan",&m_frozen);ImGui::SameLine();
+    if(ImGui::Checkbox("Freeze plan",&m_frozen)&&!m_frozen)m_graphGpuHeat=false;ImGui::SameLine();
     if(m_snapshot)ImGui::TextDisabled("Prepared snapshot %llu | scope %llu",m_snapshot->captureIndex,m_snapshot->scope);
     else ImGui::TextDisabled("Waiting for the next product frame");
     ImGui::TextDisabled("Plan captured before submission; pool counters below are live.");
@@ -237,10 +300,9 @@ void OvEditor::Panels::FrameGraph::DrawPasses()
     if(visible.empty()){ImGui::TextDisabled("No passes match this filter");ImGui::EndChild();return;}
     const auto selectedPass=m_selectedPass;
     const auto& pass=graph.passes[selectedPass];ImGui::TextWrapped("P%zu  %s",selectedPass,pass.name.c_str());
-    if(m_gpuTimings&&m_gpuTimings->graph->scope==graph.scope) {
-        const auto ns=m_gpuTimings->passNanoseconds[selectedPass];
-        ImGui::Text("GPU %.3f ms | %.1f%% of Pass sum | frame %llu",ns/1e6,m_gpuTimings->totalNanoseconds?double(ns)*100/m_gpuTimings->totalNanoseconds:0,m_gpuTimings->frameID);
-        if(ImGui::SmallButton("GPU hotspots"))m_requestedTab=4;
+    if(MatchingGpuTimings()) {
+        DrawPassGpuTiming(selectedPass);
+        ImGui::SameLine();if(ImGui::SmallButton("Show GPU heat"))ShowGpuHeat(selectedPass);
     }
     if(ImGui::SmallButton("Show dependencies")){m_requestedTab=2;m_graphFocus=true;m_graphFit=true;}
     ImGui::TextDisabled("View %llu | %zu accesses",pass.viewId,pass.accesses.size());
@@ -265,7 +327,10 @@ void OvEditor::Panels::FrameGraph::DrawPasses()
 
 void OvEditor::Panels::FrameGraph::DrawDependencies()
 {
+    DrawGpuHeatControls();
     const auto& graph=*m_snapshot;m_graphNodes.clear();m_graphEdges.clear();
+    const auto* timings=m_graphGpuHeat?MatchingGpuTimings():nullptr;
+    const auto maximum=timings?*std::max_element(timings->passNanoseconds.begin(),timings->passNanoseconds.end()):0;
     if(graph.passes.empty()){ImGui::TextDisabled("No passes");return;}
     if(ImGui::Checkbox("Resource flow",&m_graphResourceFlow))m_graphFit=true;
     ImGui::SameLine();if(m_graphResourceFlow){DrawResourceFlow();return;}
@@ -364,14 +429,17 @@ void OvEditor::Panels::FrameGraph::DrawDependencies()
             if(node.resource)continue;
             const auto p=node.index;const auto& rect=node.rect;const bool selected=p==m_selectedPass;
             const ImVec2 min={rect[0],rect[1]},max={rect[2],rect[3]};
-            draw->AddRectFilled(min,max,selected?IM_COL32(40,76,105,255):IM_COL32(40,46,58,255),5.f*m_graphZoom);
+            draw->AddRectFilled(min,max,timings?GpuHeatColor(timings->passNanoseconds[p],maximum):selected?IM_COL32(40,76,105,255):IM_COL32(40,46,58,255),5.f*m_graphZoom);
             draw->AddRect(min,max,selected?IM_COL32(105,202,255,255):p==hoveredPass?IM_COL32(190,200,215,255):IM_COL32(85,96,112,255),5.f*m_graphZoom,ImDrawFlags_None,selected?2.f:1.f);
             const float fontSize=ImGui::GetFontSize()*m_graphZoom;const ImVec4 clip={min.x+5*m_graphZoom,min.y,max.x-5*m_graphZoom,max.y};
             draw->AddText(ImGui::GetFont(),fontSize,{min.x+8*m_graphZoom,min.y+7*m_graphZoom},IM_COL32(230,235,245,255),std::format("P{}  {}",p,graph.passes[p].name).c_str(),nullptr,0,&clip);
-            draw->AddText(ImGui::GetFont(),fontSize*.85f,{min.x+8*m_graphZoom,min.y+32*m_graphZoom},IM_COL32(158,174,194,255),std::format("View {} | {} accesses",graph.passes[p].viewId,graph.passes[p].accesses.size()).c_str(),nullptr,0,&clip);
+            const auto subtitle=timings?GpuCostText(*timings,p):std::format("View {} | {} accesses",graph.passes[p].viewId,graph.passes[p].accesses.size());
+            draw->AddText(ImGui::GetFont(),fontSize*.85f,{min.x+8*m_graphZoom,min.y+32*m_graphZoom},timings?IM_COL32(240,235,222,255):IM_COL32(158,174,194,255),subtitle.c_str(),nullptr,0,&clip);
         }
         if(hoveredPass!=size_t(-1)) {
-            ImGui::SetTooltip("P%zu  %s\nClick to select; double-click for pass details",hoveredPass,graph.passes[hoveredPass].name.c_str());
+            ImGui::BeginTooltip();ImGui::Text("P%zu  %s",hoveredPass,graph.passes[hoveredPass].name.c_str());
+            if(timings)ImGui::Text("GPU %s | frame %llu",GpuCostText(*timings,hoveredPass).c_str(),timings->frameID);
+            ImGui::TextDisabled("Click to select; double-click for pass details");ImGui::EndTooltip();
             if(ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                 m_selectedPass=hoveredPass;if(m_graphFocus)m_graphFit=true;
                 if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))SelectPass(hoveredPass);
@@ -389,6 +457,7 @@ void OvEditor::Panels::FrameGraph::DrawDependencies()
         ImGui::TextDisabled("No pass or resource matches this filter");ImGui::EndChild();return;
     }
     const auto& pass=graph.passes[m_selectedPass];ImGui::TextWrapped("Selected: P%zu  %s",m_selectedPass,pass.name.c_str());
+    DrawPassGpuTiming(m_selectedPass);
     if(ImGui::SmallButton("Pass details"))SelectPass(m_selectedPass);
     for(size_t a=0;a<pass.accesses.size();++a) {
         const auto& access=pass.accesses[a];ImGui::PushID(static_cast<int>(a));
@@ -399,6 +468,8 @@ void OvEditor::Panels::FrameGraph::DrawDependencies()
 void OvEditor::Panels::FrameGraph::DrawResourceFlow()
 {
     const auto& graph=*m_snapshot;
+    const auto* timings=m_graphGpuHeat?MatchingGpuTimings():nullptr;
+    const auto maximum=timings?*std::max_element(timings->passNanoseconds.begin(),timings->passNanoseconds.end()):0;
     if(ImGui::Checkbox("Versions",&m_graphVersions))m_graphFit=true;
     if(ImGui::IsItemHovered())ImGui::SetTooltip("Each writing pass advances content once. Version nodes share storage; they are not texture copies.");
     ImGui::SameLine();
@@ -547,19 +618,19 @@ void OvEditor::Panels::FrameGraph::DrawResourceFlow()
     const auto drawNode=[&](bool resource,size_t index,uint32_t version,const std::array<float,4>& rect,bool selected,const char* title,const char* subtitle) {
         const ImVec2 min={rect[0],rect[1]},max={rect[2],rect[3]};
         const bool underMouse=hovered&&io.MousePos.x>=rect[0]&&io.MousePos.x<=rect[2]&&io.MousePos.y>=rect[1]&&io.MousePos.y<=rect[3];
-        const auto fill=selected?(resource?IM_COL32(78,67,105,255):IM_COL32(40,76,105,255)):resource?IM_COL32(53,46,67,255):IM_COL32(40,46,58,255);
+        const auto fill=!resource&&timings?GpuHeatColor(timings->passNanoseconds[index],maximum):selected?(resource?IM_COL32(78,67,105,255):IM_COL32(40,76,105,255)):resource?IM_COL32(53,46,67,255):IM_COL32(40,46,58,255);
         draw->AddRectFilled(min,max,fill,5.f*m_graphZoom);
         draw->AddRect(min,max,selected?IM_COL32(173,157,255,255):underMouse?IM_COL32(190,200,215,255):resource?IM_COL32(118,100,151,255):IM_COL32(85,96,112,255),5.f*m_graphZoom,ImDrawFlags_None,selected?2.f:1.f);
         const ImVec4 nodeClip={std::max(clip.x,min.x),std::max(clip.y,min.y),std::min(clip.z,max.x-4*m_graphZoom),std::min(clip.w,max.y)};
         draw->AddText(ImGui::GetFont(),fontSize,{min.x+6*m_graphZoom,min.y+6*m_graphZoom},IM_COL32(230,235,245,255),title,nullptr,0,&nodeClip);
-        draw->AddText(ImGui::GetFont(),fontSize*.82f,{min.x+6*m_graphZoom,min.y+28*m_graphZoom},IM_COL32(158,174,194,255),subtitle,nullptr,0,&nodeClip);
+        draw->AddText(ImGui::GetFont(),fontSize*.82f,{min.x+6*m_graphZoom,min.y+28*m_graphZoom},!resource&&timings?IM_COL32(240,235,222,255):IM_COL32(158,174,194,255),subtitle,nullptr,0,&nodeClip);
         m_graphNodes.push_back({resource,index,rect,version});
         if(underMouse)hoveredNode=m_graphNodes.size()-1;
     };
     for(size_t row=0;row<passOrder.size();++row) {
         const size_t p=passOrder[row];const float y=passY[p];const auto& pass=graph.passes[p];
         drawNode(false,p,0,{passX[p],y,passX[p]+nodeWidth*m_graphZoom,y+nodeHeight*m_graphZoom},!m_flowSelectionIsResource&&p==m_selectedPass,
-            std::format("P{}  {}",p,pass.name).c_str(),std::format("View {} | {} accesses",pass.viewId,pass.accesses.size()).c_str());
+            std::format("P{}  {}",p,pass.name).c_str(),(timings?GpuCostText(*timings,p):std::format("View {} | {} accesses",pass.viewId,pass.accesses.size())).c_str());
     }
     for(size_t row=0;row<resourceOrder.size();++row) {
         const auto [r,version]=resourceOrder[row];const auto& resource=graph.resources[r];const auto position=resourcePositions.at(resourceOrder[row]);
@@ -584,9 +655,14 @@ void OvEditor::Panels::FrameGraph::DrawResourceFlow()
                 }
             } else ImGui::Text("Live passes %zu-%zu",r.lifetime.first,r.lifetime.last);
             ImGui::EndTooltip();
-        } else ImGui::SetTooltip("P%zu  %s\nClick to select; double-click for pass details",node.index,graph.passes[node.index].name.c_str());
+        } else {
+            ImGui::BeginTooltip();ImGui::Text("P%zu  %s",node.index,graph.passes[node.index].name.c_str());
+            if(timings)ImGui::Text("GPU %s | frame %llu",GpuCostText(*timings,node.index).c_str(),timings->frameID);
+            ImGui::TextDisabled("Click to select; double-click for pass details");ImGui::EndTooltip();
+        }
         if(ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            if(node.resource){m_selectedResource=node.index;m_selectedVersion=node.version;m_flowSelectionIsResource=true;}else {m_selectedPass=node.index;m_flowSelectionIsResource=false;}
+            if(node.resource){m_selectedResource=node.index;m_selectedVersion=node.version;m_flowSelectionIsResource=true;}else {m_selectedPass=node.index;m_flowSelectionIsResource=false;
+                if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))SelectPass(node.index);}
             if(m_graphFocus)m_graphFit=true;
         }
     }
@@ -620,6 +696,7 @@ void OvEditor::Panels::FrameGraph::DrawResourceFlow()
         }
     } else if(m_selectedPass<graph.passes.size()) {
         const auto& selected=graph.passes[m_selectedPass];ImGui::TextWrapped("P%zu  %s",m_selectedPass,selected.name.c_str());
+        DrawPassGpuTiming(m_selectedPass);
         ImGui::SameLine();if(ImGui::SmallButton("Pass details"))SelectPass(m_selectedPass);
         for(size_t i=0;i<std::min<size_t>(selected.accesses.size(),6);++i) {
             const auto& access=selected.accesses[i];ImGui::PushID(static_cast<int>(i));
@@ -742,6 +819,7 @@ void OvEditor::Panels::FrameGraph::DrawTimings()
     ImGui::TextDisabled("Measured frame %llu | snapshot %llu | scope %llu",timings.frameID,graph.captureIndex,graph.scope);
     ImGui::TextWrapped("GPU elapsed intervals; excludes CPU recording, swap/vsync and preview conversion. Empty Passes include timestamp overhead.");
     ImGui::TextDisabled("Click a Pass to freeze this measured plan and inspect its resources.");
+    if(ImGui::Button("Show GPU heat"))ShowGpuHeat(static_cast<size_t>(std::max_element(timings.passNanoseconds.begin(),timings.passNanoseconds.end())-timings.passNanoseconds.begin()));
     std::vector<size_t> order;
     for(size_t p=0;p<graph.passes.size();++p)if(Matches(graph.passes[p].name,m_filter.data()))order.push_back(p);
     if(m_slowestFirst)std::stable_sort(order.begin(),order.end(),[&](size_t a,size_t b){return timings.passNanoseconds[a]>timings.passNanoseconds[b];});
@@ -754,7 +832,7 @@ void OvEditor::Panels::FrameGraph::DrawTimings()
             const auto p=order[row];const auto& pass=graph.passes[p];const auto ns=timings.passNanoseconds[p];
             ImGui::PushID(static_cast<int>(p));ImGui::TableNextRow();ImGui::TableNextColumn();
             if(ImGui::Selectable(std::format("P{}  {}",p,pass.name).c_str(),m_frozen&&m_snapshot->scope==graph.scope&&m_selectedPass==p,ImGuiSelectableFlags_SpanAllColumns)) {
-                m_snapshot=timings.graph;m_frozen=true;m_graphFit=true;SelectPass(p);
+                if(FreezeMeasuredPlan(p))SelectPass(p);
             }
             if(ImGui::IsItemHovered())ImGui::SetTooltip("%s\n%llu ns | measured scope %llu",pass.name.c_str(),ns,graph.scope);
             ImGui::TableNextColumn();ImGui::Text("%llu",pass.viewId);ImGui::TableNextColumn();ImGui::Text("%.3f",ns/1e6);

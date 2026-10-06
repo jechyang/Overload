@@ -90,5 +90,7 @@ Frame Graph 面板使用与诊断数据边界见根目录 FRAMEGRAPH_DIAGNOSTICS
 计时验收也包含在上述两个入口：精确时间戳 oracle、GPU timeout/availability
 不阻塞、取消/查询与帧失败、查询池暖机/容量/域重建/Worker 删除；编辑器实际
 采样开关、热点行选择、测量图冻结、resize、恢复计划顺序、关闭与精确视口像素。
+编辑器入口还验证 GPU heat 的两种真实画布、原生节点颜色和资源颜色保持、
+同规模新图拒绝旧值、测量图恢复、实际按钮与节点点击、冻结 resize 和取消冻结。
 
 自动曝光亮度缓冲的格式、数值对照与多视口内存实测见根目录 FRAMEGRAPH_LUMINANCE_VALIDATION.zh-CN.md。

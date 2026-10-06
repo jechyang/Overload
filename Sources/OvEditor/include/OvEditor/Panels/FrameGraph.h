@@ -31,6 +31,11 @@ namespace OvEditor::Panels
         void DrawResourceFlow();
         void DrawPreview();
         void DrawTimings();
+        void DrawGpuHeatControls();
+        void DrawPassGpuTiming(size_t);
+        const OvRendering::Data::FrameGraphGpuTimings* MatchingGpuTimings() const;
+        bool FreezeMeasuredPlan(size_t);
+        void ShowGpuHeat(size_t);
         void QueuePreview();
         void SelectPass(size_t);
         void SelectResource(size_t);
@@ -46,6 +51,7 @@ namespace OvEditor::Panels
         std::array<char,128> m_filter{};
         bool m_graphFocus=true,m_graphFit=true,m_graphSelectionInitialized=false,m_graphResourceFlow=true,m_flowSelectionIsResource=false;
         bool m_graphVersions=true;
+        bool m_graphGpuHeat=false;
         uint32_t m_selectedVersion=0;
         int m_previewMip=0,m_previewLayer=0,m_previewChannel=0;
         float m_previewExposure=0,m_previewMin=0,m_previewMax=1;

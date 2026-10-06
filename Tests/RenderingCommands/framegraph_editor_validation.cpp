@@ -2,6 +2,7 @@
 #include "editor_thread_validation.cpp"
 #include <OvEditor/Panels/FrameGraph.h>
 #include <imgui_internal.h>
+#include <map>
 
 PFNGLGENQUERIESPROC timingGenerate;
 std::atomic_size_t timingAllocations{0};
@@ -45,6 +46,7 @@ int main(int argc,char** argv) try
         };
         for(int i=0;i<4;++i)tick();
         Require(panel.m_snapshot&&frontend.GetFrameGraphDiagnostics(),"opening the panel did not enable product capture");
+        Require(!panel.m_graphGpuHeat&&!panel.m_gpuTimings,"GPU heat was enabled without a measured sample");
         const auto initial=panel.m_snapshot;
         Require(initial->passes.size()>20&&initial->resources.size()>10&&initial->physicalTransientTargets>0&&initial->physicalTransientBytes>0,"panel did not capture the actual multiview product graph");
         const auto present=std::find_if(initial->passes.begin(),initial->passes.end(),[](const auto& pass){return pass.name=="Window.Present";});
@@ -218,6 +220,7 @@ int main(int argc,char** argv) try
         Require(bool(panel.m_gpuTimings),"GPU timings did not publish a completed product sample");
         Require(panel.m_gpuTimings->graph->passes.size()==panel.m_gpuTimings->passNanoseconds.size()&&panel.m_gpuTimings->totalNanoseconds>0,"GPU timing sample had partial/empty Pass results");
         Require(panel.m_gpuTimings->graph->captureIndex<panel.m_snapshot->captureIndex,"timing fixture did not advance the live plan beyond its measured sample");
+        Require(panel.m_gpuTimings->graph!=panel.m_snapshot,"old GPU values were paired with a newer prepared plan");
         Require(readProductViews()==productBeforeTiming,"GPU timing changed product viewport pixels");
         const auto queries=timingAllocations.load();
         for(int i=0;i<16;++i)tick();
@@ -243,6 +246,54 @@ int main(int argc,char** argv) try
         Require(tabs&&tabs->SelectedTabId==ImHashStr("Passes",0,tabs->ID),"hotspot click did not open actual Pass details");
         image("timings-pass");fixture.views[1]->SetSize({530,255});tick();
         Require(panel.m_gpuTimings==measured&&panel.m_snapshot==measured->graph,"resize replaced frozen timing values or their measured graph");
+        fixture.views[1]->SetSize({545,270});panel.m_graphResourceFlow=true;panel.m_requestedTab=4;tick();tick();
+        activateTimingItem("Show GPU heat");tick();tick();tick();
+        Require(panel.m_frozen&&panel.m_graphGpuHeat&&panel.m_snapshot==measured->graph&&panel.m_gpuTimings==measured&&panel.m_selectedPass==hottest,
+            "GPU heat did not freeze and focus the actual measured graph");
+        Require(tabs->SelectedTabId==ImHashStr("Dependencies",0,tabs->ID)&&resourceNodes()>0,"GPU heat did not open the actual resource-flow canvas");
+        image("gpu-heat-resources");
+        const auto nodeColor=[&](bool resource,size_t index) {
+            const auto node=std::find_if(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[&](const auto& n){return n.resource==resource&&n.index==index;});
+            Require(node!=panel.m_graphNodes.end(),"color probe has no visible graph node");
+            const auto& rect=node->rect;const float inset=4*panel.m_graphZoom;
+            const int left=int(std::ceil(rect[0]+inset)),right=int(std::floor(rect[2]-inset)),top=int(std::ceil(rect[1]+inset)),bottom=int(std::floor(rect[3]-inset));
+            Require(left>=0&&right<1280&&top>=0&&bottom<860&&right>left&&bottom>top,"color probe node is outside the product capture");
+            std::map<std::array<uint8_t,3>,size_t> colors;
+            for(int y=top;y<bottom;++y)for(int x=left;x<right;++x){const auto offset=(size_t(859-y)*1280+x)*4;++colors[{pixels[offset],pixels[offset+1],pixels[offset+2]}];}
+            return std::max_element(colors.begin(),colors.end(),[](const auto& a,const auto& b){return a.second<b.second;})->first;
+        };
+        const auto hotColor=nodeColor(false,hottest);
+        Require(hotColor[0]>hotColor[1]*2&&hotColor[0]>hotColor[2]*2,"most expensive resource-flow Pass was not visibly warm");
+        const auto graphResource=std::find_if(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[](const auto& node){return node.resource;})->index;
+        const auto resourceColor=nodeColor(true,graphResource);
+        const auto activateGraphItem=[&](const char* label) {
+            ImGui::ActivateItemByID(ImHashStr(label,0,ImHashStr("Dependencies",0,tabs->ID)));
+        };
+        activateGraphItem("GPU heat");tick();
+        Require(!panel.m_graphGpuHeat&&panel.m_frozen&&nodeColor(true,graphResource)==resourceColor,"disabling GPU heat changed resource colors or discarded the frozen plan");
+        const auto plainColor=nodeColor(false,hottest);
+        Require(plainColor[2]>plainColor[0],"disabling heat did not restore the selected Pass color");
+        activateGraphItem("GPU heat");tick();panel.m_graphResourceFlow=false;panel.m_graphFit=true;tick();tick();image("gpu-heat-dependencies");
+        const auto dependencyColor=nodeColor(false,hottest);
+        Require(dependencyColor[0]>dependencyColor[1]*2&&dependencyColor[0]>dependencyColor[2]*2,"Pass dependency canvas omitted GPU heat");
+        // A resized/rebuilt plan with the same Pass count must never inherit old costs.
+        auto different=std::make_shared<OvRendering::Data::FrameGraphDiagnostics>(*measured->graph);++different->scope;
+        panel.m_snapshot=different;tick();
+        Require(panel.m_snapshot!=measured->graph&&nodeColor(false,hottest)[2]>nodeColor(false,hottest)[0],"unmeasured plan received stale GPU colors");
+        activateGraphItem("Use measured plan");tick();tick();
+        Require(panel.m_snapshot==measured->graph&&panel.m_gpuTimings==measured,"measured-plan action did not restore the exact GPU sample");
+        // Click a real Pass rectangle, then return to the same hotspot sample.
+        const auto heatNode=std::find_if(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[&](const auto& n){return !n.resource&&n.index!=panel.m_selectedPass;});
+        Require(heatNode!=panel.m_graphNodes.end(),"focused heat graph has no neighboring Pass to select");
+        const auto clickedPass=heatNode->index;const auto heatRect=heatNode->rect;input.AddMousePosEvent((heatRect[0]+heatRect[2])*.5f,(heatRect[1]+heatRect[3])*.5f);
+        input.AddMouseButtonEvent(ImGuiMouseButton_Left,true);tick();input.AddMouseButtonEvent(ImGuiMouseButton_Left,false);tick();input.AddMousePosEvent(-100,-100);
+        Require(panel.m_selectedPass==clickedPass&&panel.m_snapshot==measured->graph,"GPU graph node click lost its measured Pass");
+        fixture.views[1]->SetSize({525,250});tick();Require(panel.m_snapshot==measured->graph&&panel.m_gpuTimings==measured,"resize replaced the frozen GPU heat graph");
+        activateGraphItem("GPU hotspots");tick();tick();tick();
+        Require(tabs->SelectedTabId==ImHashStr("Timings",0,tabs->ID)&&panel.m_gpuTimings==measured,"GPU graph could not return to its measured hotspot list");
+        ImGui::ActivateItemByID(ImHashStr("Freeze plan",0,window->ID));tick();tick();
+        Require(!panel.m_frozen&&!panel.m_graphGpuHeat&&panel.m_snapshot!=measured->graph,"unfreezing GPU heat did not restore the live plan and remove heat");
+        Require(readProductViews()[0]==productBeforeTiming[0]&&readProductViews()[2]==productBeforeTiming[2],"GPU heat changed an unchanged product viewport");
         panel.m_frozen=false;fixture.views[1]->SetSize({545,270});panel.m_requestedTab=4;tick();tick();
         activateTimingItem("Slowest first");tick();Require(!panel.m_slowestFirst,"hotspot order could not switch back to plan order");image("timings-order");
         activateTimingItem("Capture GPU timings");tick();Require(!panel.WantsGpuTimings()&&!frontend.GetFrameGraphGpuTimings(),"disabling timing kept collecting or retaining query pools");
@@ -254,9 +305,9 @@ int main(int argc,char** argv) try
         Require(after.evictions>before.evictions&&after.allocations>before.allocations&&after.idleBudget==before.idleBudget&&!panel.m_requests.trimIdle,"panel trim did not evict idle scratch and rebuild the next product frame safely");
         panel.Close();Require(!panel.m_snapshot,"closing the panel kept its frozen values");tick();
         Require(!panel.m_previewImage&&!frontend.GetFrameGraphPreview(),"closed Frame Graph retained preview state");
-        Require(!panel.m_gpuTimings&&!frontend.GetFrameGraphGpuTimings()&&!panel.WantsGpuTimings(),"closed Frame Graph retained timing state");
+        Require(!panel.m_gpuTimings&&!frontend.GetFrameGraphGpuTimings()&&!panel.WantsGpuTimings()&&!panel.m_graphGpuHeat,"closed Frame Graph retained timing state");
         Require(!frontend.GetFrameGraphDiagnostics()&&!panel.WantsCapture(),"closed panel kept collecting diagnostics");
-        std::printf("PASS: Frame Graph panel on %s owner: versions, preview, timing enable/retirement/matched graph, warm query reuse, actual hotspot click/freeze/resize, plan ordering, disable/close, exact product pixels, thread guards and budget/trim; %zu passes / %zu resources\n",threaded?"Render":"Main",initial->passes.size(),initial->resources.size());
+        std::printf("PASS: Frame Graph panel on %s owner: versions, preview, timing, query reuse, hotspot click, GPU heat on both canvases, native colors/resource preservation, stale sample rejection, node selection, freeze/resize/resume, disable/close, exact product pixels, thread guards and budget/trim; %zu passes / %zu resources\n",threaded?"Render":"Main",initial->passes.size(),initial->resources.size());
     }
     return 0;
 }
