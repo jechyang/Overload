@@ -26,6 +26,13 @@
   再点 Capture。Texture Debugger 可打开同一份图像，Clear image 释放面板图像。
   冻结后保留已有图像，取消冻结才能发起新抓取。未初始化、Discard、越界的范围
   或变化后的计划会显示原因，不会用错误像素替换上一次成功图像。
+- Timings：启用 Capture GPU timings 后每 4 份计划采样一次。显示每个 Pass
+  的 GPU 毫秒、占 Pass 总和的比例和视图编号，默认按耗时降序排列；取消
+  Slowest first 恢复产品计划顺序，支持名称筛选。点击行会冻结该次测量的
+  计划并跳到 Pass 详情，详情显示该次耗时，可继续检查资源和依赖。
+  按住鼠标期间保持列表数据稳定，防止新样本重排热点导致点击取消。
+  结果标注实际测量的 frame/snapshot/scope；冻结后 resize 不改变已有结果。
+  关闭采样释放查询池，已显示的值可继续查看；关闭面板释放所有诊断值。
 - 支持名称筛选和只看 transient。未命名的导入附件按首次使用的 Pass 和用途
   显示名称。筛选后详情跟随可见项；空结果不会继续显示不匹配的详情。
 - Freeze plan 固定当前计划。取消冻结后恢复采集；冻结期间池计数仍保持更新。
@@ -63,6 +70,26 @@ UI 只在 RenderFrame 成功完成 GPU 退役后发布图像；取消或执行�
 命令，不改变原 Pass 顺序、资源复用或产品输出。转换恢复程序、texture/sampler/
 image 绑定与活动 texture unit，保留 FBO、viewport 和像素 pack/unpack 状态。
 当前不支持 backbuffer、多重采样和整数纹理预览；深度显示原始值，不做线性化。
+
+### GPU 耗时边界
+
+GPU 计时默认关闭，与诊断计划的采集开关独立。每个 Pass 两个 `GL_TIMESTAMP`
+查询，在命令实际执行的 GL consumer 上发出；编码 Worker 和 UI 线程不查询 GL。
+查询只在 RenderFrame 成功完成 GPU fence 后读取，且先检查每个结果是否可用。
+不可用、查询失败、取消或帧失败时不发布部分结果，也不等待或强制完成 GPU。
+`OnRetired` 诊断观察者每帧执行一次，异常不能使产品帧失败。
+
+最多保留 3 个在途样本，每份最多 512 个 Pass；满容量或超大计划跳过采样。
+查询按样本槽复用，暖机后相同规模不继续分配；最大 3072 个查询对象，停止
+采样或关闭时随最后的在途使用退役。查询使用 baregl 删除队列，Worker 释放
+不执行 GL，domain close 会删除剩余查询并使旧域失效；新域重新建立查询。
+结果只保存测量计划的值快照、帧号和纳秒数组，不含查询、源纹理或池 lease。
+
+毫秒数是 Pass 前后 GPU 时间戳的差，不是 CPU 编码时间或活跃 GPU 利用率。
+总和只相加这些区间；实际 swap/vsync 在产品计划之外，不纳入计时。
+一次性预览转换插在 Pass 区间之外，也不计入 Pass 总和。空 Pass 仍可能显示
+查询开销；profiling 本身存在开销。结果与其自身的计划一起保留，不把老帧
+的数组套在新的计划上；点击热点时冻结这一份实际测量的图。
 
 打开面板才在 PrepareFrame 末尾复制诊断值，冻结后停止采集；关闭时释放面板值，
 在同一次产品录制中关闭 Frontend 采集并释放其值。关闭状态不查询池统计，不复制
@@ -106,27 +133,33 @@ node Tests/Skinning/run-validation.mjs Debug --framegraph-editor --framegraph-ba
 
 检查覆盖：
 
-0. 预览在 alias 覆盖前得到指定 v1/v2 内容；RGB/Red/Alpha、24 个 cube
+0. 计时查询在 GPU 退役前不读取，availability 为 false 时零 result 读取；
+   精确时间戳 oracle 检查 Pass 顺序、帧/图对应及排除预览转换。暖机复用、
+   3 样本/512 Pass 上限、取消/失败不发布、查询异常不影响产品帧、观察者只
+   执行一次、冻结值由无 GL Worker 读取、域重建、Worker 删除和产品像素不变。
+   Main/Render 两种编辑器模式实际操作采样开关、点击最慢行冻结测量图、
+   resize、切回计划顺序、关闭采样和面板；暖机不分配，F0 图像基线不变。
+1. 预览在 alias 覆盖前得到指定 v1/v2 内容；RGB/Red/Alpha、24 个 cube
    face/mip、深度比较模式覆盖、depth/stencil renderbuffer resolve、R32F、
    HDR 控制和尺寸上限。拒绝未初始化 v0、Discard、过期选择和无效范围；
    TrimIdle 后源纹理删除，已有图像仍有效。GL 绑定与像素 pack 状态保持不变。
    Main/Render 两种编辑器模式直接触发 ImGui Capture/Clear image 按钮，验证
    完成后发布、冻结/resize、取消/失败保留旧图、Texture Debugger 跳转和独立
    关闭、关闭面板释放状态；抓取前后三个产品视口图像逐字节一致。
-1. 实际 GL aliasing 的值快照：逻辑/峰值/物理字节、存活区间、访问和依赖、
+2. 实际 GL aliasing 的值快照：逻辑/峰值/物理字节、存活区间、访问和依赖、
    未命名导入资源的用途名称，拒绝 foreign compiled scope 和不一致的最终版本。
    版本覆盖 Clear/Load、导入初始 v0、cube 不相交写入、mip 生成、局部保留、Discard、
    Export；捕获前后池分配数和存储字节不变。
-2. 留存冻结诊断值，同时释放 mapping、执行 TrimIdle，弱 texture owner 失效，
+3. 留存冻结诊断值，同时释放 mapping、执行 TrimIdle，弱 texture owner 失效，
    原 GL texture 不存在；冻结值仍可由无 GL Worker 读取。
-3. TrimIdle 删除两帧预留的闲置 spare，同时保留 active lease；外部 UI pin 也
+4. TrimIdle 删除两帧预留的闲置 spare，同时保留 active lease；外部 UI pin 也
    保持有效；预算和帧预留不变。
-4. 原池的 GPU timeout/退役、取消、编码/执行/fence/wait 失败、回滚、关闭和
+5. 原池的 GPU timeout/退役、取消、编码/执行/fence/wait 失败、回滚、关闭和
    context domain 重建继续检查；四视口共享和禁用复用的图像逐字节一致；
    16 种后处理组合 × 4 种尺寸，暖池零分配。
-5. 4 种自定义管线配置 × 串行/单 Worker/双 Worker，双目标精确图像及
+6. 4 种自定义管线配置 × 串行/单 Worker/双 Worker，双目标精确图像及
    7 种无效计划/owner 拒绝。
-6. 真实 Editor Main/Render owner 多视口面板：默认关闭、全图/聚焦依赖、Pass/资源
+7. 真实 Editor Main/Render owner 多视口面板：默认关闭、全图/聚焦依赖、Pass/资源
    版本数据流（每条读/写边匹配访问版本和节点）、v0/Load、真实 ImGui 版本节点点击、
    非版本资源总览、筛选、空结果、
    自动回收开关、
@@ -146,7 +179,7 @@ node Tests/Skinning/run-validation.mjs Debug --framegraph-editor --framegraph-ba
 - `Build/JobsValidation/Skinning/{Debug,Release}-framegraph-command-list/current/`
 - `Build/JobsValidation/Skinning/{Debug,Release}-pipeline-command-list/current/`
 - `Build/JobsValidation/Skinning/{Debug,Release}-framegraph-editor-command-list-editor-ui/current/`
-  的 `run.log`、`framegraph-{main,render}-{passes,resources,preview-color}.rgba`、尺寸文件；
+  的 `run.log`、`framegraph-{main,render}-{passes,resources,preview-color,timings,timings-pass,timings-order}.rgba`、尺寸文件；
   生成的 PNG 用于视觉检查。
 - 相应入口目录的 `result.json`，诊断面板结果含 `framegraphEditor: true`，
   `framegraphComparison.files` 记录两份 F0 检查。

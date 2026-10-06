@@ -43,6 +43,7 @@ namespace
         case PROGRAM: glDeleteProgram(id); break;
         case SHADER: glDeleteShader(id); break;
         case VERTEX_ARRAY: glDeleteVertexArrays(1, &id); break;
+        case QUERY: glDeleteQueries(1, &id); break;
         case NONE: break;
         }
     }

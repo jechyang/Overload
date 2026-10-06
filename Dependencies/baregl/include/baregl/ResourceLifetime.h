@@ -5,7 +5,7 @@
 
 namespace baregl
 {
-    enum class ResourceKind { NONE, TEXTURE, BUFFER, FRAMEBUFFER, RENDERBUFFER, PROGRAM, SHADER, VERTEX_ARRAY };
+    enum class ResourceKind { NONE, TEXTURE, BUFFER, FRAMEBUFFER, RENDERBUFFER, PROGRAM, SHADER, VERTEX_ARRAY, QUERY };
     namespace detail { struct DeletionState; struct DeletionRecord; }
 
     // Bind once on the current GL owner before constructing GPU objects. CPU

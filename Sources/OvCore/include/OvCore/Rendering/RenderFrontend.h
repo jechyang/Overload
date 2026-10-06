@@ -10,6 +10,7 @@
 #include <OvRendering/Data/FrameGraphDiagnostics.h>
 #include <OvRendering/Data/FrameGraphPreview.h>
 #include <OvRendering/Data/RenderFrame.h>
+#include <OvRendering/Data/FrameGraphGpuTimings.h>
 
 namespace OvCore::Rendering
 {
@@ -39,10 +40,13 @@ namespace OvCore::Rendering
         void RequestFrameGraphPreview(const OvRendering::Data::FrameGraphPreviewRequest&,OvRendering::Data::RenderFrame::Completion);
         std::shared_ptr<const PreviewTicket> GetFrameGraphPreview() const;
         void ClearFrameGraphPreview();
+        void SetGpuTimingCaptureEnabled(bool);
+        std::shared_ptr<const OvRendering::Data::FrameGraphGpuTimings> GetFrameGraphGpuTimings() const;
         std::unique_ptr<SceneFrame> PrepareFrame(std::unique_ptr<SceneFrame> frame,
             OvRendering::Data::PipelineState state, OvTools::Jobs::JobSystem* jobs = nullptr, const std::atomic_bool* cancel = nullptr) const;
         OvRendering::Data::RenderCommandList RecordFrame(std::unique_ptr<SceneFrame> frame,
-            OvTools::Jobs::JobSystem* jobs = nullptr, const std::atomic_bool* cancel = nullptr,bool deferEncoding=false) const;
+            OvTools::Jobs::JobSystem* jobs = nullptr, const std::atomic_bool* cancel = nullptr,bool deferEncoding=false,
+            OvRendering::Data::RenderFrame* timingFrame=nullptr) const;
         std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> ExtractScene(const SceneRenderRequest& p_request) const;
         std::shared_ptr<const OvRendering::Data::PreparedFrameData> Prepare(
             std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> p_scene,
@@ -61,6 +65,10 @@ namespace OvCore::Rendering
         mutable std::optional<OvRendering::Data::FrameGraphPreviewRequest> m_previewRequest;
         mutable std::shared_ptr<PreviewTicket> m_preview;
         uint64_t m_previewSequence=0;
+        mutable std::unique_ptr<OvRendering::Data::FrameGraphGpuTimer> m_gpuTimer;
+        mutable std::vector<std::shared_ptr<OvRendering::Data::FrameGraphGpuTimingCapture>> m_gpuPending;
+        mutable std::shared_ptr<const OvRendering::Data::FrameGraphGpuTimings> m_gpuTimings;
+        mutable uint64_t m_gpuSampleCounter=0;
         std::thread::id m_owner = std::this_thread::get_id();
         OvRendering::Core::MeshCommandRecorder m_recorder;
         mutable OvRendering::Core::MeshCommandRecorder::ProgramCache m_programs;

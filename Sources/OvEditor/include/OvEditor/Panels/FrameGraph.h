@@ -14,6 +14,8 @@ namespace OvEditor::Panels
         struct PoolRequests { std::optional<uint64_t> budget,unusedFrameLimit;bool trimIdle=false; };
         FrameGraph(const std::string&,bool,const OvUI::Settings::PanelWindowSettings&);
         bool WantsCapture() const;
+        bool WantsGpuTimings() const;
+        void UpdateGpuTimings(std::shared_ptr<const OvRendering::Data::FrameGraphGpuTimings>);
         void Update(std::shared_ptr<const OvRendering::Data::FrameGraphDiagnostics>,const OvRendering::Core::RenderTargetPool::Statistics&);
         PoolRequests TakePoolRequests();
         std::optional<OvRendering::Data::FrameGraphPreviewRequest> TakePreviewRequest();
@@ -28,11 +30,14 @@ namespace OvEditor::Panels
         void DrawDependencies();
         void DrawResourceFlow();
         void DrawPreview();
+        void DrawTimings();
         void QueuePreview();
         void SelectPass(size_t);
         void SelectResource(size_t);
         const std::thread::id m_uiThread=std::this_thread::get_id();
         std::shared_ptr<const OvRendering::Data::FrameGraphDiagnostics> m_snapshot;
+        std::shared_ptr<const OvRendering::Data::FrameGraphGpuTimings> m_gpuTimings;
+        bool m_captureGpuTimings=false,m_slowestFirst=true;
         OvRendering::Core::RenderTargetPool::Statistics m_pool;
         PoolRequests m_requests;
         bool m_frozen=false,m_transientOnly=false,m_budgetEdited=false;

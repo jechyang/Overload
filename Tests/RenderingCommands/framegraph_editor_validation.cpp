@@ -3,6 +3,15 @@
 #include <OvEditor/Panels/FrameGraph.h>
 #include <imgui_internal.h>
 
+PFNGLGENQUERIESPROC timingGenerate;
+std::atomic_size_t timingAllocations{0};
+std::vector<GLuint> timingQueryIDs;
+void APIENTRY FrameGraphGenerateQueries(GLsizei count,GLuint* ids)
+{
+    Require(std::this_thread::get_id()==renderOwner&&glfwGetCurrentContext(),"timing query allocation escaped the GL owner");
+    timingGenerate(count,ids);timingAllocations+=count;timingQueryIDs.insert(timingQueryIDs.end(),ids,ids+count);
+}
+
 int main(int argc,char** argv) try
 {
     producer=std::this_thread::get_id();
@@ -118,7 +127,7 @@ int main(int argc,char** argv) try
         panel.m_frozen=true;const auto frozen=panel.m_snapshot;tick();
         fixture.views[1]->SetSize({520,250});tick();
         Require(panel.m_snapshot==frozen&&!frontend.GetFrameGraphDiagnostics(),"freeze changed the captured graph or left live capture enabled");
-        std::array<bool,7> rejected{};bool cpuRead=false;
+        std::array<bool,10> rejected{};bool cpuRead=false;
         std::thread worker([&] {
             cpuRead=frozen->passes.back().name=="Window.Present"&&!glfwGetCurrentContext();
             try{panel.Update({},{});}catch(const std::logic_error&){rejected[0]=true;}
@@ -128,6 +137,9 @@ int main(int argc,char** argv) try
             try{frontend.RequestFrameGraphPreview({},{});}catch(const std::logic_error&){rejected[4]=true;}
             try{frontend.ClearFrameGraphPreview();}catch(const std::logic_error&){rejected[5]=true;}
             try{panel.UpdatePreview({});}catch(const std::logic_error&){rejected[6]=true;}
+            try{frontend.GetFrameGraphGpuTimings();}catch(const std::logic_error&){rejected[7]=true;}
+            try{frontend.SetGpuTimingCaptureEnabled(true);}catch(const std::logic_error&){rejected[8]=true;}
+            try{panel.UpdateGpuTimings({});}catch(const std::logic_error&){rejected[9]=true;}
         });worker.join();
         Require(cpuRead&&std::all_of(rejected.begin(),rejected.end(),[](bool value){return value;}),"diagnostic state escaped UI/producer ownership or frozen values required GL");
         bool invalidCompletion=false;
@@ -192,6 +204,49 @@ int main(int argc,char** argv) try
         Require(!panel.m_previewImage&&!panel.m_previewRequest&&!panel.m_previewTicket&&!frontend.GetFrameGraphPreview()&&debugger.m_capture==captured,
             "clearing Frame Graph did not release preview state or invalidated an open debugger image");
         debugger.Close();Require(!debugger.m_capture,"closing Texture Debugger retained a captured preview");
+        Require(!panel.WantsGpuTimings()&&!frontend.GetFrameGraphGpuTimings(),"GPU timing was enabled without user selection");
+        OnOwner(context,[](auto&){timingGenerate=glad_glGenQueries;glad_glGenQueries=FrameGraphGenerateQueries;timingAllocations=0;timingQueryIDs.clear();});
+        panel.m_requestedTab=4;tick();tick();
+        const auto activateTimingItem=[&](const char* label) {
+            const auto window=ImGui::FindWindowByName((panel.name+panel.GetPanelID()).c_str());
+            const auto tabs=ImHashStr("graph-tabs",0,window->ID),tab=ImHashStr("Timings",0,tabs);
+            ImGui::ActivateItemByID(ImHashStr(label,0,tab));
+        };
+        const auto productBeforeTiming=readProductViews();activateTimingItem("Capture GPU timings");tick();
+        Require(panel.WantsGpuTimings()&&!panel.m_gpuTimings,"GPU timings did not enable on the product boundary or published before retirement");
+        for(int i=0;i<15;++i)tick();
+        Require(bool(panel.m_gpuTimings),"GPU timings did not publish a completed product sample");
+        Require(panel.m_gpuTimings->graph->passes.size()==panel.m_gpuTimings->passNanoseconds.size()&&panel.m_gpuTimings->totalNanoseconds>0,"GPU timing sample had partial/empty Pass results");
+        Require(panel.m_gpuTimings->graph->captureIndex<panel.m_snapshot->captureIndex,"timing fixture did not advance the live plan beyond its measured sample");
+        Require(readProductViews()==productBeforeTiming,"GPU timing changed product viewport pixels");
+        const auto queries=timingAllocations.load();
+        for(int i=0;i<16;++i)tick();
+        Require(queries>0&&timingAllocations==queries&&queries<=OvRendering::Data::FrameGraphGpuTimer::MaxPending*OvRendering::Data::FrameGraphGpuTimer::MaxPasses*2,"warm GPU timing kept allocating queries or exceeded capacity");
+        auto& input=ImGui::GetIO();input.AddMousePosEvent(-100,-100);input.AddMouseButtonEvent(ImGuiMouseButton_Left,true);tick();
+        const auto held=panel.m_gpuTimings;
+        auto incoming=std::make_shared<OvRendering::Data::FrameGraphGpuTimings>(*held);incoming->passNanoseconds[0]+=1000000;incoming->totalNanoseconds+=1000000;
+        panel.UpdateGpuTimings(incoming);Require(panel.m_gpuTimings==held&&!panel.m_frozen,"live timing rows changed during a held mouse press");
+        input.AddMouseButtonEvent(ImGuiMouseButton_Left,false);tick();tick();
+        image("timings");
+        // Click the first visible hotspot in the actual ImGui scrolling table.
+        const auto window=ImGui::FindWindowByName((panel.name+panel.GetPanelID()).c_str());
+        const auto tab=ImHashStr("Timings",0,ImHashStr("graph-tabs",0,window->ID));
+        const auto table=ImGui::GetCurrentContext()->Tables.GetByKey(ImHashStr("timing-table",0,tab));
+        Require(table!=nullptr,"GPU hotspot table was not rendered");
+        input.AddMousePosEvent(table->Columns[0].MinX+20,table->OuterRect.Min.y+ImGui::GetTextLineHeightWithSpacing()*1.5f);
+        input.AddMouseButtonEvent(ImGuiMouseButton_Left,true);tick();input.AddMouseButtonEvent(ImGuiMouseButton_Left,false);tick();input.AddMousePosEvent(-100,-100);
+        const auto measured=panel.m_gpuTimings;const auto hottest=static_cast<size_t>(std::max_element(measured->passNanoseconds.begin(),measured->passNanoseconds.end())-measured->passNanoseconds.begin());
+        Require(panel.m_frozen&&panel.m_snapshot==measured->graph&&panel.m_selectedPass==hottest&&!frontend.GetFrameGraphGpuTimings(),"clicking the hottest Pass did not freeze its measured plan or disable queries");
+        OnOwner(context,[](auto&){for(const auto id:timingQueryIDs)Require(!glIsQuery(id),"freezing retained timing query objects");});
+        tick();tick();
+        const auto tabs=ImGui::GetCurrentContext()->TabBars.GetByKey(ImHashStr("graph-tabs",0,window->ID));
+        Require(tabs&&tabs->SelectedTabId==ImHashStr("Passes",0,tabs->ID),"hotspot click did not open actual Pass details");
+        image("timings-pass");fixture.views[1]->SetSize({530,255});tick();
+        Require(panel.m_gpuTimings==measured&&panel.m_snapshot==measured->graph,"resize replaced frozen timing values or their measured graph");
+        panel.m_frozen=false;fixture.views[1]->SetSize({545,270});panel.m_requestedTab=4;tick();tick();
+        activateTimingItem("Slowest first");tick();Require(!panel.m_slowestFirst,"hotspot order could not switch back to plan order");image("timings-order");
+        activateTimingItem("Capture GPU timings");tick();Require(!panel.WantsGpuTimings()&&!frontend.GetFrameGraphGpuTimings(),"disabling timing kept collecting or retaining query pools");
+        OnOwner(context,[](auto&){for(const auto id:timingQueryIDs)Require(!glIsQuery(id),"disabled timing retained query objects");glad_glGenQueries=timingGenerate;});
         panel.m_requests.budget=128ull*1024*1024;tick();
         Require(pool->GetStatistics().idleBudget==128ull*1024*1024&&!panel.m_requests.budget,"panel budget request was not applied exactly once at the product boundary");
         const auto before=pool->GetStatistics();Require(before.idleTargets>0,"trim fixture has no retired scratch");
@@ -199,8 +254,9 @@ int main(int argc,char** argv) try
         Require(after.evictions>before.evictions&&after.allocations>before.allocations&&after.idleBudget==before.idleBudget&&!panel.m_requests.trimIdle,"panel trim did not evict idle scratch and rebuild the next product frame safely");
         panel.Close();Require(!panel.m_snapshot,"closing the panel kept its frozen values");tick();
         Require(!panel.m_previewImage&&!frontend.GetFrameGraphPreview(),"closed Frame Graph retained preview state");
+        Require(!panel.m_gpuTimings&&!frontend.GetFrameGraphGpuTimings()&&!panel.WantsGpuTimings(),"closed Frame Graph retained timing state");
         Require(!frontend.GetFrameGraphDiagnostics()&&!panel.WantsCapture(),"closed panel kept collecting diagnostics");
-        std::printf("PASS: Frame Graph panel on %s owner: version flow and node click, bounded one-shot color preview, GPU completion publication, frozen image/resize, cancel/failure guards, Texture Debugger handoff/clear/close, filter, auto-expiry and budget/trim; %zu passes / %zu resources\n",threaded?"Render":"Main",initial->passes.size(),initial->resources.size());
+        std::printf("PASS: Frame Graph panel on %s owner: versions, preview, timing enable/retirement/matched graph, warm query reuse, actual hotspot click/freeze/resize, plan ordering, disable/close, exact product pixels, thread guards and budget/trim; %zu passes / %zu resources\n",threaded?"Render":"Main",initial->passes.size(),initial->resources.size());
     }
     return 0;
 }

@@ -108,13 +108,23 @@ OvEditor::Panels::FrameGraph::FrameGraph(const std::string& title,bool opened,co
 {
     minSize={520,360};CreateWidget<Contents>([this]{DrawContents();});
     CloseEvent += [this]{RequireUIThread();m_snapshot.reset();m_graphNodes.clear();m_graphEdges.clear();m_frozen=false;m_graphFit=true;
-        m_previewRequest.reset();m_previewTicket.reset();m_previewImage.reset();m_previewStatus.clear();m_previewSequence=0;};
+        m_previewRequest.reset();m_previewTicket.reset();m_previewImage.reset();m_previewStatus.clear();m_previewSequence=0;m_gpuTimings.reset();m_captureGpuTimings=false;};
 }
 void OvEditor::Panels::FrameGraph::RequireUIThread() const
 {
     if(std::this_thread::get_id()!=m_uiThread)throw std::logic_error("Frame Graph panel requires its UI thread");
 }
 bool OvEditor::Panels::FrameGraph::WantsCapture() const {RequireUIThread();return IsOpened()&&!m_frozen;}
+bool OvEditor::Panels::FrameGraph::WantsGpuTimings() const {RequireUIThread();return WantsCapture()&&m_captureGpuTimings;}
+void OvEditor::Panels::FrameGraph::UpdateGpuTimings(std::shared_ptr<const FrameGraphGpuTimings> timings)
+{
+    RequireUIThread();
+    if(!IsOpened()){m_gpuTimings.reset();return;}
+    // Keep sorted rows under the pointer stable from press to release. A new
+    // sample may reorder equal-cost Passes and otherwise cancel the click.
+    const bool pressing=ImGui::GetCurrentContext()&&ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    if(!m_frozen&&!pressing&&timings)m_gpuTimings=std::move(timings);
+}
 void OvEditor::Panels::FrameGraph::Update(std::shared_ptr<const FrameGraphDiagnostics> snapshot,const OvRendering::Core::RenderTargetPool::Statistics& pool)
 {
     RequireUIThread();m_pool=pool;
@@ -200,6 +210,7 @@ void OvEditor::Panels::FrameGraph::DrawContents()
         if(ImGui::BeginTabItem("Passes",nullptr,request==0?ImGuiTabItemFlags_SetSelected:0)){DrawPasses();ImGui::EndTabItem();}
         if(ImGui::BeginTabItem("Resources",nullptr,request==1?ImGuiTabItemFlags_SetSelected:0)){DrawResources();ImGui::EndTabItem();}
         if(ImGui::BeginTabItem("Preview",nullptr,request==3?ImGuiTabItemFlags_SetSelected:0)){DrawPreview();ImGui::EndTabItem();}
+        if(ImGui::BeginTabItem("Timings",nullptr,request==4?ImGuiTabItemFlags_SetSelected:0)){DrawTimings();ImGui::EndTabItem();}
         ImGui::EndTabBar();
     }
 }
@@ -226,6 +237,11 @@ void OvEditor::Panels::FrameGraph::DrawPasses()
     if(visible.empty()){ImGui::TextDisabled("No passes match this filter");ImGui::EndChild();return;}
     const auto selectedPass=m_selectedPass;
     const auto& pass=graph.passes[selectedPass];ImGui::TextWrapped("P%zu  %s",selectedPass,pass.name.c_str());
+    if(m_gpuTimings&&m_gpuTimings->graph->scope==graph.scope) {
+        const auto ns=m_gpuTimings->passNanoseconds[selectedPass];
+        ImGui::Text("GPU %.3f ms | %.1f%% of Pass sum | frame %llu",ns/1e6,m_gpuTimings->totalNanoseconds?double(ns)*100/m_gpuTimings->totalNanoseconds:0,m_gpuTimings->frameID);
+        if(ImGui::SmallButton("GPU hotspots"))m_requestedTab=4;
+    }
     if(ImGui::SmallButton("Show dependencies")){m_requestedTab=2;m_graphFocus=true;m_graphFit=true;}
     ImGui::TextDisabled("View %llu | %zu accesses",pass.viewId,pass.accesses.size());
     for(size_t i=0;i<pass.accesses.size();++i) {
@@ -713,4 +729,39 @@ void OvEditor::Panels::FrameGraph::DrawPreview()
         ImGui::Image(texture.id,{image.width*scale,image.height*scale},{0,1},{1,0});
     } else ImGui::TextDisabled("Select a resource/version, mip and channel, then Capture.");
     ImGui::EndChild();
+}
+
+void OvEditor::Panels::FrameGraph::DrawTimings()
+{
+    ImGui::BeginDisabled(m_frozen);ImGui::Checkbox("Capture GPU timings",&m_captureGpuTimings);ImGui::EndDisabled();
+    ImGui::SameLine();ImGui::Checkbox("Slowest first",&m_slowestFirst);
+    ImGui::TextDisabled("Samples every 4 plans; reads after GPU completion without waiting.");
+    if(!m_gpuTimings){ImGui::TextWrapped(m_frozen?"Unfreeze to capture GPU timings.":m_captureGpuTimings?"Waiting for a successful GPU sample.":"Enable Capture GPU timings to measure Pass costs.");return;}
+    const auto& timings=*m_gpuTimings;const auto& graph=*timings.graph;
+    ImGui::Text("Pass GPU sum: %.3f ms | %zu passes",timings.totalNanoseconds/1e6,graph.passes.size());
+    ImGui::TextDisabled("Measured frame %llu | snapshot %llu | scope %llu",timings.frameID,graph.captureIndex,graph.scope);
+    ImGui::TextWrapped("GPU elapsed intervals; excludes CPU recording, swap/vsync and preview conversion. Empty Passes include timestamp overhead.");
+    ImGui::TextDisabled("Click a Pass to freeze this measured plan and inspect its resources.");
+    std::vector<size_t> order;
+    for(size_t p=0;p<graph.passes.size();++p)if(Matches(graph.passes[p].name,m_filter.data()))order.push_back(p);
+    if(m_slowestFirst)std::stable_sort(order.begin(),order.end(),[&](size_t a,size_t b){return timings.passNanoseconds[a]>timings.passNanoseconds[b];});
+    if(ImGui::BeginTable("timing-table",4,ImGuiTableFlags_BordersInner|ImGuiTableFlags_RowBg|ImGuiTableFlags_Resizable|ImGuiTableFlags_ScrollY,{0,0})) {
+        ImGui::TableSetupColumn("Pass");ImGui::TableSetupColumn("View",ImGuiTableColumnFlags_WidthFixed,45);
+        ImGui::TableSetupColumn("GPU ms",ImGuiTableColumnFlags_WidthFixed,75);ImGui::TableSetupColumn("Share",ImGuiTableColumnFlags_WidthFixed,125);ImGui::TableHeadersRow();
+        if(order.empty()){ImGui::TableNextRow();ImGui::TableNextColumn();ImGui::TextDisabled("No matches");}
+        ImGuiListClipper clipper;clipper.Begin(static_cast<int>(order.size()));
+        while(clipper.Step())for(int row=clipper.DisplayStart;row<clipper.DisplayEnd;++row) {
+            const auto p=order[row];const auto& pass=graph.passes[p];const auto ns=timings.passNanoseconds[p];
+            ImGui::PushID(static_cast<int>(p));ImGui::TableNextRow();ImGui::TableNextColumn();
+            if(ImGui::Selectable(std::format("P{}  {}",p,pass.name).c_str(),m_frozen&&m_snapshot->scope==graph.scope&&m_selectedPass==p,ImGuiSelectableFlags_SpanAllColumns)) {
+                m_snapshot=timings.graph;m_frozen=true;m_graphFit=true;SelectPass(p);
+            }
+            if(ImGui::IsItemHovered())ImGui::SetTooltip("%s\n%llu ns | measured scope %llu",pass.name.c_str(),ns,graph.scope);
+            ImGui::TableNextColumn();ImGui::Text("%llu",pass.viewId);ImGui::TableNextColumn();ImGui::Text("%.3f",ns/1e6);
+            ImGui::TableNextColumn();const float share=timings.totalNanoseconds?float(double(ns)/timings.totalNanoseconds):0;
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram,ImVec4(.35f+share*.6f,.65f-share*.3f,.35f,1));
+            ImGui::ProgressBar(share,{ImGui::GetContentRegionAvail().x,ImGui::GetTextLineHeight()},std::format("{:.1f}%",share*100).c_str());ImGui::PopStyleColor();ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
 }

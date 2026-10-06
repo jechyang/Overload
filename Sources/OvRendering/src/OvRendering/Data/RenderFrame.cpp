@@ -17,6 +17,7 @@ namespace OvRendering::Data
         explicit Storage(uint64_t id) : shared(std::make_shared<Shared>(id)) {}
         std::shared_ptr<Shared> shared;
         RenderCommandList commands;
+        std::vector<std::function<void(bool)>> observers;
         GLsync fence = nullptr;
     };
     RenderFrame::RenderFrame(uint64_t id) : m_storage(std::make_unique<Storage>(id)) {}
@@ -44,6 +45,11 @@ namespace OvRendering::Data
     }
     RenderFrame::Completion RenderFrame::GetCompletion() const
     { return Completion(m_storage ? m_storage->shared : nullptr); }
+    void RenderFrame::OnRetired(std::function<void(bool)> observer)
+    {
+        if(!m_storage||GetCompletion().GetState()!=State::RECORDING||!observer)throw std::invalid_argument("Retirement observer requires a recording frame");
+        m_storage->observers.push_back(std::move(observer));
+    }
     size_t RenderFrame::GetExecutedCommandCount() const { return m_storage?m_storage->commands.GetExecutedCount():0; }
     void RenderFrame::Append(RenderCommandList&& commands) { AppendImpl(std::move(commands), false); }
     void RenderFrame::AppendRecording(RenderCommandList&& commands) { AppendImpl(std::move(commands), true); }
@@ -123,6 +129,9 @@ namespace OvRendering::Data
     {
         auto& storage = *m_storage;
         if (!gpuSuccess) storage.commands.InvalidateHistories();
+        const bool success=gpuSuccess&&storage.shared->state.load(std::memory_order_relaxed)==State::SUBMITTED;
+        for(const auto& observer:storage.observers)try{observer(success);}catch(...){/* Diagnostics cannot fail a product frame. */}
+        storage.observers.clear();
         storage.commands.ReleaseRetained();
         if (gpuSuccess && storage.shared->state.load(std::memory_order_relaxed) == State::SUBMITTED)
             storage.shared->state.store(State::COMPLETED, std::memory_order_release);

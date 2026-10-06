@@ -13,7 +13,7 @@ void RenderFrontend::RequireOwner() const
 void RenderFrontend::SetDiagnosticsCaptureEnabled(bool enabled)
 {
     RequireOwner();m_captureDiagnostics=enabled;
-    if(!enabled){m_diagnostics.reset();m_previewRequest.reset();m_preview.reset();}
+    if(!enabled){m_diagnostics.reset();m_previewRequest.reset();m_preview.reset();SetGpuTimingCaptureEnabled(false);}
 }
 std::shared_ptr<const OvRendering::Data::FrameGraphDiagnostics> RenderFrontend::GetFrameGraphDiagnostics() const
 {
@@ -28,6 +28,23 @@ void RenderFrontend::RequestFrameGraphPreview(const OvRendering::Data::FrameGrap
 }
 std::shared_ptr<const RenderFrontend::PreviewTicket> RenderFrontend::GetFrameGraphPreview() const {RequireOwner();return m_preview;}
 void RenderFrontend::ClearFrameGraphPreview() {RequireOwner();m_previewRequest.reset();m_preview.reset();}
+void RenderFrontend::SetGpuTimingCaptureEnabled(bool enabled)
+{
+    RequireOwner();
+    if(enabled&&!m_captureDiagnostics)throw std::logic_error("GPU timings require diagnostic capture");
+    if(enabled){if(!m_gpuTimer)m_gpuTimer=std::make_unique<OvRendering::Data::FrameGraphGpuTimer>();}
+    else {m_gpuPending.clear();m_gpuTimer.reset();m_gpuTimings.reset();m_gpuSampleCounter=0;}
+}
+std::shared_ptr<const OvRendering::Data::FrameGraphGpuTimings> RenderFrontend::GetFrameGraphGpuTimings() const
+{
+    RequireOwner();
+    for(auto it=m_gpuPending.begin();it!=m_gpuPending.end();) {
+        if(!(*it)->IsRetired()){++it;continue;}
+        if(auto result=(*it)->GetResult();result&&(!m_gpuTimings||result->graph->captureIndex>m_gpuTimings->graph->captureIndex))m_gpuTimings=std::move(result);
+        it=m_gpuPending.erase(it);
+    }
+    return m_gpuTimings;
+}
 
 std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> RenderFrontend::ExtractScene(const SceneRenderRequest& p_request) const
 {
@@ -84,7 +101,7 @@ std::unique_ptr<SceneFrame> RenderFrontend::PrepareFrame(std::unique_ptr<SceneFr
     return frame;
 }
 OvRendering::Data::RenderCommandList RenderFrontend::RecordFrame(std::unique_ptr<SceneFrame> frame,
-    OvTools::Jobs::JobSystem* jobs, const std::atomic_bool* cancel,bool deferEncoding) const
+    OvTools::Jobs::JobSystem* jobs, const std::atomic_bool* cancel,bool deferEncoding,OvRendering::Data::RenderFrame* timingFrame) const
 {
     RequireOwner();
     if (!frame || frame->m_prepared.size() != frame->m_views.size()) throw std::invalid_argument("Frame not prepared");
@@ -92,7 +109,16 @@ OvRendering::Data::RenderCommandList RenderFrontend::RecordFrame(std::unique_ptr
     std::vector<std::optional<baregl::Framebuffer::Snapshot>> targets(frame->m_views.size());
     for (const auto& pass : frame->m_plan.passes) if(pass.view!=OvRendering::Data::RenderPlanPass::NoView) targets[pass.view] = pass.target;
     auto blocks = OvRendering::Core::RenderTaskCoordinator::RecordViews(frame->m_prepared,targets,m_recorder,jobs,cancel);
-    frame->m_plan.RecordOperations(frame->m_commands,blocks,frame->m_mapping,std::move(frame->m_inspection));
+    std::shared_ptr<OvRendering::Data::FrameGraphGpuTimingCapture> timings;
+    if(m_gpuTimer) {
+        if(!timingFrame||!m_diagnostics||m_diagnostics->scope!=frame->m_plan.Scope())throw std::invalid_argument("GPU timings require the recording frame and matching diagnostic graph");
+        GetFrameGraphGpuTimings();
+        if(m_gpuSampleCounter++%4==0&&m_gpuPending.size()<OvRendering::Data::FrameGraphGpuTimer::MaxPending) {
+            timings=m_gpuTimer->Capture(m_diagnostics,*timingFrame);
+            if(timings)m_gpuPending.push_back(timings);
+        }
+    }
+    frame->m_plan.RecordOperations(frame->m_commands,blocks,frame->m_mapping,std::move(frame->m_inspection),std::move(timings));
     if(!deferEncoding)frame->m_commands.Seal(jobs);
     return std::move(frame->m_commands);
 }

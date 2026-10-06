@@ -414,6 +414,7 @@ void OvEditor::Core::Editor::UpdateEditorPanels(float p_deltaTime)
     if(graph.IsOpened())graph.Update(m_productFrontend.GetFrameGraphDiagnostics(),m_productFrontend.GetResourcePool()->GetStatistics());
     else graph.Update({},{});
     graph.UpdatePreview(graph.IsOpened()?m_productFrontend.GetFrameGraphPreview():nullptr);
+    graph.UpdateGpuTimings(graph.IsOpened()?m_productFrontend.GetFrameGraphGpuTimings():nullptr);
 }
 
 OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p_deltaTime)
@@ -491,12 +492,13 @@ OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p
         present.operation=[] {return [](auto&) {};};product->ComposePlan().passes.push_back(std::move(present));
     }
     m_productFrontend.SetDiagnosticsCaptureEnabled(m_panelsManager.GetPanelAs<Panels::FrameGraph>("Frame Graph").WantsCapture());
+    m_productFrontend.SetGpuTimingCaptureEnabled(m_panelsManager.GetPanelAs<Panels::FrameGraph>("Frame Graph").WantsGpuTimings());
     product=m_productFrontend.PrepareFrame(std::move(product),m_context.driver->CreatePipelineState(),recordingJobs);
     size_t viewOffset=0;
     for(auto& item:pending)if(item.frame.active) {
         item.view->PublishProductView(item.frame,product->GetPreparedViews().subspan(viewOffset,item.frame.viewCount));viewOffset+=item.frame.viewCount;
     }
-    frame.AppendRecording(m_productFrontend.RecordFrame(std::move(product),recordingJobs,nullptr,true));
+    frame.AppendRecording(m_productFrontend.RecordFrame(std::move(product),recordingJobs,nullptr,true,&frame));
     frame.Seal(recordingJobs);
     m_latestFrameCompletion = frame.GetCompletion();
     return frame;

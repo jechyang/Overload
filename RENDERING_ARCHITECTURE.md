@@ -93,4 +93,6 @@ ComposeFrame 要求拥有型视图和完整资源契约；错误诊断定位到 
 
 显式 Capture 可在下一份匹配计划的版本生产点转换资源为最大 512×512 的独立 RGBA8 预览，支持 mip、cube 面、颜色通道、深度窗口及 HDR 显示。只有 RenderFrame 成功 GPU 退役后才发布图像；源资源和临时 resolve 随帧退役，保留的图像最多 1 MiB，不含池 lease。冻结可保留该图像，Texture Debugger 可独立打开同一图像；关闭或清除会释放相应持有者。具体边界和验证见 [Frame Graph 诊断面板验收](FRAMEGRAPH_DIAGNOSTICS_VALIDATION.zh-CN.md)。
 
+Timings 默认关闭；开启后每 4 份计划在 GL consumer 上为每个 Pass 记录一对时间戳，成功 GPU 退役后检查 availability，再发布与该测量计划绑定的纳秒数组。最多 3 个在途样本、每图 512 个 Pass；查询池复用并通过 baregl 删除队列释放，不增加 owner roundtrip 或 GPU 等待。热点点击冻结对应测量图，禁止把旧结果套到新计划上。Pass 总和排除预览转换、CPU 编码与实际 swap/vsync；取消、帧失败、不可用或查询失败不发布部分数据。
+
 新增 CPU 功能应先确定快照字段及 owner，再实现局部 Processor/Preparer/Collector，并通过明确阶段/资源契约组合。当前没有可视化流水线编辑器、脚本 SRP SDK 或新的 Renderer 继承体系。运行入口和测试边界见 Tests/RenderingCommands/README.md。

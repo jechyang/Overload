@@ -1,5 +1,6 @@
 #include <OvRendering/Data/RenderPlan.h>
 #include <OvRendering/Data/FrameGraphDiagnostics.h>
+#include <OvRendering/Data/FrameGraphGpuTimings.h>
 #include <algorithm>
 #include <stdexcept>
 #include <string_view>
@@ -277,7 +278,8 @@ void RenderPlan::GenerateMipmaps(std::string name,const std::shared_ptr<baregl::
     pass.operation=[texture] {return [texture](auto&) {texture->GenerateMipmaps();};};passes.push_back(std::move(pass));
 }
 void RenderPlan::RecordOperations(RenderCommandList& commands,std::span<RenderCommandList> blocks,
-    std::shared_ptr<const Core::RenderResourceMapping> mapping,std::optional<RenderPlanInspection> inspection) const
+    std::shared_ptr<const Core::RenderResourceMapping> mapping,std::optional<RenderPlanInspection> inspection,
+    std::shared_ptr<FrameGraphGpuTimingCapture> timings) const
 {
     if(inspection&&(inspection->beforePass>passes.size()||!inspection->operation))throw std::invalid_argument("RenderPlan: invalid inspection position");
     if(mapping)commands.KeepUntilRetired(mapping);
@@ -288,12 +290,14 @@ void RenderPlan::RecordOperations(RenderCommandList& commands,std::span<RenderCo
         if(index==passes.size())break;
         const auto& pass=passes[index];
         for(const auto* source:pass.gpuScopesBegin)scopes.emplace_back(commands.GetPendingCount(),source);
+        if(timings)commands.Append([timings,index](auto&){timings->Begin(index);});
         if(pass.view==RenderPlanPass::NoView) {
             if(pass.commandBlock)commands.AppendRecording(std::move(*pass.commandBlock));
             else if(pass.prepareOperation){if(!mapping)throw std::logic_error("RenderPlan: missing physical resource mapping");commands.AppendDeferred(pass.prepareOperation(*mapping));}
             else commands.AppendDeferred(pass.operation);
         }
         else {if(pass.view>=blocks.size())throw std::invalid_argument("RenderPlan: missing recorded view block");commands.Append(std::move(blocks[pass.view]));}
+        if(timings)commands.Append([timings,index](auto&){timings->End(index);});
         for(size_t i=0;i<pass.gpuScopesEnd;++i) {
             if(scopes.empty())throw std::invalid_argument("RenderPlan: unmatched GPU scope");
             const auto [first,source]=scopes.back();scopes.pop_back();

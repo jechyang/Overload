@@ -47,6 +47,9 @@ namespace OvRendering::Data
         void Seal(OvTools::Jobs::JobSystem* jobs = nullptr);
         void Cancel();
         Completion GetCompletion() const;
+        // Diagnostic observers run once at GPU retirement (false on cancellation
+        // or any frame failure). They must not block or affect product success.
+        void OnRetired(std::function<void(bool)> observer);
         size_t GetExecutedCommandCount() const;
         // The synchronous consumer callback must present its live target/window.
         // Failure is stored; partially submitted captures still wait for GPU retirement.
