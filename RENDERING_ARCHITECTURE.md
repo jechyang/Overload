@@ -89,11 +89,15 @@ Tests/RenderingCommands/inspection_pipeline.h 使用既有 Opaque/Transparent/Sc
 
 ComposeFrame 要求拥有型视图和完整资源契约；错误诊断定位到 Pass/View 或资源编号。缺少生产者、错误阶段/尺寸/附件或无效视图会被拒绝。需要跨帧历史的流程由 ExtractFrame 的相应 owner 构建，不能用手写计划绕过。ComposeFrames 合并未准备的拥有型片段，生产链在 PrepareFrame 中统一编译一次。
 
-编辑器 `Window > Frame Graph` 提供最近一次准备完成的产品图诊断：Pass 访问和依赖、子资源、资源存活区间与物理复用、池缓存统计和闲置预算/清理。资源流图可拆分内容版本，逐访问显示读入/写出版本及 mip/layer 范围；多个版本仍共享物理存储，不自动保留旧纹理内容。诊断快照只保存值；默认关闭，打开才采集，关闭即停止。冻结只固定计划，池计数保持更新；这是提交前计划，不代表 GPU 已完成。
+编辑器 `Window > Frame Graph` 提供最近一次成功录制的产品图诊断：Pass 访问和依赖、子资源、资源存活区间与物理复用、池缓存统计和闲置预算/清理。资源流图可拆分内容版本，逐访问显示读入/写出版本及 mip/layer 范围；多个版本仍共享物理存储，不自动保留旧纹理内容。诊断快照只保存值；默认关闭，打开才采集，关闭即停止。冻结只固定计划，池计数保持更新；这是提交前计划，不代表 GPU 已完成。
 
 显式 Capture 可在下一份匹配计划的版本生产点转换资源为最大 512×512 的独立 RGBA8 预览，支持 mip、cube 面、颜色通道、深度窗口及 HDR 显示。只有 RenderFrame 成功 GPU 退役后才发布图像；源资源和临时 resolve 随帧退役，保留的图像最多 1 MiB，不含池 lease。冻结可保留该图像，Texture Debugger 可独立打开同一图像；关闭或清除会释放相应持有者。具体边界和验证见 [Frame Graph 诊断面板验收](FRAMEGRAPH_DIAGNOSTICS_VALIDATION.zh-CN.md)。
 
-Timings 默认关闭；开启后每 4 份计划在 GL consumer 上为每个 Pass 记录一对时间戳，成功 GPU 退役后检查 availability，再发布与该测量计划绑定的纳秒数组。最多 3 个在途样本、每图 512 个 Pass；查询池复用并通过 baregl 删除队列释放，不增加 owner roundtrip 或 GPU 等待。热点点击冻结对应测量图，禁止把旧结果套到新计划上。Pass 总和排除预览转换、CPU 编码与实际 swap/vsync；取消、帧失败、不可用或查询失败不发布部分数据。
+GPU Timings 默认关闭；开启后每 4 份计划在 GL consumer 上为每个 Pass 记录一对时间戳，成功 GPU 退役后检查 availability，再发布与该测量计划绑定的纳秒数组。最多 3 个在途样本、每图 512 个 Pass；查询池复用并通过 baregl 删除队列释放，不增加 owner roundtrip 或 GPU 等待。热点点击冻结对应测量图，禁止把旧结果套到新计划上。Pass 总和排除预览转换、CPU 编码与实际 swap/vsync；取消、帧失败、不可用或查询失败不发布部分数据。
+
+CPU stages 在开启诊断时测量编译、资源实现、视图准备、诊断采集、视图/操作录制与即时 Seal 的生产线程墙钟时间。快照在成功 RecordFrame 后发布，此后不再修改；Editor 的最终编码延后到 RenderFrame::Seal，明确标为 Deferred。数据不覆盖 Extract/Compose、预览、提交/GPU/Swap，也不是各 Worker CPU 时间之和。
+
+Memory 的池统计/目标列表在同一锁内复制成值：当前/较早计划的 active lease、pins-only、当前闲置预留和未用缓存五类互斥；活跃且有 pin 的目标仍只计一次。较早计划的租用可为同尺寸在途帧。计划内 Output/History/Imported 的逻辑估算另列，不能与池容量相加或代表全局 VRAM。折叠池控制、画布扩展和查找定位保持现有 owner 边界；JSON 导出全部计划及实时池，GPU 数组只导出完全对应快照的样本。
 
 Dependencies 的 GPU heat 在资源版本流和 Pass 依赖图中按整份样本的最大 Pass 耗时着色，显示毫秒和占比。启用时冻结测量快照，节点点击、筛选与视图切换共享同一份值；只匹配相同快照对象，取消冻结即恢复实时图并移除热力着色。资源与边颜色、选中边框保留，不新增查询、纹理或历史队列。
 

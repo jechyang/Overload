@@ -7,6 +7,12 @@ namespace OvRendering::Data
     // views, materials, or a pool lease.
     struct FrameGraphDiagnostics
     {
+        struct CpuTimings
+        {
+            uint64_t compile=0,realize=0,prepare=0,diagnostics=0,recordViews=0,recordOperations=0,seal=0;
+            bool captured=false,encodingDeferred=false;
+            uint64_t Total() const {return compile+realize+prepare+diagnostics+recordViews+recordOperations+seal;}
+        } cpu;
         struct Resource
         {
             ResourceHandle handle;

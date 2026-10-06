@@ -411,7 +411,10 @@ void OvEditor::Core::Editor::UpdateEditorPanels(float p_deltaTime)
 		textureDebugger.Update(p_deltaTime);
 	}
     auto& graph=m_panelsManager.GetPanelAs<Panels::FrameGraph>("Frame Graph");
-    if(graph.IsOpened())graph.Update(m_productFrontend.GetFrameGraphDiagnostics(),m_productFrontend.GetResourcePool()->GetStatistics());
+    if(graph.IsOpened()) {
+        auto memory=m_productFrontend.GetResourcePool()->GetMemoryDiagnostics();
+        graph.Update(m_productFrontend.GetFrameGraphDiagnostics(),memory.statistics,std::move(memory.entries));
+    }
     else graph.Update({},{});
     graph.UpdatePreview(graph.IsOpened()?m_productFrontend.GetFrameGraphPreview():nullptr);
     graph.UpdateGpuTimings(graph.IsOpened()?m_productFrontend.GetFrameGraphGpuTimings():nullptr);

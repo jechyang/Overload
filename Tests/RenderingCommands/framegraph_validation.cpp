@@ -58,6 +58,31 @@ namespace
             };plan.passes.push_back(std::move(read));
         }
         const auto compiled=plan.Compile();
+        {
+            OvRendering::Core::RenderTargetPool attribution;attribution.SetFrameReserve(2);attribution.SetUnusedFrameLimit(0);
+            auto first=attribution.Realize(plan,compiled);
+            const auto check=[&] {
+                const auto d=attribution.GetMemoryDiagnostics();const auto& s=d.statistics;
+                uint64_t bytes=0;for(const auto& e:d.entries)bytes+=e.bytes;
+                Require(bytes==s.idleBytes+s.leasedBytes&&d.entries.size()==s.idleTargets+s.leasedTargets&&
+                    s.activeCurrentBytes+s.activeOldBytes+s.pinnedOnlyBytes+s.idleReserveBytes+s.idleUnusedBytes==bytes&&
+                    s.activeCurrentTargets+s.activeOldTargets+s.pinnedOnlyTargets+s.idleReserveTargets+s.idleUnusedTargets==d.entries.size(),
+                    "physical memory categories overlap or omit targets");return d;
+            };
+            auto d=check();Require(d.statistics.activeCurrentTargets==1&&d.statistics.idleReserveTargets==1,"latest lease/reserve attribution failed");
+            auto resized=plan;for(auto& r:resized.resources)r.descriptor->texture.width=32;
+            auto second=attribution.Realize(resized,resized.Compile());d=check();
+            Require(d.statistics.activeCurrentTargets==1&&d.statistics.activeOldTargets==1&&d.statistics.idleReserveTargets==1&&d.statistics.idleUnusedTargets==1,
+                "in-flight old size or idle unused size attribution failed");
+            const auto retained=first->TextureStorage(a);first.reset();
+            RenderPlan imported;const auto external=imported.Import("external pin",retained,ResourceOrigin::Imported,{{}});
+            imported.passes.push_back(Node("read pinned",{{external,{},ResourceAccessType::Sample}}));
+            auto pin=attribution.Realize(imported,imported.Compile());d=check();
+            Require(d.statistics.pinnedOnlyTargets==1&&d.statistics.activeOldTargets==1&&d.statistics.activeCurrentTargets==0,"external pins were counted as active leases");
+            const auto valueOnly=d;attribution.TrimIdle();pin.reset();second.reset();attribution.TrimIdle();
+            Require(check().entries.empty()&&valueOnly.entries.size()>0,"memory diagnostic values retained pool storage");
+            std::cout<<"PASS: disjoint memory attribution: latest/older leases, pins-only, latest reserve/unused cache, resize, atomic totals and value-only trim\n";
+        }
         auto mapping=pool->Realize(plan,compiled);
         Require(mapping->TextureStorage(a)==mapping->TextureStorage(b)&&mapping->PhysicalID(a)==mapping->PhysicalID(b),"nonoverlapping transients did not share real GL storage");
         const auto diagnostics=CaptureFrameGraphDiagnostics(plan,compiled,*mapping);
@@ -354,9 +379,13 @@ namespace
         auto copy=Node("owned copy",{{src,{},ResourceAccessType::CopySource},{dst,{},ResourceAccessType::CopyDestination,AttachmentLoad::DontCare,AttachmentStore::Store,true}});
         copy.operation=[sourceSnapshot,targetSnapshot] {return [sourceSnapshot,targetSnapshot](auto&){glBlitNamedFramebuffer(sourceSnapshot.GetID(),targetSnapshot.GetID(),0,0,64,32,0,0,64,32,GL_COLOR_BUFFER_BIT,GL_NEAREST);};};
         plan.passes.push_back(std::move(copy));
-        OvCore::Rendering::RenderFrontend frontend;auto frame=frontend.ComposeFrame({},std::move(plan));
+        OvCore::Rendering::RenderFrontend frontend;frontend.SetDiagnosticsCaptureEnabled(true);auto frame=frontend.ComposeFrame({},std::move(plan));
         source->Resize(8,8);target->Resize(8,8);source.reset();target.reset();
-        frame=frontend.PrepareFrame(std::move(frame),driver.CreatePipelineState());auto commands=frontend.RecordFrame(std::move(frame));
+        frame=frontend.PrepareFrame(std::move(frame),driver.CreatePipelineState());
+        Require(!frontend.GetFrameGraphDiagnostics(),"prepare published an incomplete CPU sample");
+        auto commands=frontend.RecordFrame(std::move(frame));const auto recorded=frontend.GetFrameGraphDiagnostics();
+        Require(recorded&&recorded->cpu.captured&&!recorded->cpu.encodingDeferred&&recorded->cpu.seal>0,"immediate record omitted sealing time");
+        frontend.SetDiagnosticsCaptureEnabled(false);Require(!frontend.GetFrameGraphDiagnostics()&&recorded->cpu.captured,"capture shutdown mutated published values");
         RenderFrame product;product.Append(std::move(commands));product.Seal();product.Submit(driver);product.Wait();product.GetCompletion().RethrowIfFailed();
         std::vector<uint8_t> a(64*32*4),b(a.size());sourceSnapshot.ReadRGBA8(a);targetSnapshot.ReadRGBA8(b);
         Require(a==b&&a[0]>0&&glGetError()==GL_NO_ERROR,"independent copy output/lifetime failure");

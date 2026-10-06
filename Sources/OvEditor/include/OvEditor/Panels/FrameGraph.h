@@ -5,6 +5,7 @@
 #include <OvCore/Rendering/RenderFrontend.h>
 #include <array>
 #include <thread>
+#include <filesystem>
 
 namespace OvEditor::Panels
 {
@@ -16,11 +17,15 @@ namespace OvEditor::Panels
         bool WantsCapture() const;
         bool WantsGpuTimings() const;
         void UpdateGpuTimings(std::shared_ptr<const OvRendering::Data::FrameGraphGpuTimings>);
-        void Update(std::shared_ptr<const OvRendering::Data::FrameGraphDiagnostics>,const OvRendering::Core::RenderTargetPool::Statistics&);
+        void Update(std::shared_ptr<const OvRendering::Data::FrameGraphDiagnostics>,const OvRendering::Core::RenderTargetPool::Statistics&,
+            std::vector<OvRendering::Core::RenderTargetPool::MemoryEntry> entries={});
         PoolRequests TakePoolRequests();
         std::optional<OvRendering::Data::FrameGraphPreviewRequest> TakePreviewRequest();
         void UpdatePreview(std::shared_ptr<const OvCore::Rendering::RenderFrontend::PreviewTicket>);
         bool TakePreviewClearRequest();
+        // Full values-only report for tools and the panel's file/clipboard export.
+        std::string BuildReport() const;
+        bool SaveReport(const std::filesystem::path&,std::string& error) const;
         OvTools::Eventing::Event<std::shared_ptr<const OvRendering::Data::FrameGraphPreviewImage>> OpenPreviewEvent;
     private:
         void RequireUIThread() const;
@@ -32,6 +37,8 @@ namespace OvEditor::Panels
         void DrawResourceFlow();
         void DrawPreview();
         void DrawTimings();
+        void DrawMemory();
+        void DrawLocator();
         void DrawGpuHeatControls();
         void DrawPassGpuTiming(size_t);
         const OvRendering::Data::FrameGraphGpuTimings* MatchingGpuTimings() const;
@@ -45,6 +52,7 @@ namespace OvEditor::Panels
         std::shared_ptr<const OvRendering::Data::FrameGraphGpuTimings> m_gpuTimings;
         bool m_captureGpuTimings=false,m_slowestFirst=true;
         OvRendering::Core::RenderTargetPool::Statistics m_pool;
+        std::vector<OvRendering::Core::RenderTargetPool::MemoryEntry> m_poolEntries;
         PoolRequests m_requests;
         bool m_frozen=false,m_transientOnly=false,m_budgetEdited=false;
         int m_budgetMiB=256,m_requestedTab=-1;
@@ -53,6 +61,9 @@ namespace OvEditor::Panels
         bool m_graphFocus=true,m_graphFit=true,m_graphSelectionInitialized=false,m_graphResourceFlow=true,m_flowSelectionIsResource=false;
         bool m_graphVersions=true;
         bool m_graphGpuHeat=false;
+        bool m_graphExpanded=false;
+        std::array<char,128> m_locator{};
+        std::string m_exportStatus;
         bool m_lifetimePhysical=true,m_lifetimeTransientOnly=true,m_lifetimeAtPass=false;
         float m_lifetimeZoom=1;
         size_t m_lifetimePeakPass=0;

@@ -48,6 +48,9 @@ int main(int argc,char** argv) try
         Require(panel.m_snapshot&&frontend.GetFrameGraphDiagnostics(),"opening the panel did not enable product capture");
         Require(!panel.m_graphGpuHeat&&!panel.m_gpuTimings,"GPU heat was enabled without a measured sample");
         const auto initial=panel.m_snapshot;
+        Require(initial->cpu.captured&&initial->cpu.Total()>0&&initial->cpu.compile>0&&initial->cpu.realize>0&&
+            initial->cpu.prepare>0&&initial->cpu.diagnostics>0&&initial->cpu.recordViews>0&&initial->cpu.recordOperations>0&&
+            initial->cpu.encodingDeferred&&initial->cpu.seal==0,"product CPU timings omitted stages or claimed deferred encoding");
         Require(initial->passes.size()>20&&initial->resources.size()>10&&initial->physicalTransientTargets>0&&initial->physicalTransientBytes>0,"panel did not capture the actual multiview product graph");
         const auto present=std::find_if(initial->passes.begin(),initial->passes.end(),[](const auto& pass){return pass.name=="Window.Present";});
         Require(present!=initial->passes.end(),"diagnostic capture missed final window presentation");
@@ -129,7 +132,7 @@ int main(int argc,char** argv) try
         panel.m_frozen=true;const auto frozen=panel.m_snapshot;tick();
         fixture.views[1]->SetSize({520,250});tick();
         Require(panel.m_snapshot==frozen&&!frontend.GetFrameGraphDiagnostics(),"freeze changed the captured graph or left live capture enabled");
-        std::array<bool,10> rejected{};bool cpuRead=false;
+        std::array<bool,11> rejected{};bool cpuRead=false;
         std::thread worker([&] {
             cpuRead=frozen->passes.back().name=="Window.Present"&&!glfwGetCurrentContext();
             try{panel.Update({},{});}catch(const std::logic_error&){rejected[0]=true;}
@@ -142,6 +145,7 @@ int main(int argc,char** argv) try
             try{frontend.GetFrameGraphGpuTimings();}catch(const std::logic_error&){rejected[7]=true;}
             try{frontend.SetGpuTimingCaptureEnabled(true);}catch(const std::logic_error&){rejected[8]=true;}
             try{panel.UpdateGpuTimings({});}catch(const std::logic_error&){rejected[9]=true;}
+            try{panel.BuildReport();}catch(const std::logic_error&){rejected[10]=true;}
         });worker.join();
         Require(cpuRead&&std::all_of(rejected.begin(),rejected.end(),[](bool value){return value;}),"diagnostic state escaped UI/producer ownership or frozen values required GL");
         bool invalidCompletion=false;
@@ -245,6 +249,7 @@ int main(int argc,char** argv) try
         const auto tabs=ImGui::GetCurrentContext()->TabBars.GetByKey(ImHashStr("graph-tabs",0,window->ID));
         Require(tabs&&tabs->SelectedTabId==ImHashStr("Passes",0,tabs->ID),"hotspot click did not open actual Pass details");
         image("timings-pass");fixture.views[1]->SetSize({530,255});tick();
+        {std::string error;Require(panel.SaveReport(output/(threaded?"framegraph-render-gpu-report.json":"framegraph-main-gpu-report.json"),error),"measured GPU report export failed");}
         Require(panel.m_gpuTimings==measured&&panel.m_snapshot==measured->graph,"resize replaced frozen timing values or their measured graph");
         fixture.views[1]->SetSize({545,270});panel.m_graphResourceFlow=true;panel.m_requestedTab=4;tick();tick();
         activateTimingItem("Show GPU heat");tick();tick();tick();
@@ -299,6 +304,18 @@ int main(int argc,char** argv) try
         activateTimingItem("Capture GPU timings");tick();Require(!panel.WantsGpuTimings()&&!frontend.GetFrameGraphGpuTimings(),"disabling timing kept collecting or retaining query pools");
         OnOwner(context,[](auto&){for(const auto id:timingQueryIDs)Require(!glIsQuery(id),"disabled timing retained query objects");glad_glGenQueries=timingGenerate;});
         #include "framegraph_lifetime_editor_validation.inl"
+        panel.m_requestedTab=4;tick();tick();activateTimingItem("CPU stages");tick();tick();
+        const auto cpuTable=ImGui::GetCurrentContext()->Tables.GetByKey(ImHashStr("cpu-stages",0,ImHashStr("Timings",0,tabs->ID)));
+        Require(cpuTable&&cpuTable->ColumnsCount==3,"CPU stage table did not open through native UI");
+        panel.m_frozen=true;const auto cpuPlan=panel.m_snapshot;const auto cpuTotal=cpuPlan->cpu.Total();
+        fixture.views[1]->SetSize({530,250});tick();Require(panel.m_snapshot==cpuPlan&&cpuPlan->cpu.Total()==cpuTotal,"frozen CPU sample mutated on resize");
+        image("cpu-stages");fixture.views[1]->SetSize({545,270});panel.m_frozen=false;tick();tick();
+        std::vector<uint64_t> compileSamples,realizeSamples,totalSamples;
+        for(int i=0;i<24;++i){tick();const auto& cpu=frontend.GetFrameGraphDiagnostics()->cpu;compileSamples.push_back(cpu.compile);realizeSamples.push_back(cpu.realize);totalSamples.push_back(cpu.Total());}
+        std::sort(compileSamples.begin(),compileSamples.end());std::sort(realizeSamples.begin(),realizeSamples.end());std::sort(totalSamples.begin(),totalSamples.end());
+        std::printf("PASS: %s CPU diagnostics: immutable complete plan, native table, frozen resize; 24 warm samples median compile %.3f ms / realize %.3f ms / stages %.3f ms\n",threaded?"Render":"Main",compileSamples[12]/1e6,realizeSamples[12]/1e6,totalSamples[12]/1e6);
+        activateTimingItem("CPU stages");tick();
+        #include "framegraph_handoff_editor_validation.inl"
         panel.m_requests.budget=128ull*1024*1024;tick();
         Require(pool->GetStatistics().idleBudget==128ull*1024*1024&&!panel.m_requests.budget,"panel budget request was not applied exactly once at the product boundary");
         const auto before=pool->GetStatistics();Require(before.idleTargets>0,"trim fixture has no retired scratch");
@@ -309,6 +326,7 @@ int main(int argc,char** argv) try
         Require(!panel.m_gpuTimings&&!frontend.GetFrameGraphGpuTimings()&&!panel.WantsGpuTimings()&&!panel.m_graphGpuHeat,"closed Frame Graph retained timing state");
         Require(!frontend.GetFrameGraphDiagnostics()&&!panel.WantsCapture(),"closed panel kept collecting diagnostics");
         Require(panel.m_lifetimeBars.empty()&&panel.m_lifetimeLiveBytes.empty(),"closed Frame Graph retained lifetime UI values");
+        Require(panel.m_poolEntries.empty(),"closed Frame Graph retained live memory diagnostic entries");
         std::printf("PASS: Frame Graph panel on %s owner: versions, preview, timing, query reuse, hotspot click, GPU heat on both canvases, native colors/resource preservation, stale sample rejection, node selection, freeze/resize/resume, disable/close, exact product pixels, thread guards and budget/trim; %zu passes / %zu resources\n",threaded?"Render":"Main",initial->passes.size(),initial->resources.size());
     }
     return 0;

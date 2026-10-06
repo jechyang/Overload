@@ -62,8 +62,17 @@ struct Core::RenderTargetPool::State
     Statistics Stats() const {
         auto result=totals;
         result.idleBudget=budget;result.frameReserve=frameReserve;result.unusedFrameLimit=unusedFrameLimit;
-        for(const auto& entry:entries)if(entry->leased||entry->pins){result.leasedBytes+=entry->descriptor.EstimatedBytes();++result.leasedTargets;}
-            else {result.idleBytes+=entry->descriptor.EstimatedBytes();++result.idleTargets;}
+        for(const auto& entry:entries) {
+            const auto bytes=entry->descriptor.EstimatedBytes();const bool current=entry->lastRequiredFrame==frame;
+            if(entry->leased||entry->pins){result.leasedBytes+=bytes;++result.leasedTargets;}
+            else {result.idleBytes+=bytes;++result.idleTargets;}
+            if(entry->leased) {
+                if(current){result.activeCurrentBytes+=bytes;++result.activeCurrentTargets;}
+                else {result.activeOldBytes+=bytes;++result.activeOldTargets;}
+            } else if(entry->pins){result.pinnedOnlyBytes+=bytes;++result.pinnedOnlyTargets;}
+            else if(current){result.idleReserveBytes+=bytes;++result.idleReserveTargets;}
+            else {result.idleUnusedBytes+=bytes;++result.idleUnusedTargets;}
+        }
         return result;
     }
     // Extract under the lock; destruction uses ResourceLifetime's owner queue.
@@ -136,6 +145,18 @@ Core::RenderTargetPool::RenderTargetPool(uint64_t budget):m_state(std::make_shar
 Core::RenderTargetPool::~RenderTargetPool(){Close();}
 Core::RenderTargetPool::Statistics Core::RenderTargetPool::GetStatistics() const
 {std::lock_guard lock(m_state->mutex);return m_state->Stats();}
+Core::RenderTargetPool::MemoryDiagnostics Core::RenderTargetPool::GetMemoryDiagnostics() const
+{
+    std::lock_guard lock(m_state->mutex);MemoryDiagnostics result;result.statistics=m_state->Stats();
+    result.entries.reserve(m_state->entries.size());
+    for(const auto& entry:m_state->entries) {
+        const auto& desc=entry->descriptor;
+        result.entries.push_back({entry->serial,desc.EstimatedBytes(),m_state->frame-entry->lastRequiredFrame,
+            desc.texture.width,desc.texture.height,desc.mips,desc.layers,desc.samples,desc.kind,desc.texture.internalFormat,
+            entry->leased,entry->lastRequiredFrame==m_state->frame,entry->pins});
+    }
+    return result;
+}
 void Core::RenderTargetPool::SetIdleBudget(uint64_t budget)
 {
     baregl::ResourceExecutor::Invoke([&] {

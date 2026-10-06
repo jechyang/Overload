@@ -6,6 +6,10 @@
 #include <cmath>
 #include <format>
 #include <map>
+#include <numeric>
+#include <sstream>
+#include <fstream>
+#include <OvWindowing/Dialogs/SaveFileDialog.h>
 #include <OvUI/Internal/TextureID.h>
 
 using namespace OvRendering::Data;
@@ -128,12 +132,14 @@ namespace
     }
 }
 
+#include "FrameGraphReport.inl"
+
 OvEditor::Panels::FrameGraph::FrameGraph(const std::string& title,bool opened,const OvUI::Settings::PanelWindowSettings& settings)
     :PanelWindow(title,opened,settings)
 {
     minSize={520,360};CreateWidget<Contents>([this]{DrawContents();});
     CloseEvent += [this]{RequireUIThread();m_snapshot.reset();m_graphNodes.clear();m_graphEdges.clear();m_frozen=false;m_graphFit=true;
-        m_lifetimeBars.clear();m_lifetimeLiveBytes.clear();m_lifetimeProfileRect={};
+        m_lifetimeBars.clear();m_lifetimeLiveBytes.clear();m_lifetimeProfileRect={};m_poolEntries.clear();m_exportStatus.clear();
         m_previewRequest.reset();m_previewTicket.reset();m_previewImage.reset();m_previewStatus.clear();m_previewSequence=0;m_gpuTimings.reset();m_captureGpuTimings=false;m_graphGpuHeat=false;};
 }
 void OvEditor::Panels::FrameGraph::RequireUIThread() const
@@ -151,11 +157,13 @@ void OvEditor::Panels::FrameGraph::UpdateGpuTimings(std::shared_ptr<const FrameG
     const bool pressing=ImGui::GetCurrentContext()&&ImGui::IsMouseDown(ImGuiMouseButton_Left);
     if(!m_frozen&&!pressing&&timings)m_gpuTimings=std::move(timings);
 }
-void OvEditor::Panels::FrameGraph::Update(std::shared_ptr<const FrameGraphDiagnostics> snapshot,const OvRendering::Core::RenderTargetPool::Statistics& pool)
+void OvEditor::Panels::FrameGraph::Update(std::shared_ptr<const FrameGraphDiagnostics> snapshot,const OvRendering::Core::RenderTargetPool::Statistics& pool,
+    std::vector<OvRendering::Core::RenderTargetPool::MemoryEntry> entries)
 {
     RequireUIThread();m_pool=pool;
     if(!m_budgetEdited)m_budgetMiB=static_cast<int>(std::min(uint64_t{4096},pool.idleBudget/uint64_t(MiB)));
-    if(!IsOpened()){m_snapshot.reset();m_graphNodes.clear();m_graphEdges.clear();m_lifetimeBars.clear();m_lifetimeLiveBytes.clear();m_frozen=false;return;}
+    if(!IsOpened()){m_snapshot.reset();m_poolEntries.clear();m_graphNodes.clear();m_graphEdges.clear();m_lifetimeBars.clear();m_lifetimeLiveBytes.clear();m_frozen=false;return;}
+    m_poolEntries=std::move(entries);
     if(!m_frozen&&snapshot)m_snapshot=std::move(snapshot);
     if(m_snapshot){
         if(m_selectedPass>=m_snapshot->passes.size())m_selectedPass=0;
@@ -260,10 +268,10 @@ void OvEditor::Panels::FrameGraph::DrawContents()
 {
     RequireUIThread();
     if(ImGui::Checkbox("Freeze plan",&m_frozen)&&!m_frozen)m_graphGpuHeat=false;ImGui::SameLine();
-    if(m_snapshot)ImGui::TextDisabled("Prepared snapshot %llu | scope %llu",m_snapshot->captureIndex,m_snapshot->scope);
+    if(m_snapshot)ImGui::TextDisabled("Snapshot %llu | scope %llu",m_snapshot->captureIndex,m_snapshot->scope);
     else ImGui::TextDisabled("Waiting for the next product frame");
-    ImGui::TextDisabled("Plan captured before submission; pool counters below are live.");
     ImGui::Text("Idle %.1f MiB (%zu) | Leased/pinned %.1f MiB (%zu)",m_pool.idleBytes/MiB,m_pool.idleTargets,m_pool.leasedBytes/MiB,m_pool.leasedTargets);
+    if(ImGui::CollapsingHeader("Pool controls")) {
     ImGui::Text("Budget %.0f MiB | Reserve %zu | Peak leased %.1f MiB",m_pool.idleBudget/MiB,m_pool.frameReserve,m_pool.peakLeasedBytes/MiB);
     ImGui::TextDisabled("Allocations %llu | Hits %llu | Aliases %llu | Evictions %llu",m_pool.allocations,m_pool.hits,m_pool.aliases,m_pool.evictions);
     ImGui::SetNextItemWidth(160);
@@ -276,23 +284,65 @@ void OvEditor::Panels::FrameGraph::DrawContents()
     if(ImGui::Checkbox("Auto trim unused",&autoTrim))m_requests.unusedFrameLimit=autoTrim?60:0;
     ImGui::SameLine();ImGui::TextDisabled("After %llu unused graphs | Reclaimed %llu",m_pool.unusedFrameLimit,m_pool.autoEvictions);
     if(ImGui::IsItemHovered())ImGui::SetTooltip("Old sizes and unused effects expire. Current spare sets, in-flight frames and external pins stay protected.");
+    }
     if(!m_snapshot)return;
     ImGui::Separator();
     ImGui::Text("%zu passes | %zu resources | %zu physical scratch slots",m_snapshot->passes.size(),m_snapshot->resources.size(),m_snapshot->physicalTransientTargets);
     ImGui::TextDisabled("Scratch: declared %.1f MiB | live peak %.1f MiB | physical %.1f MiB",
         m_snapshot->logicalTransientBytes/MiB,m_snapshot->estimatedPeakBytes/MiB,m_snapshot->physicalTransientBytes/MiB);
     ImGui::SetNextItemWidth(-1);if(ImGui::InputTextWithHint("##filter","Filter passes or resources",m_filter.data(),m_filter.size()))m_graphFit=true;
+    DrawLocator();ImGui::SameLine();
+    if(ImGui::Button("Copy JSON")){ImGui::SetClipboardText(BuildReport().c_str());m_exportStatus="Full plan and live pool copied.";}
+    ImGui::SameLine();if(ImGui::Button("Save JSON...")) {
+        OvWindowing::Dialogs::SaveFileDialog dialog("Export Frame Graph diagnostics");
+        dialog.SetInitialFilename("framegraph.json");dialog.DefineExtension("JSON diagnostics",".json");
+        using enum OvWindowing::Dialogs::EExplorerFlags;
+        dialog.Show(OVERWRITEPROMPT|PATHMUSTEXIST|NOCHANGEDIR|DONTADDTORECENT);
+        if(dialog.HasSucceeded()) {
+            std::string error;m_exportStatus=SaveReport(dialog.GetSelectedFilePath(),error)?"Saved full plan and live pool.":error;
+        }
+    }
+    if(!m_exportStatus.empty())ImGui::TextWrapped("%s",m_exportStatus.c_str());
     if(ImGui::BeginTabBar("graph-tabs")) {
         const int request=m_requestedTab;m_requestedTab=-1;
         if(ImGui::BeginTabItem("Dependencies",nullptr,request==2?ImGuiTabItemFlags_SetSelected:0)){DrawDependencies();ImGui::EndTabItem();}
         if(ImGui::BeginTabItem("Passes",nullptr,request==0?ImGuiTabItemFlags_SetSelected:0)){DrawPasses();ImGui::EndTabItem();}
         if(ImGui::BeginTabItem("Resources",nullptr,request==1?ImGuiTabItemFlags_SetSelected:0)){DrawResources();ImGui::EndTabItem();}
         if(ImGui::BeginTabItem("Lifetimes",nullptr,request==5?ImGuiTabItemFlags_SetSelected:0)){DrawLifetimes();ImGui::EndTabItem();}
+        if(ImGui::BeginTabItem("Memory",nullptr,request==6?ImGuiTabItemFlags_SetSelected:0)){DrawMemory();ImGui::EndTabItem();}
         if(ImGui::BeginTabItem("Preview",nullptr,request==3?ImGuiTabItemFlags_SetSelected:0)){DrawPreview();ImGui::EndTabItem();}
         if(ImGui::BeginTabItem("Timings",nullptr,request==4?ImGuiTabItemFlags_SetSelected:0)){DrawTimings();ImGui::EndTabItem();}
         ImGui::EndTabBar();
     }
 }
+void OvEditor::Panels::FrameGraph::DrawLocator()
+{
+    if(ImGui::Button("Locate..."))ImGui::OpenPopup("graph-locator");
+    ImGui::SetNextWindowSize({480,350},ImGuiCond_Appearing);
+    if(!ImGui::BeginPopup("graph-locator"))return;
+    ImGui::SetNextItemWidth(-1);ImGui::InputTextWithHint("##locate","Find a Pass or resource by name or P#/R#",m_locator.data(),m_locator.size());
+    struct Match {bool resource;size_t index;std::string label;};std::vector<Match> results;
+    for(size_t i=0;i<m_snapshot->passes.size();++i) {
+        auto label=std::format("P{}  {}",i,m_snapshot->passes[i].name);if(Matches(label,m_locator.data()))results.push_back({false,i,std::move(label)});
+    }
+    for(size_t i=0;i<m_snapshot->resources.size();++i) {
+        auto label=std::format("R{}  {}",i,m_snapshot->resources[i].name);if(Matches(label,m_locator.data()))results.push_back({true,i,std::move(label)});
+    }
+    ImGui::TextDisabled("%zu matches | select to focus its graph",results.size());
+    ImGui::BeginChild("locator-results",{0,0});
+    ImGuiListClipper clipper;clipper.Begin(static_cast<int>(results.size()));
+    while(clipper.Step())for(int row=clipper.DisplayStart;row<clipper.DisplayEnd;++row) {
+        const auto& item=results[row];
+        if(ImGui::Selectable(item.label.c_str())) {
+            m_flowSelectionIsResource=item.resource;
+            if(item.resource){m_selectedResource=item.index;m_selectedVersion=m_snapshot->resources[item.index].finalVersion;m_graphResourceFlow=true;}
+            else m_selectedPass=item.index;
+            m_graphFocus=true;m_graphFit=true;m_requestedTab=2;m_filter[0]=0;ImGui::CloseCurrentPopup();
+        }
+    }
+    if(results.empty())ImGui::TextDisabled("No matches");ImGui::EndChild();ImGui::EndPopup();
+}
+
 void OvEditor::Panels::FrameGraph::DrawPasses()
 {
     const auto& graph=*m_snapshot;
@@ -345,6 +395,7 @@ void OvEditor::Panels::FrameGraph::DrawPasses()
 void OvEditor::Panels::FrameGraph::DrawDependencies()
 {
     DrawGpuHeatControls();
+    if(ImGui::Checkbox("Expand canvas",&m_graphExpanded))m_graphFit=true;
     const auto& graph=*m_snapshot;m_graphNodes.clear();m_graphEdges.clear();
     const auto* timings=m_graphGpuHeat?MatchingGpuTimings():nullptr;
     const auto maximum=timings?*std::max_element(timings->passNanoseconds.begin(),timings->passNanoseconds.end()):0;
@@ -390,7 +441,7 @@ void OvEditor::Panels::FrameGraph::DrawDependencies()
     }
     for(size_t g=0;g<views.size();++g){groupStart[g]=totalRows;totalRows+=groupHeights[g]+1;}
     ImGui::TextDisabled("%zu / %zu passes | %zu / %zu edges | Click a node or resource edge",nodeCount,graph.passes.size(),edgeCount,graph.dependencies.size());
-    const float height=std::max(140.f,ImGui::GetContentRegionAvail().y-125);
+    const float height=std::max(140.f,ImGui::GetContentRegionAvail().y-(m_graphExpanded?0:125));
     ImGui::BeginChild("dependency-canvas",{0,height},ImGuiChildFlags_Borders,ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
     const auto origin=ImGui::GetCursorScreenPos();const auto size=ImGui::GetContentRegionAvail();
     ImGui::InvisibleButton("canvas",size,ImGuiButtonFlags_MouseButtonLeft|ImGuiButtonFlags_MouseButtonMiddle);
@@ -469,6 +520,7 @@ void OvEditor::Panels::FrameGraph::DrawDependencies()
         }
     } else draw->AddText({origin.x+16,origin.y+16},ImGui::GetColorU32(ImGuiCol_TextDisabled),"No passes match this filter");
     ImGui::EndChild();
+    if(m_graphExpanded)return;
     ImGui::BeginChild("dependency-detail",{0,0});
     if(filtered&&std::none_of(matches.begin(),matches.end(),[](bool value){return value;})) {
         ImGui::TextDisabled("No pass or resource matches this filter");ImGui::EndChild();return;
@@ -563,11 +615,11 @@ void OvEditor::Panels::FrameGraph::DrawResourceFlow()
     }
     const size_t edgeCount=static_cast<size_t>(std::count_if(m_graphEdges.begin(),m_graphEdges.end(),[&](const auto& e){return visiblePass[e.pass]&&visibleResource[e.resource];}));
     ImGui::TextDisabled("%zu passes + %zu %s | %zu links | plan: %zu passes / %zu resources",passOrder.size(),resourceOrder.size(),m_graphVersions?"versions":"resources",edgeCount,graph.passes.size(),graph.resources.size());
-    const float canvasHeight=std::max(150.f,ImGui::GetContentRegionAvail().y-88);
+    const float canvasHeight=std::max(150.f,ImGui::GetContentRegionAvail().y-(m_graphExpanded?0:88));
     if(passOrder.empty()&&resourceOrder.empty()) {
         ImGui::BeginChild("resource-flow-canvas",{0,canvasHeight},ImGuiChildFlags_Borders);
         ImGui::TextDisabled("No passes or resources match this filter");ImGui::EndChild();
-        ImGui::BeginChild("resource-flow-detail",{0,0});ImGui::TextDisabled("No matching nodes");ImGui::EndChild();return;
+        if(!m_graphExpanded){ImGui::BeginChild("resource-flow-detail",{0,0});ImGui::TextDisabled("No matching nodes");ImGui::EndChild();}return;
     }
     ImGui::BeginChild("resource-flow-canvas",{0,canvasHeight},ImGuiChildFlags_Borders,ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
     const auto origin=ImGui::GetCursorScreenPos();const auto size=ImGui::GetContentRegionAvail();
@@ -696,6 +748,7 @@ void OvEditor::Panels::FrameGraph::DrawResourceFlow()
         if(ImGui::IsMouseClicked(ImGuiMouseButton_Left)){m_selectedResource=link.resource;m_selectedVersion=link.version;m_flowSelectionIsResource=true;if(m_graphFocus)m_graphFit=true;}
     }
     ImGui::EndChild();
+    if(m_graphExpanded)return;
     ImGui::BeginChild("resource-flow-detail",{0,0});
     if(m_flowSelectionIsResource&&m_selectedResource<graph.resources.size()) {
         const auto& selected=graph.resources[m_selectedResource];
@@ -937,8 +990,75 @@ void OvEditor::Panels::FrameGraph::DrawPreview()
     ImGui::EndChild();
 }
 
+void OvEditor::Panels::FrameGraph::DrawMemory()
+{
+    ImGui::TextWrapped("Pool is live, even when the plan is frozen. Categories below partition physical pool storage; older leases may be earlier frames of the same size.");
+    const char* labels[]={"Active: latest plan","Active: older plans","External pins only","Idle: latest reserve","Idle: unused sizes/effects"};
+    const uint64_t bytes[]={m_pool.activeCurrentBytes,m_pool.activeOldBytes,m_pool.pinnedOnlyBytes,m_pool.idleReserveBytes,m_pool.idleUnusedBytes};
+    const size_t counts[]={m_pool.activeCurrentTargets,m_pool.activeOldTargets,m_pool.pinnedOnlyTargets,m_pool.idleReserveTargets,m_pool.idleUnusedTargets};
+    if(ImGui::BeginTable("memory-categories",3,ImGuiTableFlags_RowBg|ImGuiTableFlags_BordersInner)) {
+        ImGui::TableSetupColumn("Physical pool category");ImGui::TableSetupColumn("MiB");ImGui::TableSetupColumn("Targets");ImGui::TableHeadersRow();
+        for(size_t i=0;i<5;++i){ImGui::TableNextRow();ImGui::TableNextColumn();ImGui::TextUnformatted(labels[i]);ImGui::TableNextColumn();ImGui::Text("%.2f",bytes[i]/MiB);ImGui::TableNextColumn();ImGui::Text("%zu",counts[i]);}
+        ImGui::EndTable();
+    }
+    ImGui::Text("Pool total: %.2f MiB",(m_pool.idleBytes+m_pool.leasedBytes)/MiB);
+    if(ImGui::CollapsingHeader("Plan resource roles")) {
+        ImGui::TextWrapped("Logical descriptors in snapshot %llu. Output/History/Imported storage belongs to its owner; these estimates are not added to the pool total. Other history generations, preview/query objects, meshes and driver overhead are outside this view.",m_snapshot->captureIndex);
+        uint64_t roleBytes[4]{};size_t roleCounts[4]{};
+        const ResourceOrigin origins[]={ResourceOrigin::CurrentFrame,ResourceOrigin::History,ResourceOrigin::Imported,ResourceOrigin::Transient};
+        for(const auto& r:m_snapshot->resources)if(r.lifetime.first<m_snapshot->passes.size()&&r.kind!=PlanResourceKind::Backbuffer)
+            for(size_t i=0;i<4;++i)if(r.origin==origins[i]){roleBytes[i]+=r.lifetime.estimatedBytes;++roleCounts[i];}
+        if(ImGui::BeginTable("memory-roles",3,ImGuiTableFlags_RowBg|ImGuiTableFlags_BordersInner)) {
+            ImGui::TableSetupColumn("Plan role");ImGui::TableSetupColumn("Logical MiB");ImGui::TableSetupColumn("Used resources");ImGui::TableHeadersRow();
+            for(size_t i=0;i<4;++i){ImGui::TableNextRow();ImGui::TableNextColumn();ImGui::TextUnformatted(Origin(origins[i]));ImGui::TableNextColumn();ImGui::Text("%.2f",roleBytes[i]/MiB);ImGui::TableNextColumn();ImGui::Text("%zu",roleCounts[i]);}
+            ImGui::EndTable();
+        }
+    }
+    std::vector<size_t> order(m_poolEntries.size());std::iota(order.begin(),order.end(),0);
+    std::stable_sort(order.begin(),order.end(),[&](size_t a,size_t b){return m_poolEntries[a].bytes>m_poolEntries[b].bytes;});
+    ImGui::TextDisabled("Largest pool targets first; age counts successfully realized graphs.");
+    if(ImGui::BeginTable("memory-targets",5,ImGuiTableFlags_RowBg|ImGuiTableFlags_BordersInner|ImGuiTableFlags_Resizable|ImGuiTableFlags_ScrollY,{0,0})) {
+        ImGui::TableSetupColumn("Slot / state");ImGui::TableSetupColumn("Size");ImGui::TableSetupColumn("MiB");ImGui::TableSetupColumn("Age");ImGui::TableSetupColumn("Pins");ImGui::TableHeadersRow();
+        if(order.empty()){ImGui::TableNextRow();ImGui::TableNextColumn();ImGui::TextDisabled("No pool targets");}
+        ImGuiListClipper clipper;clipper.Begin(static_cast<int>(order.size()));
+        while(clipper.Step())for(int row=clipper.DisplayStart;row<clipper.DisplayEnd;++row) {
+            const auto& entry=m_poolEntries[order[row]];const auto category=entry.leased?(entry.requiredByLatest?0:1):entry.pins?2:entry.requiredByLatest?3:4;
+            ImGui::TableNextRow();ImGui::TableNextColumn();ImGui::Text("#%llu  %s",entry.slot,labels[category]);
+            if(ImGui::IsItemHovered()) {
+                ImGui::BeginTooltip();ImGui::Text("%s %s | %u mips, %u layers, %u samples",Kind(entry.kind),Format(entry.format),entry.mips,entry.layers,entry.samples);
+                bool found=false;for(size_t r=0;r<m_snapshot->resources.size();++r)if(m_snapshot->resources[r].physicalSlot==entry.slot){ImGui::Text("Snapshot R%zu: %s",r,m_snapshot->resources[r].name.c_str());found=true;}
+                if(!found)ImGui::TextDisabled("No matching scratch slot in the displayed snapshot.");ImGui::EndTooltip();
+            }
+            ImGui::TableNextColumn();ImGui::Text("%ux%u",entry.width,entry.height);ImGui::TableNextColumn();ImGui::Text("%.2f",entry.bytes/MiB);
+            ImGui::TableNextColumn();ImGui::Text("%llu",entry.unusedGraphs);ImGui::TableNextColumn();ImGui::Text("%zu",entry.pins);
+        }
+        ImGui::EndTable();
+    }
+}
+
 void OvEditor::Panels::FrameGraph::DrawTimings()
 {
+    if(ImGui::CollapsingHeader("CPU stages")) {
+        const auto& cpu=m_snapshot->cpu;
+        if(!cpu.captured)ImGui::TextDisabled("No CPU sample for this diagnostic snapshot.");
+        else {
+            ImGui::Text("CPU stages: %.3f ms | snapshot %llu",cpu.Total()/1e6,m_snapshot->captureIndex);
+            ImGui::TextWrapped("Producer wall time, including joined jobs. Realize includes allocation/owner waits. Excludes extraction, composition, preview, submission, GPU execution and presentation.");
+            if(cpu.encodingDeferred)ImGui::TextDisabled("Product encoding is deferred to RenderFrame::Seal; not included here.");
+            const char* names[]={"Compile","Realize","Prepare views","Capture diagnostics","Record views","Record operations","Seal commands"};
+            const uint64_t values[]={cpu.compile,cpu.realize,cpu.prepare,cpu.diagnostics,cpu.recordViews,cpu.recordOperations,cpu.seal};
+            if(ImGui::BeginTable("cpu-stages",3,ImGuiTableFlags_RowBg|ImGuiTableFlags_BordersInner)) {
+                ImGui::TableSetupColumn("Stage");ImGui::TableSetupColumn("CPU ms");ImGui::TableSetupColumn("Share");ImGui::TableHeadersRow();
+                for(size_t i=0;i<7;++i) {
+                    ImGui::TableNextRow();ImGui::TableNextColumn();ImGui::TextUnformatted(names[i]);ImGui::TableNextColumn();
+                    if(i==6&&cpu.encodingDeferred)ImGui::TextDisabled("Deferred");else ImGui::Text("%.3f",values[i]/1e6);
+                    ImGui::TableNextColumn();ImGui::ProgressBar(cpu.Total()?float(double(values[i])/cpu.Total()):0,{ -1,ImGui::GetTextLineHeight() });
+                }
+                ImGui::EndTable();
+            }
+        }
+    }
+    ImGui::Separator();
     ImGui::BeginDisabled(m_frozen);ImGui::Checkbox("Capture GPU timings",&m_captureGpuTimings);ImGui::EndDisabled();
     ImGui::SameLine();ImGui::Checkbox("Slowest first",&m_slowestFirst);
     ImGui::TextDisabled("Samples every 4 plans; reads after GPU completion without waiting.");

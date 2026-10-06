@@ -97,3 +97,11 @@ Frame Graph 面板使用与诊断数据边界见根目录 FRAMEGRAPH_DIAGNOSTICS
 缩放/水平滚动、详情双向跳转、冻结 resize/恢复，另测 Export/未使用/空图边界。
 
 自动曝光亮度缓冲的格式、数值对照与多视口内存实测见根目录 FRAMEGRAPH_LUMINANCE_VALIDATION.zh-CN.md。
+
+收尾档案见根目录 FRAMEGRAPH_HANDOFF.zh-CN.md。编辑器入口增加 CPU 阶段的完整/
+冻结快照检查和 24 个暖帧样本，以及 framegraph_handoff_editor_validation.inl 的
+实时内存分类/冻结 resize、资源角色、折叠池控制、两种画布扩展、实际 Pass/资源
+查找、clipboard/file JSON 和写出错误。Node 独立解析六份报告，核对 JSON 转义、
+完整节点、CPU 合计、物理分类/目标总量及 GPU 数据与计划的精确对应。
+核心 --framegraph 另测立即 Seal 与成功录制后发布、五类内存的 resize/lease/pin/
+reserve/unused 边界，以及诊断值不阻止 TrimIdle 的实际 GL 释放。

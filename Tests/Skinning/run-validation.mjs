@@ -4,6 +4,7 @@ import path from 'node:path';
 import cp from 'node:child_process';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { validateFrameGraphReports } from '../RenderingCommands/framegraph-report-validation.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const config = process.argv[2] || 'Release';
@@ -378,6 +379,10 @@ function run(file, args, cwd, log, timeout = 120000) {
   }
 }
 // A5 baseline is data only: never compile or patch historical renderer sources.
+if(framegraphEditor) {
+  manifest.framegraphReports=validateFrameGraphReports(path.join(output,'current'));
+  console.log('PASS: 6 full Frame Graph JSON reports: parsed schema, escaped Unicode/control names, CPU stages, reconciled pool entries and exact GPU sample');
+}
 const golden=JSON.parse(fs.readFileSync(path.join(root,'Tests/RenderingCommands/a5-image-baseline.json'),'utf8'));
 const relative=path.relative(root,output).replaceAll('\\','/')+'/current/';
 const expected=golden.files.filter(f=>f.path.startsWith(relative)&&

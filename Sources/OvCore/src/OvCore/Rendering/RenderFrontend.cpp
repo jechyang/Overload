@@ -1,8 +1,22 @@
 #include <OvCore/Rendering/RenderFrontend.h>
 #include <OvRendering/Core/RenderTaskCoordinator.h>
 #include <stdexcept>
+#include <chrono>
 
 using namespace OvCore::Rendering;
+namespace
+{
+    class PhaseClock
+    {
+        using Clock=std::chrono::steady_clock;
+        bool enabled;
+        Clock::time_point start;
+    public:
+        explicit PhaseClock(bool capture):enabled(capture) {Reset();}
+        void Reset(){if(enabled)start=Clock::now();}
+        uint64_t Lap(){if(!enabled)return 0;const auto end=Clock::now();const auto ns=std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();start=end;return static_cast<uint64_t>(ns);}
+    };
+}
 
 void RenderFrontend::RequireOwner() const
 {
@@ -78,8 +92,12 @@ std::unique_ptr<SceneFrame> RenderFrontend::PrepareFrame(std::unique_ptr<SceneFr
 {
     RequireOwner();
     if (!frame || frame->m_compiled || !frame->m_prepared.empty()) throw std::invalid_argument("Frame missing or already prepared");
+    PhaseClock clock(m_captureDiagnostics);
+    OvRendering::Data::FrameGraphDiagnostics::CpuTimings cpu;
     frame->m_compiled = frame->m_plan.Compile(frame->m_views);
+    cpu.compile=clock.Lap();
     frame->m_mapping=m_pool->Realize(frame->m_plan,*frame->m_compiled,m_reuse);
+    cpu.realize=clock.Lap();
     frame->m_prepared = OvRendering::Core::RenderTaskCoordinator::PrepareViews(frame->m_views,state,jobs,cancel);
     for(const auto& prepared:frame->m_prepared)for(const auto& draw:prepared->GetDraws())
     {
@@ -87,13 +105,15 @@ std::unique_ptr<SceneFrame> RenderFrontend::PrepareFrame(std::unique_ptr<SceneFr
         frame->m_info.Add(mesh.geometry->GetVertexCount(),mesh.geometry->GetIndexCount(),mesh.instances);
     }
     if(m_captureDiagnostics) {
+        cpu.prepare=clock.Lap();
         auto diagnostics=OvRendering::Data::CaptureFrameGraphDiagnostics(frame->m_plan,*frame->m_compiled,*frame->m_mapping,frame->m_views);
         diagnostics.captureIndex=++m_diagnosticsSequence;
-        m_diagnostics=std::make_shared<const OvRendering::Data::FrameGraphDiagnostics>(std::move(diagnostics));
+        frame->m_diagnostics=std::make_shared<OvRendering::Data::FrameGraphDiagnostics>(std::move(diagnostics));
+        cpu.diagnostics=clock.Lap();frame->m_diagnostics->cpu=cpu;
         if(m_previewRequest) {
             const auto request=*m_previewRequest;m_previewRequest.reset();
             try {
-                auto preview=OvRendering::Data::PrepareFrameGraphPreview(frame->m_plan,*frame->m_compiled,*frame->m_mapping,frame->m_views,*m_diagnostics,request);
+                auto preview=OvRendering::Data::PrepareFrameGraphPreview(frame->m_plan,*frame->m_compiled,*frame->m_mapping,frame->m_views,*frame->m_diagnostics,request);
                 m_preview->image=std::move(preview.image);frame->m_inspection=std::move(preview.inspection);
             }catch(const std::exception& error){m_preview->error=error.what();}
         }
@@ -106,20 +126,29 @@ OvRendering::Data::RenderCommandList RenderFrontend::RecordFrame(std::unique_ptr
     RequireOwner();
     if (!frame || frame->m_prepared.size() != frame->m_views.size()) throw std::invalid_argument("Frame not prepared");
     if (!frame->m_compiled) throw std::invalid_argument("Frame plan was not compiled before recording");
+    PhaseClock clock(bool(frame->m_diagnostics)&&m_captureDiagnostics);
     std::vector<std::optional<baregl::Framebuffer::Snapshot>> targets(frame->m_views.size());
     for (const auto& pass : frame->m_plan.passes) if(pass.view!=OvRendering::Data::RenderPlanPass::NoView) targets[pass.view] = pass.target;
     auto blocks = OvRendering::Core::RenderTaskCoordinator::RecordViews(frame->m_prepared,targets,m_recorder,jobs,cancel);
+    const auto recordViews=clock.Lap();
     std::shared_ptr<OvRendering::Data::FrameGraphGpuTimingCapture> timings;
     if(m_gpuTimer) {
-        if(!timingFrame||!m_diagnostics||m_diagnostics->scope!=frame->m_plan.Scope())throw std::invalid_argument("GPU timings require the recording frame and matching diagnostic graph");
+        if(!timingFrame||!frame->m_diagnostics||frame->m_diagnostics->scope!=frame->m_plan.Scope())throw std::invalid_argument("GPU timings require the recording frame and matching diagnostic graph");
         GetFrameGraphGpuTimings();
         if(m_gpuSampleCounter++%4==0&&m_gpuPending.size()<OvRendering::Data::FrameGraphGpuTimer::MaxPending) {
-            timings=m_gpuTimer->Capture(m_diagnostics,*timingFrame);
+            timings=m_gpuTimer->Capture(frame->m_diagnostics,*timingFrame);
             if(timings)m_gpuPending.push_back(timings);
         }
     }
+    clock.Reset();
     frame->m_plan.RecordOperations(frame->m_commands,blocks,frame->m_mapping,std::move(frame->m_inspection),std::move(timings));
+    const auto recordOperations=clock.Lap();
     if(!deferEncoding)frame->m_commands.Seal(jobs);
+    if(frame->m_diagnostics&&m_captureDiagnostics) {
+        auto& cpu=frame->m_diagnostics->cpu;cpu.recordViews=recordViews;cpu.recordOperations=recordOperations;
+        cpu.seal=deferEncoding?0:clock.Lap();cpu.encodingDeferred=deferEncoding;cpu.captured=true;
+        m_diagnostics=std::move(frame->m_diagnostics);
+    }
     return std::move(frame->m_commands);
 }
 

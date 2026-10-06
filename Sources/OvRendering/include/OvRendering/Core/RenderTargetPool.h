@@ -32,13 +32,29 @@ namespace OvRendering::Core
             uint64_t idleBudget=0;
             size_t frameReserve=1;
             uint64_t unusedFrameLimit=60;
+            // Disjoint physical categories; pins on an active lease stay in active.
+            uint64_t activeCurrentBytes=0,activeOldBytes=0,pinnedOnlyBytes=0,idleReserveBytes=0,idleUnusedBytes=0;
+            size_t activeCurrentTargets=0,activeOldTargets=0,pinnedOnlyTargets=0,idleReserveTargets=0,idleUnusedTargets=0;
         };
+        struct MemoryEntry
+        {
+            uint64_t slot=0,bytes=0,unusedGraphs=0;
+            uint32_t width=0,height=0;
+            uint16_t mips=1,layers=1,samples=1;
+            Data::PlanResourceKind kind;
+            baregl::types::EInternalFormat format;
+            bool leased=false,requiredByLatest=false;
+            size_t pins=0;
+        };
+        struct MemoryDiagnostics {Statistics statistics;std::vector<MemoryEntry> entries;};
         explicit RenderTargetPool(uint64_t idleBudget=256ull*1024*1024);
         ~RenderTargetPool();
         RenderTargetPool(const RenderTargetPool&)=delete;
         RenderTargetPool& operator=(const RenderTargetPool&)=delete;
         std::shared_ptr<const RenderResourceMapping> Realize(const Data::RenderPlan&,const Data::CompiledRenderPlan&,bool reuse=true);
         Statistics GetStatistics() const;
+        // One locked, values-only view. No GPU query or resource retention.
+        MemoryDiagnostics GetMemoryDiagnostics() const;
         void SetIdleBudget(uint64_t);
         // Release only idle entries; preserve the budget and all active leases/pins.
         void TrimIdle();

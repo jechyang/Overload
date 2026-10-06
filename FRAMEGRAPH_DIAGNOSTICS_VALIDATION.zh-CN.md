@@ -54,6 +54,19 @@
 - 支持名称筛选和只看 transient。未命名的导入附件按首次使用的 Pass 和用途
   显示名称。筛选后详情跟随可见项；空结果不会继续显示不匹配的详情。
 - Freeze plan 固定当前计划。取消冻结后恢复采集；冻结期间池计数仍保持更新。
+
+- Memory：五种互斥分类与池总量核对，目标按估算字节降序显示尺寸、格式、未使用
+  图数和 pin 数；悬浮可查同物理槽的当前快照资源。Active older 表示较早的计划
+  租用，可能是相同尺寸的在途帧，不能一律认作泄漏。Plan resource roles 分开列出
+  Output/History/Imported/Transient 的已使用逻辑描述量；它们不与池总量相加。
+- Pool controls 默认折叠，保留预算 Apply、Trim idle 和自动回收；展开可调缓存策略。
+  Dependencies 的 Expand canvas 回收下方详情区域；取消勾选恢复详情，节点双击仍
+  可打开详情页。Locate... 按名称或 P#/R# 查找条目，选择后聚焦对应图节点。
+- Copy JSON 与 Save JSON... 导出完整快照，不受 UI 筛选影响。schemaVersion=1，
+  包括资源描述/存活区间/物理槽、Pass 子资源访问与内容版本、依赖、CPU 阶段、
+  实时池分类与各目标；GPU 字段仅在完全相同的测量快照上有值，否则为 null。
+  时间单位 ns，内存单位估算字节；poolIsLive 明示冻结计划与实时池的时间区别。
+  导出不包含可恢复 GPU 对象、纹理像素或设备指针。
 - 显示池的闲置与 leased/pinned 字节和数量、闲置预算、帧预留、历史 leased 峰值、
   allocations/hits/aliases/evictions 和自动回收计数。
 - 默认对连续 60 个成功 Realize 图计划都未再使用的资源自动回收；可关闭或重新启用。
@@ -231,17 +244,22 @@ node Tests/Skinning/run-validation.mjs Debug --framegraph-editor --framegraph-ba
 
 ## 当前完成度与后续范围
 
+本轮收尾逐项进度、验证证据与未覆盖范围集中记录在 `FRAMEGRAPH_HANDOFF.zh-CN.md`。
+Timings 新增可折叠的 CPU stages：阶段采用生产线程墙钟时间，成功录制后才发布，
+冻结时保持对应数据不变；关闭采集不运行计时器。Editor 延迟到 RenderFrame 的
+编码标为 Deferred；即时录制包括 Seal。合计不覆盖 Extract/Compose、预览转换、
+最终提交/GPU/Swap，因此不是整帧 CPU 时间。GPU 数据仍绑定原始采样计划。
+
 F0–F6 核心迁移已完成，见 FRAMEGRAPH_F6_VALIDATION.zh-CN.md。主线目前包含资源/
 子资源与内容版本契约、依赖/初始化校验、固定顺序的产品组合、生命周期分析、
 兼容物理复用、池预算/自动回收、GPU 退役、Editor/Game 和多线程回归，以及依赖图、
 版本图、资源预览、GPU 耗时/热力图、生命周期时间轴。
 
-按当前 OpenGL 产品需求，建议时间轴之后再做 2–3 轮有明确验收的收尾：
+时间轴后的三项收尾现已完成，证据见交接档案：
 
-1. 编译/实现/准备/录制的 CPU 耗时与慢点定位，再按证据评估稳定图结构缓存。
-2. 内存占用来源诊断，把当前图、持久输出/历史、闲置预留、在途旧尺寸和外部 pin
-   的边界讲清楚；保留描述估算与实测显存的区别。
-3. 大图操作与导出：折叠统计、扩大画布、查找和定位、导出可复核的值诊断。
+1. CPU 阶段实时耗时、完整/冻结快照和 24 暖帧观察；暂不增加结构缓存。
+2. 池物理类别/逐目标与计划资源角色，分开旧计划租用、pins-only 和闲置预留/旧尺寸。
+3. 折叠统计、两种图扩大画布、名称/编号查找聚焦、完整 JSON 导出与独立解析校验。
 
 自动 Pass 裁剪/重排、通用 Buffer 图、显式 API barrier、Vulkan/D3D12 与多队列/
 异步计算是更大的独立扩展。它们没有包含在 F0–F6 或上述收尾估计中，是否实现

@@ -1,6 +1,7 @@
 #pragma once
 #include <OvCore/Rendering/SceneRenderExtractor.h>
 #include <OvRendering/Data/RenderPlan.h>
+#include <OvRendering/Data/FrameGraphDiagnostics.h>
 #include <OvCore/Rendering/PostProcess/PostProcessPipeline.h>
 #include <optional>
 namespace OvCore::UI { class RenderResources; }
@@ -37,6 +38,8 @@ namespace OvCore::Rendering
         std::optional<OvRendering::Data::CompiledRenderPlan> m_compiled;
         std::shared_ptr<const OvRendering::Core::RenderResourceMapping> m_mapping;
         std::optional<OvRendering::Data::RenderPlanInspection> m_inspection;
+        // Kept private until recording succeeds; published diagnostics never mutate.
+        std::shared_ptr<OvRendering::Data::FrameGraphDiagnostics> m_diagnostics;
         std::vector<std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot>> m_views;
         std::vector<std::shared_ptr<const OvRendering::Data::PreparedFrameData>> m_prepared;
         // Registers histories before speculative owner state advances. Destruction,
