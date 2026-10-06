@@ -11,6 +11,7 @@
 #include <limits>
 #include <algorithm>
 #include <stdexcept>
+#include <tuple>
 
 using namespace OvCore;
 using namespace OvRendering;
@@ -80,6 +81,10 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     std::vector<std::optional<Data::FeatureSet>> featuresToResolve;
     std::vector<std::string> techniquesToResolve;
     bool resolveSingleUse = false;
+    // Only this view extraction: shadow inputs are constant in the request;
+    // environment inputs can vary by probe. No cache survives asset edits or a frame.
+    using StableKey = std::tuple<uintptr_t, uintptr_t, uintptr_t, uint8_t>;
+    std::map<StableKey, Data::Material::PreparedSnapshot> stableSnapshots;
     std::vector<Data::Material::PropertyOverrides> overridesToResolve;
     std::vector<std::shared_ptr<baregl::Texture>> receiverTextures;
     if (p_request.shadow.map) receiverTextures.push_back(p_request.shadow.map);
@@ -165,6 +170,10 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
         }
         materialCache.meshBasesBuilt = true;
     }
+    // Unique source materials cannot benefit from snapshot reuse. Avoid allocating
+    // a prepared-snapshot cache entry for each of them in material-heavy scenes.
+    std::unordered_map<const Data::Material*, size_t> materialUses;
+    for (const auto& base : materialCache.meshBases) ++materialUses[base.sourceMaterial];
     for (const auto& base : materialCache.meshBases)
     {
         const bool rendererVisible = shadow ? base.visibleShadow : capture ? base.visibleReflection : base.visibleGeometry;
@@ -216,8 +225,9 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
             }
             if (material->HasPass(p_request.meshTechnique)) technique = p_request.meshTechnique;
         }
+        bool singleUse = false;
         for (const auto& [name, property] : material->GetProperties())
-            if (property.singleUse) resolveSingleUse = true;
+            if (property.singleUse) singleUse = resolveSingleUse = true;
         std::optional<Data::FeatureSet> features;
         const bool hasPalette = base.hasSkin && (shadow || base.meshHasSkinningData);
         if (hasPalette && (!picking || pickingSkinned) && (!shadow || originalSkinning) &&
@@ -317,7 +327,24 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
         }
         if (description.reflectionReceiver && material->IsReflectionReceiver() && material->HasProperty("_EnvironmentMap"))
             overrides.emplace("_EnvironmentMap", reflection.map.get());
-        item.material = material->PrepareSnapshot(technique, featureRef, p_white, p_black, receiverTextures, {}, true, true, false, overrides);
+        const auto environment = overrides.find("_EnvironmentMap");
+        const bool hasEnvironment = environment != overrides.end();
+        const bool hasShadow = overrides.contains("_ShadowMap") && overrides.contains("_LightSpaceMatrix");
+        const uint8_t receiverMask = (hasEnvironment ? 1 : 0) | (hasShadow ? 2 : 0);
+        // Picking colors and preview overrides are per actor/source material.
+        // Their values, and ordered single-use consumption, remain per draw.
+        const bool repeatedMaterial = material != sourceMaterial || materialUses.at(material) > 1;
+        const bool reusable = repeatedMaterial && !singleUse && !picking && !previewFallback &&
+            overrides.size() == (hasEnvironment ? 1u : 0u) + (hasShadow ? 2u : 0u);
+        const StableKey key{reinterpret_cast<uintptr_t>(material), reinterpret_cast<uintptr_t>(program.get()),
+            hasEnvironment ? reinterpret_cast<uintptr_t>(std::get<baregl::Texture*>(environment->second)) : 0, receiverMask};
+        const auto cached = reusable ? stableSnapshots.find(key) : stableSnapshots.end();
+        if (cached != stableSnapshots.end()) item.material = cached->second;
+        else
+        {
+            item.material = material->PrepareSnapshot(technique, featureRef, p_white, p_black, receiverTextures, {}, true, true, false, overrides);
+            if (reusable) stableSnapshots.emplace(key, item.material);
+        }
         techniquesToResolve.push_back(std::move(technique));
         overridesToResolve.push_back(std::move(overrides));
         materialsToResolve.push_back(material);

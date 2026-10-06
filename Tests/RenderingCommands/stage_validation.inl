@@ -272,6 +272,24 @@ void StageSemantics(const std::filesystem::path& assets, OvRendering::Resources:
     try{frontend.ExtractScene(request);}catch(const std::invalid_argument&){duplicate=true;}
     Require(duplicate,"duplicate stage submitted geometry twice");
     Require(&shader->GetVariant("MISSING_A2_TECHNIQUE",{"MISSING_A2_VARIANT"})==&shader->GetVariant(),"missing technique fallback changed");
+#ifdef FRONTEND_BINDING_VALIDATION
+    // One material can select different retained programs for static/skinned
+    // meshes in the same view. Sharing must stay within each program family.
+    StageFixture sharing(assets,shader,0);
+    sharing.materials[0].SetProperty("u_EmissiveIntensity",.2f,false);
+    for(auto* actor:sharing.scene->GetActors())if(auto* materials=actor->GetComponent<CMaterialRenderer>())
+        materials->FillWithMaterial(sharing.materials[0]);
+    SceneRequest sharingRequest{{*sharing.scene,camera,96,64}};
+    const auto shared=frontend.ExtractScene(sharingRequest);
+    OvRendering::Data::Material::PreparedSnapshot staticInput,skinnedInput;
+    for(const auto& mesh:shared->GetMeshes()) {
+        auto& family=mesh.skinning.enabled?skinnedInput:staticInput;
+        if(!family)family=mesh.material;
+        else Require(family==mesh.material,"stable material/program family was rebuilt per mesh");
+    }
+    Require(staticInput&&skinnedInput&&staticInput!=skinnedInput,"material sharing merged static and skinned program inputs");
+    std::puts("PASS: one stable material shares per retained program; static/skinned variants remain separate");
+#endif
     std::puts("PASS: serial/Worker stage contracts: three stages per object, global/equal-key order, override/fallback/invalid material, inclusion exception, pipeline subset/order, unsupported/duplicate stage rejection");
 }
 #ifdef FRONTEND_BINDING_VALIDATION

@@ -83,4 +83,5 @@ framegraph-*-gpu-report.json 以及 memory/cpu-stages/expanded-canvas/located-re
 本轮 Frame Graph 三项收尾全部完成，没有承诺内的待办。上面的独立扩展仍未实现。
 用户已选择下一方向为「实际场景渲染性能」；先在当前主线对 PerformanceLab 的
 六组 A/B 场景独占采样，分别定位 Update/Extract/Prepare/Record/Execute/GPU，
-把结果、优化优先级和未做项另存为 `RENDERING_PERFORMANCE_HANDOFF.zh-CN.md`。
+基线与首轮共享材质优化现已完成，结果、优化优先级和未做项见
+[实际场景性能交接档案](RENDERING_PERFORMANCE_HANDOFF.zh-CN.md)。收尾提交为 `9bb01a23`。

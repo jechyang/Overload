@@ -451,6 +451,36 @@ void FrontendValidation(const std::filesystem::path& dir, std::optional<unsigned
                 }
                 auto snapshot=frontend->ExtractScene({{*scene,camera,96,64,7,9,expectedTime}});
                 Require(snapshot->GetMeshes().size()==5,"active candidate ownership mismatch");
+                const auto sharedMaterial=snapshot->GetMeshes().front().material;
+                Require(std::all_of(snapshot->GetMeshes().begin(),snapshot->GetMeshes().end(),[&](const auto& mesh){return mesh.material==sharedMaterial;}),
+                    "identical immutable material inputs were rebuilt per object");
+                if(frame==0) {
+                    const auto fresh=frontend->ExtractScene({{*scene,camera,96,64,7,9,expectedTime}});
+                    Require(fresh->GetMeshes().front().material!=sharedMaterial,"material snapshot cache survived its extraction boundary");
+                    // ExtractFrame supplies neutral shadows even without a caster.
+                    // Receiver overrides must share owned inputs without per-draw rebuilds.
+                    auto shadowMap=std::make_shared<baregl::Texture>(baregl::types::ETextureType::TEXTURE_2D);
+                    auto environment=std::make_shared<baregl::Texture>(baregl::types::ETextureType::TEXTURE_CUBE);
+                    shadowMap->Allocate({.width=1,.height=1,.internalFormat=baregl::types::EInternalFormat::RGBA8});
+                    environment->Allocate({.width=1,.height=1,.internalFormat=baregl::types::EInternalFormat::RGBA8});
+                    material->SetReceiveShadows(true);material->SetReceiveReflections(true);
+                    OvCore::Rendering::SceneRenderRequest receivers{{*scene,camera,96,64,7,9,expectedTime}};
+                    receivers.shadow={shadowMap,FMatrix4::Identity};receivers.reflection.map=environment;
+                    const auto receiverSnapshot=frontend->ExtractScene(receivers);
+                    const auto receiverMaterial=receiverSnapshot->GetMeshes().front().material;
+                    Require(std::all_of(receiverSnapshot->GetMeshes().begin(),receiverSnapshot->GetMeshes().end(),
+                        [&](const auto& mesh){return mesh.material==receiverMaterial;}),"constant shadow/environment overrides disabled material sharing");
+                    const auto reads=OvRendering::Data::Material::GetPreparedTextureReads(receiverMaterial);
+                    for(const auto& texture:{shadowMap,environment})Require(std::any_of(reads.begin(),reads.end(),
+                        [&](const auto& storage){return storage.GetID()==texture->RetainStorage().GetID();}),"shared receiver lost its owned sampler input");
+                    material->SetReceiveShadows(false);material->SetReceiveReflections(false);
+                    material->SetProperty("u_EmissiveIntensity",.9f,true);
+                    const auto singleUse=frontend->ExtractScene({{*scene,camera,96,64,7,9,expectedTime}});
+                    const auto value=material->GetProperty("u_EmissiveIntensity");
+                    Require(!singleUse->GetMeshes().empty()&&std::get<float>(value->value)==std::get<float>(value->defaultValue),
+                        "material sharing bypassed ordered single-use consumption");
+                    material->SetProperty("u_EmissiveIntensity",.7f,false);
+                }
                 auto state=driver.CreatePipelineState();
                 std::array<std::shared_ptr<const SceneSnapshot>,3> failures;
                 if(mode==2 && frame==0)for(auto& failure:failures)failure=frontend->ExtractScene({{*scene,camera,96,64,7,9,expectedTime}});

@@ -105,3 +105,11 @@ Frame Graph 面板使用与诊断数据边界见根目录 FRAMEGRAPH_DIAGNOSTICS
 完整节点、CPU 合计、物理分类/目标总量及 GPU 数据与计划的精确对应。
 核心 --framegraph 另测立即 Seal 与成功录制后发布、五类内存的 resize/lease/pin/
 reserve/unused 边界，以及诊断值不阻止 TrimIdle 的实际 GL 释放。
+
+实际场景性能基线和材质快照共享记录见根目录 RENDERING_PERFORMANCE_HANDOFF.zh-CN.md。
+run-performance-lab.mjs 适配本机已有 Examples/PerformanceLab（该包不随此变更提交），
+补齐主线 OvReflection 链接库并将编译临时目录放在 Build。使用原 analyze.mjs 生成
+summary.json 后，compare-performance-lab.mjs 对两组完整捕获核对机器/参数/资产、
+样本量、计数和逐字节 RGBA，写出独立 comparison.json；不接受像素容差。
+--frontend 覆盖稳定快照共享、视图边界与 receiver/single-use；--bindings 另测同材质
+静态/骨骼实际 program 分组，保持原八个冷进程的绑定、像素、线程和失败语义验收。
