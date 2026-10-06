@@ -27,6 +27,7 @@ namespace OvEditor::Panels
         void DrawContents();
         void DrawPasses();
         void DrawResources();
+        void DrawLifetimes();
         void DrawDependencies();
         void DrawResourceFlow();
         void DrawPreview();
@@ -52,6 +53,14 @@ namespace OvEditor::Panels
         bool m_graphFocus=true,m_graphFit=true,m_graphSelectionInitialized=false,m_graphResourceFlow=true,m_flowSelectionIsResource=false;
         bool m_graphVersions=true;
         bool m_graphGpuHeat=false;
+        bool m_lifetimePhysical=true,m_lifetimeTransientOnly=true,m_lifetimeAtPass=false;
+        float m_lifetimeZoom=1;
+        size_t m_lifetimePeakPass=0;
+        // UI values only: visible bars and one plan's estimated scratch profile.
+        struct LifetimeBar { size_t resource;std::array<float,4> rect; };
+        std::vector<LifetimeBar> m_lifetimeBars;
+        std::vector<uint64_t> m_lifetimeLiveBytes;
+        std::array<float,4> m_lifetimeProfileRect{};
         uint32_t m_selectedVersion=0;
         int m_previewMip=0,m_previewLayer=0,m_previewChannel=0;
         float m_previewExposure=0,m_previewMin=0,m_previewMax=1;

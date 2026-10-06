@@ -92,5 +92,8 @@ Frame Graph 面板使用与诊断数据边界见根目录 FRAMEGRAPH_DIAGNOSTICS
 采样开关、热点行选择、测量图冻结、resize、恢复计划顺序、关闭与精确视口像素。
 编辑器入口还验证 GPU heat 的两种真实画布、原生节点颜色和资源颜色保持、
 同规模新图拒绝旧值、测量图恢复、实际按钮与节点点击、冻结 resize 和取消冻结。
+生命周期时间轴检查在 framegraph_lifetime_editor_validation.inl：实际产品逐 Pass
+内存曲线/编译峰值、同槽非重叠条、原生条与曲线点击、筛选/峰值、逻辑/外部资源、
+缩放/水平滚动、详情双向跳转、冻结 resize/恢复，另测 Export/未使用/空图边界。
 
 自动曝光亮度缓冲的格式、数值对照与多视口内存实测见根目录 FRAMEGRAPH_LUMINANCE_VALIDATION.zh-CN.md。

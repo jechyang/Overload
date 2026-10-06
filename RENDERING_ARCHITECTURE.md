@@ -97,4 +97,6 @@ Timings 默认关闭；开启后每 4 份计划在 GL consumer 上为每个 Pass
 
 Dependencies 的 GPU heat 在资源版本流和 Pass 依赖图中按整份样本的最大 Pass 耗时着色，显示毫秒和占比。启用时冻结测量快照，节点点击、筛选与视图切换共享同一份值；只匹配相同快照对象，取消冻结即恢复实时图并移除热力着色。资源与边颜色、选中边框保留，不新增查询、纹理或历史队列。
 
+Lifetimes 把同一物理 scratch 槽的非重叠逻辑资源放在一行，也可按逻辑资源独立查看；外部资源不与 scratch 合并。横轴为 Pass 顺序，逻辑 scratch 存活曲线及峰值沿用编译区间，包含末次使用和 Export 延长。筛选不改变整图内存口径，缩放/平移/点击和详情跳转只读取值快照；条结束不表示原生存储释放，池回收边界保持不变。
+
 新增 CPU 功能应先确定快照字段及 owner，再实现局部 Processor/Preparer/Collector，并通过明确阶段/资源契约组合。当前没有可视化流水线编辑器、脚本 SRP SDK 或新的 Renderer 继承体系。运行入口和测试边界见 Tests/RenderingCommands/README.md。

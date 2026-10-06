@@ -24,6 +24,17 @@
 - Resources：查看来源、尺寸、格式、估算字节、最终内容版本、存活区间，以及
   同一物理 scratch slot 的逻辑资源；访问列表也标注读/写版本，点击关联 Pass 跳转。
   Show version flow 直接聚焦该资源的版本流。
+- Lifetimes：按 Pass 顺序显示资源的首次/末次使用。默认 Physical slots 把复用同一
+  物理 scratch 槽的逻辑纹理放在一行，非重叠区间显示为独立条；取消后每个逻辑资源
+  一行。Transient only 可切换到外部/历史/输出资源，它们始终单独列出，不与 scratch
+  合并。资源条保持原字号，Zoom 与水平滚动可放大和平移时间轴，左侧行名固定，
+  行列表支持垂直滚动；Fit 恢复默认比例，未使用资源明确标记未分配。
+  上方曲线只计算整份计划的逻辑 scratch 存活字节，筛选不改变曲线和峰值；点击曲线
+  或调整 Pass 选择位置，Peak 定位峰值，At selected Pass 只显示该位置仍存活的资源。
+  点击条选择资源，双击或 Resource details 查看资源详情；首末端点按钮和 Pass
+  details 查看对应 Pass。Resources 的 Show lifetime 和 Passes 的 Show lifetimes
+  提供双向入口。Export 延长到计划末尾并标注橙色端点；未使用的 scratch 不分配条。
+  时间轴沿用当前准备快照与 Freeze plan，不保留额外图历史或 GPU 存储。
 - Preview：在资源详情或版本流中点 Preview content，或手动选资源后点 Capture。
   在下一份结构匹配的产品计划中，于所选版本的生产 Pass 后抓取一次图像；v0 在
   首次访问前抓取。支持 2D、cube 的六个面、mip、RGB/单通道/Alpha 和深度窗口，
@@ -102,6 +113,19 @@ GPU 计时默认关闭，与诊断计划的采集开关独立。每个 Pass 两�
 普通图的筛选、缩放、选中边框、资源版本和读写链路保留，颜色尺度使用整图最大
 Pass 耗时，不代表 GPU 利用率或 CPU 时间。全部为零时仍可查看零值，不发生除零。
 
+### 生命周期时间轴的内存口径
+
+Lifetimes 的横轴是固定执行顺序的 Pass 编号，不是 CPU/GPU 毫秒。首次和末次使用
+均包含在区间内，Export 的末次标记可以等于 Pass 数量，画面钳制到最后一列。
+整图 scratch 曲线按编译结果累加仍存活的逻辑 transient 字节，峰值与编译器一致。
+物理槽按本计划的 mapping 序号分组；每槽容量与槽内多个逻辑资源的字节总和不同。
+外部资源可能在计划之前/之后由 owner 保留，时间轴只显示本计划内使用，不能据此
+推断其实际创建/销毁或全部显存占用。条结束也不表示池已释放该槽，实际回收仍由
+GPU 退役、外部 pin、帧预留、闲置预算和过期策略决定。
+
+当前页只计算一份值快照的曲线和可见条矩形；筛选、缩放、冻结和关闭都不发出 GL
+调用，不添加 texture、lease、native query 或新的每帧历史队列。关闭释放这些 UI 值。
+
 打开面板才在 PrepareFrame 末尾复制诊断值，冻结后停止采集；关闭时释放面板值，
 在同一次产品录制中关闭 Frontend 采集并释放其值。关闭状态不查询池统计，不复制
 计划；没有每帧诊断历史队列。
@@ -153,6 +177,9 @@ node Tests/Skinning/run-validation.mjs Debug --framegraph-editor --framegraph-ba
    GPU heat 验证两种实际画布的原生窗口像素：最慢 Pass 着暖色、停用后恢复原色，
    资源颜色不变；实际 ImGui 按钮切换与节点点击、同规模不同图拒绝旧样本、测量图
    恢复、冻结 resize、返回热点列表及取消冻结恢复实时计划，产品视口像素不变。
+   生命周期验收还覆盖逐 Pass 与编译存活区间/峰值一致、实际物理槽的非重叠条、
+   原生条和内存曲线点击、峰值与筛选、逻辑/外部资源、缩放平移、详情双向跳转、
+   冻结 resize 与恢复，以及 Export 末尾、未使用和空图的受控边界值。
 1. 预览在 alias 覆盖前得到指定 v1/v2 内容；RGB/Red/Alpha、24 个 cube
    face/mip、深度比较模式覆盖、depth/stencil renderbuffer resolve、R32F、
    HDR 控制和尺寸上限。拒绝未初始化 v0、Discard、过期选择和无效范围；
@@ -193,7 +220,7 @@ node Tests/Skinning/run-validation.mjs Debug --framegraph-editor --framegraph-ba
 - `Build/JobsValidation/Skinning/{Debug,Release}-framegraph-command-list/current/`
 - `Build/JobsValidation/Skinning/{Debug,Release}-pipeline-command-list/current/`
 - `Build/JobsValidation/Skinning/{Debug,Release}-framegraph-editor-command-list-editor-ui/current/`
-  的 `run.log`、`framegraph-{main,render}-{passes,resources,preview-color,timings,timings-pass,timings-order,gpu-heat-resources,gpu-heat-dependencies}.rgba`、尺寸文件；
+  的 `run.log`、`framegraph-{main,render}-{passes,resources,preview-color,timings,timings-pass,timings-order,gpu-heat-resources,gpu-heat-dependencies,lifetimes-physical,lifetimes-peak,lifetimes-logical,lifetimes-zoom}.rgba`、尺寸文件；
   生成的 PNG 用于视觉检查。
 - 相应入口目录的 `result.json`，诊断面板结果含 `framegraphEditor: true`，
   `framegraphComparison.files` 记录两份 F0 检查。
@@ -201,6 +228,24 @@ node Tests/Skinning/run-validation.mjs Debug --framegraph-editor --framegraph-ba
 面板依赖图按产品计划及其资源访问绘制；聚焦和筛选显示相邻链路，便于检查多视图
 计划。以历史内存数据解释当前缓存行为时需留意它采集于过期回收实现之前；新的
 自动回收效果以本轮内存测量为准。
+
+## 当前完成度与后续范围
+
+F0–F6 核心迁移已完成，见 FRAMEGRAPH_F6_VALIDATION.zh-CN.md。主线目前包含资源/
+子资源与内容版本契约、依赖/初始化校验、固定顺序的产品组合、生命周期分析、
+兼容物理复用、池预算/自动回收、GPU 退役、Editor/Game 和多线程回归，以及依赖图、
+版本图、资源预览、GPU 耗时/热力图、生命周期时间轴。
+
+按当前 OpenGL 产品需求，建议时间轴之后再做 2–3 轮有明确验收的收尾：
+
+1. 编译/实现/准备/录制的 CPU 耗时与慢点定位，再按证据评估稳定图结构缓存。
+2. 内存占用来源诊断，把当前图、持久输出/历史、闲置预留、在途旧尺寸和外部 pin
+   的边界讲清楚；保留描述估算与实测显存的区别。
+3. 大图操作与导出：折叠统计、扩大画布、查找和定位、导出可复核的值诊断。
+
+自动 Pass 裁剪/重排、通用 Buffer 图、显式 API barrier、Vulkan/D3D12 与多队列/
+异步计算是更大的独立扩展。它们没有包含在 F0–F6 或上述收尾估计中，是否实现
+应由实际渲染需求和测量结果决定。
 
 ## 自动回收内存实测
 

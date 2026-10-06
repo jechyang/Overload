@@ -113,6 +113,19 @@ namespace
         draw->AddRectFilled({pos.x+width*start,pos.y},{pos.x+std::max(width*start+2,width*end),pos.y+height},SlotColor(resource.physicalSlot),3);
         if(ImGui::IsItemHovered())ImGui::SetTooltip("P%zu -> P%zu%s",life.first,life.last,life.exported?" (exported through end of plan)":"");
     }
+    struct LifetimeRow
+    {
+        uint64_t slot=0,bytes=0;
+        std::vector<size_t> resources;
+    };
+    std::vector<uint64_t> ScratchProfile(const FrameGraphDiagnostics& graph)
+    {
+        const auto count=graph.passes.size();std::vector<uint64_t> starts(count),ends(count),result(count);
+        for(const auto& resource:graph.resources)if(resource.origin==ResourceOrigin::Transient&&resource.lifetime.first<count) {
+            const auto& life=resource.lifetime;starts[life.first]+=life.estimatedBytes;ends[std::min(life.last,count-1)]+=life.estimatedBytes;
+        }
+        uint64_t live=0;for(size_t p=0;p<count;++p){live+=starts[p];result[p]=live;live-=ends[p];}return result;
+    }
 }
 
 OvEditor::Panels::FrameGraph::FrameGraph(const std::string& title,bool opened,const OvUI::Settings::PanelWindowSettings& settings)
@@ -120,6 +133,7 @@ OvEditor::Panels::FrameGraph::FrameGraph(const std::string& title,bool opened,co
 {
     minSize={520,360};CreateWidget<Contents>([this]{DrawContents();});
     CloseEvent += [this]{RequireUIThread();m_snapshot.reset();m_graphNodes.clear();m_graphEdges.clear();m_frozen=false;m_graphFit=true;
+        m_lifetimeBars.clear();m_lifetimeLiveBytes.clear();m_lifetimeProfileRect={};
         m_previewRequest.reset();m_previewTicket.reset();m_previewImage.reset();m_previewStatus.clear();m_previewSequence=0;m_gpuTimings.reset();m_captureGpuTimings=false;m_graphGpuHeat=false;};
 }
 void OvEditor::Panels::FrameGraph::RequireUIThread() const
@@ -141,7 +155,7 @@ void OvEditor::Panels::FrameGraph::Update(std::shared_ptr<const FrameGraphDiagno
 {
     RequireUIThread();m_pool=pool;
     if(!m_budgetEdited)m_budgetMiB=static_cast<int>(std::min(uint64_t{4096},pool.idleBudget/uint64_t(MiB)));
-    if(!IsOpened()){m_snapshot.reset();m_graphNodes.clear();m_graphEdges.clear();m_frozen=false;return;}
+    if(!IsOpened()){m_snapshot.reset();m_graphNodes.clear();m_graphEdges.clear();m_lifetimeBars.clear();m_lifetimeLiveBytes.clear();m_frozen=false;return;}
     if(!m_frozen&&snapshot)m_snapshot=std::move(snapshot);
     if(m_snapshot){
         if(m_selectedPass>=m_snapshot->passes.size())m_selectedPass=0;
@@ -188,7 +202,8 @@ void OvEditor::Panels::FrameGraph::QueuePreview()
     m_previewRequest=request;m_previewStatus="Queued for the next matching product plan";
 }
 void OvEditor::Panels::FrameGraph::SelectPass(size_t index){m_selectedPass=index;m_flowSelectionIsResource=false;m_requestedTab=0;m_filter[0]=0;}
-void OvEditor::Panels::FrameGraph::SelectResource(size_t index){m_selectedResource=index;m_selectedVersion=m_snapshot->resources[index].finalVersion;m_flowSelectionIsResource=true;m_requestedTab=1;m_filter[0]=0;}
+void OvEditor::Panels::FrameGraph::SelectResource(size_t index){m_selectedResource=index;m_selectedVersion=m_snapshot->resources[index].finalVersion;m_flowSelectionIsResource=true;m_requestedTab=1;m_filter[0]=0;
+    if(m_snapshot->resources[index].origin!=ResourceOrigin::Transient)m_transientOnly=false;}
 
 const FrameGraphGpuTimings* OvEditor::Panels::FrameGraph::MatchingGpuTimings() const
 {
@@ -272,6 +287,7 @@ void OvEditor::Panels::FrameGraph::DrawContents()
         if(ImGui::BeginTabItem("Dependencies",nullptr,request==2?ImGuiTabItemFlags_SetSelected:0)){DrawDependencies();ImGui::EndTabItem();}
         if(ImGui::BeginTabItem("Passes",nullptr,request==0?ImGuiTabItemFlags_SetSelected:0)){DrawPasses();ImGui::EndTabItem();}
         if(ImGui::BeginTabItem("Resources",nullptr,request==1?ImGuiTabItemFlags_SetSelected:0)){DrawResources();ImGui::EndTabItem();}
+        if(ImGui::BeginTabItem("Lifetimes",nullptr,request==5?ImGuiTabItemFlags_SetSelected:0)){DrawLifetimes();ImGui::EndTabItem();}
         if(ImGui::BeginTabItem("Preview",nullptr,request==3?ImGuiTabItemFlags_SetSelected:0)){DrawPreview();ImGui::EndTabItem();}
         if(ImGui::BeginTabItem("Timings",nullptr,request==4?ImGuiTabItemFlags_SetSelected:0)){DrawTimings();ImGui::EndTabItem();}
         ImGui::EndTabBar();
@@ -305,6 +321,7 @@ void OvEditor::Panels::FrameGraph::DrawPasses()
         ImGui::SameLine();if(ImGui::SmallButton("Show GPU heat"))ShowGpuHeat(selectedPass);
     }
     if(ImGui::SmallButton("Show dependencies")){m_requestedTab=2;m_graphFocus=true;m_graphFit=true;}
+    ImGui::SameLine();if(ImGui::SmallButton("Show lifetimes")){m_requestedTab=5;m_lifetimeAtPass=true;m_lifetimeTransientOnly=false;m_filter[0]=0;}
     ImGui::TextDisabled("View %llu | %zu accesses",pass.viewId,pass.accesses.size());
     for(size_t i=0;i<pass.accesses.size();++i) {
         const auto& access=pass.accesses[i];const auto& resource=graph.resources[access.resource.index];ImGui::PushID(static_cast<int>(i));
@@ -739,6 +756,7 @@ void OvEditor::Panels::FrameGraph::DrawResources()
         m_flowSelectionIsResource=true;m_selectedVersion=selected.finalVersion;m_graphResourceFlow=true;m_graphVersions=true;m_graphFocus=true;m_graphFit=true;m_requestedTab=2;m_filter[0]=0;
     }
     ImGui::SameLine();if(ImGui::SmallButton("Preview content")){m_requestedTab=3;QueuePreview();}
+    ImGui::SameLine();if(ImGui::SmallButton("Show lifetime")){m_requestedTab=5;m_lifetimeAtPass=false;m_lifetimeTransientOnly=selected.origin==ResourceOrigin::Transient;m_filter[0]=0;}
     ImGui::BeginChild("resource-detail",{0,0});
     if(selected.physicalSlot) {
         ImGui::TextUnformatted("Same physical slot (nonoverlapping plan lifetimes):");
@@ -757,6 +775,117 @@ void OvEditor::Panels::FrameGraph::DrawResources()
             ImGui::PopID();
         }
         ImGui::PopID();
+    }
+    ImGui::EndChild();
+}
+
+void OvEditor::Panels::FrameGraph::DrawLifetimes()
+{
+    const auto& graph=*m_snapshot;const auto count=graph.passes.size();m_lifetimeBars.clear();
+    m_lifetimeLiveBytes=ScratchProfile(graph);
+    if(!count){m_lifetimeProfileRect={};ImGui::TextDisabled("No passes in this plan");return;}
+    m_lifetimePeakPass=static_cast<size_t>(std::max_element(m_lifetimeLiveBytes.begin(),m_lifetimeLiveBytes.end())-m_lifetimeLiveBytes.begin());
+    ImGui::Checkbox("Physical slots",&m_lifetimePhysical);ImGui::SameLine();ImGui::Checkbox("Transient only",&m_lifetimeTransientOnly);
+    ImGui::SameLine();ImGui::Checkbox("At selected Pass",&m_lifetimeAtPass);
+    int selected=static_cast<int>(m_selectedPass);ImGui::SetNextItemWidth(175);
+    if(ImGui::SliderInt("Pass",&selected,0,static_cast<int>(count-1),"%d",ImGuiSliderFlags_AlwaysClamp))m_selectedPass=selected;
+    ImGui::SameLine();if(ImGui::SmallButton("Peak"))m_selectedPass=m_lifetimePeakPass;
+    ImGui::SameLine();ImGui::SetNextItemWidth(100);ImGui::SliderFloat("Zoom",&m_lifetimeZoom,1,8,"%.1fx",ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SameLine();if(ImGui::SmallButton("Fit"))m_lifetimeZoom=1;
+    ImGui::Text("Scratch at P%zu: %.2f MiB | peak %.2f MiB at P%zu",m_selectedPass,m_lifetimeLiveBytes[m_selectedPass]/MiB,m_lifetimeLiveBytes[m_lifetimePeakPass]/MiB,m_lifetimePeakPass);
+    std::vector<float> profile;profile.reserve(count);for(const auto bytes:m_lifetimeLiveBytes)profile.push_back(static_cast<float>(bytes/MiB));
+    ImGui::PlotHistogram("##scratch-profile",profile.data(),static_cast<int>(count),0,nullptr,0,std::max(1.f,profile[m_lifetimePeakPass]),{ImGui::GetContentRegionAvail().x,42});
+    const auto profileMin=ImGui::GetItemRectMin(),profileMax=ImGui::GetItemRectMax();
+    m_lifetimeProfileRect={profileMin.x,profileMin.y,profileMax.x,profileMax.y};
+    const auto& style=ImGui::GetStyle();const float profileStart=profileMin.x+style.FramePadding.x,profileWidth=std::max(1.f,profileMax.x-profileMin.x-2*style.FramePadding.x);
+    const float selectedX=profileStart+profileWidth*(float(m_selectedPass)+.5f)/count;
+    ImGui::GetWindowDrawList()->AddLine({selectedX,profileMin.y},{selectedX,profileMax.y},IM_COL32(105,202,255,255),2);
+    if(ImGui::IsItemHovered()) {
+        const auto p=std::min(count-1,static_cast<size_t>(std::max(0.f,(ImGui::GetIO().MousePos.x-profileStart)/profileWidth)*count));
+        ImGui::SetTooltip("P%zu  %s\nLive logical scratch %.3f MiB\nClick to select this Pass",p,graph.passes[p].name.c_str(),m_lifetimeLiveBytes[p]/MiB);
+        if(ImGui::IsMouseClicked(ImGuiMouseButton_Left))m_selectedPass=p;
+    }
+    std::vector<LifetimeRow> rows;std::map<uint64_t,size_t> slots;size_t shown=0;
+    for(size_t r=0;r<graph.resources.size();++r) {
+        const auto& resource=graph.resources[r];const auto& life=resource.lifetime;
+        if(m_lifetimeTransientOnly&&resource.origin!=ResourceOrigin::Transient)continue;
+        if(m_lifetimeAtPass&&(life.first>m_selectedPass||life.last<m_selectedPass))continue;
+        bool matches=Matches(resource.name,m_filter.data());
+        if(!matches&&m_filter[0])for(const auto& pass:graph.passes)if(Matches(pass.name,m_filter.data())&&std::any_of(pass.accesses.begin(),pass.accesses.end(),[&](const auto& access){return access.resource.index==r;})){matches=true;break;}
+        if(!matches)continue;
+        const auto slot=m_lifetimePhysical&&resource.origin==ResourceOrigin::Transient?resource.physicalSlot:0;
+        size_t row=rows.size();
+        if(slot){const auto found=slots.find(slot);if(found!=slots.end())row=found->second;else slots.emplace(slot,row);}
+        if(row==rows.size())rows.push_back({slot});
+        rows[row].resources.push_back(r);if(life.first<count)rows[row].bytes=std::max(rows[row].bytes,life.estimatedBytes);++shown;
+    }
+    for(auto& row:rows)std::stable_sort(row.resources.begin(),row.resources.end(),[&](size_t a,size_t b){return graph.resources[a].lifetime.first<graph.resources[b].lifetime.first;});
+    std::stable_sort(rows.begin(),rows.end(),[](const auto& a,const auto& b){return a.bytes>b.bytes;});
+    const bool selectedVisible=std::any_of(rows.begin(),rows.end(),[&](const auto& row){return std::find(row.resources.begin(),row.resources.end(),m_selectedResource)!=row.resources.end();});
+    if(!selectedVisible&&!rows.empty()){m_selectedResource=rows.front().resources.front();m_selectedVersion=graph.resources[m_selectedResource].finalVersion;}
+    ImGui::TextDisabled("%zu rows / %zu resources | Whole-plan scratch estimates; horizontal scroll to pan",rows.size(),shown);
+    const float labelWidth=160,axisWidth=std::max(float(count)*4,ImGui::GetContentRegionAvail().x-labelWidth-2*style.WindowPadding.x-style.ScrollbarSize-12)*m_lifetimeZoom;
+    const float rowHeight=30,headerHeight=22,height=std::max(100.f,ImGui::GetContentRegionAvail().y-102);
+    ImGui::SetNextWindowContentSize({labelWidth+axisWidth+8,headerHeight+rowHeight*rows.size()});
+    ImGui::BeginChild("lifetime-rows",{0,height},ImGuiChildFlags_Borders,ImGuiWindowFlags_HorizontalScrollbar);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,ImVec2(style.ItemSpacing.x,0));
+    const auto start=ImGui::GetCursorScreenPos();const float labelX=start.x+ImGui::GetScrollX(),axisViewportX=labelX+labelWidth,axisX=start.x+labelWidth,cell=axisWidth/count;
+    const float clipRight=ImGui::GetWindowPos().x+ImGui::GetWindowSize().x;
+    auto* draw=ImGui::GetWindowDrawList();const auto font=ImGui::GetFont();const float fontSize=ImGui::GetFontSize();
+    ImGui::Dummy({labelWidth+axisWidth,headerHeight});
+    const size_t step=std::max<size_t>(1,static_cast<size_t>(std::ceil(46.f/cell)));
+    draw->PushClipRect({axisViewportX,start.y},{clipRight,start.y+headerHeight},true);
+    for(size_t p=0;p<count;p+=step)draw->AddText({axisX+p*cell,start.y},IM_COL32(158,174,194,255),std::format("P{}",p).c_str());
+    draw->PopClipRect();draw->AddText({labelX+4,start.y},IM_COL32(158,174,194,255),"Storage / plan use");
+    ImGuiListClipper clipper;clipper.Begin(static_cast<int>(rows.size()),rowHeight);
+    while(clipper.Step())for(int rowIndex=clipper.DisplayStart;rowIndex<clipper.DisplayEnd;++rowIndex) {
+        const auto& row=rows[rowIndex];const auto pos=ImGui::GetCursorScreenPos();const float y=pos.y;
+        ImGui::InvisibleButton(std::format("row{}",rowIndex).c_str(),{labelWidth+axisWidth,rowHeight});
+        draw->AddRectFilled({pos.x,y},{pos.x+labelWidth+axisWidth,y+rowHeight-1},rowIndex%2?IM_COL32(30,34,43,255):IM_COL32(24,28,36,255));
+        const auto& first=graph.resources[row.resources.front()];const ImVec4 labelClip={labelX,y,axisViewportX-6,y+rowHeight};
+        const auto label=row.slot?std::format("Slot #{} | {} res.",row.slot,row.resources.size()):std::format("R{}  {}",row.resources.front(),first.name);
+        const auto subtitle=first.origin==ResourceOrigin::Transient?(first.lifetime.first<count?std::format("{:.2f} MiB",row.bytes/MiB):"Unused: no allocation"):std::string(Origin(first.origin))+" | external";
+        draw->PushClipRect({axisViewportX,y},{clipRight,y+rowHeight},true);
+        for(size_t p=0;p<count;p+=step)draw->AddLine({axisX+p*cell,y},{axisX+p*cell,y+rowHeight},IM_COL32(255,255,255,16));
+        draw->AddLine({axisX+(m_selectedPass+.5f)*cell,y},{axisX+(m_selectedPass+.5f)*cell,y+rowHeight},IM_COL32(105,202,255,100));
+        for(const auto r:row.resources) {
+            const auto& resource=graph.resources[r];const auto& life=resource.lifetime;
+            if(life.first>=count){draw->AddText({axisX+4,y+7},ImGui::GetColorU32(ImGuiCol_TextDisabled),resource.origin==ResourceOrigin::Transient?"Unused: no allocation":"Unused in plan");continue;}
+            const float left=axisX+life.first*cell+1,right=axisX+(std::min(life.last,count-1)+1)*cell-1;
+            const std::array<float,4> rect={left,y+4,std::max(left+1,right),y+rowHeight-4};
+            if(rect[2]>axisViewportX&&rect[0]<clipRight)m_lifetimeBars.push_back({r,{std::max(rect[0],axisViewportX),rect[1],std::min(rect[2],clipRight),rect[3]}});
+            const auto color=resource.origin==ResourceOrigin::Transient?SlotColor(resource.physicalSlot?resource.physicalSlot:r+1):IM_COL32(65,86,106,255);
+            draw->AddRectFilled({rect[0],rect[1]},{rect[2],rect[3]},color,2);
+            if(r==m_selectedResource)draw->AddRect({rect[0],rect[1]},{rect[2],rect[3]},IM_COL32(240,245,255,255),2,ImDrawFlags_None,2);
+            if(life.exported)draw->AddLine({rect[2]-2,rect[1]},{rect[2]-2,rect[3]},IM_COL32(255,180,85,255),3);
+            const ImVec4 textClip={rect[0]+2,rect[1],rect[2]-2,rect[3]};
+            const auto title=std::format("R{} {}",r,resource.name);draw->AddText(font,fontSize*.9f,{rect[0]+3,rect[1]+3},IM_COL32(255,255,255,255),title.c_str(),nullptr,0,&textClip);
+            if(ImGui::IsItemHovered()&&ImGui::GetIO().MousePos.x>=axisViewportX&&ImGui::GetIO().MousePos.x>=rect[0]&&ImGui::GetIO().MousePos.x<=rect[2]) {
+                ImGui::SetTooltip("R%zu  %s\n%s %ux%u | %s | slot %llu\nP%zu -> P%zu%s\nClick to select; double-click for resource details",r,resource.name.c_str(),Format(resource.format),resource.width,resource.height,Origin(resource.origin),resource.physicalSlot,life.first,std::min(life.last,count-1),life.exported?" (exported through plan end)":"");
+                if(ImGui::IsMouseClicked(ImGuiMouseButton_Left)){m_selectedResource=r;m_selectedVersion=resource.finalVersion;m_flowSelectionIsResource=true;if(ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))SelectResource(r);}
+            }
+        }
+        draw->PopClipRect();
+        draw->AddRectFilled({labelX,y},{axisViewportX,y+rowHeight-1},rowIndex%2?IM_COL32(30,34,43,255):IM_COL32(24,28,36,255));
+        draw->AddText(font,fontSize,{labelX+4,y+2},IM_COL32(220,230,245,255),label.c_str(),nullptr,0,&labelClip);
+        draw->AddText(font,fontSize*.82f,{labelX+4,y+17},IM_COL32(158,174,194,255),subtitle.c_str(),nullptr,0,&labelClip);
+        if(ImGui::IsItemHovered()&&ImGui::GetIO().MousePos.x<axisViewportX)ImGui::SetTooltip("%s\n%zu logical resource(s) in this row",first.name.c_str(),row.resources.size());
+    }
+    if(rows.empty())ImGui::TextDisabled("No resources match these filters");
+    ImGui::PopStyleVar();
+    ImGui::EndChild();
+    ImGui::BeginChild("lifetime-detail",{0,0});
+    if(!rows.empty()) {
+        const auto& resource=graph.resources[m_selectedResource];const auto& life=resource.lifetime;
+        ImGui::TextWrapped("R%zu  %s | %s %ux%u",m_selectedResource,resource.name.c_str(),Format(resource.format),resource.width,resource.height);
+        if(life.first<count) {
+            if(ImGui::SmallButton(std::format("First: P{}",life.first).c_str()))m_selectedPass=life.first;
+            ImGui::SameLine();if(ImGui::SmallButton(std::format("Last: P{}",std::min(life.last,count-1)).c_str()))m_selectedPass=std::min(life.last,count-1);
+            ImGui::SameLine();ImGui::TextDisabled(life.exported?"Exported through plan end":"Inclusive first/last use");
+        } else ImGui::TextDisabled("Unused in this plan; no scratch allocation.");
+        if(ImGui::SmallButton("Resource details"))SelectResource(m_selectedResource);
+        ImGui::SameLine();if(ImGui::SmallButton("Pass details"))SelectPass(m_selectedPass);
+        ImGui::TextDisabled("Plan use only; pool storage stays allocated until retirement and caching rules allow release.");
     }
     ImGui::EndChild();
 }

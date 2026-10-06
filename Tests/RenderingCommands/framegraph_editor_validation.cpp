@@ -298,6 +298,7 @@ int main(int argc,char** argv) try
         activateTimingItem("Slowest first");tick();Require(!panel.m_slowestFirst,"hotspot order could not switch back to plan order");image("timings-order");
         activateTimingItem("Capture GPU timings");tick();Require(!panel.WantsGpuTimings()&&!frontend.GetFrameGraphGpuTimings(),"disabling timing kept collecting or retaining query pools");
         OnOwner(context,[](auto&){for(const auto id:timingQueryIDs)Require(!glIsQuery(id),"disabled timing retained query objects");glad_glGenQueries=timingGenerate;});
+        #include "framegraph_lifetime_editor_validation.inl"
         panel.m_requests.budget=128ull*1024*1024;tick();
         Require(pool->GetStatistics().idleBudget==128ull*1024*1024&&!panel.m_requests.budget,"panel budget request was not applied exactly once at the product boundary");
         const auto before=pool->GetStatistics();Require(before.idleTargets>0,"trim fixture has no retired scratch");
@@ -307,6 +308,7 @@ int main(int argc,char** argv) try
         Require(!panel.m_previewImage&&!frontend.GetFrameGraphPreview(),"closed Frame Graph retained preview state");
         Require(!panel.m_gpuTimings&&!frontend.GetFrameGraphGpuTimings()&&!panel.WantsGpuTimings()&&!panel.m_graphGpuHeat,"closed Frame Graph retained timing state");
         Require(!frontend.GetFrameGraphDiagnostics()&&!panel.WantsCapture(),"closed panel kept collecting diagnostics");
+        Require(panel.m_lifetimeBars.empty()&&panel.m_lifetimeLiveBytes.empty(),"closed Frame Graph retained lifetime UI values");
         std::printf("PASS: Frame Graph panel on %s owner: versions, preview, timing, query reuse, hotspot click, GPU heat on both canvases, native colors/resource preservation, stale sample rejection, node selection, freeze/resize/resume, disable/close, exact product pixels, thread guards and budget/trim; %zu passes / %zu resources\n",threaded?"Render":"Main",initial->passes.size(),initial->resources.size());
     }
     return 0;
