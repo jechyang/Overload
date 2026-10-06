@@ -85,3 +85,7 @@ framegraph-*-gpu-report.json 以及 memory/cpu-stages/expanded-canvas/located-re
 六组 A/B 场景独占采样，分别定位 Update/Extract/Prepare/Record/Execute/GPU，
 基线与首轮共享材质优化现已完成，结果、优化优先级和未做项见
 [实际场景性能交接档案](RENDERING_PERFORMANCE_HANDOFF.zh-CN.md)。收尾提交为 `9bb01a23`。
+
+现已补上可人工操作的复杂多 Pass 场景：
+[Frame Graph 实验室](Examples/FrameGraphLab/README.zh-CN.md)。
+场景内容、实际验证和仍未做项见 [场景验收档案](FRAMEGRAPH_LAB_VALIDATION.zh-CN.md)。

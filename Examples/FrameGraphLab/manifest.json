@@ -1,0 +1,610 @@
+{
+  "schema": 1,
+  "actors": [
+    {
+      "id": 1,
+      "guid": 7000001,
+      "name": "00 Lab Camera",
+      "parent": 0
+    },
+    {
+      "id": 2,
+      "guid": 7000002,
+      "name": "01 Shadow Sun",
+      "parent": 0
+    },
+    {
+      "id": 3,
+      "guid": 7000003,
+      "name": "02 Warm Point",
+      "parent": 0
+    },
+    {
+      "id": 4,
+      "guid": 7000004,
+      "name": "03 Cool Point",
+      "parent": 0
+    },
+    {
+      "id": 5,
+      "guid": 7000005,
+      "name": "04 Post Process",
+      "parent": 0
+    },
+    {
+      "id": 6,
+      "guid": 7000006,
+      "name": "05 Global Probe - Once",
+      "parent": 0
+    },
+    {
+      "id": 7,
+      "guid": 7000007,
+      "name": "06 Local Probe - Progressive",
+      "parent": 0
+    },
+    {
+      "id": 8,
+      "guid": 7000008,
+      "name": "07 Lab Controls",
+      "parent": 0
+    },
+    {
+      "id": 9,
+      "guid": 7000009,
+      "name": "10 Architecture",
+      "parent": 0
+    },
+    {
+      "id": 10,
+      "guid": 7000010,
+      "name": "Floor",
+      "parent": 9
+    },
+    {
+      "id": 11,
+      "guid": 7000011,
+      "name": "Stage",
+      "parent": 9
+    },
+    {
+      "id": 12,
+      "guid": 7000012,
+      "name": "Backdrop Warm",
+      "parent": 9
+    },
+    {
+      "id": 13,
+      "guid": 7000013,
+      "name": "Backdrop Cool",
+      "parent": 9
+    },
+    {
+      "id": 14,
+      "guid": 7000014,
+      "name": "Backdrop Center",
+      "parent": 9
+    },
+    {
+      "id": 15,
+      "guid": 7000015,
+      "name": "Shadow column 0",
+      "parent": 9
+    },
+    {
+      "id": 16,
+      "guid": 7000016,
+      "name": "Amber wall light 0",
+      "parent": 9
+    },
+    {
+      "id": 17,
+      "guid": 7000017,
+      "name": "Shadow column 1",
+      "parent": 9
+    },
+    {
+      "id": 18,
+      "guid": 7000018,
+      "name": "Amber wall light 1",
+      "parent": 9
+    },
+    {
+      "id": 19,
+      "guid": 7000019,
+      "name": "Shadow column 2",
+      "parent": 9
+    },
+    {
+      "id": 20,
+      "guid": 7000020,
+      "name": "Amber wall light 2",
+      "parent": 9
+    },
+    {
+      "id": 21,
+      "guid": 7000021,
+      "name": "Shadow column 3",
+      "parent": 9
+    },
+    {
+      "id": 22,
+      "guid": 7000022,
+      "name": "Amber wall light 3",
+      "parent": 9
+    },
+    {
+      "id": 23,
+      "guid": 7000023,
+      "name": "Shadow column 4",
+      "parent": 9
+    },
+    {
+      "id": 24,
+      "guid": 7000024,
+      "name": "Amber wall light 4",
+      "parent": 9
+    },
+    {
+      "id": 25,
+      "guid": 7000025,
+      "name": "Shadow column 5",
+      "parent": 9
+    },
+    {
+      "id": 26,
+      "guid": 7000026,
+      "name": "Amber wall light 5",
+      "parent": 9
+    },
+    {
+      "id": 27,
+      "guid": 7000027,
+      "name": "Shadow column 6",
+      "parent": 9
+    },
+    {
+      "id": 28,
+      "guid": 7000028,
+      "name": "Amber wall light 6",
+      "parent": 9
+    },
+    {
+      "id": 29,
+      "guid": 7000029,
+      "name": "Shadow column 7",
+      "parent": 9
+    },
+    {
+      "id": 30,
+      "guid": 7000030,
+      "name": "Amber wall light 7",
+      "parent": 9
+    },
+    {
+      "id": 31,
+      "guid": 7000031,
+      "name": "Shadow column 8",
+      "parent": 9
+    },
+    {
+      "id": 32,
+      "guid": 7000032,
+      "name": "Amber wall light 8",
+      "parent": 9
+    },
+    {
+      "id": 33,
+      "guid": 7000033,
+      "name": "Shadow column 9",
+      "parent": 9
+    },
+    {
+      "id": 34,
+      "guid": 7000034,
+      "name": "Amber wall light 9",
+      "parent": 9
+    },
+    {
+      "id": 35,
+      "guid": 7000035,
+      "name": "20 Reflective Sculptures",
+      "parent": 0
+    },
+    {
+      "id": 36,
+      "guid": 7000036,
+      "name": "Mirror pedestal -6",
+      "parent": 35
+    },
+    {
+      "id": 37,
+      "guid": 7000037,
+      "name": "Mirror sphere -6",
+      "parent": 35
+    },
+    {
+      "id": 38,
+      "guid": 7000038,
+      "name": "Halo -6",
+      "parent": 35
+    },
+    {
+      "id": 39,
+      "guid": 7000039,
+      "name": "Mirror pedestal 6",
+      "parent": 35
+    },
+    {
+      "id": 40,
+      "guid": 7000040,
+      "name": "Mirror sphere 6",
+      "parent": 35
+    },
+    {
+      "id": 41,
+      "guid": 7000041,
+      "name": "Halo 6",
+      "parent": 35
+    },
+    {
+      "id": 42,
+      "guid": 7000042,
+      "name": "Kinetic Ring",
+      "parent": 35
+    },
+    {
+      "id": 43,
+      "guid": 7000043,
+      "name": "Kinetic Core",
+      "parent": 35
+    },
+    {
+      "id": 44,
+      "guid": 7000044,
+      "name": "Orbiting Amber",
+      "parent": 35
+    },
+    {
+      "id": 45,
+      "guid": 7000045,
+      "name": "30 Transparency",
+      "parent": 0
+    },
+    {
+      "id": 46,
+      "guid": 7000046,
+      "name": "Cyan glass left",
+      "parent": 45
+    },
+    {
+      "id": 47,
+      "guid": 7000047,
+      "name": "Cyan glass right",
+      "parent": 45
+    },
+    {
+      "id": 48,
+      "guid": 7000048,
+      "name": "40 Animation",
+      "parent": 0
+    },
+    {
+      "id": 49,
+      "guid": 7000049,
+      "name": "Animated Copper",
+      "parent": 48
+    },
+    {
+      "id": 50,
+      "guid": 7000050,
+      "name": "Animated Chrome",
+      "parent": 48
+    },
+    {
+      "id": 51,
+      "guid": 7000051,
+      "name": "50 Shared Material Gallery",
+      "parent": 0
+    },
+    {
+      "id": 52,
+      "guid": 7000052,
+      "name": "Shared cube 0 0",
+      "parent": 51
+    },
+    {
+      "id": 53,
+      "guid": 7000053,
+      "name": "Shared cube 0 1",
+      "parent": 51
+    },
+    {
+      "id": 54,
+      "guid": 7000054,
+      "name": "Shared cube 0 2",
+      "parent": 51
+    },
+    {
+      "id": 55,
+      "guid": 7000055,
+      "name": "Shared cube 0 3",
+      "parent": 51
+    },
+    {
+      "id": 56,
+      "guid": 7000056,
+      "name": "Shared cube 0 4",
+      "parent": 51
+    },
+    {
+      "id": 57,
+      "guid": 7000057,
+      "name": "Shared cube 0 5",
+      "parent": 51
+    },
+    {
+      "id": 58,
+      "guid": 7000058,
+      "name": "Shared cube 0 6",
+      "parent": 51
+    },
+    {
+      "id": 59,
+      "guid": 7000059,
+      "name": "Shared cube 0 7",
+      "parent": 51
+    },
+    {
+      "id": 60,
+      "guid": 7000060,
+      "name": "Shared cube 0 8",
+      "parent": 51
+    },
+    {
+      "id": 61,
+      "guid": 7000061,
+      "name": "Shared cube 0 9",
+      "parent": 51
+    },
+    {
+      "id": 62,
+      "guid": 7000062,
+      "name": "Shared cube 0 10",
+      "parent": 51
+    },
+    {
+      "id": 63,
+      "guid": 7000063,
+      "name": "Shared cube 0 11",
+      "parent": 51
+    },
+    {
+      "id": 64,
+      "guid": 7000064,
+      "name": "Shared cube 1 0",
+      "parent": 51
+    },
+    {
+      "id": 65,
+      "guid": 7000065,
+      "name": "Shared cube 1 1",
+      "parent": 51
+    },
+    {
+      "id": 66,
+      "guid": 7000066,
+      "name": "Shared cube 1 2",
+      "parent": 51
+    },
+    {
+      "id": 67,
+      "guid": 7000067,
+      "name": "Shared cube 1 3",
+      "parent": 51
+    },
+    {
+      "id": 68,
+      "guid": 7000068,
+      "name": "Shared cube 1 4",
+      "parent": 51
+    },
+    {
+      "id": 69,
+      "guid": 7000069,
+      "name": "Shared cube 1 5",
+      "parent": 51
+    },
+    {
+      "id": 70,
+      "guid": 7000070,
+      "name": "Shared cube 1 6",
+      "parent": 51
+    },
+    {
+      "id": 71,
+      "guid": 7000071,
+      "name": "Shared cube 1 7",
+      "parent": 51
+    },
+    {
+      "id": 72,
+      "guid": 7000072,
+      "name": "Shared cube 1 8",
+      "parent": 51
+    },
+    {
+      "id": 73,
+      "guid": 7000073,
+      "name": "Shared cube 1 9",
+      "parent": 51
+    },
+    {
+      "id": 74,
+      "guid": 7000074,
+      "name": "Shared cube 1 10",
+      "parent": 51
+    },
+    {
+      "id": 75,
+      "guid": 7000075,
+      "name": "Shared cube 1 11",
+      "parent": 51
+    },
+    {
+      "id": 76,
+      "guid": 7000076,
+      "name": "Shared cube 2 0",
+      "parent": 51
+    },
+    {
+      "id": 77,
+      "guid": 7000077,
+      "name": "Shared cube 2 1",
+      "parent": 51
+    },
+    {
+      "id": 78,
+      "guid": 7000078,
+      "name": "Shared cube 2 2",
+      "parent": 51
+    },
+    {
+      "id": 79,
+      "guid": 7000079,
+      "name": "Shared cube 2 3",
+      "parent": 51
+    },
+    {
+      "id": 80,
+      "guid": 7000080,
+      "name": "Shared cube 2 4",
+      "parent": 51
+    },
+    {
+      "id": 81,
+      "guid": 7000081,
+      "name": "Shared cube 2 5",
+      "parent": 51
+    },
+    {
+      "id": 82,
+      "guid": 7000082,
+      "name": "Shared cube 2 6",
+      "parent": 51
+    },
+    {
+      "id": 83,
+      "guid": 7000083,
+      "name": "Shared cube 2 7",
+      "parent": 51
+    },
+    {
+      "id": 84,
+      "guid": 7000084,
+      "name": "Shared cube 2 8",
+      "parent": 51
+    },
+    {
+      "id": 85,
+      "guid": 7000085,
+      "name": "Shared cube 2 9",
+      "parent": 51
+    },
+    {
+      "id": 86,
+      "guid": 7000086,
+      "name": "Shared cube 2 10",
+      "parent": 51
+    },
+    {
+      "id": 87,
+      "guid": 7000087,
+      "name": "Shared cube 2 11",
+      "parent": 51
+    },
+    {
+      "id": 88,
+      "guid": 7000088,
+      "name": "Shared cube 3 0",
+      "parent": 51
+    },
+    {
+      "id": 89,
+      "guid": 7000089,
+      "name": "Shared cube 3 1",
+      "parent": 51
+    },
+    {
+      "id": 90,
+      "guid": 7000090,
+      "name": "Shared cube 3 2",
+      "parent": 51
+    },
+    {
+      "id": 91,
+      "guid": 7000091,
+      "name": "Shared cube 3 3",
+      "parent": 51
+    },
+    {
+      "id": 92,
+      "guid": 7000092,
+      "name": "Shared cube 3 4",
+      "parent": 51
+    },
+    {
+      "id": 93,
+      "guid": 7000093,
+      "name": "Shared cube 3 5",
+      "parent": 51
+    },
+    {
+      "id": 94,
+      "guid": 7000094,
+      "name": "Shared cube 3 6",
+      "parent": 51
+    },
+    {
+      "id": 95,
+      "guid": 7000095,
+      "name": "Shared cube 3 7",
+      "parent": 51
+    },
+    {
+      "id": 96,
+      "guid": 7000096,
+      "name": "Shared cube 3 8",
+      "parent": 51
+    },
+    {
+      "id": 97,
+      "guid": 7000097,
+      "name": "Shared cube 3 9",
+      "parent": 51
+    },
+    {
+      "id": 98,
+      "guid": 7000098,
+      "name": "Shared cube 3 10",
+      "parent": 51
+    },
+    {
+      "id": 99,
+      "guid": 7000099,
+      "name": "Shared cube 3 11",
+      "parent": 51
+    }
+  ],
+  "engineModels": [
+    "Cube",
+    "Cylinder",
+    "Sphere",
+    "Torus",
+    "Mannequin"
+  ],
+  "shadowResolution": 1024,
+  "probeResolution": 128,
+  "bloomPasses": 5,
+  "notes": "Alpha blended glass; cubemap reflections; fixed pass order. Not refraction, ray tracing, or automatic instancing."
+}

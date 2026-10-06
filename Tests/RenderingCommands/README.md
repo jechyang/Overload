@@ -113,3 +113,9 @@ summary.json 后，compare-performance-lab.mjs 对两组完整捕获核对机器
 样本量、计数和逐字节 RGBA，写出独立 comparison.json；不接受像素容差。
 --frontend 覆盖稳定快照共享、视图边界与 receiver/single-use；--bindings 另测同材质
 静态/骨骼实际 program 分组，保持原八个冷进程的绑定、像素、线程和失败语义验收。
+
+复杂场景人工验收入口见 Examples/FrameGraphLab/README.zh-CN.md，可并排观察实际画面与
+Frame Graph。自动验证运行 `node Tests/RenderingCommands/run-framegraph-lab.mjs Release`
+或 Debug：生产 Editor 的 Main/Render consumer、真实 Lua 快捷键、完整/逐面捕获、效果
+关闭、骨骼运动/暂停与分辨率恢复；JSON 验证版本/依赖/History/池，15 张图逐字节一致。
+场景验收记录见根目录 FRAMEGRAPH_LAB_VALIDATION.zh-CN.md。
