@@ -2,6 +2,7 @@
 #include <OvUI/Panels/PanelWindow.h>
 #include <OvRendering/Data/FrameGraphDiagnostics.h>
 #include <OvRendering/Core/RenderTargetPool.h>
+#include <OvCore/Rendering/RenderFrontend.h>
 #include <array>
 #include <thread>
 
@@ -15,6 +16,10 @@ namespace OvEditor::Panels
         bool WantsCapture() const;
         void Update(std::shared_ptr<const OvRendering::Data::FrameGraphDiagnostics>,const OvRendering::Core::RenderTargetPool::Statistics&);
         PoolRequests TakePoolRequests();
+        std::optional<OvRendering::Data::FrameGraphPreviewRequest> TakePreviewRequest();
+        void UpdatePreview(std::shared_ptr<const OvCore::Rendering::RenderFrontend::PreviewTicket>);
+        bool TakePreviewClearRequest();
+        OvTools::Eventing::Event<std::shared_ptr<const OvRendering::Data::FrameGraphPreviewImage>> OpenPreviewEvent;
     private:
         void RequireUIThread() const;
         void DrawContents();
@@ -22,6 +27,8 @@ namespace OvEditor::Panels
         void DrawResources();
         void DrawDependencies();
         void DrawResourceFlow();
+        void DrawPreview();
+        void QueuePreview();
         void SelectPass(size_t);
         void SelectResource(size_t);
         const std::thread::id m_uiThread=std::this_thread::get_id();
@@ -35,6 +42,15 @@ namespace OvEditor::Panels
         bool m_graphFocus=true,m_graphFit=true,m_graphSelectionInitialized=false,m_graphResourceFlow=true,m_flowSelectionIsResource=false;
         bool m_graphVersions=true;
         uint32_t m_selectedVersion=0;
+        int m_previewMip=0,m_previewLayer=0,m_previewChannel=0;
+        float m_previewExposure=0,m_previewMin=0,m_previewMax=1;
+        bool m_previewToneMap=false;
+        bool m_clearPreview=false;
+        std::optional<OvRendering::Data::FrameGraphPreviewRequest> m_previewRequest;
+        std::shared_ptr<const OvCore::Rendering::RenderFrontend::PreviewTicket> m_previewTicket;
+        std::shared_ptr<const OvRendering::Data::FrameGraphPreviewImage> m_previewImage;
+        uint64_t m_previewSequence=0;
+        std::string m_previewStatus;
         float m_graphZoom=1;
         std::array<float,2> m_graphPan{};
         // Screen rectangles contain values only; also serve node hit testing.

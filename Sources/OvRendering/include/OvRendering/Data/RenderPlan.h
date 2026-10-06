@@ -50,6 +50,9 @@ namespace OvRendering::Data
         size_t gpuScopesEnd=0;
         std::shared_ptr<RenderCommandList> commandBlock;
     };
+    // An optional diagnostic read inserted inside an existing resource lifetime.
+    // The caller validates content/ranges at this exact fixed-order position.
+    struct RenderPlanInspection { size_t beforePass=0;RenderCommandList::OperationFactory operation; };
     // Fixed GPU order, independent of the order in which CPU view jobs finish.
     // Imported/history availability is supplied only at the owner planning boundary.
     struct RenderPlan
@@ -74,7 +77,7 @@ namespace OvRendering::Data
         std::optional<ResourceHandle> Find(const baregl::Texture::Snapshot&) const;
         void GenerateMipmaps(std::string name,const std::shared_ptr<baregl::Texture>&);
         void RecordOperations(RenderCommandList&,std::span<RenderCommandList> viewBlocks={},
-            std::shared_ptr<const Core::RenderResourceMapping> mapping={}) const;
+            std::shared_ptr<const Core::RenderResourceMapping> mapping={},std::optional<RenderPlanInspection> inspection={}) const;
         CompiledRenderPlan Compile(std::span<const std::shared_ptr<const RenderSceneSnapshot>> views={}) const;
         uint64_t Scope() const { return m_scope; }
     private:

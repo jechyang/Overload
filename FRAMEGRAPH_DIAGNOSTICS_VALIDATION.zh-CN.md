@@ -19,6 +19,13 @@
 - Resources：查看来源、尺寸、格式、估算字节、最终内容版本、存活区间，以及
   同一物理 scratch slot 的逻辑资源；访问列表也标注读/写版本，点击关联 Pass 跳转。
   Show version flow 直接聚焦该资源的版本流。
+- Preview：在资源详情或版本流中点 Preview content，或手动选资源后点 Capture。
+  在下一份结构匹配的产品计划中，于所选版本的生产 Pass 后抓取一次图像；v0 在
+  首次访问前抓取。支持 2D、cube 的六个面、mip、RGB/单通道/Alpha 和深度窗口，
+  HDR 可调 EV 和 Tone map。图像标题显示实际 scope 和抓取位置，修改参数后需
+  再点 Capture。Texture Debugger 可打开同一份图像，Clear image 释放面板图像。
+  冻结后保留已有图像，取消冻结才能发起新抓取。未初始化、Discard、越界的范围
+  或变化后的计划会显示原因，不会用错误像素替换上一次成功图像。
 - 支持名称筛选和只看 transient。未命名的导入附件按首次使用的 Pass 和用途
   显示名称。筛选后详情跟随可见项；空结果不会继续显示不匹配的详情。
 - Freeze plan 固定当前计划。取消冻结后恢复采集；冻结期间池计数仍保持更新。
@@ -43,6 +50,20 @@ framebuffer Snapshot、资源 owner、命令回调、视图或池 mapping/lease�
 冻结的值可在无 GL context 的 Worker 上读取。Frontend 的采集开关和快照查询要求
 其构造线程；面板更新和请求消费要求 UI 线程。
 
+预览图像单独保存在 `FrameGraphPreviewImage` 中，不加入值诊断快照。只有显式
+抓取才创建转换命令；目标为保持宽高比、最大 512×512 的 RGBA8，单张最多
+1 MiB。源 Snapshot、转换程序和临时 resolve 只保留到该 RenderFrame 的 GPU
+退役；发布后的图像不含 mapping/lease 或源纹理。深度 renderbuffer 抓取期间
+额外使用原尺寸 resolve texture，该临时空间不包含在 1 MiB 图像上限内。
+关闭面板、Clear image 会释放其图像和 Frontend 预览状态；已打开的 Texture
+Debugger 可独立持有同一图像，直到关闭或选择其他纹理。
+
+UI 只在 RenderFrame 成功完成 GPU 退役后发布图像；取消或执行失败保留旧图。
+抓取复用子资源编译器检查版本与初始化状态，在原图的两个 Pass 间插入诊断
+命令，不改变原 Pass 顺序、资源复用或产品输出。转换恢复程序、texture/sampler/
+image 绑定与活动 texture unit，保留 FBO、viewport 和像素 pack/unpack 状态。
+当前不支持 backbuffer、多重采样和整数纹理预览；深度显示原始值，不做线性化。
+
 打开面板才在 PrepareFrame 末尾复制诊断值，冻结后停止采集；关闭时释放面板值，
 在同一次产品录制中关闭 Frontend 采集并释放其值。关闭状态不查询池统计，不复制
 计划；没有每帧诊断历史队列。
@@ -61,8 +82,9 @@ v0 的读取来自已初始化的导入/History 范围，未使用的资源节�
 捕获和编译共用读写分类和版本推进规则，并检查最终版本一致；片段合并后按产品顺序
 计算，而不是各片段从 0 重新开始。版本不同于 ResourceHandle 的 generation。
 
-多个版本节点使用同一个物理槽，并不保留旧像素、分配额外 GPU texture 或支持任意
-读取历史版本。版本快照只增加每个 access 的两个可选整数值，仍只在诊断采集开启
+多个版本节点使用同一个物理槽，并不自动保留旧像素或分配额外 GPU texture。
+显式预览是在下一份匹配计划执行到对应内容状态时抓取，并非读取已结束帧的
+历史纹理。版本快照只增加每个 access 的两个可选整数值，仍只在诊断采集开启
 时生成；冻结、关闭和线程边界不变。
 
 诊断与编译共用 EffectiveAccesses：传统 reads/writes 与显式访问使用同一套
@@ -84,6 +106,13 @@ node Tests/Skinning/run-validation.mjs Debug --framegraph-editor --framegraph-ba
 
 检查覆盖：
 
+0. 预览在 alias 覆盖前得到指定 v1/v2 内容；RGB/Red/Alpha、24 个 cube
+   face/mip、深度比较模式覆盖、depth/stencil renderbuffer resolve、R32F、
+   HDR 控制和尺寸上限。拒绝未初始化 v0、Discard、过期选择和无效范围；
+   TrimIdle 后源纹理删除，已有图像仍有效。GL 绑定与像素 pack 状态保持不变。
+   Main/Render 两种编辑器模式直接触发 ImGui Capture/Clear image 按钮，验证
+   完成后发布、冻结/resize、取消/失败保留旧图、Texture Debugger 跳转和独立
+   关闭、关闭面板释放状态；抓取前后三个产品视口图像逐字节一致。
 1. 实际 GL aliasing 的值快照：逻辑/峰值/物理字节、存活区间、访问和依赖、
    未命名导入资源的用途名称，拒绝 foreign compiled scope 和不一致的最终版本。
    版本覆盖 Clear/Load、导入初始 v0、cube 不相交写入、mip 生成、局部保留、Discard、
@@ -117,7 +146,7 @@ node Tests/Skinning/run-validation.mjs Debug --framegraph-editor --framegraph-ba
 - `Build/JobsValidation/Skinning/{Debug,Release}-framegraph-command-list/current/`
 - `Build/JobsValidation/Skinning/{Debug,Release}-pipeline-command-list/current/`
 - `Build/JobsValidation/Skinning/{Debug,Release}-framegraph-editor-command-list-editor-ui/current/`
-  的 `run.log`、`framegraph-{main,render}-{passes,resources}.rgba`、尺寸文件；
+  的 `run.log`、`framegraph-{main,render}-{passes,resources,preview-color}.rgba`、尺寸文件；
   生成的 PNG 用于视觉检查。
 - 相应入口目录的 `result.json`，诊断面板结果含 `framegraphEditor: true`，
   `framegraphComparison.files` 记录两份 F0 检查。

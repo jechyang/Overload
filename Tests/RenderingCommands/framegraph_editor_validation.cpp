@@ -1,6 +1,7 @@
 #define EDITOR_THREAD_TEST_MAIN UnusedFrameGraphEditorThreadMain
 #include "editor_thread_validation.cpp"
 #include <OvEditor/Panels/FrameGraph.h>
+#include <imgui_internal.h>
 
 int main(int argc,char** argv) try
 {
@@ -117,24 +118,89 @@ int main(int argc,char** argv) try
         panel.m_frozen=true;const auto frozen=panel.m_snapshot;tick();
         fixture.views[1]->SetSize({520,250});tick();
         Require(panel.m_snapshot==frozen&&!frontend.GetFrameGraphDiagnostics(),"freeze changed the captured graph or left live capture enabled");
-        std::array<bool,3> rejected{};bool cpuRead=false;
+        std::array<bool,7> rejected{};bool cpuRead=false;
         std::thread worker([&] {
             cpuRead=frozen->passes.back().name=="Window.Present"&&!glfwGetCurrentContext();
             try{panel.Update({},{});}catch(const std::logic_error&){rejected[0]=true;}
             try{frontend.GetFrameGraphDiagnostics();}catch(const std::logic_error&){rejected[1]=true;}
             try{frontend.SetDiagnosticsCaptureEnabled(true);}catch(const std::logic_error&){rejected[2]=true;}
+            try{frontend.GetFrameGraphPreview();}catch(const std::logic_error&){rejected[3]=true;}
+            try{frontend.RequestFrameGraphPreview({},{});}catch(const std::logic_error&){rejected[4]=true;}
+            try{frontend.ClearFrameGraphPreview();}catch(const std::logic_error&){rejected[5]=true;}
+            try{panel.UpdatePreview({});}catch(const std::logic_error&){rejected[6]=true;}
         });worker.join();
-        Require(cpuRead&&rejected[0]&&rejected[1]&&rejected[2],"diagnostic state escaped UI/producer ownership or frozen values required GL");
+        Require(cpuRead&&std::all_of(rejected.begin(),rejected.end(),[](bool value){return value;}),"diagnostic state escaped UI/producer ownership or frozen values required GL");
+        bool invalidCompletion=false;
+        try{frontend.RequestFrameGraphPreview({},{});}catch(const std::invalid_argument&){invalidCompletion=true;}
+        Require(invalidCompletion,"preview accepted an absent frame completion");
         panel.m_frozen=false;tick();tick();
         Require(panel.m_snapshot!=frozen&&panel.m_snapshot->captureIndex>frozen->captureIndex&&panel.m_snapshot->scope!=frozen->scope,"unfreezing did not resume fresh scoped capture");
+        const auto previewResource=std::find_if(panel.m_snapshot->resources.begin(),panel.m_snapshot->resources.end(),[](const auto& r){return r.name=="PostProcess.Tonemapping";});
+        Require(previewResource!=panel.m_snapshot->resources.end(),"product fixture has no tonemapped texture to preview");
+        panel.m_selectedResource=static_cast<size_t>(previewResource-panel.m_snapshot->resources.begin());panel.m_selectedVersion=previewResource->finalVersion;
+        panel.m_previewChannel=0;panel.m_previewMip=panel.m_previewLayer=0;panel.m_requestedTab=3;tick();tick();
+        const auto activatePreviewButton=[&](const char* label) {
+            const auto window=ImGui::FindWindowByName((panel.name+panel.GetPanelID()).c_str());
+            Require(window!=nullptr,"Frame Graph ImGui window is unavailable");
+            const auto tabs=ImHashStr("graph-tabs",0,window->ID),preview=ImHashStr("Preview",0,tabs);
+            ImGui::ActivateItemByID(ImHashStr(label,0,preview));
+        };
+        const auto readProductViews=[&] {
+            std::vector<std::vector<uint8_t>> bytes;
+            OnOwner(context,[&](auto&) {for(auto* view:fixture.views) {
+                const auto target=view->GetOutputTarget();const auto [width,height]=target.GetSize();
+                bytes.emplace_back(size_t(width)*height*4);target.ReadRGBA8(bytes.back());
+            }});return bytes;
+        };
+        const auto productBeforePreview=readProductViews();
+        activatePreviewButton("Capture");
+        tick();Require(!panel.m_previewImage,"preview image was published before its frame reached GPU completion");
+        tick();tick();
+        Require(panel.m_previewImage&&panel.m_previewImage->width<=512&&panel.m_previewImage->height<=512&&pool->GetStatistics().leasedTargets==0,
+            "one-shot product preview did not publish a bounded image without source leases");
+        Require(readProductViews()==productBeforePreview,"resource preview changed product viewport pixels");
+        image("preview-color");
+        const auto captured=panel.m_previewImage;
+        const auto readPreview=[&] {
+            std::vector<uint8_t> bytes(captured->width*captured->height*4);
+            OnOwner(context,[&](auto&){glGetTextureImage(captured->texture->GetID(),0,GL_RGBA,GL_UNSIGNED_BYTE,static_cast<GLsizei>(bytes.size()),bytes.data());});return bytes;
+        };
+        const auto capturedBytes=readPreview();panel.m_frozen=true;tick();fixture.views[1]->SetSize({500,240});tick();
+        Require(panel.m_previewImage==captured&&readPreview()==capturedBytes&&!frontend.GetFrameGraphPreview(),"freeze/resize changed the captured image or kept a frontend source capture");
+        activatePreviewButton("Capture");tick();Require(!panel.m_previewRequest&&!frontend.GetFrameGraphPreview()&&panel.m_previewImage==captured,"frozen plan allowed a new preview capture");
+        panel.m_frozen=false;fixture.views[1]->SetSize({545,270});tick();tick();
+        const auto oldSequence=panel.m_previewSequence;
+        {
+            OvRendering::Data::RenderFrame cancelled;cancelled.Cancel();
+            auto ticket=std::make_shared<OvCore::Rendering::RenderFrontend::PreviewTicket>();ticket->sequence=oldSequence+1;
+            ticket->image=std::make_shared<OvRendering::Data::FrameGraphPreviewImage>(*captured);ticket->completion=cancelled.GetCompletion();
+            panel.UpdatePreview(ticket);Require(panel.m_previewImage==captured&&panel.m_previewStatus.find("cancelled")!=std::string::npos,"cancelled preview replaced the last successful image");
+        }
+        {
+            OvRendering::Data::RenderCommandList commands;commands.Append([](auto&){throw std::runtime_error("Preview frame failure");});commands.Seal();
+            OvRendering::Data::RenderFrame failed;failed.Append(std::move(commands));failed.Seal();OnOwner(context,[&](auto& driver){failed.Submit(driver);failed.Wait();});
+            auto ticket=std::make_shared<OvCore::Rendering::RenderFrontend::PreviewTicket>();ticket->sequence=oldSequence+2;
+            ticket->image=std::make_shared<OvRendering::Data::FrameGraphPreviewImage>(*captured);ticket->completion=failed.GetCompletion();panel.UpdatePreview(ticket);
+            Require(panel.m_previewImage==captured,"failed preview frame published a speculative image");
+        }
+        panel.m_previewSequence=oldSequence;
+        auto& debugger=editor.m_panelsManager.GetPanelAs<OvEditor::Panels::TextureDebugger>("Texture Debugger");
+        activatePreviewButton("Texture Debugger");tick();debugger.Update(0);
+        Require(debugger.IsOpened()&&debugger.m_capture==captured&&debugger.m_textureSelector.currentChoice==-1&&debugger.m_image.textureID.storage==captured->texture->RetainStorage(),
+            "Frame Graph preview did not open the same retained image in Texture Debugger");
+        activatePreviewButton("Clear image");tick();
+        Require(!panel.m_previewImage&&!panel.m_previewRequest&&!panel.m_previewTicket&&!frontend.GetFrameGraphPreview()&&debugger.m_capture==captured,
+            "clearing Frame Graph did not release preview state or invalidated an open debugger image");
+        debugger.Close();Require(!debugger.m_capture,"closing Texture Debugger retained a captured preview");
         panel.m_requests.budget=128ull*1024*1024;tick();
         Require(pool->GetStatistics().idleBudget==128ull*1024*1024&&!panel.m_requests.budget,"panel budget request was not applied exactly once at the product boundary");
         const auto before=pool->GetStatistics();Require(before.idleTargets>0,"trim fixture has no retired scratch");
         panel.m_requests.trimIdle=true;tick();const auto after=pool->GetStatistics();
         Require(after.evictions>before.evictions&&after.allocations>before.allocations&&after.idleBudget==before.idleBudget&&!panel.m_requests.trimIdle,"panel trim did not evict idle scratch and rebuild the next product frame safely");
         panel.Close();Require(!panel.m_snapshot,"closing the panel kept its frozen values");tick();
+        Require(!panel.m_previewImage&&!frontend.GetFrameGraphPreview(),"closed Frame Graph retained preview state");
         Require(!frontend.GetFrameGraphDiagnostics()&&!panel.WantsCapture(),"closed panel kept collecting diagnostics");
-        std::printf("PASS: Frame Graph panel on %s owner: full/focused content versions, declared read/write links, v0/Load, version node click, aggregate resource flow, Pass dependency view, filter, live auto-expiry, freeze/resize, thread guards, budget/trim; %zu passes / %zu resources\n",threaded?"Render":"Main",initial->passes.size(),initial->resources.size());
+        std::printf("PASS: Frame Graph panel on %s owner: version flow and node click, bounded one-shot color preview, GPU completion publication, frozen image/resize, cancel/failure guards, Texture Debugger handoff/clear/close, filter, auto-expiry and budget/trim; %zu passes / %zu resources\n",threaded?"Render":"Main",initial->passes.size(),initial->resources.size());
     }
     return 0;
 }

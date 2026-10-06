@@ -8,6 +8,8 @@
 #include <OvCore/UI/RenderResources.h>
 #include <OvRendering/Core/RenderTargetPool.h>
 #include <OvRendering/Data/FrameGraphDiagnostics.h>
+#include <OvRendering/Data/FrameGraphPreview.h>
+#include <OvRendering/Data/RenderFrame.h>
 
 namespace OvCore::Rendering
 {
@@ -15,6 +17,13 @@ namespace OvCore::Rendering
     class RenderFrontend final
     {
     public:
+        struct PreviewTicket
+        {
+            uint64_t sequence=0;
+            std::shared_ptr<const OvRendering::Data::FrameGraphPreviewImage> image;
+            std::string error;
+            OvRendering::Data::RenderFrame::Completion completion;
+        };
         RenderFrontend() = default;
         void SetResourcePool(std::shared_ptr<OvRendering::Core::RenderTargetPool> pool) {RequireOwner();if(!pool)throw std::invalid_argument("Missing resource pool");m_pool=std::move(pool);}
         std::shared_ptr<OvRendering::Core::RenderTargetPool> GetResourcePool() const {return m_pool;}
@@ -27,6 +36,9 @@ namespace OvCore::Rendering
         void SetResourceReuseEnabled(bool value) { RequireOwner();m_reuse=value; }
         void SetDiagnosticsCaptureEnabled(bool);
         std::shared_ptr<const OvRendering::Data::FrameGraphDiagnostics> GetFrameGraphDiagnostics() const;
+        void RequestFrameGraphPreview(const OvRendering::Data::FrameGraphPreviewRequest&,OvRendering::Data::RenderFrame::Completion);
+        std::shared_ptr<const PreviewTicket> GetFrameGraphPreview() const;
+        void ClearFrameGraphPreview();
         std::unique_ptr<SceneFrame> PrepareFrame(std::unique_ptr<SceneFrame> frame,
             OvRendering::Data::PipelineState state, OvTools::Jobs::JobSystem* jobs = nullptr, const std::atomic_bool* cancel = nullptr) const;
         OvRendering::Data::RenderCommandList RecordFrame(std::unique_ptr<SceneFrame> frame,
@@ -46,6 +58,9 @@ namespace OvCore::Rendering
         bool m_captureDiagnostics=false;
         mutable uint64_t m_diagnosticsSequence=0;
         mutable std::shared_ptr<const OvRendering::Data::FrameGraphDiagnostics> m_diagnostics;
+        mutable std::optional<OvRendering::Data::FrameGraphPreviewRequest> m_previewRequest;
+        mutable std::shared_ptr<PreviewTicket> m_preview;
+        uint64_t m_previewSequence=0;
         std::thread::id m_owner = std::this_thread::get_id();
         OvRendering::Core::MeshCommandRecorder m_recorder;
         mutable OvRendering::Core::MeshCommandRecorder::ProgramCache m_programs;

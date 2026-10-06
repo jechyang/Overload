@@ -12,6 +12,7 @@
 #include <OvUI/Widgets/Visual/Image.h>
 #include <OvUI/Widgets/Selection/ComboBox.h>
 #include <OvUI/Panels/PanelWindow.h>
+#include <OvRendering/Data/FrameGraphPreview.h>
 
 namespace OvEditor::Panels
 {
@@ -53,6 +54,7 @@ namespace OvEditor::Panels
 		* @param p_deltaTime
 		*/
 		void Update(float p_deltaTime);
+        void ShowCapturedTexture(std::shared_ptr<const OvRendering::Data::FrameGraphPreviewImage>);
 
 	private:
 		void RequireMainThread() const;
@@ -64,5 +66,6 @@ namespace OvEditor::Panels
 		OvUI::Widgets::Selection::ComboBox& m_scaleSelector;
 		OvUI::Widgets::Visual::Image& m_image;
 		std::optional<OvRendering::Utils::ResourceTracking::TextureRegistryEntryDesc> m_selectedTexture;
+        std::shared_ptr<const OvRendering::Data::FrameGraphPreviewImage> m_capture;
 	};
 }

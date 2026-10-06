@@ -13,12 +13,21 @@ void RenderFrontend::RequireOwner() const
 void RenderFrontend::SetDiagnosticsCaptureEnabled(bool enabled)
 {
     RequireOwner();m_captureDiagnostics=enabled;
-    if(!enabled)m_diagnostics.reset();
+    if(!enabled){m_diagnostics.reset();m_previewRequest.reset();m_preview.reset();}
 }
 std::shared_ptr<const OvRendering::Data::FrameGraphDiagnostics> RenderFrontend::GetFrameGraphDiagnostics() const
 {
     RequireOwner();return m_diagnostics;
 }
+void RenderFrontend::RequestFrameGraphPreview(const OvRendering::Data::FrameGraphPreviewRequest& request,OvRendering::Data::RenderFrame::Completion completion)
+{
+    RequireOwner();
+    if(completion.GetState()!=OvRendering::Data::RenderFrame::State::RECORDING)throw std::invalid_argument("Preview requires the recording frame's completion");
+    m_previewRequest=request;m_preview=std::make_shared<PreviewTicket>();
+    m_preview->sequence=++m_previewSequence;m_preview->completion=std::move(completion);
+}
+std::shared_ptr<const RenderFrontend::PreviewTicket> RenderFrontend::GetFrameGraphPreview() const {RequireOwner();return m_preview;}
+void RenderFrontend::ClearFrameGraphPreview() {RequireOwner();m_previewRequest.reset();m_preview.reset();}
 
 std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> RenderFrontend::ExtractScene(const SceneRenderRequest& p_request) const
 {
@@ -64,6 +73,13 @@ std::unique_ptr<SceneFrame> RenderFrontend::PrepareFrame(std::unique_ptr<SceneFr
         auto diagnostics=OvRendering::Data::CaptureFrameGraphDiagnostics(frame->m_plan,*frame->m_compiled,*frame->m_mapping,frame->m_views);
         diagnostics.captureIndex=++m_diagnosticsSequence;
         m_diagnostics=std::make_shared<const OvRendering::Data::FrameGraphDiagnostics>(std::move(diagnostics));
+        if(m_previewRequest) {
+            const auto request=*m_previewRequest;m_previewRequest.reset();
+            try {
+                auto preview=OvRendering::Data::PrepareFrameGraphPreview(frame->m_plan,*frame->m_compiled,*frame->m_mapping,frame->m_views,*m_diagnostics,request);
+                m_preview->image=std::move(preview.image);frame->m_inspection=std::move(preview.inspection);
+            }catch(const std::exception& error){m_preview->error=error.what();}
+        }
     }
     return frame;
 }
@@ -76,7 +92,7 @@ OvRendering::Data::RenderCommandList RenderFrontend::RecordFrame(std::unique_ptr
     std::vector<std::optional<baregl::Framebuffer::Snapshot>> targets(frame->m_views.size());
     for (const auto& pass : frame->m_plan.passes) if(pass.view!=OvRendering::Data::RenderPlanPass::NoView) targets[pass.view] = pass.target;
     auto blocks = OvRendering::Core::RenderTaskCoordinator::RecordViews(frame->m_prepared,targets,m_recorder,jobs,cancel);
-    frame->m_plan.RecordOperations(frame->m_commands,blocks,frame->m_mapping);
+    frame->m_plan.RecordOperations(frame->m_commands,blocks,frame->m_mapping,std::move(frame->m_inspection));
     if(!deferEncoding)frame->m_commands.Seal(jobs);
     return std::move(frame->m_commands);
 }

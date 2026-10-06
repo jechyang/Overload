@@ -82,5 +82,10 @@ inspection_pipeline.h 是小型 C++ 配置实例：先在主线程选择阶段�
 当前没有流水线编辑器、脚本 SRP SDK 或新渲染效果。模块与 owner 边界见根目录 RENDERING_ARCHITECTURE.md；A6 最终状态以 RENDERING_ARCHITECTURE_A6_VALIDATION.md 为准。
 
 Frame Graph 面板使用与诊断数据边界见根目录 FRAMEGRAPH_DIAGNOSTICS_VALIDATION.zh-CN.md。
+`--framegraph` 还覆盖一次性资源预览：版本生产点与 alias 覆盖、mip/cube 面、
+深度 texture/renderbuffer、HDR/通道转换、GL 状态恢复、范围校验和图像独立于源
+资源的寿命。`--framegraph-editor --framegraph-baseline` 在 Main/Render 模式验证
+实际 Preview UI、GPU 完成后发布、冻结 resize、取消/失败、Texture Debugger
+跳转及清除/关闭；原 F0 图像和命令帧基线保持不变。
 
 自动曝光亮度缓冲的格式、数值对照与多视口内存实测见根目录 FRAMEGRAPH_LUMINANCE_VALIDATION.zh-CN.md。

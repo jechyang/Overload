@@ -277,12 +277,16 @@ void RenderPlan::GenerateMipmaps(std::string name,const std::shared_ptr<baregl::
     pass.operation=[texture] {return [texture](auto&) {texture->GenerateMipmaps();};};passes.push_back(std::move(pass));
 }
 void RenderPlan::RecordOperations(RenderCommandList& commands,std::span<RenderCommandList> blocks,
-    std::shared_ptr<const Core::RenderResourceMapping> mapping) const
+    std::shared_ptr<const Core::RenderResourceMapping> mapping,std::optional<RenderPlanInspection> inspection) const
 {
+    if(inspection&&(inspection->beforePass>passes.size()||!inspection->operation))throw std::invalid_argument("RenderPlan: invalid inspection position");
     if(mapping)commands.KeepUntilRetired(mapping);
     std::vector<std::pair<size_t,const tracy::SourceLocationData*>> scopes;
-    for(const auto& pass:passes)
+    for(size_t index=0;index<=passes.size();++index)
     {
+        if(inspection&&inspection->beforePass==index)commands.AppendDeferred(inspection->operation);
+        if(index==passes.size())break;
+        const auto& pass=passes[index];
         for(const auto* source:pass.gpuScopesBegin)scopes.emplace_back(commands.GetPendingCount(),source);
         if(pass.view==RenderPlanPass::NoView) {
             if(pass.commandBlock)commands.AppendRecording(std::move(*pass.commandBlock));

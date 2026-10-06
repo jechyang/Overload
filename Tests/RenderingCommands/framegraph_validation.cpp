@@ -4,6 +4,7 @@
 #include <OvRendering/Data/RenderFrame.h>
 #include <OvRendering/Core/RenderTargetPool.h>
 #include <OvRendering/Data/FrameGraphDiagnostics.h>
+#include <OvRendering/Data/FrameGraphPreview.h>
 #include <baregl/ResourceLifetime.h>
 #include <baregl/ResourceExecutor.h>
 #include <iostream>
@@ -501,8 +502,9 @@ namespace
         std::cout<<"PASS: 16 postprocess effect combinations x 1x1/thin/odd/normal extents, Bloom pass bounds/Load blending, explicit luminance mip/history nodes, exact no-reuse pixels and warm zero allocation\n";
     }
 #include "luminance_validation.inl"
+#include "framegraph_preview_validation.inl"
 }
 int main(int argc,char** argv) try
 {
-    Require(argc==2,"expected evidence directory");ContractValidation(argv[1]);OperationValidation();PoolValidation(argv[1]);ProductPlanValidation(argv[1]);PostProcessValidation(argv[1]);LuminanceValidation(argv[1]);return 0;
+    Require(argc==2,"expected evidence directory");ContractValidation(argv[1]);OperationValidation();PoolValidation(argv[1]);ProductPlanValidation(argv[1]);PostProcessValidation(argv[1]);LuminanceValidation(argv[1]);PreviewValidation(argv[1]);return 0;
 }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}

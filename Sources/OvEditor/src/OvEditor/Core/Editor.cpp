@@ -221,6 +221,9 @@ void OvEditor::Core::Editor::SetupUI()
 	m_panelsManager.CreatePanel<Panels::AssetProperties>("Asset Properties", false, settings);
 	m_panelsManager.CreatePanel<Panels::TextureDebugger>("Texture Debugger", false, settings);
     m_panelsManager.CreatePanel<Panels::FrameGraph>("Frame Graph", false, settings);
+    m_panelsManager.GetPanelAs<Panels::FrameGraph>("Frame Graph").OpenPreviewEvent += [this](auto image) {
+        m_panelsManager.GetPanelAs<Panels::TextureDebugger>("Texture Debugger").ShowCapturedTexture(std::move(image));
+    };
 
 	// Needs to be called after all panels got created, because some settings in this menu depend on other panels
 	m_panelsManager.GetPanelAs<Panels::MenuBar>("Menu Bar").InitializeSettingsMenu();
@@ -410,6 +413,7 @@ void OvEditor::Core::Editor::UpdateEditorPanels(float p_deltaTime)
     auto& graph=m_panelsManager.GetPanelAs<Panels::FrameGraph>("Frame Graph");
     if(graph.IsOpened())graph.Update(m_productFrontend.GetFrameGraphDiagnostics(),m_productFrontend.GetResourcePool()->GetStatistics());
     else graph.Update({},{});
+    graph.UpdatePreview(graph.IsOpened()?m_productFrontend.GetFrameGraphPreview():nullptr);
 }
 
 OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p_deltaTime)
@@ -417,6 +421,9 @@ OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p
     m_latestFrameCompletion = {};
     m_recordedInteraction.reset();
     OvRendering::Data::RenderFrame frame(++m_recordedFrameID);
+    if(m_panelsManager.GetPanelAs<Panels::FrameGraph>("Frame Graph").TakePreviewClearRequest())m_productFrontend.ClearFrameGraphPreview();
+    if(const auto preview=m_panelsManager.GetPanelAs<Panels::FrameGraph>("Frame Graph").TakePreviewRequest())
+        m_productFrontend.RequestFrameGraphPreview(*preview,frame.GetCompletion());
     const auto requests=m_panelsManager.GetPanelAs<Panels::FrameGraph>("Frame Graph").TakePoolRequests();
     if(requests.unusedFrameLimit)m_productFrontend.GetResourcePool()->SetUnusedFrameLimit(*requests.unusedFrameLimit);
     if(requests.budget)m_productFrontend.GetResourcePool()->SetIdleBudget(*requests.budget);

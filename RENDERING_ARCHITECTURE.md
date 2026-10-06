@@ -89,6 +89,8 @@ Tests/RenderingCommands/inspection_pipeline.h 使用既有 Opaque/Transparent/Sc
 
 ComposeFrame 要求拥有型视图和完整资源契约；错误诊断定位到 Pass/View 或资源编号。缺少生产者、错误阶段/尺寸/附件或无效视图会被拒绝。需要跨帧历史的流程由 ExtractFrame 的相应 owner 构建，不能用手写计划绕过。ComposeFrames 合并未准备的拥有型片段，生产链在 PrepareFrame 中统一编译一次。
 
-编辑器 `Window > Frame Graph` 提供最近一次准备完成的产品图诊断：Pass 访问和依赖、子资源、资源存活区间与物理复用、池缓存统计和闲置预算/清理。资源流图可拆分内容版本，逐访问显示读入/写出版本及 mip/layer 范围；多个版本仍共享物理存储，不保留旧纹理内容。诊断快照只保存值，冻结不会持有 GPU 存储；默认关闭，打开才采集，关闭即停止。冻结只固定计划，池计数保持更新；这是提交前计划，不代表 GPU 已完成。具体边界和验证见 [Frame Graph 诊断面板验收](FRAMEGRAPH_DIAGNOSTICS_VALIDATION.zh-CN.md)。
+编辑器 `Window > Frame Graph` 提供最近一次准备完成的产品图诊断：Pass 访问和依赖、子资源、资源存活区间与物理复用、池缓存统计和闲置预算/清理。资源流图可拆分内容版本，逐访问显示读入/写出版本及 mip/layer 范围；多个版本仍共享物理存储，不自动保留旧纹理内容。诊断快照只保存值；默认关闭，打开才采集，关闭即停止。冻结只固定计划，池计数保持更新；这是提交前计划，不代表 GPU 已完成。
+
+显式 Capture 可在下一份匹配计划的版本生产点转换资源为最大 512×512 的独立 RGBA8 预览，支持 mip、cube 面、颜色通道、深度窗口及 HDR 显示。只有 RenderFrame 成功 GPU 退役后才发布图像；源资源和临时 resolve 随帧退役，保留的图像最多 1 MiB，不含池 lease。冻结可保留该图像，Texture Debugger 可独立打开同一图像；关闭或清除会释放相应持有者。具体边界和验证见 [Frame Graph 诊断面板验收](FRAMEGRAPH_DIAGNOSTICS_VALIDATION.zh-CN.md)。
 
 新增 CPU 功能应先确定快照字段及 owner，再实现局部 Processor/Preparer/Collector，并通过明确阶段/资源契约组合。当前没有可视化流水线编辑器、脚本 SRP SDK 或新的 Renderer 继承体系。运行入口和测试边界见 Tests/RenderingCommands/README.md。

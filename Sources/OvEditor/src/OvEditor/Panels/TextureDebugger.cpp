@@ -85,6 +85,8 @@ namespace OvEditor::Panels
         RefreshTextures(true);
         m_textureSelector.ValueChangedEvent += [this](int id) {
             RequireMainThread();
+            if(id==-1&&m_capture)return;
+            m_capture.reset();
             SetSelection(id ? OvRendering::Utils::ResourceTracking::GetTexture(id) : std::nullopt);
         };
         if (m_textureSelector.choices.size() > 1)
@@ -103,6 +105,7 @@ namespace OvEditor::Panels
             RequireMainThread(); m_scaleMode = static_cast<EScaleMode>(scale);
             m_image.size = m_selectedTexture ? CalculateImageSize(m_scaleMode, GetSize(), *m_selectedTexture) : OvMaths::FVector2::Zero;
         };
+        CloseEvent += [this]{if(m_capture){m_capture.reset();SetSelection(std::nullopt);}};
     }
     void TextureDebugger::RequireMainThread() const
     {
@@ -119,6 +122,15 @@ namespace OvEditor::Panels
     void TextureDebugger::RefreshTextures(bool choices)
     {
         RequireMainThread();
+        if(m_capture) {
+            if(!m_capture->texture->RetainStorage().GetID()){m_capture.reset();SetSelection(std::nullopt);return;}
+            if(choices) {
+                m_textureSelector.choices={{0,"None"}};
+                for(const auto& texture:OvRendering::Utils::ResourceTracking::GetTextures())if(IsValidTexture(texture))m_textureSelector.choices[texture.id]=std::format("Texture {}: {}",texture.id,texture.name);
+                m_textureSelector.choices[-1]=std::format("Frame Graph: {} v{} / mip {} / layer {}",m_capture->resourceName,m_capture->version,m_capture->mip,m_capture->layer);
+            }
+            m_image.size=CalculateImageSize(m_scaleMode,GetSize(),*m_selectedTexture);return;
+        }
         if (choices)
         {
             const auto textures = OvRendering::Utils::ResourceTracking::GetTextures();
@@ -141,5 +153,12 @@ namespace OvEditor::Panels
         // Even closed panels release a removed selection. Visible choices are
         // rebuilt from one stable registry snapshot, never from writer callbacks.
         RefreshTextures(IsOpened());
+    }
+    void TextureDebugger::ShowCapturedTexture(std::shared_ptr<const OvRendering::Data::FrameGraphPreviewImage> image)
+    {
+        RequireMainThread();if(!image||!image->texture)return;
+        const auto entry=OvRendering::Utils::ResourceTracking::GetTexture(image->texture->GetID());
+        if(!entry)return;m_capture=std::move(image);SetSelection(entry);m_textureSelector.currentChoice=-1;
+        RefreshTextures(true);Open();
     }
 }

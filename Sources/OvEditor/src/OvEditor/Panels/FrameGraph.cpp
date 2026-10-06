@@ -6,6 +6,7 @@
 #include <cmath>
 #include <format>
 #include <map>
+#include <OvUI/Internal/TextureID.h>
 
 using namespace OvRendering::Data;
 namespace
@@ -106,7 +107,8 @@ OvEditor::Panels::FrameGraph::FrameGraph(const std::string& title,bool opened,co
     :PanelWindow(title,opened,settings)
 {
     minSize={520,360};CreateWidget<Contents>([this]{DrawContents();});
-    CloseEvent += [this]{RequireUIThread();m_snapshot.reset();m_graphNodes.clear();m_graphEdges.clear();m_frozen=false;m_graphFit=true;};
+    CloseEvent += [this]{RequireUIThread();m_snapshot.reset();m_graphNodes.clear();m_graphEdges.clear();m_frozen=false;m_graphFit=true;
+        m_previewRequest.reset();m_previewTicket.reset();m_previewImage.reset();m_previewStatus.clear();m_previewSequence=0;};
 }
 void OvEditor::Panels::FrameGraph::RequireUIThread() const
 {
@@ -134,6 +136,34 @@ void OvEditor::Panels::FrameGraph::Update(std::shared_ptr<const FrameGraphDiagno
 OvEditor::Panels::FrameGraph::PoolRequests OvEditor::Panels::FrameGraph::TakePoolRequests()
 {
     RequireUIThread();auto result=m_requests;m_requests={};return result;
+}
+std::optional<FrameGraphPreviewRequest> OvEditor::Panels::FrameGraph::TakePreviewRequest()
+{
+    RequireUIThread();auto result=std::move(m_previewRequest);m_previewRequest.reset();return WantsCapture()?result:std::nullopt;
+}
+bool OvEditor::Panels::FrameGraph::TakePreviewClearRequest(){RequireUIThread();const bool result=m_clearPreview;m_clearPreview=false;return result;}
+void OvEditor::Panels::FrameGraph::UpdatePreview(std::shared_ptr<const OvCore::Rendering::RenderFrontend::PreviewTicket> ticket)
+{
+    RequireUIThread();
+    if(!IsOpened()){m_previewImage.reset();m_previewTicket.reset();m_previewRequest.reset();return;}
+    if(ticket&&ticket->sequence>m_previewSequence){m_previewSequence=ticket->sequence;m_previewTicket=std::move(ticket);m_previewStatus="Capturing; waiting for GPU completion";}
+    if(m_previewTicket&&m_previewTicket->completion.IsRetired()) {
+        if(!m_previewTicket->error.empty())m_previewStatus=m_previewTicket->error;
+        else if(m_previewTicket->completion.Succeeded()&&m_previewTicket->image){m_previewImage=m_previewTicket->image;m_previewStatus="Captured image; click Capture again to refresh";}
+        else m_previewStatus="Capture cancelled or failed; the previous image is unchanged.";
+        m_previewTicket.reset();
+    }
+}
+void OvEditor::Panels::FrameGraph::QueuePreview()
+{
+    RequireUIThread();
+    if(!WantsCapture()||!m_snapshot||m_selectedResource>=m_snapshot->resources.size())return;
+    const auto& resource=m_snapshot->resources[m_selectedResource];
+    FrameGraphPreviewRequest request;request.resource=m_selectedResource;request.resourceKey=FrameGraphPreviewResourceKey(*m_snapshot,m_selectedResource);
+    request.version=m_selectedVersion;request.mip=static_cast<uint16_t>(std::clamp(m_previewMip,0,int(resource.mips)-1));
+    request.layer=static_cast<uint16_t>(std::clamp(m_previewLayer,0,int(resource.layers)-1));request.channel=static_cast<FrameGraphPreviewChannel>(m_previewChannel);
+    request.exposure=m_previewExposure;request.rangeMin=m_previewMin;request.rangeMax=m_previewMax;request.toneMap=m_previewToneMap;
+    m_previewRequest=request;m_previewStatus="Queued for the next matching product plan";
 }
 void OvEditor::Panels::FrameGraph::SelectPass(size_t index){m_selectedPass=index;m_flowSelectionIsResource=false;m_requestedTab=0;m_filter[0]=0;}
 void OvEditor::Panels::FrameGraph::SelectResource(size_t index){m_selectedResource=index;m_selectedVersion=m_snapshot->resources[index].finalVersion;m_flowSelectionIsResource=true;m_requestedTab=1;m_filter[0]=0;}
@@ -169,6 +199,7 @@ void OvEditor::Panels::FrameGraph::DrawContents()
         if(ImGui::BeginTabItem("Dependencies",nullptr,request==2?ImGuiTabItemFlags_SetSelected:0)){DrawDependencies();ImGui::EndTabItem();}
         if(ImGui::BeginTabItem("Passes",nullptr,request==0?ImGuiTabItemFlags_SetSelected:0)){DrawPasses();ImGui::EndTabItem();}
         if(ImGui::BeginTabItem("Resources",nullptr,request==1?ImGuiTabItemFlags_SetSelected:0)){DrawResources();ImGui::EndTabItem();}
+        if(ImGui::BeginTabItem("Preview",nullptr,request==3?ImGuiTabItemFlags_SetSelected:0)){DrawPreview();ImGui::EndTabItem();}
         ImGui::EndTabBar();
     }
 }
@@ -561,6 +592,7 @@ void OvEditor::Panels::FrameGraph::DrawResourceFlow()
         const auto& selected=graph.resources[m_selectedResource];
         ImGui::TextWrapped("R%zu%s  %s | %s %ux%u | slot %llu",m_selectedResource,m_graphVersions?std::format(" v{}",m_selectedVersion).c_str():"",selected.name.c_str(),Format(selected.format),selected.width,selected.height,selected.physicalSlot);
         ImGui::SameLine();if(ImGui::SmallButton("Resource details"))SelectResource(m_selectedResource);
+        ImGui::SameLine();if(ImGui::SmallButton("Preview content")){m_requestedTab=3;QueuePreview();}
         if(m_graphVersions)ImGui::TextDisabled(m_selectedVersion==0?"v0: initial content in accessed ranges (unused nodes have no content).":"Content states share storage; partial writes keep other ranges. No texture copies.");
         size_t shown=0;for(size_t p=0;p<graph.passes.size()&&shown<6;++p)for(size_t a=0;a<graph.passes[p].accesses.size()&&shown<6;++a) {
             const auto& access=graph.passes[p].accesses[a];const auto& version=graph.passes[p].contentVersions[a];
@@ -613,6 +645,7 @@ void OvEditor::Panels::FrameGraph::DrawResources()
     ImGui::SameLine();if(ImGui::SmallButton("Show version flow")) {
         m_flowSelectionIsResource=true;m_selectedVersion=selected.finalVersion;m_graphResourceFlow=true;m_graphVersions=true;m_graphFocus=true;m_graphFit=true;m_requestedTab=2;m_filter[0]=0;
     }
+    ImGui::SameLine();if(ImGui::SmallButton("Preview content")){m_requestedTab=3;QueuePreview();}
     ImGui::BeginChild("resource-detail",{0,0});
     if(selected.physicalSlot) {
         ImGui::TextUnformatted("Same physical slot (nonoverlapping plan lifetimes):");
@@ -632,5 +665,52 @@ void OvEditor::Panels::FrameGraph::DrawResources()
         }
         ImGui::PopID();
     }
+    ImGui::EndChild();
+}
+
+void OvEditor::Panels::FrameGraph::DrawPreview()
+{
+    const auto& graph=*m_snapshot;
+    if(graph.resources.empty()){ImGui::TextDisabled("No resource to preview");return;}
+    if(ImGui::BeginCombo("Resource",graph.resources[m_selectedResource].name.c_str())) {
+        for(size_t r=0;r<graph.resources.size();++r) {
+            ImGui::PushID(static_cast<int>(r));
+            if(ImGui::Selectable(std::format("R{}  {}",r,graph.resources[r].name).c_str(),r==m_selectedResource)) {
+                m_selectedResource=r;m_selectedVersion=graph.resources[r].finalVersion;m_flowSelectionIsResource=true;m_previewMip=m_previewLayer=0;
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndCombo();
+    }
+    const auto& resource=graph.resources[m_selectedResource];
+    int version=static_cast<int>(m_selectedVersion);ImGui::SetNextItemWidth(130);
+    if(ImGui::SliderInt("Version",&version,0,static_cast<int>(resource.finalVersion)))m_selectedVersion=static_cast<uint32_t>(version);
+    m_previewMip=std::clamp(m_previewMip,0,int(resource.mips)-1);m_previewLayer=std::clamp(m_previewLayer,0,int(resource.layers)-1);
+    ImGui::SameLine();ImGui::SetNextItemWidth(110);ImGui::SliderInt("Mip",&m_previewMip,0,resource.mips-1);
+    if(resource.layers>1){ImGui::SameLine();ImGui::SetNextItemWidth(100);const char* faces[]={"+X","-X","+Y","-Y","+Z","-Z"};ImGui::Combo("Face",&m_previewLayer,faces,6);}
+    const char* channels[]={"Auto","RGB","Red","Green","Blue","Alpha","Depth"};ImGui::SetNextItemWidth(110);ImGui::Combo("Channel",&m_previewChannel,channels,7);
+    const bool depth=m_previewChannel==int(FrameGraphPreviewChannel::Depth)||(m_previewChannel==0&&(uint8_t(resource.aspect)&uint8_t(ResourceAspect::Depth)));
+    ImGui::SameLine();
+    if(depth) {
+        float range[]={m_previewMin,m_previewMax};ImGui::SetNextItemWidth(180);
+        if(ImGui::DragFloat2("Depth range",range,.0001f,0,1,"%.5f")){m_previewMin=range[0];m_previewMax=range[1];}
+    } else {
+        ImGui::SetNextItemWidth(130);ImGui::SliderFloat("EV",&m_previewExposure,-12,12,"%.1f");ImGui::SameLine();ImGui::Checkbox("Tone map",&m_previewToneMap);
+    }
+    ImGui::BeginDisabled(m_frozen||bool(m_previewRequest)||bool(m_previewTicket));
+    if(ImGui::Button("Capture"))QueuePreview();ImGui::EndDisabled();ImGui::SameLine();
+    if(ImGui::Button("Clear image")){m_previewImage.reset();m_previewRequest.reset();m_previewTicket.reset();m_previewStatus.clear();m_clearPreview=true;}
+    if(m_previewImage){ImGui::SameLine();if(ImGui::Button("Texture Debugger"))OpenPreviewEvent.Invoke(m_previewImage);}
+    ImGui::TextDisabled(m_frozen?"Frozen plan: only the captured image is available. Unfreeze to capture.":"One-shot capture from the next matching plan. No continuous GPU copies.");
+    if(!m_previewStatus.empty())ImGui::TextWrapped("%s",m_previewStatus.c_str());
+    ImGui::BeginChild("preview-image",{0,0},ImGuiChildFlags_Borders);
+    if(m_previewImage&&m_previewImage->texture->RetainStorage().GetID()) {
+        const auto& image=*m_previewImage;
+        ImGui::TextWrapped("%s v%u | mip %u, layer %u | scope %llu | before P%zu",image.resourceName.c_str(),image.version,image.mip,image.layer,image.scope,image.beforePass);
+        ImGui::TextDisabled("Source %ux%u | image %ux%u RGBA8 | %.2f MiB",image.sourceWidth,image.sourceHeight,image.width,image.height,image.width*image.height*4/MiB);
+        const auto available=ImGui::GetContentRegionAvail();const float scale=std::max(.01f,std::min(available.x/image.width,available.y/image.height));
+        OvUI::Internal::TextureID texture(image.texture);texture.RetainForCapture();
+        ImGui::Image(texture.id,{image.width*scale,image.height*scale},{0,1},{1,0});
+    } else ImGui::TextDisabled("Select a resource/version, mip and channel, then Capture.");
     ImGui::EndChild();
 }

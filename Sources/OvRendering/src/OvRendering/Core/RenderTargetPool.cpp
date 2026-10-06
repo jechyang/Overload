@@ -39,8 +39,8 @@ namespace
             const auto attachment=desc.aspect==Data::ResourceAspect::Color?COLOR:desc.aspect==Data::ResourceAspect::Depth?DEPTH:DEPTH_STENCIL;
             if(entry->texture)target->Attach(entry->texture,attachment,0,desc.layers==6?std::optional<uint32_t>(layer):std::nullopt);
             else target->Attach(entry->renderbuffer,attachment);
-            if(desc.aspect!=Data::ResourceAspect::Color){target->SetTargetDrawBuffer({});target->SetTargetReadBuffer({});}
             if(!target->Validate())throw std::runtime_error("FrameGraph: invalid transient framebuffer");
+            if(desc.aspect!=Data::ResourceAspect::Color){target->SetTargetDrawBuffer({});target->SetTargetReadBuffer({});}
             entry->snapshots.push_back(target->RecordTarget());entry->targets.push_back(std::move(target));
         }
         return entry;
