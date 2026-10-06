@@ -3,6 +3,7 @@
 #undef main
 #include <OvRendering/Data/RenderFrame.h>
 #include <OvRendering/Core/RenderTargetPool.h>
+#include <OvRendering/Data/FrameGraphDiagnostics.h>
 #include <baregl/ResourceLifetime.h>
 #include <baregl/ResourceExecutor.h>
 #include <iostream>
@@ -54,6 +55,26 @@ namespace
         const auto compiled=plan.Compile();
         auto mapping=pool->Realize(plan,compiled);
         Require(mapping->TextureStorage(a)==mapping->TextureStorage(b)&&mapping->PhysicalID(a)==mapping->PhysicalID(b),"nonoverlapping transients did not share real GL storage");
+        const auto diagnostics=CaptureFrameGraphDiagnostics(plan,compiled,*mapping);
+        Require(diagnostics.resources.size()==2&&diagnostics.passes.size()==4&&diagnostics.dependencies.size()==compiled.dependencies.size(),"diagnostics omitted graph nodes/edges");
+        Require(diagnostics.physicalTransientTargets==1&&diagnostics.physicalTransientBytes==64*32*16&&diagnostics.logicalTransientBytes==2*64*32*16&&diagnostics.estimatedPeakBytes==64*32*16,"diagnostics confused logical/peak/physical scratch bytes");
+        Require(diagnostics.resources[0].physicalSlot==diagnostics.resources[1].physicalSlot&&diagnostics.resources[0].lifetime.last==1&&diagnostics.resources[1].lifetime.first==2&&diagnostics.passes[1].accesses[0].type==ResourceAccessType::Readback,"diagnostics lost aliases, lifetimes or accesses");
+        auto foreignCompiled=compiled;++foreignCompiled.scope;bool diagnosticsRejected=false;
+        try{CaptureFrameGraphDiagnostics(plan,foreignCompiled,*mapping);}catch(const std::invalid_argument&){diagnosticsRejected=true;}
+        Require(diagnosticsRejected,"diagnostics accepted a foreign compiled graph");
+        {
+            OvRendering::Core::RenderTargetPool inspectPool;inspectPool.SetFrameReserve(2);
+            auto active=inspectPool.Realize(plan,compiled);const auto id=active->TextureStorage(a).GetID();
+            std::weak_ptr<baregl::Texture> owner=active->Texture(a);
+            const auto frozen=CaptureFrameGraphDiagnostics(plan,compiled,*active);
+            const auto before=inspectPool.GetStatistics();inspectPool.TrimIdle();const auto trimmed=inspectPool.GetStatistics();
+            Require(before.idleTargets==1&&trimmed.idleTargets==0&&trimmed.leasedTargets==1&&glIsTexture(id),"idle trim released an active lease or kept spare storage");
+            Require(trimmed.idleBudget==before.idleBudget&&trimmed.frameReserve==2,"idle trim changed caching policy");
+            active.reset();inspectPool.TrimIdle();
+            Require(owner.expired()&&!glIsTexture(id)&&frozen.resources[0].physicalSlot!=0,"frozen diagnostics retained GPU storage after idle trim");
+            bool cpuRead=false;std::thread worker([&]{cpuRead=frozen.resources[0].name=="A"&&frozen.physicalTransientTargets==1;});worker.join();
+            Require(cpuRead,"immutable frozen diagnostics were not readable without a GL context");
+        }
         const auto original=mapping->TextureStorage(a).GetID();
         std::ofstream(output/"pooled-plan.txt")<<compiled.Dump()<<mapping->Dump();
         RenderCommandList commands;plan.RecordOperations(commands,{},mapping);commands.Seal();mapping.reset();
@@ -68,10 +89,14 @@ namespace
         Require(pool->GetStatistics().allocations==allocations,"warm pool allocated another target");
         {
             auto previous=pool->Realize(plan,compiled);const auto retained=previous->TextureStorage(a);previous.reset();
-            auto inspection=plan;const auto external=inspection.Import("Debugger.PreviousGeneration",retained,ResourceOrigin::Imported,{{}});
+            auto inspection=plan;const auto external=inspection.Import("",retained,ResourceOrigin::Imported,{{}});
             inspection.passes.push_back(Node("UI.PreviousGeneration",{{external,{},ResourceAccessType::Sample}}));
             auto first=pool->Realize(inspection,inspection.Compile());auto second=pool->Realize(inspection,inspection.Compile());
+            const auto inspected=CaptureFrameGraphDiagnostics(inspection,inspection.Compile(),*first);
+            Require(inspected.resources[external.index].name=="UI.PreviousGeneration.Color [R2]","unnamed imported diagnostics lost their first-use role");
             Require(first->TextureStorage(a)!=retained&&second->TextureStorage(a)!=retained,"external UI sampler was overwritten by pooled scratch");
+            const auto pinnedCount=pool->GetStatistics().leasedTargets;pool->TrimIdle();
+            Require(pool->GetStatistics().leasedTargets==pinnedCount&&glIsTexture(retained.GetID()),"idle trim evicted an external UI generation pin");
             first.reset();auto unrelated=pool->Realize(plan,compiled);
             Require(unrelated->TextureStorage(a)!=retained,"retiring one UI frame released another frame's external pool pin");
         }
@@ -169,6 +194,7 @@ namespace
         {OvRendering::Core::RenderTargetPool fresh;auto map=fresh.Realize(plan,compiled);Require(map->TextureStorage(a).GetID()!=0,"new resource domain could not allocate");}
         Require(glGetError()==GL_NO_ERROR,"pool GL validation failed");
         std::cout<<"PASS: real transient aliasing, overlapping/sampler separation, warm reuse, no-reuse, delayed GPU lease, immediate retirement, cancellation/encode/execute/fence/wait failure, rollback, idle eviction, close and domain rebuild\n";
+        std::cout<<"PASS: value-only diagnostics preserve aliases/bytes/lifetimes/accesses; freezing does not retain GPU storage; idle trim protects active leases and external pins without changing budget/reserve\n";
     }
     void ContractValidation(const std::filesystem::path& output)
     {

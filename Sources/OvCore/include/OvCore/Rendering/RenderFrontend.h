@@ -7,6 +7,7 @@
 #include <OvTools/Jobs/JobSystem.h>
 #include <OvCore/UI/RenderResources.h>
 #include <OvRendering/Core/RenderTargetPool.h>
+#include <OvRendering/Data/FrameGraphDiagnostics.h>
 
 namespace OvCore::Rendering
 {
@@ -24,6 +25,8 @@ namespace OvCore::Rendering
             OvRendering::Data::RenderPlan plan) const;
         std::unique_ptr<SceneFrame> ComposeFrames(std::vector<std::unique_ptr<SceneFrame>>) const;
         void SetResourceReuseEnabled(bool value) { RequireOwner();m_reuse=value; }
+        void SetDiagnosticsCaptureEnabled(bool);
+        std::shared_ptr<const OvRendering::Data::FrameGraphDiagnostics> GetFrameGraphDiagnostics() const;
         std::unique_ptr<SceneFrame> PrepareFrame(std::unique_ptr<SceneFrame> frame,
             OvRendering::Data::PipelineState state, OvTools::Jobs::JobSystem* jobs = nullptr, const std::atomic_bool* cancel = nullptr) const;
         OvRendering::Data::RenderCommandList RecordFrame(std::unique_ptr<SceneFrame> frame,
@@ -40,6 +43,9 @@ namespace OvCore::Rendering
     private:
         void RequireOwner() const;
         bool m_reuse=true;
+        bool m_captureDiagnostics=false;
+        mutable uint64_t m_diagnosticsSequence=0;
+        mutable std::shared_ptr<const OvRendering::Data::FrameGraphDiagnostics> m_diagnostics;
         std::thread::id m_owner = std::this_thread::get_id();
         OvRendering::Core::MeshCommandRecorder m_recorder;
         mutable OvRendering::Core::MeshCommandRecorder::ProgramCache m_programs;

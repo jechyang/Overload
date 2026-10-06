@@ -10,6 +10,16 @@ void RenderFrontend::RequireOwner() const
         throw std::logic_error("RenderFrontend requires its constructing thread");
 }
 
+void RenderFrontend::SetDiagnosticsCaptureEnabled(bool enabled)
+{
+    RequireOwner();m_captureDiagnostics=enabled;
+    if(!enabled)m_diagnostics.reset();
+}
+std::shared_ptr<const OvRendering::Data::FrameGraphDiagnostics> RenderFrontend::GetFrameGraphDiagnostics() const
+{
+    RequireOwner();return m_diagnostics;
+}
+
 std::shared_ptr<const OvRendering::Data::RenderSceneSnapshot> RenderFrontend::ExtractScene(const SceneRenderRequest& p_request) const
 {
     RequireOwner();
@@ -49,6 +59,11 @@ std::unique_ptr<SceneFrame> RenderFrontend::PrepareFrame(std::unique_ptr<SceneFr
     {
         const auto& mesh=prepared->GetScene().GetMeshes()[draw.sourceIndex];
         frame->m_info.Add(mesh.geometry->GetVertexCount(),mesh.geometry->GetIndexCount(),mesh.instances);
+    }
+    if(m_captureDiagnostics) {
+        auto diagnostics=OvRendering::Data::CaptureFrameGraphDiagnostics(frame->m_plan,*frame->m_compiled,*frame->m_mapping,frame->m_views);
+        diagnostics.captureIndex=++m_diagnosticsSequence;
+        m_diagnostics=std::make_shared<const OvRendering::Data::FrameGraphDiagnostics>(std::move(diagnostics));
     }
     return frame;
 }

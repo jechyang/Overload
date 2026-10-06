@@ -29,6 +29,8 @@ namespace OvRendering::Core
             uint64_t allocations=0, hits=0, aliases=0, evictions=0;
             uint64_t idleBytes=0, leasedBytes=0, peakLeasedBytes=0;
             size_t idleTargets=0, leasedTargets=0;
+            uint64_t idleBudget=0;
+            size_t frameReserve=1;
         };
         explicit RenderTargetPool(uint64_t idleBudget=256ull*1024*1024);
         ~RenderTargetPool();
@@ -37,6 +39,8 @@ namespace OvRendering::Core
         std::shared_ptr<const RenderResourceMapping> Realize(const Data::RenderPlan&,const Data::CompiledRenderPlan&,bool reuse=true);
         Statistics GetStatistics() const;
         void SetIdleBudget(uint64_t);
+        // Release only idle entries; preserve the budget and all active leases/pins.
+        void TrimIdle();
         // Reserve physical sets for the product's bounded in-flight capacity.
         void SetFrameReserve(size_t);
         // Owner boundary, after draining frames. Active leases remain pinned.

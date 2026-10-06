@@ -61,6 +61,7 @@ struct Core::RenderTargetPool::State
     explicit State(uint64_t value):budget(value){}
     Statistics Stats() const {
         auto result=totals;
+        result.idleBudget=budget;result.frameReserve=frameReserve;
         for(const auto& entry:entries)if(entry->leased||entry->pins){result.leasedBytes+=entry->descriptor.EstimatedBytes();++result.leasedTargets;}
             else {result.idleBytes+=entry->descriptor.EstimatedBytes();++result.idleTargets;}
         return result;
@@ -140,6 +141,18 @@ void Core::RenderTargetPool::SetFrameReserve(size_t count)
 {
     if(!count||count>4)throw std::invalid_argument("FrameGraph: invalid frame reserve");
     std::lock_guard lock(m_state->mutex);if(m_state->producerBound&&m_state->producer!=std::this_thread::get_id())throw std::logic_error("FrameGraph reserve requires its producer");m_state->frameReserve=count;
+}
+void Core::RenderTargetPool::TrimIdle()
+{
+    baregl::ResourceExecutor::Invoke([&] {
+        std::list<std::shared_ptr<TargetEntry>> removed;
+        std::lock_guard lock(m_state->mutex);
+        for(auto it=m_state->entries.begin();it!=m_state->entries.end();) {
+            auto entry=it++;if(!(*entry)->leased&&!(*entry)->pins) {
+                removed.splice(removed.end(),m_state->entries,entry);++m_state->totals.evictions;
+            }
+        }
+    });
 }
 void Core::RenderTargetPool::Close()
 {

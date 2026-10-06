@@ -11,6 +11,7 @@ node Tests\Skinning\run-validation.mjs Debug --auxiliary
 node Tests\Skinning\run-validation.mjs Debug --postprocess
 node Tests\Skinning\run-validation.mjs Debug --pipeline
 node Tests\Skinning\run-validation.mjs Debug --framegraph
+node Tests\Skinning\run-validation.mjs Debug --framegraph-editor --framegraph-baseline
 node Tests\Skinning\run-validation.mjs Debug --parallel-recording
 node Tests\Skinning\run-validation.mjs Debug --editor --command-list --editor-ui --product-loop
 node Tests\Skinning\run-validation.mjs Debug --editor-stress
@@ -29,7 +30,8 @@ Build/Data，防止单独构建项目时遗漏资源发布、误用旧 shader。
 | --stages / --bindings | 明确的阶段排序/override/fallback 期望；蒙皮/灯光/绑定；范围 Prepare/Record 的双 Worker 交错、逆序、失败/取消/部分提交与汇合 |
 | --auxiliary / --postprocess | 主视图、阴影及全部 cubemap mip 的串行/双 Worker/单 Worker 精确对照；渐进捕获、曝光历史、失败恢复、源及目标生命周期 |
 | --pipeline | inspection_pipeline.h 的双视图配置；选择 Opaque/Transparent/SceneUI；声明多个附件；冻结配置、源销毁、无效资源/视图/Stage/尺寸诊断 |
-| --framegraph | 子资源/版本/Load/Store/反馈契约，真实池复用、外部 UI pin、GPU 退役及失败回滚；四视口共享、禁用复用逐字节对照；16 效果组合 × 四种尺寸、暖池零分配 |
+| --framegraph | 子资源/版本/Load/Store/反馈契约，真实池复用、外部 UI pin、GPU 退役及失败回滚；四视口共享、禁用复用逐字节对照；16 效果组合 × 四种尺寸、暖池零分配；诊断数据不持有 GPU 存储，TrimIdle 保留活动 lease/pin 和预算 |
+| --framegraph-editor --framegraph-baseline | 实际 Main/Render owner 多视口图的诊断面板：默认关闭、筛选和隐藏选项详情、冻结/恢复/resize、线程归属、缓存预算/闲置清理、关闭释放；同时执行真实产品和 27 组完整/单面板原生/拥有型 UI 精确对照，检查 F0 两份冻结图像 |
 | --parallel-recording | 延迟编码依赖图和共享材质压力；串行、单 Worker、多 Worker，确定命令顺序与资源退役 |
 | --editor --command-list --editor-ui --product-loop | Scene/Game/Asset 三视口、Grid/Outline/Gizmo/调试对象、真实 Picking、对象删除/场景替换、完整 UI 和产品循环 |
 | --editor-camera | 含 OverlayUI 时，未选中对象/选中 Canvas 的 Scene 相机旋转会改变网格和辅助图形像素，屏幕 UI 保持固定；注入右键事件验证控制器不依赖对象选择（不覆盖操作系统鼠标焦点） |
@@ -44,7 +46,7 @@ Build/Data，防止单独构建项目时遗漏资源发布、误用旧 shader。
 A5 的同机精确基线由 a5-image-baseline.json 固定大小和 SHA-256。运行器比较本次输出文件，并同时要求串行/Worker 的所有像素与逻辑绘制数据一致；不从旧 Git 编译第二套实现。CPU/GL 环境变化造成差异时应定位原因，不能重写基线或放宽像素容差以通过测试。该清单是历史证据，不代替源所有权、无 GL Worker、失败汇合与 GPU 退役检查。
 
 FrameGraph F0 在改造前已记录旧 A5 Editor 场景图像不符，冻结数据见
-FRAMEGRAPH_F0_BASELINE.zh-CN.md。Editor 产品/线程/压力入口可显式加
+FRAMEGRAPH_F0_BASELINE.zh-CN.md。Editor 产品/线程/压力/诊断面板入口可显式加
 `--framegraph-baseline`，要求 editor-command-frames.bin 和 editor-game.rgba 与开发前数据精确
 相等，并在 result.json 保留已存在的 A5 差异。其他 A5 文件仍照常比较；历史清单
 没有覆盖。新清单 framegraph-image-baseline.json 仅含已冻结的大小/SHA256。
@@ -78,3 +80,5 @@ encodeExecuteUs 包含执行及 GPU 退役等待，不是纯 GPU 时间。
 inspection_pipeline.h 是小型 C++ 配置实例：先在主线程选择阶段并提取两个视图，通过 SceneFrame.AddView 声明附件和实际采样，再调用 PrepareFrame、RecordFrame 和已有 RenderFrame。无需更改任务协调器、场景提取核心或执行后端。ComposeFrame 拒绝需要未提供历史 owner 的配置；阴影/反射/后处理历史使用现有 ExtractFrame 入口。
 
 当前没有流水线编辑器、脚本 SRP SDK 或新渲染效果。模块与 owner 边界见根目录 RENDERING_ARCHITECTURE.md；A6 最终状态以 RENDERING_ARCHITECTURE_A6_VALIDATION.md 为准。
+
+Frame Graph 面板使用与诊断数据边界见根目录 FRAMEGRAPH_DIAGNOSTICS_VALIDATION.zh-CN.md。

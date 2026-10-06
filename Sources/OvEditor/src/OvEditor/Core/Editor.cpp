@@ -30,6 +30,7 @@
 #include <OvEditor/Panels/AssetView.h>
 #include <OvEditor/Panels/Console.h>
 #include <OvEditor/Panels/FrameInfo.h>
+#include <OvEditor/Panels/FrameGraph.h>
 #include <OvEditor/Panels/GameView.h>
 #include <OvEditor/Panels/HardwareInfo.h>
 #include <OvEditor/Panels/Hierarchy.h>
@@ -219,6 +220,7 @@ void OvEditor::Core::Editor::SetupUI()
 	m_panelsManager.CreatePanel<Panels::ProjectSettings>("Project Settings", false, settings);
 	m_panelsManager.CreatePanel<Panels::AssetProperties>("Asset Properties", false, settings);
 	m_panelsManager.CreatePanel<Panels::TextureDebugger>("Texture Debugger", false, settings);
+    m_panelsManager.CreatePanel<Panels::FrameGraph>("Frame Graph", false, settings);
 
 	// Needs to be called after all panels got created, because some settings in this menu depend on other panels
 	m_panelsManager.GetPanelAs<Panels::MenuBar>("Menu Bar").InitializeSettingsMenu();
@@ -405,6 +407,9 @@ void OvEditor::Core::Editor::UpdateEditorPanels(float p_deltaTime)
 		ZoneScopedN("Texture Debugger Update");
 		textureDebugger.Update(p_deltaTime);
 	}
+    auto& graph=m_panelsManager.GetPanelAs<Panels::FrameGraph>("Frame Graph");
+    if(graph.IsOpened())graph.Update(m_productFrontend.GetFrameGraphDiagnostics(),m_productFrontend.GetResourcePool()->GetStatistics());
+    else graph.Update({},{});
 }
 
 OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p_deltaTime)
@@ -412,6 +417,9 @@ OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p
     m_latestFrameCompletion = {};
     m_recordedInteraction.reset();
     OvRendering::Data::RenderFrame frame(++m_recordedFrameID);
+    const auto requests=m_panelsManager.GetPanelAs<Panels::FrameGraph>("Frame Graph").TakePoolRequests();
+    if(requests.budget)m_productFrontend.GetResourcePool()->SetIdleBudget(*requests.budget);
+    if(requests.trimIdle)m_productFrontend.GetResourcePool()->TrimIdle();
 	auto& assetView = m_panelsManager.GetPanelAs<OvEditor::Panels::AssetView>("Asset View");
 	auto& sceneView = m_panelsManager.GetPanelAs<OvEditor::Panels::SceneView>("Scene View");
 	auto& gameView = m_panelsManager.GetPanelAs<OvEditor::Panels::GameView>("Game View");
@@ -474,6 +482,7 @@ OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p
         present.accesses.push_back({product->ComposePlan().ImportBackbuffer(windowWidth,windowHeight,true),{},OvRendering::Data::ResourceAccessType::Present});
         present.operation=[] {return [](auto&) {};};product->ComposePlan().passes.push_back(std::move(present));
     }
+    m_productFrontend.SetDiagnosticsCaptureEnabled(m_panelsManager.GetPanelAs<Panels::FrameGraph>("Frame Graph").WantsCapture());
     product=m_productFrontend.PrepareFrame(std::move(product),m_context.driver->CreatePipelineState(),recordingJobs);
     size_t viewOffset=0;
     for(auto& item:pending)if(item.frame.active) {

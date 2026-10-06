@@ -1,4 +1,5 @@
 #include <OvRendering/Data/RenderPlan.h>
+#include <OvRendering/Data/FrameGraphDiagnostics.h>
 #include <algorithm>
 #include <stdexcept>
 #include <string_view>
@@ -11,6 +12,30 @@
 #include <OvRendering/Core/RenderTargetPool.h>
 using namespace OvRendering::Data;
 namespace { CompiledRenderPlan CompileAccesses(const RenderPlan&,std::span<const std::shared_ptr<const RenderSceneSnapshot>>); }
+namespace
+{
+    std::vector<ResourceAccess> EffectiveAccesses(const RenderPlan& plan,const RenderPlanPass& pass,
+        const std::vector<PlanResourceDesc>& descriptors,std::span<const std::shared_ptr<const RenderSceneSnapshot>> views)
+    {
+        auto accesses=pass.accesses;
+        const auto legacy=[&](const ResourceUse& use,bool write) {
+            const auto& desc=descriptors[use.resource];
+            for(unsigned layer=0;layer<desc.layers;++layer)if(use.subresources&(1u<<layer)) {
+                ResourceAccess access{plan.Handle(use.resource),{desc.aspect,0,1,static_cast<uint16_t>(layer),1},write?ResourceAccessType::Attachment:ResourceAccessType::Sample};
+                if(write) {
+                    if(pass.view>=views.size()||!views[pass.view])throw std::invalid_argument("RenderPlan access inspection requires its view");
+                    const auto& view=views[pass.view]->GetView();
+                    const bool clear=desc.aspect==ResourceAspect::Depth?view.clearDepth:desc.aspect==ResourceAspect::DepthStencil?(view.clearDepth&&view.clearStencil):view.clearColor;
+                    access.load=clear?AttachmentLoad::Clear:AttachmentLoad::Load;access.fullCoverage=clear;
+                }
+                accesses.push_back(access);
+            }
+        };
+        for(const auto& use:pass.reads)legacy(use,false);
+        for(const auto& use:pass.writes)legacy(use,true);
+        return accesses;
+    }
+}
 RenderPlan::RenderPlan() { static std::atomic_uint64_t next{1}; m_scope=next++; }
 void RenderPlan::Validate(std::span<const std::shared_ptr<const RenderSceneSnapshot>> views) const { (void)Compile(views); }
 CompiledRenderPlan RenderPlan::Compile(std::span<const std::shared_ptr<const RenderSceneSnapshot>> views) const
@@ -327,21 +352,7 @@ namespace
         {
             const auto& pass=plan.passes[passIndex];const auto scope="RenderPlan pass "+pass.name+": ";
             for(auto previous:pass.after) { if(previous>=passIndex)throw std::invalid_argument(scope+"explicit dependency conflicts with fixed order/cycle");edge(previous,passIndex,size_t(-1),DependencyKind::Explicit); }
-            auto accesses=pass.accesses;
-            const auto legacy=[&](const ResourceUse& use,bool write) {
-                const auto& desc=descriptors[use.resource];
-                for(unsigned layer=0;layer<desc.layers;++layer)if(use.subresources&(1u<<layer)) {
-                    ResourceAccess access{plan.Handle(use.resource),{desc.aspect,0,1,static_cast<uint16_t>(layer),1},write?ResourceAccessType::Attachment:ResourceAccessType::Sample};
-                    if(write) {
-                        const auto& view=views[pass.view]->GetView();
-                        const bool clear=desc.aspect==ResourceAspect::Depth?view.clearDepth:desc.aspect==ResourceAspect::DepthStencil?(view.clearDepth&&view.clearStencil):view.clearColor;
-                        access.load=clear?AttachmentLoad::Clear:AttachmentLoad::Load;access.fullCoverage=clear;
-                    }
-                    accesses.push_back(access);
-                }
-            };
-            for(const auto& use:pass.reads)legacy(use,false);
-            for(const auto& use:pass.writes)legacy(use,true);
+            auto accesses=EffectiveAccesses(plan,pass,descriptors,views);
             std::map<std::pair<size_t,size_t>,AccessFlags> flags;
             std::optional<std::pair<uint32_t,uint32_t>> copyExtent;
             for(const auto& access:accesses)
@@ -405,4 +416,41 @@ namespace
         }
         return result;
     }
+}
+
+FrameGraphDiagnostics OvRendering::Data::CaptureFrameGraphDiagnostics(const RenderPlan& plan,const CompiledRenderPlan& compiled,
+    const OvRendering::Core::RenderResourceMapping& mapping,std::span<const std::shared_ptr<const RenderSceneSnapshot>> views)
+{
+    if(compiled.scope!=plan.Scope()||compiled.lifetimes.size()!=plan.resources.size()||compiled.finalVersions.size()!=plan.resources.size())
+        throw std::invalid_argument("FrameGraph diagnostics: foreign or incomplete compiled plan");
+    FrameGraphDiagnostics result;result.scope=plan.Scope();result.estimatedPeakBytes=compiled.estimatedPeakBytes;result.dependencies=compiled.dependencies;
+    std::vector<PlanResourceDesc> descriptors;descriptors.reserve(plan.resources.size());
+    std::unordered_set<uint64_t> physical;
+    for(size_t i=0;i<plan.resources.size();++i) {
+        const auto& resource=plan.resources[i];const auto desc=resource.descriptor?*resource.descriptor:PlanResourceDesc::From(resource.storage);
+        descriptors.push_back(desc);
+        FrameGraphDiagnostics::Resource record;
+        record.handle=plan.Handle(i);record.name=resource.name.empty()?"Resource "+std::to_string(i):resource.name;
+        record.origin=resource.origin;record.kind=desc.kind;record.aspect=desc.aspect;record.format=desc.texture.internalFormat;
+        record.width=desc.texture.width;record.height=desc.texture.height;record.mips=desc.mips;record.layers=desc.layers;record.samples=desc.samples;
+        record.lifetime=compiled.lifetimes[i];record.finalVersion=compiled.finalVersions[i];record.physicalSlot=mapping.PhysicalID(record.handle);
+        if(resource.origin==ResourceOrigin::Transient&&record.lifetime.first!=size_t(-1)) {
+            result.logicalTransientBytes+=record.lifetime.estimatedBytes;
+            if(record.physicalSlot&&physical.insert(record.physicalSlot).second)result.physicalTransientBytes+=record.lifetime.estimatedBytes;
+        }
+        result.resources.push_back(std::move(record));
+    }
+    result.physicalTransientTargets=physical.size();
+    for(const auto& pass:plan.passes)result.passes.push_back({pass.name,pass.viewId,EffectiveAccesses(plan,pass,descriptors,views)});
+    // Imported attachments often have no explicit logical name. Identify them
+    // by their first use without retaining the originating texture/view owner.
+    for(size_t i=0;i<plan.resources.size();++i)if(plan.resources[i].name.empty()) {
+        for(const auto& pass:result.passes)if(std::any_of(pass.accesses.begin(),pass.accesses.end(),[&](const auto& access){return access.resource.index==i;})) {
+            const auto& resource=result.resources[i];
+            const auto role=resource.kind==PlanResourceKind::Backbuffer?"Backbuffer":resource.kind==PlanResourceKind::TextureCube?"Cube":
+                resource.aspect==ResourceAspect::Depth?"Depth":resource.aspect==ResourceAspect::DepthStencil?"DepthStencil":"Color";
+            result.resources[i].name=pass.name+"."+role+" [R"+std::to_string(i)+"]";break;
+        }
+    }
+    return result;
 }
