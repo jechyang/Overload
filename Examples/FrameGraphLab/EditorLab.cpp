@@ -15,6 +15,9 @@
 #include <iostream>
 #include <vector>
 #include <stdexcept>
+#include <OvCore/Rendering/SceneRenderExtractor.h>
+#include "../../Tests/RenderingCommands/reflection_probe_selection_validation.inl"
+#include "../../Tests/RenderingCommands/environment_texture_validation.inl"
 
 namespace {
     std::filesystem::path capturePath;
@@ -77,7 +80,11 @@ int main(int argc, char** argv) try {
     for (int i = 0; i < 3; ++i) context.uiManager->RecordRenderCommands();
     EDITOR_EXEC(LoadSceneFromDisk("Scenes/FrameGraphLab.ovscene"));
     auto* scene = context.sceneManager.GetCurrentScene();
-    if (!scene || scene->GetActors().size() != 99) throw std::runtime_error("Lab scene did not load all 99 actors");
+    if (!scene || scene->GetActors().size() != 100) throw std::runtime_error("Lab scene did not load all 100 actors");
+    if (verify) {
+        ValidateLabProbeSelection(*scene);
+        ValidateLabEnvironment(context, *scene, output);
+    }
     auto* controls = scene->FindActorByName("07 Lab Controls");
     if (!controls) throw std::runtime_error("Missing lab controls");
     EDITOR_EXEC(SelectActor(*controls));
@@ -142,7 +149,7 @@ int main(int argc, char** argv) try {
     if (!std::get<bool>(*script.GetProperty("shadows"))) throw std::runtime_error("Disabled shortcuts accepted a key");
     set("_acceptKeys", true);
     for (const auto& [effect, key] : std::vector<std::pair<const char*, int>>{
-        {"shadows", 49}, {"reflections", 50}, {"bloom", 51}, {"exposure", 52}, {"fxaa", 53}, {"glass", 84}, {"gallery", 71}}) {
+        {"shadows", 49}, {"reflections", 50}, {"bloom", 51}, {"exposure", 52}, {"fxaa", 53}, {"environment", 55}, {"glass", 84}, {"gallery", 71}}) {
         press(key); tick(7);
         const auto value = script.GetProperty(effect);
         if (!value || std::get<bool>(*value)) throw std::runtime_error(std::string("Keyboard toggle failed: ") + effect);

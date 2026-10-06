@@ -17,7 +17,8 @@ const files=[];
 function visit(dir){for(const name of fs.readdirSync(dir)){const file=path.join(dir,name);if(fs.statSync(file).isDirectory())visit(file);else files.push(file);}}
 visit(path.join(root,'Examples/FrameGraphLab/Assets'));files.push(path.join(root,'Examples/FrameGraphLab/FrameGraphLab.ovproject'));
 const assetsBefore=files.map(f=>[path.relative(root,f),hash(fs.readFileSync(f))]);
-const captures=['cold','all-effects','without-shadows','without-reflections','without-bloom','without-exposure','without-fxaa','without-glass','without-gallery','six-faces','one-face','motion','paused','paused-stable','restored'];
+const authored=JSON.parse(fs.readFileSync(path.join(root,'Examples/FrameGraphLab/manifest.json'),'utf8'));
+const captures=['cold','all-effects','without-shadows','without-reflections','without-bloom','without-exposure','without-fxaa','without-environment','without-glass','without-gallery','six-faces','one-face','motion','paused','paused-stable','restored'];
 const owners=[];
 for(const owner of ['main','render']){
   if(!process.argv.includes('--inspect-only')){
@@ -28,6 +29,13 @@ for(const owner of ['main','render']){
   const log=fs.readFileSync(path.join(dir,'run.log'),'utf8');
   assert(!log.includes('[ERROR]'),'Lua/GL/product error in '+dir);
   assert(log.includes('FrameGraphLab product editor verification completed'));
+  assert(log.includes('FrameGraphLab probe selection verification completed'));
+  assert(log.includes('FrameGraphLab HDR environment texture verification completed'));
+  const environment=JSON.parse(fs.readFileSync(path.join(dir,'environment-info.json'),'utf8'));
+  assert.equal(environment.width,1024);assert.equal(environment.height,512);
+  assert.equal(environment.format,'RGBA32F');assert.equal(environment.mipmapped,false);
+  assert.equal(environment.estimatedBytes,authored.environment.estimatedTextureBytes);
+  assert(environment.hdrMaxValue>1,'environment capture silently used an LDR texture');
   const read=name=>JSON.parse(fs.readFileSync(path.join(dir,name+'.json'),'utf8'));
   const count=(g,name)=>g.snapshot.passes.filter(p=>p.name===name).length;
   const cold=read('cold'),all=read('all-effects'),six=read('six-faces'),one=read('one-face');
@@ -71,9 +79,11 @@ for(const owner of ['main','render']){
   assert(resized.pool.entries.some(e=>e.category==='idleUnused'&&e.width===960&&e.height===540),'old-size scratch was not classified as unused');
   owners.push({owner,coldPasses:cold.snapshot.passes.length,coldResources:cold.snapshot.resources.length,
     warmPasses:progressive.map(g=>g.snapshot.passes.length),warmResources:progressive.map(g=>g.snapshot.resources.length),sixFacePasses:six.snapshot.passes.length,
-    keyboardControls:true,history:true,versionReferences:true,poolReconciled:true,skeletalPlaybackAndPause:true,resizeAndRestore:true,images});
+    keyboardControls:true,probeSelectionFallback:true,environment,history:true,versionReferences:true,poolReconciled:true,skeletalPlaybackAndPause:true,resizeAndRestore:true,images});
 }
 assert.deepEqual(files.map(f=>[path.relative(root,f),hash(fs.readFileSync(f))]),assetsBefore,'verification changed authored assets/project');
 assert.deepEqual(owners[0].images.map(i=>[i.name,i.sha256]),owners[1].images.map(i=>[i.name,i.sha256]),'Main/Render image mismatch');
-const result={passed:true,config,actors:99,materials:11,gameResolution:[960,540],editorResolution:[1600,900],nativeProductEditor:true,assetsUnchanged:true,exactMainRenderImages:true,owners};
+const result={passed:true,config,actors:authored.actors.length,materials:authored.materials.length,environmentTexture:authored.environmentTexture,
+  environmentSource:authored.environmentSource,environmentTextureBytes:authored.environment.estimatedTextureBytes,
+  gameResolution:[960,540],editorResolution:[1600,900],nativeProductEditor:true,assetsUnchanged:true,exactMainRenderImages:true,owners};
 fs.writeFileSync(reportFile,JSON.stringify(result,null,2)+'\n');console.log('PASS '+reportFile);

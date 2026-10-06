@@ -594,7 +594,27 @@
       "guid": 7000099,
       "name": "Shared cube 3 11",
       "parent": 51
+    },
+    {
+      "id": 100,
+      "guid": 7000100,
+      "name": "08 HDRI Skysphere",
+      "parent": 0
     }
+  ],
+  "materials": [
+    "Floor",
+    "Stone",
+    "Dark",
+    "Chrome",
+    "Gold",
+    "Copper",
+    "Warm",
+    "Cool",
+    "Cyan",
+    "Amber",
+    "Glass",
+    "Sky"
   ],
   "engineModels": [
     "Cube",
@@ -603,8 +623,22 @@
     "Torus",
     "Mannequin"
   ],
+  "environmentTexture": "Textures/LabSky.hdr",
+  "environmentSource": ":Textures/PureSky.hdr",
+  "environment": {
+    "sourceResolution": [
+      4096,
+      2048
+    ],
+    "resolution": [
+      1024,
+      512
+    ],
+    "maxLinearValue": 61112,
+    "estimatedTextureBytes": 8388608
+  },
   "shadowResolution": 1024,
   "probeResolution": 128,
   "bloomPasses": 5,
-  "notes": "Alpha blended glass; cubemap reflections; fixed pass order. Not refraction, ray tracing, or automatic instancing."
+  "notes": "HDRI sky in main view and cubemap captures; alpha blended glass; fixed pass order. Not refraction, ray tracing, or automatic instancing."
 }

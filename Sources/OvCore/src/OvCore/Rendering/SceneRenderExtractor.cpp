@@ -272,10 +272,13 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
                 {
                     const auto local = probe.inverseRotation * (OvMaths::FVector3{center.x,center.y,center.z} - probe.position);
                     const auto extent = probe.halfExtents;
-                    const auto closest = OvMaths::FVector3{std::max(-extent.x,std::min(extent.x,local.x)), std::max(-extent.y,std::min(extent.y,local.y)), std::max(-extent.z,std::min(extent.z,local.z))};
-                    const auto d = local - closest;
-                    const auto radius = bounds.radius * scale;
-                    if (d.x*d.x+d.y*d.y+d.z*d.z > radius*radius) continue;
+                    // A draw has one environment map. Selecting a merely overlapping
+                    // local box would leave fragments outside it without IBL. Keep
+                    // straddling/oversized meshes on the global (or neutral) fallback.
+                    const auto radius = bounds.radius * scale * base.meshBoundsScale;
+                    if (std::abs(local.x) + radius > extent.x ||
+                        std::abs(local.y) + radius > extent.y ||
+                        std::abs(local.z) + radius > extent.z) continue;
                 }
                 best = &probe; bestDistance = distance;
             }

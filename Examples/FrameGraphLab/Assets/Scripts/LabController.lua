@@ -1,5 +1,5 @@
 local lab = { animate = true, shadows = true, reflections = true, bloom = true,
-    exposure = true, fxaa = true, glass = true, gallery = true,
+    exposure = true, fxaa = true, glass = true, gallery = true, environment = true,
     progressiveCapture = true, exposureProgressive = true, speed = 1.0 }
 
 function lab:OnStart()
@@ -12,6 +12,7 @@ function lab:OnStart()
     self._orb = scene:FindActorByName("Orbiting Amber"):GetTransform()
     self._glass = scene:FindActorByName("30 Transparency")
     self._gallery = scene:FindActorByName("50 Shared Material Gallery")
+    self._environment = scene:FindActorByName("08 HDRI Skysphere")
     self._skins = {
         scene:FindActorByName("Animated Copper"):GetSkinnedMeshRenderer(),
         scene:FindActorByName("Animated Chrome"):GetSkinnedMeshRenderer()
@@ -19,7 +20,7 @@ function lab:OnStart()
     self._time = 0
     self._applied = {}
     self._acceptKeys = true
-    Debug.LogInfo("FrameGraphLab: 1 shadow | 2 reflection | 3 bloom | 4 exposure | 5 FXAA | 6 probe speed | T glass | G gallery | P motion | R recapture")
+    Debug.LogInfo("FrameGraphLab: 1 shadow | 2 reflection | 3 bloom | 4 exposure | 5 FXAA | 6 probe speed | 7 sky | T glass | G gallery | P motion | R recapture")
     self:ApplySettings()
 end
 
@@ -58,6 +59,11 @@ function lab:ApplySettings()
     end
     if changed("glass") then self._glass:SetActive(self.glass) end
     if changed("gallery") then self._gallery:SetActive(self.gallery) end
+    if changed("environment") then
+        self._environment:SetActive(self.environment)
+        self._globalProbe:GetReflectionProbe():RequestCapture(true)
+        self._localProbe:GetReflectionProbe():RequestCapture(true)
+    end
     if changed("animate") then
         for _, skin in ipairs(self._skins) do
             if self.animate then skin:Play() else skin:Pause() end
@@ -70,6 +76,7 @@ function lab:HandleKeys()
         {Key.ALPHA_1, "shadows"}, {Key.ALPHA_2, "reflections"},
         {Key.ALPHA_3, "bloom"}, {Key.ALPHA_4, "exposure"},
         {Key.ALPHA_5, "fxaa"}, {Key.ALPHA_6, "progressiveCapture"},
+        {Key.ALPHA_7, "environment"},
         {Key.T, "glass"}, {Key.G, "gallery"}, {Key.P, "animate"}
     }
     for _, binding in ipairs(bindings) do

@@ -2,9 +2,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {buildLabSky} from './environment.mjs';
 const dir=path.dirname(fileURLToPath(import.meta.url));
 const assets=path.join(dir,'Assets');
-for(const folder of ['Scenes','Materials'])fs.mkdirSync(path.join(assets,folder),{recursive:true});
+for(const folder of ['Scenes','Materials','Textures'])fs.mkdirSync(path.join(assets,folder),{recursive:true});
+const sky=buildLabSky(path.resolve(dir,'../../Resources/Engine/Textures/PureSky.hdr'),path.join(assets,'Textures/LabSky.hdr'));
 const esc=s=>String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 const tag=(k,v)=>'<'+k+'>'+esc(v)+'</'+k+'>';
 const vec=(k,a)=>'<'+k+'>'+a.map((v,i)=>tag(['x','y','z','w'][i],v)).join('')+'</'+k+'>';
@@ -27,16 +29,20 @@ const materials={
   Cyan:{albedo:[.05,.5,.7,1],metal:0,rough:.4,emissive:[.08,.8,1],intensity:1.2},
   Amber:{albedo:[.95,.34,.04,1],metal:0,rough:.4,emissive:[1,.28,.03],intensity:1.1},
   Glass:{albedo:[.1,.65,.82,.28],metal:.05,rough:.1,glass:true},
+  Sky:{sky:true},
 };
 for(const [name,m] of Object.entries(materials)){
-  const settings=fields({support_orthographic:true,support_perspective:true,blendable:!!m.glass,backface_culling:!m.glass,
-    frontface_culling:false,depth_test:true,depth_writing:!m.glass,color_writing:true,cast_shadows:!m.glass,
+  const settings=fields({support_orthographic:!m.sky,support_perspective:true,blendable:!!m.glass,backface_culling:!m.glass&&!m.sky,
+    frontface_culling:!!m.sky,depth_test:!m.sky,depth_writing:!m.glass&&!m.sky,color_writing:true,cast_shadows:!m.glass&&!m.sky,
     // Stable priorities make intersecting sculpture edges reproducible across
     // process-local shader/program identities. Normal depth testing stays on.
-    receive_shadows:!m.glass,receive_reflections:!m.glass,user_interface:false,gpu_instances:1,draw_order:100+Object.keys(materials).indexOf(name)});
-  const uniforms={u_Albedo:m.albedo,u_Metallic:m.metal,u_Roughness:m.rough,u_EmissiveColor:m.emissive??[0,0,0],
-    u_EmissiveIntensity:m.intensity??0,u_BuiltInToneMapping:false,u_BuiltInGammaCorrection:false};
-  fs.writeFileSync(path.join(assets,'Materials',name+'.ovmat'),'<root>'+tag('shader',':Shaders/Standard.ovfx')+'<settings>'+settings+'</settings><uniforms>'+Object.entries(uniforms).map(([k,v])=>'<uniform>'+tag('name',k)+'<value>'+ (Array.isArray(v)?fields(Object.fromEntries(v.map((x,i)=>[['x','y','z','w'][i],x]))):esc(v))+'</value></uniform>').join('')+'</uniforms><features/></root>\n');
+    receive_shadows:!m.glass&&!m.sky,receive_reflections:!m.glass&&!m.sky,
+    ...(m.sky?{captured_by_reflection_probes:true}:{}),
+    user_interface:false,gpu_instances:1,draw_order:m.sky?0:100+Object.keys(materials).indexOf(name)});
+  const uniforms=m.sky?{u_Diffuse:[.7,.8,1,1],u_DiffuseMap:'Textures/LabSky.hdr',u_TextureOffset:[0,0],u_TextureTiling:[1,1]}:
+    {u_Albedo:m.albedo,u_Metallic:m.metal,u_Roughness:m.rough,u_EmissiveColor:m.emissive??[0,0,0],
+      u_EmissiveIntensity:m.intensity??0,u_BuiltInToneMapping:false,u_BuiltInGammaCorrection:false};
+  fs.writeFileSync(path.join(assets,'Materials',name+'.ovmat'),'<root>'+tag('shader',m.sky?':Shaders/Skysphere.ovfx':':Shaders/Standard.ovfx')+'<settings>'+settings+'</settings><uniforms>'+Object.entries(uniforms).map(([k,v])=>'<uniform>'+tag('name',k)+'<value>'+ (Array.isArray(v)?fields(Object.fromEntries(v.map((x,i)=>[['x','y','z','w'][i],x]))):esc(v))+'</value></uniform>').join('')+'</uniforms><features/></root>\n');
 }
 let next=1;const actors=[];const manifest=[];
 function add(name,pos,components='',options={}){
@@ -46,7 +52,7 @@ function add(name,pos,components='',options={}){
   manifest.push({id,guid,name,parent:options.parent??0});return id;
 }
 function mesh(name,model,mat,pos,scale=[1,1,1],options={}){
-  return add(name,pos,component('CModelRenderer',fields({model:':Models/'+model+'.fbx',frustum_behaviour:2}))+
+  return add(name,pos,component('CModelRenderer',fields({model:':Models/'+model+'.fbx',frustum_behaviour:options.frustum??2}))+
     (options.skin?component('CSkinnedMeshRenderer',fields({playing:true,looping:true,playback_speed:1,mesh_bounds_scale:1.5,pose_eval_rate:0,time_ticks:0,animation_source:'?',animation:'root|air_jump'})):'')+
     component('CMaterialRenderer','<materials>'+Array(options.skin?3:1).fill(tag('material','Materials/'+mat+'.ovmat')).join('')+'</materials><visibility_flags>7</visibility_flags>'),{...options,scale});
 }
@@ -88,7 +94,12 @@ mesh('Animated Copper','Mannequin','Copper',[-1.5,.5,3.6],[1,1,1],{parent:animat
 mesh('Animated Chrome','Mannequin','Chrome',[1.5,.5,3.6],[1,1,1],{parent:animation,skin:true});
 const crowd=add('50 Shared Material Gallery',[0,0,0]);
 for(let row=0;row<4;row++)for(let col=0;col<12;col++)mesh('Shared cube '+row+' '+col,'Cube',row%2?'Copper':'Chrome',[-11+col*2,.8+row*.9,-7],[.5,.5,.5],{parent:crowd});
+// Camera-centred sky shader draws before geometry and participates in all cube faces.
+// Uses a small HDR derivative of the bundled sky; render target sizes stay fixed.
+mesh('08 HDRI Skysphere','Sphere','Sky',[0,0,0],[1,1,1],{frustum:0});
 fs.writeFileSync(path.join(assets,'Scenes/FrameGraphLab.ovscene'),'<root><scene><actors>\n'+actors.join('\n')+'\n</actors></scene></root>\n');
-fs.writeFileSync(path.join(dir,'manifest.json'),JSON.stringify({schema:1,actors:manifest,engineModels:['Cube','Cylinder','Sphere','Torus','Mannequin'],
-  shadowResolution:1024,probeResolution:128,bloomPasses:5,notes:'Alpha blended glass; cubemap reflections; fixed pass order. Not refraction, ray tracing, or automatic instancing.'},null,2)+'\n');
+fs.writeFileSync(path.join(dir,'manifest.json'),JSON.stringify({schema:1,actors:manifest,materials:Object.keys(materials),engineModels:['Cube','Cylinder','Sphere','Torus','Mannequin'],
+  environmentTexture:'Textures/LabSky.hdr',environmentSource:':Textures/PureSky.hdr',environment:sky,
+  shadowResolution:1024,probeResolution:128,bloomPasses:5,
+  notes:'HDRI sky in main view and cubemap captures; alpha blended glass; fixed pass order. Not refraction, ray tracing, or automatic instancing.'},null,2)+'\n');
 console.log('Generated FrameGraphLab: '+actors.length+' actors, '+Object.keys(materials).length+' materials; all meshes reference engine assets.');
