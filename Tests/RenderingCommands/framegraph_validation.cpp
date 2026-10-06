@@ -412,8 +412,9 @@ namespace
         std::cout<<"PASS: effect output survives in-flight viewport resize; cancellation preserves older GPU leases\n";
         std::cout<<"PASS: 16 postprocess effect combinations x 1x1/thin/odd/normal extents, Bloom pass bounds/Load blending, explicit luminance mip/history nodes, exact no-reuse pixels and warm zero allocation\n";
     }
+#include "luminance_validation.inl"
 }
 int main(int argc,char** argv) try
 {
-    Require(argc==2,"expected evidence directory");ContractValidation(argv[1]);OperationValidation();PoolValidation(argv[1]);ProductPlanValidation(argv[1]);PostProcessValidation(argv[1]);return 0;
+    Require(argc==2,"expected evidence directory");ContractValidation(argv[1]);OperationValidation();PoolValidation(argv[1]);ProductPlanValidation(argv[1]);PostProcessValidation(argv[1]);LuminanceValidation(argv[1]);return 0;
 }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}

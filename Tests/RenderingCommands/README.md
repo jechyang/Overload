@@ -30,7 +30,7 @@ Build/Data，防止单独构建项目时遗漏资源发布、误用旧 shader。
 | --stages / --bindings | 明确的阶段排序/override/fallback 期望；蒙皮/灯光/绑定；范围 Prepare/Record 的双 Worker 交错、逆序、失败/取消/部分提交与汇合 |
 | --auxiliary / --postprocess | 主视图、阴影及全部 cubemap mip 的串行/双 Worker/单 Worker 精确对照；渐进捕获、曝光历史、失败恢复、源及目标生命周期 |
 | --pipeline | inspection_pipeline.h 的双视图配置；选择 Opaque/Transparent/SceneUI；声明多个附件；冻结配置、源销毁、无效资源/视图/Stage/尺寸诊断 |
-| --framegraph | 子资源/版本/Load/Store/反馈契约，真实池复用、外部 UI pin、GPU 退役及失败回滚；四视口共享、禁用复用逐字节对照；16 效果组合 × 四种尺寸、暖池零分配；诊断数据不持有 GPU 存储，TrimIdle 保留活动 lease/pin 和预算 |
+| --framegraph | 子资源/版本/Load/Store/反馈契约，真实池复用、外部 UI pin、GPU 退役及失败回滚；四视口共享、禁用复用逐字节对照；16 效果组合 × 四种尺寸、暖池零分配；诊断数据不持有 GPU 存储，TrimIdle 保留活动 lease/pin 和预算；80 组 R32F/RGBA32F 对照，全部 mip 红通道/渐进曝光历史/最终 HDR 浮点逐位一致，实际 GL 存储减少 75% |
 | --framegraph-editor --framegraph-baseline | 实际 Main/Render owner 多视口图的诊断面板：默认关闭、筛选和隐藏选项详情、冻结/恢复/resize、线程归属、缓存预算/闲置清理、关闭释放；同时执行真实产品和 27 组完整/单面板原生/拥有型 UI 精确对照，检查 F0 两份冻结图像 |
 | --parallel-recording | 延迟编码依赖图和共享材质压力；串行、单 Worker、多 Worker，确定命令顺序与资源退役 |
 | --editor --command-list --editor-ui --product-loop | Scene/Game/Asset 三视口、Grid/Outline/Gizmo/调试对象、真实 Picking、对象删除/场景替换、完整 UI 和产品循环 |
@@ -82,3 +82,5 @@ inspection_pipeline.h 是小型 C++ 配置实例：先在主线程选择阶段�
 当前没有流水线编辑器、脚本 SRP SDK 或新渲染效果。模块与 owner 边界见根目录 RENDERING_ARCHITECTURE.md；A6 最终状态以 RENDERING_ARCHITECTURE_A6_VALIDATION.md 为准。
 
 Frame Graph 面板使用与诊断数据边界见根目录 FRAMEGRAPH_DIAGNOSTICS_VALIDATION.zh-CN.md。
+
+自动曝光亮度缓冲的格式、数值对照与多视口内存实测见根目录 FRAMEGRAPH_LUMINANCE_VALIDATION.zh-CN.md。

@@ -52,7 +52,16 @@ void OvCore::Rendering::PostProcess::AutoExposureEffect::Draw(
         m_exposurePingPongBuffer.Reset();
     }
 
-	const auto luminance=recorder.CreateTransient("Exposure.Luminance",kLuminanceBufferResolution,kLuminanceBufferResolution,true);
+    // Exposure samples only luminance.r. Keep the existing precision, sampling
+    // and mip chain while avoiding three unused 32-bit channels.
+    using namespace baregl::types;
+    const baregl::data::TextureDesc luminanceDesc{
+        .width=kLuminanceBufferResolution,.height=kLuminanceBufferResolution,
+        .minFilter=ETextureFilteringMode::LINEAR_MIPMAP_LINEAR,.magFilter=ETextureFilteringMode::LINEAR,
+        .horizontalWrap=ETextureWrapMode::CLAMP_TO_BORDER,.verticalWrap=ETextureWrapMode::CLAMP_TO_BORDER,
+        .internalFormat=EInternalFormat::R32F,.useMipMaps=true,
+        .mutableDesc=baregl::data::MutableTextureDesc{.format=EFormat::RED,.type=EPixelDataType::FLOAT}};
+    const auto luminance=recorder.CreateTransient("Exposure.Luminance",luminanceDesc);
 
 	// Luminance calculation
 	m_luminanceMaterial.SetProperty("_CenterWeightBias", autoExposureSettings.centerWeightBias, true);

@@ -38,6 +38,9 @@ mip 和 cube face；当前不自动裁剪或重排。
 过滤和 wrap 均须一致。物理资源映射在发布 Worker 输入前冻结，租约保留到 GPU
 fence 退役；即时执行同样退役。Texture Debugger/材质导入上一代池资源时也会
 pin 相应存储，多个在途消费者独立释放。输出、曝光/反射历史和资产不成为 scratch。
+自动曝光的亮度 scratch 使用 R32F、1024×1024 和完整 11 级 mip 链；
+保留原采样与 32 位精度，完整链约 5.33 MiB。数值对照与内存实测见
+[亮度缓冲验收](FRAMEGRAPH_LUMINANCE_VALIDATION.zh-CN.md)。
 
 产品池默认闲置预算 256 MiB。Main 执行预留单套，RenderThread 产品预留两套，
 覆盖现有两帧容量；租用资源不受闲置淘汰影响。预热命中只做 CPU 查询，缺失目标
