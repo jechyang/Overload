@@ -14,7 +14,7 @@ namespace
     struct TargetEntry
     {
         Data::PlanResourceDesc descriptor;
-        uint64_t serial=0, lastUse=0;
+        uint64_t serial=0, lastUse=0, lastRequiredFrame=0;
         bool leased=false;
         size_t pins=0;
         std::shared_ptr<baregl::Texture> texture;
@@ -51,7 +51,7 @@ struct Core::RenderTargetPool::State
     mutable std::mutex mutex;
     std::list<std::shared_ptr<TargetEntry>> entries;
     Statistics totals;
-    uint64_t budget, clock=0, nextSerial=1;
+    uint64_t budget, clock=0, nextSerial=1, frame=0, unusedFrameLimit=60;
     bool closed=false, bound=false;
     std::thread::id owner,producer;
     std::shared_ptr<const void> binding;
@@ -61,15 +61,21 @@ struct Core::RenderTargetPool::State
     explicit State(uint64_t value):budget(value){}
     Statistics Stats() const {
         auto result=totals;
-        result.idleBudget=budget;result.frameReserve=frameReserve;
+        result.idleBudget=budget;result.frameReserve=frameReserve;result.unusedFrameLimit=unusedFrameLimit;
         for(const auto& entry:entries)if(entry->leased||entry->pins){result.leasedBytes+=entry->descriptor.EstimatedBytes();++result.leasedTargets;}
             else {result.idleBytes+=entry->descriptor.EstimatedBytes();++result.idleTargets;}
         return result;
     }
-    // Extract victims under the lock, destroy on the caller's resource owner.
+    // Extract under the lock; destruction uses ResourceLifetime's owner queue.
     std::list<std::shared_ptr<TargetEntry>> Trim()
     {
         std::list<std::shared_ptr<TargetEntry>> removed;
+        if(!closed&&unusedFrameLimit)for(auto it=entries.begin();it!=entries.end();) {
+            auto entry=it++;
+            if(!(*entry)->leased&&!(*entry)->pins&&frame-(*entry)->lastRequiredFrame>=unusedFrameLimit) {
+                removed.splice(removed.end(),entries,entry);++totals.evictions;++totals.autoEvictions;
+            }
+        }
         auto idle=Stats().idleBytes;
         for(;;) {
             auto oldest=entries.end();
@@ -141,6 +147,14 @@ void Core::RenderTargetPool::SetFrameReserve(size_t count)
 {
     if(!count||count>4)throw std::invalid_argument("FrameGraph: invalid frame reserve");
     std::lock_guard lock(m_state->mutex);if(m_state->producerBound&&m_state->producer!=std::this_thread::get_id())throw std::logic_error("FrameGraph reserve requires its producer");m_state->frameReserve=count;
+}
+void Core::RenderTargetPool::SetUnusedFrameLimit(uint64_t count)
+{
+    std::list<std::shared_ptr<TargetEntry>> removed;
+    {std::lock_guard lock(m_state->mutex);
+        if(m_state->producerBound&&m_state->producer!=std::this_thread::get_id())throw std::logic_error("FrameGraph expiry requires its producer");
+        m_state->unusedFrameLimit=count;removed=m_state->Trim();
+    }
 }
 void Core::RenderTargetPool::TrimIdle()
 {
@@ -240,6 +254,11 @@ std::shared_ptr<const Core::RenderResourceMapping> Core::RenderTargetPool::Reali
             }
         });
         {std::list<std::shared_ptr<TargetEntry>> removed;std::lock_guard lock(m_state->mutex);
+            // Advance only after realization succeeds. Retirement does not
+            // refresh this age: an old in-flight size can expire once released.
+            ++m_state->frame;
+            for(const auto& slot:slots)slot.entry->lastRequiredFrame=m_state->frame;
+            for(const auto& entry:externalEntries)entry->lastRequiredFrame=m_state->frame;
             // Keep only the spare capacity needed by this graph recent. After a
             // resize, untouched spares must not be evicted ahead of old sizes on
             // every retirement. Excess entries retain their original LRU age.
@@ -249,7 +268,7 @@ std::shared_ptr<const Core::RenderResourceMapping> Core::RenderTargetPool::Reali
                 size_t needed=static_cast<size_t>(std::count_if(slots.begin(),slots.end(),[&](const auto& slot){return slot.entry->descriptor.Compatible(desc);})) * m_state->frameReserve;
                 for(const auto& entry:m_state->entries)if(!entry->pins&&entry->leased&&entry->descriptor.Compatible(desc)&&needed)--needed;
                 for(const auto& entry:m_state->entries)if(needed&&!entry->pins&&!entry->leased&&entry->Alive()&&entry->descriptor.Compatible(desc)) {
-                    entry->lastUse=++m_state->clock;--needed;
+                    entry->lastUse=++m_state->clock;entry->lastRequiredFrame=m_state->frame;--needed;
                 }
             }
             m_state->totals.peakLeasedBytes=std::max(m_state->totals.peakLeasedBytes,m_state->Stats().leasedBytes);removed=m_state->Trim();}

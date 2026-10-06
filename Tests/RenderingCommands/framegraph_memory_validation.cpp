@@ -73,23 +73,26 @@ int main(int argc, char** argv)
             const bool twoSets=productMode&&enabled("OV_FRAMEGRAPH_MEMORY_RESERVE2");
             const bool distinctOutputs=productMode&&enabled("OV_FRAMEGRAPH_MEMORY_DISTINCT_OUTPUTS");
             if(twoSets)sharedPool->SetFrameReserve(2);
+            const bool noAutoTrim=enabled("OV_FRAMEGRAPH_MEMORY_NO_AUTO_TRIM");
+            if(noAutoTrim&&sharedPool)sharedPool->SetUnusedFrameLimit(0);
             std::ofstream(output/"pool-mode.txt")<<(productMode?"one product graph and pool, default 256 MiB idle budget":sharedMode?"shared pool, 64 MiB idle budget":"per-viewport pools, default 256 MiB idle budget each")<<"; frame reserve="<<(twoSets?2:1)<<"; pipeline count="<<pipelineCount<<"; distinct outputs="<<distinctOutputs<<'\n';
-            std::ofstream poolReport(output/"pool.csv");poolReport<<"phase,allocations,hits,aliases,evictions,idleBytes,leasedBytes,peakLeasedBytes\n";
+            std::ofstream poolReport(output/"pool.csv");poolReport<<"phase,allocations,hits,aliases,evictions,idleBytes,leasedBytes,peakLeasedBytes,autoEvictions\n";
             const auto samplePool=[&](const char* phase) {
                 const auto phaseName=label(phase);phase=phaseName.c_str();
                 OvRendering::Core::RenderTargetPool::Statistics total;
                 for(const auto& pool:pools) {
                     const auto s=pool->GetStatistics();total.allocations+=s.allocations;total.hits+=s.hits;total.aliases+=s.aliases;
-                    total.evictions+=s.evictions;total.idleBytes+=s.idleBytes;total.leasedBytes+=s.leasedBytes;total.peakLeasedBytes+=s.peakLeasedBytes;
+                    total.evictions+=s.evictions;total.autoEvictions+=s.autoEvictions;total.idleBytes+=s.idleBytes;total.leasedBytes+=s.leasedBytes;total.peakLeasedBytes+=s.peakLeasedBytes;
                     Require(s.idleBytes<=(productMode?256ull*1024*1024:budget),"effects exceed pool idle budget");
                 }
-                poolReport<<phase<<','<<total.allocations<<','<<total.hits<<','<<total.aliases<<','<<total.evictions<<','<<total.idleBytes<<','<<total.leasedBytes<<','<<total.peakLeasedBytes<<'\n';poolReport.flush();
+                poolReport<<phase<<','<<total.allocations<<','<<total.hits<<','<<total.aliases<<','<<total.evictions<<','<<total.idleBytes<<','<<total.leasedBytes<<','<<total.peakLeasedBytes<<','<<total.autoEvictions<<'\n';poolReport.flush();
             };
             std::vector<std::unique_ptr<OvCore::Rendering::PostProcess::PostProcessPipeline>> pipelines(pipelineCount);
             for(auto& pipeline:pipelines) {
                 auto pool=sharedMode?sharedPool:std::make_shared<OvRendering::Core::RenderTargetPool>(budget);
                 if(!sharedMode||pools.empty())pools.push_back(pool);
                 pipeline=std::make_unique<OvCore::Rendering::PostProcess::PostProcessPipeline>();pipeline->SetResourcePool(pool);
+                if(noAutoTrim)pool->SetUnusedFrameLimit(0);
             }
             sample("three-cold-pipelines");samplePool("three-cold-pipelines");
             baregl::Framebuffer target("MemoryTarget"); OvCore::Rendering::FramebufferUtil::SetupFramebuffer(target,1920,1080,false,false,false);
@@ -175,6 +178,14 @@ int main(int argc, char** argv)
                 resize(1920,1080);
                 render("all-effects-restored-1080p");sample("three-all-effects-restored-1080p");samplePool("three-all-effects-restored-1080p");
                 Require(sharedPool->GetStatistics().leasedBytes==0,"retired memory frame retained scratch");
+                const auto restored=sharedPool->GetStatistics();
+                for(unsigned i=0;i<10;++i)render("restored-cooldown");
+                sample("restored-after-60-frames");samplePool("restored-after-60-frames");
+                Require(sharedPool->GetStatistics().allocations==restored.allocations,"idle size expiry caused warm allocations");
+                if(!noAutoTrim)Require(sharedPool->GetStatistics().autoEvictions>0&&sharedPool->GetStatistics().idleBytes<restored.idleBytes,"old viewport sizes failed to expire automatically");
+                settings.exposure.enabled=settings.bloom.enabled=settings.tonemapping.enabled=settings.fxaa.enabled=false;
+                for(unsigned i=0;i<10;++i)render("disabled-cooldown");
+                sample("disabled-after-60-frames");samplePool("disabled-after-60-frames");
             }
             for(const auto& pool:pools)pool->SetIdleBudget(0);sample("idle-cache-trimmed");samplePool("idle-cache-trimmed");
         }

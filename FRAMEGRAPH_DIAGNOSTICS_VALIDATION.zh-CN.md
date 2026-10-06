@@ -5,6 +5,11 @@
 
 ## 使用
 
+- Dependencies：默认聚焦依赖最多的 Pass，真实产品节点和有向资源边清晰可读；完整模式
+  可查看全图，聚焦模式
+  查看选中 Pass 及直接相邻依赖。支持筛选、Fit、滚轮缩放、中键平移；资源边标注
+  RAW/WAR/WAW/显式顺序和资源名。单击选中 Pass，双击跳到 Pass 详情，点击资源边
+  跳到资源详情；底部列出选中 Pass 的资源访问。
 - Passes：按产品计划顺序列出 Pass，查看资源访问、mip/layer 范围、附件
   Load/Store、传入和传出的 RAW/WAR/WAW/显式顺序依赖；点击资源或依赖跳转。
 - Resources：查看来源、尺寸、格式、估算字节、最终内容版本、存活区间，以及
@@ -13,7 +18,10 @@
   显示名称。筛选后详情跟随可见项；空结果不会继续显示不匹配的详情。
 - Freeze plan 固定当前计划。取消冻结后恢复采集；冻结期间池计数仍保持更新。
 - 显示池的闲置与 leased/pinned 字节和数量、闲置预算、帧预留、历史 leased 峰值、
-  allocations/hits/aliases/evictions。
+  allocations/hits/aliases/evictions 和自动回收计数。
+- 默认对连续 60 个成功 Realize 图计划都未再使用的资源自动回收；可关闭或重新启用。
+  当前计划和帧预留、在途 lease、外部 pin 不会被自动回收。计数按成功图计划推进，
+  停用效果或 resize 后，旧资源等过期再释放。
 - Apply 修改当前产品池的闲置预算，范围 0–4096 MiB，0 禁用闲置缓存。
   预算是本次会话设置，不写入项目配置。
 - Trim idle 释放闲置 scratch；保持预算和帧预留，保留活动帧 lease 和外部 pin。
@@ -64,7 +72,8 @@ node Tests/Skinning/run-validation.mjs Debug --framegraph-editor --framegraph-ba
    16 种后处理组合 × 4 种尺寸，暖池零分配。
 5. 4 种自定义管线配置 × 串行/单 Worker/双 Worker，双目标精确图像及
    7 种无效计划/owner 拒绝。
-6. 真实 Editor Main/Render owner 多视口面板：默认关闭、Pass/资源筛选、空结果、
+6. 真实 Editor Main/Render owner 多视口面板：默认关闭、全图/聚焦依赖、筛选、空结果、
+   自动回收开关、
    冻结/恢复和 resize、线程归属、预算请求恰好消费一次、TrimIdle 后重建并继续
    渲染、关闭后 Frontend 和面板释放快照。
 7. Editor Edit/Play/Pause/单步/恢复/Stop、实际产品帧/交互检查，27 组完整/
@@ -86,7 +95,27 @@ node Tests/Skinning/run-validation.mjs Debug --framegraph-editor --framegraph-ba
 - 相应入口目录的 `result.json`，诊断面板结果含 `framegraphEditor: true`，
   `framegraphComparison.files` 记录两份 F0 检查。
 
-面板已经暴露下一处值得优化的资源：本测试中 `Exposure.Luminance` 使用
-1024×1024 RGBA32F mip 链，估算约 **21.3 MiB**。自动曝光 shader 只读取其
-红通道；后续可评估单通道格式并保持图像与曝光行为一致。本轮只报告，没有改变
-曝光算法或纹理格式。
+面板依赖图按产品计划及其资源访问绘制；聚焦和筛选显示相邻链路，便于检查多视图
+计划。以历史内存数据解释当前缓存行为时需留意它采集于过期回收实现之前；新的
+自动回收效果以本轮内存测量为准。
+
+## 自动回收内存实测
+
+本次 Debug 内存实测使用单池、3 条视口后处理链、默认 256 MiB
+闲置预算，先测两帧在途，再执行 720p resize 并恢复 1080p；之后各运行 60 个相同
+1080p 全效果图计划及 60 个无效果计划。两个阶段暖池物理分配都保持 0。
+
+- 恢复 1080p 后，自动回收 18 个旧目标，池闲置从约 **236.83 MiB** 降到
+  **110.83 MiB**；追踪到的产品纹理从 **268.50 MiB** 降到 **142.46 MiB**。
+- 关闭效果后再运行 60 个计划，累计自动回收 27 个目标，池闲置进一步降到约
+  **31.64 MiB**，纹理统计降到约 **63.28 MiB**。
+
+```powershell
+$env:OV_FRAMEGRAPH_MEMORY_PRODUCT='1'
+node Tests/Skinning/run-validation.mjs Debug --framegraph-memory
+Remove-Item Env:OV_FRAMEGRAPH_MEMORY_PRODUCT
+```
+
+纹理统计只包含该测试中 GL 当前存活纹理，不等于显卡总 VRAM 或任意项目的完整
+显存占用。过期回收按成功完成的 Realize 图计划推进；自动开关不会改变闲置预算，
+预算超出时仍由原 LRU 预算路径立即回收。

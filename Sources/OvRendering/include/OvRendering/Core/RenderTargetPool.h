@@ -26,11 +26,12 @@ namespace OvRendering::Core
     public:
         struct Statistics
         {
-            uint64_t allocations=0, hits=0, aliases=0, evictions=0;
+            uint64_t allocations=0, hits=0, aliases=0, evictions=0, autoEvictions=0;
             uint64_t idleBytes=0, leasedBytes=0, peakLeasedBytes=0;
             size_t idleTargets=0, leasedTargets=0;
             uint64_t idleBudget=0;
             size_t frameReserve=1;
+            uint64_t unusedFrameLimit=60;
         };
         explicit RenderTargetPool(uint64_t idleBudget=256ull*1024*1024);
         ~RenderTargetPool();
@@ -43,6 +44,9 @@ namespace OvRendering::Core
         void TrimIdle();
         // Reserve physical sets for the product's bounded in-flight capacity.
         void SetFrameReserve(size_t);
+        // Age in successfully realized graphs. Zero disables automatic expiry.
+        // Required spare sets, active leases and external pins never expire.
+        void SetUnusedFrameLimit(uint64_t);
         // Owner boundary, after draining frames. Active leases remain pinned.
         // A closed pool cannot be used for another context.
         void Close();

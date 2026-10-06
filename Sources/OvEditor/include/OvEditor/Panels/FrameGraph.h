@@ -10,7 +10,7 @@ namespace OvEditor::Panels
     class FrameGraph final : public OvUI::Panels::PanelWindow
     {
     public:
-        struct PoolRequests { std::optional<uint64_t> budget;bool trimIdle=false; };
+        struct PoolRequests { std::optional<uint64_t> budget,unusedFrameLimit;bool trimIdle=false; };
         FrameGraph(const std::string&,bool,const OvUI::Settings::PanelWindowSettings&);
         bool WantsCapture() const;
         void Update(std::shared_ptr<const OvRendering::Data::FrameGraphDiagnostics>,const OvRendering::Core::RenderTargetPool::Statistics&);
@@ -20,6 +20,7 @@ namespace OvEditor::Panels
         void DrawContents();
         void DrawPasses();
         void DrawResources();
+        void DrawDependencies();
         void SelectPass(size_t);
         void SelectResource(size_t);
         const std::thread::id m_uiThread=std::this_thread::get_id();
@@ -30,5 +31,11 @@ namespace OvEditor::Panels
         int m_budgetMiB=256,m_requestedTab=-1;
         size_t m_selectedPass=0,m_selectedResource=0;
         std::array<char,128> m_filter{};
+        bool m_graphFocus=true,m_graphFit=true,m_graphSelectionInitialized=false;
+        float m_graphZoom=1;
+        std::array<float,2> m_graphPan{};
+        // Screen rectangles contain values only; also serve node hit testing.
+        struct GraphNode { size_t pass;std::array<float,4> rect; };
+        std::vector<GraphNode> m_graphNodes;
     };
 }

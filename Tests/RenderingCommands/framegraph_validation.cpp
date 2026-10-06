@@ -188,6 +188,53 @@ namespace
             Require(bounded.GetStatistics().allocations==allocations&&dispatches==ownerWaits,
                 "resize evicted current spare sets repeatedly despite a sufficient idle budget");
         }
+        {
+            unsigned dispatches=0;
+            baregl::ResourceExecutor owner([&](auto operation){++dispatches;baregl::ResourceExecutor native([](auto operation){operation();});operation();});
+            OvRendering::Core::RenderTargetPool aged;aged.SetFrameReserve(2);aged.SetUnusedFrameLimit(3);
+            auto old=aged.Realize(plan,compiled);const auto oldID=old->TextureStorage(a).GetID();
+            auto resized=plan;for(auto& resource:resized.resources)resource.descriptor=ColorDesc(32,16);
+            const auto resizedCompiled=resized.Compile();
+            for(unsigned i=0;i<2;++i){auto current=aged.Realize(resized,resizedCompiled);}
+            Require(aged.GetStatistics().autoEvictions==0,"old size expired before its grace period");
+            auto broken=resizedCompiled;++broken.scope;bool failed=false;
+            try{aged.Realize(resized,broken);}catch(const std::invalid_argument&){failed=true;}
+            Require(failed&&aged.GetStatistics().autoEvictions==0,"failed graph advanced automatic expiry");
+            {auto current=aged.Realize(resized,resizedCompiled);}
+            Require(aged.GetStatistics().autoEvictions==1&&aged.GetStatistics().leasedTargets==1&&glIsTexture(oldID),"age expiry retained old spare or destroyed in-flight storage");
+            old.reset();Require(aged.GetStatistics().autoEvictions==2&&!glIsTexture(oldID),"late retirement refreshed an expired size instead of releasing it");
+            const auto allocations=aged.GetStatistics().allocations;const auto waits=dispatches;
+            for(unsigned i=0;i<80;++i){auto current=aged.Realize(resized,resizedCompiled);}
+            Require(aged.GetStatistics().allocations==allocations&&dispatches==waits&&aged.GetStatistics().idleTargets==2&&aged.GetStatistics().autoEvictions==2,"automatic expiry evicted required reserves or dispatched a warm owner wait");
+            RenderPlan empty;const auto emptyCompiled=empty.Compile();
+            aged.SetUnusedFrameLimit(0);for(unsigned i=0;i<5;++i){auto current=aged.Realize(empty,emptyCompiled);}
+            Require(aged.GetStatistics().idleTargets==2,"disabled automatic expiry still released scratch");
+            aged.SetUnusedFrameLimit(3);
+            Require(aged.GetStatistics().idleTargets==0&&aged.GetStatistics().autoEvictions==4&&dispatches==waits,"re-enabling expiry failed to release unused features without an owner wait");
+        }
+        {
+            OvRendering::Core::RenderTargetPool aged;aged.SetUnusedFrameLimit(2);
+            auto source=aged.Realize(plan,compiled);const auto retained=source->TextureStorage(a);
+            std::weak_ptr<baregl::Texture> owner=source->Texture(a);source.reset();
+            RenderPlan inspection;const auto imported=inspection.Import("Inspection",retained,ResourceOrigin::Imported,{{}});
+            inspection.passes.push_back(Node("UI.Inspect",{{imported,{},ResourceAccessType::Sample}}));
+            auto first=aged.Realize(inspection,inspection.Compile()),second=aged.Realize(inspection,inspection.Compile());
+            RenderPlan empty;for(unsigned i=0;i<3;++i){auto frame=aged.Realize(empty,empty.Compile());}
+            Require(aged.GetStatistics().autoEvictions==0&&aged.GetStatistics().leasedTargets==1&&!owner.expired(),"automatic expiry released an external pin");
+            first.reset();Require(aged.GetStatistics().leasedTargets==1&&!owner.expired(),"one retired external reader released another reader's pin");
+            second.reset();Require(aged.GetStatistics().autoEvictions==1&&owner.expired()&&aged.GetStatistics().leasedTargets==0,"final external reader refreshed or stranded expired scratch");
+        }
+        {
+            OvRendering::Core::RenderTargetPool aged;aged.SetUnusedFrameLimit(2);
+            auto active=aged.Realize(plan,compiled);const auto id=active->TextureStorage(a).GetID();
+            RenderPlan empty;for(unsigned i=0;i<2;++i){auto frame=aged.Realize(empty,empty.Compile());}
+            bool rejected=false;std::thread release([&,active=std::move(active)]()mutable {
+                try{aged.SetUnusedFrameLimit(0);}catch(const std::logic_error&){rejected=true;}active.reset();
+            });release.join();
+            Require(rejected&&aged.GetStatistics().autoEvictions==1&&domain->GetPendingCount()>0&&glIsTexture(id),"expired Worker retirement bypassed its GL owner or accepted a foreign producer");
+            domain->Drain();Require(!glIsTexture(id),"owner did not delete automatically expired Worker resources");
+        }
+        std::cout<<"PASS: automatic unused-frame expiry: grace, failed graphs, in-flight resize, independent pins, required reserves, zero warm owner waits, disable/re-enable, empty plans and Worker deletion queue\n";
         auto oldDomainPool=std::make_shared<OvRendering::Core::RenderTargetPool>();auto old=oldDomainPool->Realize(plan,compiled);const auto oldStorage=old->TextureStorage(a);old.reset();
         domain->Close();domain.reset();Require(oldStorage.GetID()==0,"closed domain did not invalidate pooled storage");
         domain=std::make_unique<baregl::DeletionQueue>();bool foreign=false;try{oldDomainPool->Realize(plan,compiled);}catch(...){foreign=true;}Require(foreign,"pool reused a previous context domain");oldDomainPool.reset();

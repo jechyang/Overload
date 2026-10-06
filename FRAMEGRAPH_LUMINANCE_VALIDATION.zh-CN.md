@@ -109,7 +109,9 @@ node Tests/Skinning/run-validation.mjs Release --framegraph-memory
 亮度链和在途分配，保留闲置缓存的总量仍受现有预算/淘汰策略影响。进程 private
 bytes 同时受到驱动和缓存影响，此次不据此宣称固定比例的整进程内存下降。
 
-后续优先优化旧尺寸和停用效果的闲置缓存回收，可进一步降低 resize 后的留存。
+旧尺寸和停用效果的自动闲置回收已在后续 Frame Graph 面板改进中实现；宽限期、
+保留当前帧预留与两阶段内存实测见
+[Frame Graph 自动回收验证](FRAMEGRAPH_DIAGNOSTICS_VALIDATION.zh-CN.md#自动回收内存实测)。
 
 验收设备为 NVIDIA GeForce RTX 3070 Ti，OpenGL 4.5 / NVIDIA 616.92。
 构建、数值、图像、暖池和生命周期检查全部通过；本轮未重写冻结图像基线。

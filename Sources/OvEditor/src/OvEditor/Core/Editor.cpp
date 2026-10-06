@@ -418,6 +418,7 @@ OvRendering::Data::RenderFrame OvEditor::Core::Editor::RecordRenderFrame(float p
     m_recordedInteraction.reset();
     OvRendering::Data::RenderFrame frame(++m_recordedFrameID);
     const auto requests=m_panelsManager.GetPanelAs<Panels::FrameGraph>("Frame Graph").TakePoolRequests();
+    if(requests.unusedFrameLimit)m_productFrontend.GetResourcePool()->SetUnusedFrameLimit(*requests.unusedFrameLimit);
     if(requests.budget)m_productFrontend.GetResourcePool()->SetIdleBudget(*requests.budget);
     if(requests.trimIdle)m_productFrontend.GetResourcePool()->TrimIdle();
 	auto& assetView = m_panelsManager.GetPanelAs<OvEditor::Panels::AssetView>("Asset View");
