@@ -39,9 +39,22 @@ int main(int argc,char** argv) try
         Require(initial->passes.size()>20&&initial->resources.size()>10&&initial->physicalTransientTargets>0&&initial->physicalTransientBytes>0,"panel did not capture the actual multiview product graph");
         const auto present=std::find_if(initial->passes.begin(),initial->passes.end(),[](const auto& pass){return pass.name=="Window.Present";});
         Require(present!=initial->passes.end(),"diagnostic capture missed final window presentation");
-        Require(panel.m_graphFocus&&!panel.m_graphNodes.empty()&&panel.m_graphNodes.size()<initial->passes.size(),"dependency graph did not open at a readable product pass cluster by default");
-        panel.m_graphFocus=false;panel.m_graphFit=true;panel.m_requestedTab=2;tick();tick();
-        Require(panel.m_graphNodes.size()==initial->passes.size(),"full dependency view did not render every product pass");
+        const auto passNodes=[&]{return static_cast<size_t>(std::count_if(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[](const auto& node){return !node.resource;}));};
+        const auto resourceNodes=[&]{return static_cast<size_t>(std::count_if(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[](const auto& node){return node.resource;}));};
+        Require(panel.m_graphResourceFlow&&panel.m_graphFocus&&passNodes()>0&&resourceNodes()>0&&passNodes()<initial->passes.size()&&
+            std::any_of(panel.m_graphEdges.begin(),panel.m_graphEdges.end(),[](const auto& edge){return edge.read;})&&
+            std::any_of(panel.m_graphEdges.begin(),panel.m_graphEdges.end(),[](const auto& edge){return edge.write;}),
+            "resource flow did not open on a readable product cluster with separate read/write resource links");
+        const size_t focusedPass=panel.m_selectedPass,focusedResource=panel.m_graphEdges.front().resource;
+        panel.m_selectedResource=focusedResource;panel.m_flowSelectionIsResource=true;panel.m_graphFit=true;tick();
+        Require(resourceNodes()>0&&std::any_of(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[&](const auto& node){return node.resource&&node.index==focusedResource;})&&
+            std::any_of(panel.m_graphEdges.begin(),panel.m_graphEdges.end(),[&](const auto& edge){return edge.resource==focusedResource;}),
+            "selecting a resource did not focus its connected pass/resource flow");
+        panel.m_selectedPass=focusedPass;panel.m_flowSelectionIsResource=false;panel.m_graphFit=true;tick();
+        panel.m_graphFocus=false;panel.m_graphFit=true;tick();tick();
+        Require(passNodes()==initial->passes.size()&&resourceNodes()==initial->resources.size(),"full resource-flow view did not render every product pass and resource node");
+        panel.m_graphResourceFlow=false;panel.m_graphFit=true;tick();
+        Require(passNodes()==initial->passes.size(),"Pass dependency view did not remain available beside resource flow");
         panel.m_selectedPass=static_cast<size_t>(present-initial->passes.begin());tick();
         panel.m_requestedTab=0;tick();
         std::copy_n("Window.Present",sizeof("Window.Present"),panel.m_filter.begin());panel.m_selectedPass=0;tick();
@@ -56,16 +69,17 @@ int main(int argc,char** argv) try
         image("passes");
         panel.m_requestedTab=1;panel.m_transientOnly=true;tick();tick();image("resources");
         Require(panel.m_snapshot->resources[panel.m_selectedResource].origin==OvRendering::Data::ResourceOrigin::Transient,"transient filter left details on an imported resource");
-        panel.m_filter[0]=0;panel.m_graphFocus=true;
+        panel.m_filter[0]=0;panel.m_graphFocus=true;panel.m_graphResourceFlow=true;
         const auto composite=std::find_if(panel.m_snapshot->passes.begin(),panel.m_snapshot->passes.end(),[](const auto& pass){return pass.name.find("Bloom")!=std::string::npos;});
         if(composite!=panel.m_snapshot->passes.end())panel.m_selectedPass=static_cast<size_t>(composite-panel.m_snapshot->passes.begin());
         panel.m_graphFit=true;panel.m_requestedTab=2;tick();tick();image("dependencies-focused");
-        Require(!panel.m_graphNodes.empty()&&panel.m_graphNodes.size()<panel.m_snapshot->passes.size()&&
-            std::any_of(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[&](const auto& node){return node.pass==panel.m_selectedPass;}),
+        Require(passNodes()>0&&passNodes()<panel.m_snapshot->passes.size()&&resourceNodes()>0&&
+            std::any_of(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[&](const auto& node){return !node.resource&&node.index==panel.m_selectedPass;}),
             "selected dependency focus omitted the selected pass or failed to reduce an actual product graph");
         std::copy_n("Bloom",sizeof("Bloom"),panel.m_filter.begin());panel.m_graphFit=true;tick();image("dependencies-filtered");
         Require(!panel.m_graphNodes.empty()&&std::any_of(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[&](const auto& node){
-            const auto& pass=panel.m_snapshot->passes[node.pass];
+            if(node.resource)return panel.m_snapshot->resources[node.index].name.find("Bloom")!=std::string::npos;
+            const auto& pass=panel.m_snapshot->passes[node.index];
             return pass.name.find("Bloom")!=std::string::npos||std::any_of(pass.accesses.begin(),pass.accesses.end(),[&](const auto& access){return panel.m_snapshot->resources[access.resource.index].name.find("Bloom")!=std::string::npos;});
         }),"graph pass/resource filter hid all matching nodes");
         panel.m_filter[0]=0;panel.m_graphFocus=false;
@@ -91,7 +105,7 @@ int main(int argc,char** argv) try
         Require(after.evictions>before.evictions&&after.allocations>before.allocations&&after.idleBudget==before.idleBudget&&!panel.m_requests.trimIdle,"panel trim did not evict idle scratch and rebuild the next product frame safely");
         panel.Close();Require(!panel.m_snapshot,"closing the panel kept its frozen values");tick();
         Require(!frontend.GetFrameGraphDiagnostics()&&!panel.WantsCapture(),"closed panel kept collecting diagnostics");
-        std::printf("PASS: Frame Graph panel on %s owner: all-pass graph, selected focus, dependency-aware filter, live auto-expiry control, freeze/resume across resize, CPU-only values, thread guards, budget/trim, close; %zu passes / %zu resources\n",threaded?"Render":"Main",initial->passes.size(),initial->resources.size());
+        std::printf("PASS: Frame Graph panel on %s owner: full/focused Pass-resource flow, read/write links, resource selection, Pass dependency view, filter, live auto-expiry, freeze/resize, thread guards, budget/trim; %zu passes / %zu resources\n",threaded?"Render":"Main",initial->passes.size(),initial->resources.size());
     }
     return 0;
 }

@@ -21,6 +21,7 @@ namespace OvEditor::Panels
         void DrawPasses();
         void DrawResources();
         void DrawDependencies();
+        void DrawResourceFlow();
         void SelectPass(size_t);
         void SelectResource(size_t);
         const std::thread::id m_uiThread=std::this_thread::get_id();
@@ -31,11 +32,13 @@ namespace OvEditor::Panels
         int m_budgetMiB=256,m_requestedTab=-1;
         size_t m_selectedPass=0,m_selectedResource=0;
         std::array<char,128> m_filter{};
-        bool m_graphFocus=true,m_graphFit=true,m_graphSelectionInitialized=false;
+        bool m_graphFocus=true,m_graphFit=true,m_graphSelectionInitialized=false,m_graphResourceFlow=true,m_flowSelectionIsResource=false;
         float m_graphZoom=1;
         std::array<float,2> m_graphPan{};
         // Screen rectangles contain values only; also serve node hit testing.
-        struct GraphNode { size_t pass;std::array<float,4> rect; };
+        struct GraphNode { bool resource;size_t index;std::array<float,4> rect; };
+        struct GraphEdge { size_t pass,resource;bool read,write; };
         std::vector<GraphNode> m_graphNodes;
+        std::vector<GraphEdge> m_graphEdges;
     };
 }

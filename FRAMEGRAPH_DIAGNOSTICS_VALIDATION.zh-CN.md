@@ -5,11 +5,11 @@
 
 ## 使用
 
-- Dependencies：默认聚焦依赖最多的 Pass，真实产品节点和有向资源边清晰可读；完整模式
-  可查看全图，聚焦模式
-  查看选中 Pass 及直接相邻依赖。支持筛选、Fit、滚轮缩放、中键平移；资源边标注
-  RAW/WAR/WAW/显式顺序和资源名。单击选中 Pass，双击跳到 Pass 详情，点击资源边
-  跳到资源详情；底部列出选中 Pass 的资源访问。
+- Dependencies：默认以独立 Pass 节点和资源节点展示数据流；蓝色箭头表示资源读取，
+  橙色箭头表示写入，紫色表示同一 Pass 同时读写。资源节点标注格式、尺寸和物理槽，
+  悬浮可看来源与存活区间。选择资源可查看访问 Pass，点击资源节点可聚焦它的读写方。
+  勾选/取消 Resource flow 可在资源流图和 Pass 依赖图间切换。Pass 依赖图默认聚焦
+  依赖最多的 Pass，也可显示全图；两种图都支持名称筛选、Fit、滚轮缩放和中键平移。
 - Passes：按产品计划顺序列出 Pass，查看资源访问、mip/layer 范围、附件
   Load/Store、传入和传出的 RAW/WAR/WAW/显式顺序依赖；点击资源或依赖跳转。
 - Resources：查看来源、尺寸、格式、估算字节、最终内容版本、存活区间，以及
@@ -72,7 +72,8 @@ node Tests/Skinning/run-validation.mjs Debug --framegraph-editor --framegraph-ba
    16 种后处理组合 × 4 种尺寸，暖池零分配。
 5. 4 种自定义管线配置 × 串行/单 Worker/双 Worker，双目标精确图像及
    7 种无效计划/owner 拒绝。
-6. 真实 Editor Main/Render owner 多视口面板：默认关闭、全图/聚焦依赖、筛选、空结果、
+6. 真实 Editor Main/Render owner 多视口面板：默认关闭、全图/聚焦依赖、Pass/资源
+   数据流、筛选、空结果、
    自动回收开关、
    冻结/恢复和 resize、线程归属、预算请求恰好消费一次、TrimIdle 后重建并继续
    渲染、关闭后 Frontend 和面板释放快照。
