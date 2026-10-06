@@ -5,15 +5,20 @@
 
 ## 使用
 
-- Dependencies：默认以独立 Pass 节点和资源节点展示数据流；蓝色箭头表示资源读取，
-  橙色箭头表示写入，紫色表示同一 Pass 同时读写。资源节点标注格式、尺寸和物理槽，
+- Dependencies：默认以独立 Pass 节点和资源版本节点展示数据流；蓝色箭头表示资源读取，
+  橙色箭头表示写入，紫色写入箭头表示附件 Load。资源节点标注版本、格式、尺寸和物理槽，
   悬浮可看来源与存活区间。选择资源可查看访问 Pass，点击资源节点可聚焦它的读写方。
   勾选/取消 Resource flow 可在资源流图和 Pass 依赖图间切换。Pass 依赖图默认聚焦
   依赖最多的 Pass，也可显示全图；两种图都支持名称筛选、Fit、滚轮缩放和中键平移。
+  Versions 开关可切回每个资源一个节点的总览。点击版本节点选择对应内容状态，
+  下方显示该版本的生产/消费 Pass；悬浮链路显示输入/输出版本和 mip/layer 范围。
+  布局依据画布宽高在每侧 1–3 列中选择节点最大的方案；长标题限制在节点内，完整
+  名称可悬浮查看，下方关联按钮按可用宽度换行。
 - Passes：按产品计划顺序列出 Pass，查看资源访问、mip/layer 范围、附件
   Load/Store、传入和传出的 RAW/WAR/WAW/显式顺序依赖；点击资源或依赖跳转。
 - Resources：查看来源、尺寸、格式、估算字节、最终内容版本、存活区间，以及
-  同一物理 scratch slot 的逻辑资源；点击关联 Pass 跳转。
+  同一物理 scratch slot 的逻辑资源；访问列表也标注读/写版本，点击关联 Pass 跳转。
+  Show version flow 直接聚焦该资源的版本流。
 - 支持名称筛选和只看 transient。未命名的导入附件按首次使用的 Pass 和用途
   显示名称。筛选后详情跟随可见项；空结果不会继续显示不匹配的详情。
 - Freeze plan 固定当前计划。取消冻结后恢复采集；冻结期间池计数仍保持更新。
@@ -42,6 +47,24 @@ framebuffer Snapshot、资源 owner、命令回调、视图或池 mapping/lease�
 在同一次产品录制中关闭 Frontend 采集并释放其值。关闭状态不查询池统计，不复制
 计划；没有每帧诊断历史队列。
 
+### 内容版本语义
+
+版本表示同一个逻辑资源在每个写入 Pass 后的内容状态，一帧计划内从 0 开始；
+v0 的读取来自已初始化的导入/History 范围，未使用的资源节点也可显示 v0，但并不
+表示其内容已经初始化。Clear/DontCare 覆盖只有输出版本，Load 有输入和输出版本。
+同一 Pass 写多个不相交 cube 面或 mip/layer，只增加一次版本；mip 生成读取之前
+的 mip0 状态，再生成一个包含 mip 链的新状态。
+
+版本是整个资源的计数，具体范围仍由每条 access 记录；局部写入后的状态包含未被
+覆盖的其他范围。Discard 的写入也增加版本，但对应范围不可继续读取，图的悬浮详情
+标记 discarded range。实际初始化/丢弃和 RAW/WAR/WAW 校验仍由子资源编译器执行。
+捕获和编译共用读写分类和版本推进规则，并检查最终版本一致；片段合并后按产品顺序
+计算，而不是各片段从 0 重新开始。版本不同于 ResourceHandle 的 generation。
+
+多个版本节点使用同一个物理槽，并不保留旧像素、分配额外 GPU texture 或支持任意
+读取历史版本。版本快照只增加每个 access 的两个可选整数值，仍只在诊断采集开启
+时生成；冻结、关闭和线程边界不变。
+
 诊断与编译共用 EffectiveAccesses：传统 reads/writes 与显式访问使用同一套
 子资源和附件清理语义。logical/peak/physical scratch 字节分别表示使用的 transient
 逻辑资源总和、逻辑存活峰值、该计划实际占用的不同物理 slot 总和。它们是描述符
@@ -62,7 +85,9 @@ node Tests/Skinning/run-validation.mjs Debug --framegraph-editor --framegraph-ba
 检查覆盖：
 
 1. 实际 GL aliasing 的值快照：逻辑/峰值/物理字节、存活区间、访问和依赖、
-   未命名导入资源的用途名称，拒绝 foreign compiled scope。
+   未命名导入资源的用途名称，拒绝 foreign compiled scope 和不一致的最终版本。
+   版本覆盖 Clear/Load、导入初始 v0、cube 不相交写入、mip 生成、局部保留、Discard、
+   Export；捕获前后池分配数和存储字节不变。
 2. 留存冻结诊断值，同时释放 mapping、执行 TrimIdle，弱 texture owner 失效，
    原 GL texture 不存在；冻结值仍可由无 GL Worker 读取。
 3. TrimIdle 删除两帧预留的闲置 spare，同时保留 active lease；外部 UI pin 也
@@ -73,7 +98,8 @@ node Tests/Skinning/run-validation.mjs Debug --framegraph-editor --framegraph-ba
 5. 4 种自定义管线配置 × 串行/单 Worker/双 Worker，双目标精确图像及
    7 种无效计划/owner 拒绝。
 6. 真实 Editor Main/Render owner 多视口面板：默认关闭、全图/聚焦依赖、Pass/资源
-   数据流、筛选、空结果、
+   版本数据流（每条读/写边匹配访问版本和节点）、v0/Load、真实 ImGui 版本节点点击、
+   非版本资源总览、筛选、空结果、
    自动回收开关、
    冻结/恢复和 resize、线程归属、预算请求恰好消费一次、TrimIdle 后重建并继续
    渲染、关闭后 Frontend 和面板释放快照。

@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cmath>
 #include <format>
+#include <map>
 
 using namespace OvRendering::Data;
 namespace
@@ -70,6 +71,17 @@ namespace
         for(auto& c:value)c=static_cast<char>(std::tolower(static_cast<unsigned char>(c)));return value;
     }
     bool Matches(const std::string& name,const char* filter){return Lower(name).find(Lower(filter))!=std::string::npos;}
+    std::string VersionText(const FrameGraphDiagnostics::Pass::AccessVersion& version)
+    {
+        if(version.read&&version.write)return std::format("Read v{} -> write v{}",*version.read,*version.write);
+        return version.read?std::format("Read v{}",*version.read):version.write?std::format("Write v{}",*version.write):"No content access";
+    }
+    void ContinueButtonRow(const std::string& label,bool first)
+    {
+        const auto& style=ImGui::GetStyle();
+        const float right=ImGui::GetCursorScreenPos().x+ImGui::GetContentRegionAvail().x;
+        if(!first&&ImGui::GetItemRectMax().x+style.ItemSpacing.x+ImGui::CalcTextSize(label.c_str()).x+2*style.FramePadding.x<=right)ImGui::SameLine();
+    }
     ImU32 SlotColor(uint64_t id)
     {
         float r,g,b;ImGui::ColorConvertHSVtoRGB(float(id%13)/13.f,.55f,.8f,r,g,b);
@@ -110,6 +122,7 @@ void OvEditor::Panels::FrameGraph::Update(std::shared_ptr<const FrameGraphDiagno
     if(m_snapshot){
         if(m_selectedPass>=m_snapshot->passes.size())m_selectedPass=0;
         if(m_selectedResource>=m_snapshot->resources.size())m_selectedResource=0;
+        if(m_selectedResource<m_snapshot->resources.size())m_selectedVersion=std::min(m_selectedVersion,m_snapshot->resources[m_selectedResource].finalVersion);
         if(!m_graphSelectionInitialized&&!m_snapshot->passes.empty()) {
             std::vector<size_t> degree(m_snapshot->passes.size());
             for(const auto& edge:m_snapshot->dependencies){++degree[edge.before];++degree[edge.after];}
@@ -123,7 +136,7 @@ OvEditor::Panels::FrameGraph::PoolRequests OvEditor::Panels::FrameGraph::TakePoo
     RequireUIThread();auto result=m_requests;m_requests={};return result;
 }
 void OvEditor::Panels::FrameGraph::SelectPass(size_t index){m_selectedPass=index;m_flowSelectionIsResource=false;m_requestedTab=0;m_filter[0]=0;}
-void OvEditor::Panels::FrameGraph::SelectResource(size_t index){m_selectedResource=index;m_flowSelectionIsResource=true;m_requestedTab=1;m_filter[0]=0;}
+void OvEditor::Panels::FrameGraph::SelectResource(size_t index){m_selectedResource=index;m_selectedVersion=m_snapshot->resources[index].finalVersion;m_flowSelectionIsResource=true;m_requestedTab=1;m_filter[0]=0;}
 
 void OvEditor::Panels::FrameGraph::DrawContents()
 {
@@ -189,6 +202,7 @@ void OvEditor::Panels::FrameGraph::DrawPasses()
         if(ImGui::Selectable(std::format("{}: {}",Access(access.type),resource.name).c_str()))SelectResource(access.resource.index);
         ImGui::TextDisabled("  mip %u +%u, layer %u +%u",access.range.firstMip,access.range.mipCount,access.range.firstLayer,access.range.layerCount);
         if(access.type==ResourceAccessType::Attachment)ImGui::TextDisabled("  %s / %s",access.load==AttachmentLoad::Clear?"Clear":access.load==AttachmentLoad::Load?"Load":"DontCare",access.store==AttachmentStore::Store?"Store":"Discard");
+        ImGui::TextDisabled("  %s",VersionText(pass.contentVersions[i]).c_str());
         ImGui::PopID();
     }
     ImGui::SeparatorText("Dependencies");bool any=false;
@@ -338,13 +352,16 @@ void OvEditor::Panels::FrameGraph::DrawDependencies()
 void OvEditor::Panels::FrameGraph::DrawResourceFlow()
 {
     const auto& graph=*m_snapshot;
+    if(ImGui::Checkbox("Versions",&m_graphVersions))m_graphFit=true;
+    if(ImGui::IsItemHovered())ImGui::SetTooltip("Each writing pass advances content once. Version nodes share storage; they are not texture copies.");
+    ImGui::SameLine();
     if(ImGui::Checkbox("Focus selection",&m_graphFocus))m_graphFit=true;
     ImGui::SameLine();if(ImGui::SmallButton("Fit"))m_graphFit=true;
     ImGui::SameLine();ImGui::TextDisabled("%.0f%% | Wheel: zoom | Middle drag: pan",m_graphZoom*100);
     const ImU32 readColor=IM_COL32(85,190,255,255),writeColor=IM_COL32(255,168,75,255),rwColor=IM_COL32(199,132,255,255);
     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(readColor),"Resource to Pass  read");ImGui::SameLine();
     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(writeColor),"Pass to Resource  write");ImGui::SameLine();
-    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(rwColor),"Load / read-write");
+    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(rwColor),"Load write");
 
     const bool filtered=m_filter[0]!=0;
     std::vector<bool> matches(graph.passes.size(),false),visiblePass(graph.passes.size(),false),visibleResource(graph.resources.size(),false);
@@ -369,12 +386,19 @@ void OvEditor::Panels::FrameGraph::DrawResourceFlow()
         const auto contextPass=visiblePass;
         for(const auto& edge:graph.dependencies)if(contextPass[edge.before]||contextPass[edge.after])visiblePass[edge.before]=visiblePass[edge.after]=true;
     }
-    for(size_t p=0;p<graph.passes.size();++p)if(visiblePass[p])for(const auto& access:graph.passes[p].accesses) {
+    const auto addEdge=[&](size_t p,size_t r,uint32_t version,bool read,bool write,bool load) {
+        auto edge=std::find_if(m_graphEdges.begin(),m_graphEdges.end(),[&](const auto& e){return e.pass==p&&e.resource==r&&e.version==version;});
+        if(edge==m_graphEdges.end())m_graphEdges.push_back({p,r,read,write,version,load});
+        else {edge->read|=read;edge->write|=write;edge->load|=load;}
+    };
+    for(size_t p=0;p<graph.passes.size();++p)if(visiblePass[p])for(size_t a=0;a<graph.passes[p].accesses.size();++a) {
+        const auto& access=graph.passes[p].accesses[a];const auto& version=graph.passes[p].contentVersions[a];
         const size_t r=access.resource.index;visibleResource[r]=true;
-        bool write=access.type==ResourceAccessType::Attachment||access.type==ResourceAccessType::CopyDestination||access.type==ResourceAccessType::MipmapDestination;
-        bool read=!write||(access.type==ResourceAccessType::Attachment&&access.load==AttachmentLoad::Load);
-        auto edge=std::find_if(m_graphEdges.begin(),m_graphEdges.end(),[&](const auto& e){return e.pass==p&&e.resource==r;});
-        if(edge==m_graphEdges.end())m_graphEdges.push_back({p,r,read,write});else {edge->read|=read;edge->write|=write;}
+        const bool load=access.type==ResourceAccessType::Attachment&&access.load==AttachmentLoad::Load;
+        if(m_graphVersions) {
+            if(version.read)addEdge(p,r,*version.read,true,false,false);
+            if(version.write)addEdge(p,r,*version.write,false,true,load);
+        } else addEdge(p,r,0,version.read.has_value(),version.write.has_value(),load);
     }
     if(!filtered&&!m_graphFocus)std::fill(visibleResource.begin(),visibleResource.end(),true);
     if(filtered)for(size_t r=0;r<graph.resources.size();++r)if(Matches(graph.resources[r].name,m_filter.data()))visibleResource[r]=true;
@@ -382,18 +406,29 @@ void OvEditor::Panels::FrameGraph::DrawResourceFlow()
         m_selectedPass=static_cast<size_t>(std::find(matches.begin(),matches.end(),true)-matches.begin());m_flowSelectionIsResource=false;m_graphFit=true;
     }
 
-    std::vector<size_t> passOrder,resourceOrder;std::vector<size_t> resourceFirst(graph.resources.size(),size_t(-1));
+    using ResourceNode=std::pair<size_t,uint32_t>;
+    std::vector<size_t> passOrder;std::vector<ResourceNode> resourceOrder;std::vector<size_t> resourceFirst(graph.resources.size(),size_t(-1));
     for(size_t p=0;p<visiblePass.size();++p)if(visiblePass[p]) {
         passOrder.push_back(p);
         for(const auto& access:graph.passes[p].accesses)resourceFirst[access.resource.index]=std::min(resourceFirst[access.resource.index],p);
     }
-    for(size_t r=0;r<visibleResource.size();++r)if(visibleResource[r])resourceOrder.push_back(r);
-    std::stable_sort(resourceOrder.begin(),resourceOrder.end(),[&](size_t a,size_t b){
-        if(resourceFirst[a]!=resourceFirst[b])return resourceFirst[a]<resourceFirst[b];return a<b;
+    for(const auto& edge:m_graphEdges)resourceOrder.emplace_back(edge.resource,edge.version);
+    for(size_t r=0;r<visibleResource.size();++r)if(visibleResource[r]&&std::none_of(resourceOrder.begin(),resourceOrder.end(),[&](const auto& node){return node.first==r;}))
+        resourceOrder.emplace_back(r,m_graphVersions?graph.resources[r].finalVersion:0);
+    std::sort(resourceOrder.begin(),resourceOrder.end());resourceOrder.erase(std::unique(resourceOrder.begin(),resourceOrder.end()),resourceOrder.end());
+    std::stable_sort(resourceOrder.begin(),resourceOrder.end(),[&](const auto& a,const auto& b){
+        if(resourceFirst[a.first]!=resourceFirst[b.first])return resourceFirst[a.first]<resourceFirst[b.first];return a<b;
     });
+    if(filtered&&passOrder.empty()&&!resourceOrder.empty()) {
+        m_selectedResource=resourceOrder.front().first;m_selectedVersion=resourceOrder.front().second;m_flowSelectionIsResource=true;
+    }
+    if(m_flowSelectionIsResource&&m_graphVersions&&std::find(resourceOrder.begin(),resourceOrder.end(),ResourceNode{m_selectedResource,m_selectedVersion})==resourceOrder.end()) {
+        const auto current=std::find_if(resourceOrder.rbegin(),resourceOrder.rend(),[&](const auto& node){return node.first==m_selectedResource;});
+        if(current!=resourceOrder.rend())m_selectedVersion=current->second;
+    }
     const size_t edgeCount=static_cast<size_t>(std::count_if(m_graphEdges.begin(),m_graphEdges.end(),[&](const auto& e){return visiblePass[e.pass]&&visibleResource[e.resource];}));
-    ImGui::TextDisabled("%zu passes + %zu resources | %zu read/write links / %zu / %zu in plan",passOrder.size(),resourceOrder.size(),edgeCount,graph.passes.size(),graph.resources.size());
-    const float canvasHeight=std::max(190.f,ImGui::GetContentRegionAvail().y-48);
+    ImGui::TextDisabled("%zu passes + %zu %s | %zu links | plan: %zu passes / %zu resources",passOrder.size(),resourceOrder.size(),m_graphVersions?"versions":"resources",edgeCount,graph.passes.size(),graph.resources.size());
+    const float canvasHeight=std::max(150.f,ImGui::GetContentRegionAvail().y-88);
     if(passOrder.empty()&&resourceOrder.empty()) {
         ImGui::BeginChild("resource-flow-canvas",{0,canvasHeight},ImGuiChildFlags_Borders);
         ImGui::TextDisabled("No passes or resources match this filter");ImGui::EndChild();
@@ -406,9 +441,17 @@ void OvEditor::Panels::FrameGraph::DrawResourceFlow()
     const bool hovered=ImGui::IsItemHovered();auto& io=ImGui::GetIO();auto* draw=ImGui::GetWindowDrawList();
     draw->AddRectFilled(origin,{origin.x+size.x,origin.y+size.y},IM_COL32(20,24,31,255));
     constexpr float nodeWidth=184,nodeHeight=48,rowStep=58,padding=18,columnGap=12,centerGap=48;
-    const auto columns=[](size_t count){return count>18?size_t{3}:count>8?size_t{2}:size_t{1};};
-    const size_t passColumns=columns(passOrder.size()),resourceColumns=columns(resourceOrder.size());
     const auto rowCount=[](size_t count,size_t columnCount){return (count+columnCount-1)/columnCount;};
+    size_t passColumns=1,resourceColumns=1;float bestScale=-1;
+    // Maximize readable node size for the actual canvas aspect ratio. A tall
+    // single column can be smaller than two columns even for a short chain.
+    for(size_t pc=1;pc<=std::min<size_t>(3,std::max<size_t>(1,passOrder.size()));++pc)
+        for(size_t rc=1;rc<=std::min<size_t>(3,std::max<size_t>(1,resourceOrder.size()));++rc) {
+            const float width=(pc+rc)*nodeWidth+(pc+rc-2)*columnGap+centerGap+2*padding;
+            const float height=std::max(1.f,std::max(rowCount(passOrder.size(),pc),rowCount(resourceOrder.size(),rc))*rowStep);
+            const float scale=std::min((size.x-2*padding)/width,(size.y-2*padding)/height);
+            if(scale>bestScale){bestScale=scale;passColumns=pc;resourceColumns=rc;}
+        }
     const size_t rows=std::max(rowCount(passOrder.size(),passColumns),rowCount(resourceOrder.size(),resourceColumns));
     const float extentHeight=std::max(1.f,rows*rowStep);
     const float passLaneWidth=passColumns*nodeWidth+(passColumns-1)*columnGap;
@@ -428,85 +471,113 @@ void OvEditor::Panels::FrameGraph::DrawResourceFlow()
     const auto passLaneX=origin.x+padding*m_graphZoom+m_graphPan[0];
     const auto resourceLaneX=passLaneX+(passLaneWidth+centerGap)*m_graphZoom;
     const auto yFor=[&](size_t row){return origin.y+m_graphPan[1]+row*rowStep*m_graphZoom;};
-    std::vector<float> passY(graph.passes.size()),resourceY(graph.resources.size()),passX(graph.passes.size()),resourceX(graph.resources.size());
+    std::vector<float> passY(graph.passes.size()),passX(graph.passes.size());std::map<ResourceNode,ImVec2> resourcePositions;
     for(size_t row=0;row<passOrder.size();++row){passY[passOrder[row]]=yFor(row/passColumns);passX[passOrder[row]]=passLaneX+(row%passColumns)*scaledNodeStep;}
-    for(size_t row=0;row<resourceOrder.size();++row){resourceY[resourceOrder[row]]=yFor(row/resourceColumns);resourceX[resourceOrder[row]]=resourceLaneX+(row%resourceColumns)*scaledNodeStep;}
+    for(size_t row=0;row<resourceOrder.size();++row)resourcePositions[resourceOrder[row]]={resourceLaneX+(row%resourceColumns)*scaledNodeStep,yFor(row/resourceColumns)};
     const float fontSize=ImGui::GetFontSize()*m_graphZoom;const auto clip=ImVec4(origin.x,origin.y,origin.x+size.x,origin.y+size.y);
-    size_t hoveredNode=size_t(-1);bool hoveredEdge=false;size_t edgePass=0,edgeResource=0;
+    size_t hoveredNode=size_t(-1);const GraphEdge* hoveredEdge=nullptr;
     float edgeDistance=6;
     for(const auto& edge:m_graphEdges)if(visiblePass[edge.pass]&&visibleResource[edge.resource]) {
-        const float py=passY[edge.pass]+nodeHeight*m_graphZoom*.5f,ry=resourceY[edge.resource]+nodeHeight*m_graphZoom*.5f;
-        const auto drawFlowEdge=[&](bool read,bool write) {
-            if(!read&&!write)return;
-            const bool forward=read;const auto color=read&&write?rwColor:read?readColor:writeColor;
-            const ImVec2 a=forward?ImVec2(resourceX[edge.resource],ry):ImVec2(passX[edge.pass]+nodeWidth*m_graphZoom,py);
-            const ImVec2 d=forward?ImVec2(passX[edge.pass]+nodeWidth*m_graphZoom,py):ImVec2(resourceX[edge.resource],ry);
+        const auto position=resourcePositions.at({edge.resource,edge.version});
+        const auto drawFlowEdge=[&](bool read,float offset) {
+            const float py=passY[edge.pass]+nodeHeight*m_graphZoom*.5f+offset,ry=position.y+nodeHeight*m_graphZoom*.5f+offset;
+            const bool forward=read;const auto color=read?readColor:edge.load?rwColor:writeColor;
+            const ImVec2 a=forward?ImVec2(position.x,ry):ImVec2(passX[edge.pass]+nodeWidth*m_graphZoom,py);
+            const ImVec2 d=forward?ImVec2(passX[edge.pass]+nodeWidth*m_graphZoom,py):ImVec2(position.x,ry);
             const float bend=(d.x-a.x)*.5f;const ImVec2 b={a.x+bend,a.y},c={d.x-bend,d.y};
-            const bool selected=m_flowSelectionIsResource?edge.resource==m_selectedResource:edge.pass==m_selectedPass;
+            const bool selected=m_flowSelectionIsResource?edge.resource==m_selectedResource&&(!m_graphVersions||edge.version==m_selectedVersion):edge.pass==m_selectedPass;
             draw->AddBezierCubic(a,b,c,d,color,selected?2.f:1.2f);
             const float arrow=std::clamp(7.f*m_graphZoom,3.f,9.f);const float sign=forward?1.f:-1.f;
             draw->AddTriangleFilled(d,{d.x+sign*arrow,d.y-arrow*.6f},{d.x+sign*arrow,d.y+arrow*.6f},color);
             if(hovered&&hoveredNode==size_t(-1)) {
                 auto previous=a;for(int step=1;step<=20;++step){const auto point=Curve(a,b,c,d,step/20.f);const float distance=SegmentDistance(io.MousePos,previous,point);
-                    if(distance<edgeDistance){edgeDistance=distance;hoveredEdge=true;edgePass=edge.pass;edgeResource=edge.resource;}previous=point;}
+                    if(distance<edgeDistance){edgeDistance=distance;hoveredEdge=&edge;}previous=point;}
             }
         };
-        if(edge.read&&edge.write) {const float offset=3.f*m_graphZoom;const float oldPY=passY[edge.pass];
-            passY[edge.pass]=oldPY-offset;drawFlowEdge(false,true);passY[edge.pass]=oldPY+offset;drawFlowEdge(true,false);passY[edge.pass]=oldPY;
-        } else drawFlowEdge(edge.read,edge.write);
+        if(edge.write)drawFlowEdge(false,edge.read?-3.f*m_graphZoom:0);
+        if(edge.read)drawFlowEdge(true,edge.write?3.f*m_graphZoom:0);
     }
-    const auto drawNode=[&](bool resource,size_t index,const std::array<float,4>& rect,bool selected,bool underMouse,const char* title,const char* subtitle) {
+    const auto drawNode=[&](bool resource,size_t index,uint32_t version,const std::array<float,4>& rect,bool selected,const char* title,const char* subtitle) {
         const ImVec2 min={rect[0],rect[1]},max={rect[2],rect[3]};
+        const bool underMouse=hovered&&io.MousePos.x>=rect[0]&&io.MousePos.x<=rect[2]&&io.MousePos.y>=rect[1]&&io.MousePos.y<=rect[3];
         const auto fill=selected?(resource?IM_COL32(78,67,105,255):IM_COL32(40,76,105,255)):resource?IM_COL32(53,46,67,255):IM_COL32(40,46,58,255);
         draw->AddRectFilled(min,max,fill,5.f*m_graphZoom);
         draw->AddRect(min,max,selected?IM_COL32(173,157,255,255):underMouse?IM_COL32(190,200,215,255):resource?IM_COL32(118,100,151,255):IM_COL32(85,96,112,255),5.f*m_graphZoom,ImDrawFlags_None,selected?2.f:1.f);
-        draw->AddText(ImGui::GetFont(),fontSize,{min.x+6*m_graphZoom,min.y+6*m_graphZoom},IM_COL32(230,235,245,255),title,nullptr,0,&clip);
-        draw->AddText(ImGui::GetFont(),fontSize*.82f,{min.x+6*m_graphZoom,min.y+28*m_graphZoom},IM_COL32(158,174,194,255),subtitle,nullptr,0,&clip);
-        m_graphNodes.push_back({resource,index,rect});
-        if(hovered&&io.MousePos.x>=rect[0]&&io.MousePos.x<=rect[2]&&io.MousePos.y>=rect[1]&&io.MousePos.y<=rect[3])hoveredNode=index;
+        const ImVec4 nodeClip={std::max(clip.x,min.x),std::max(clip.y,min.y),std::min(clip.z,max.x-4*m_graphZoom),std::min(clip.w,max.y)};
+        draw->AddText(ImGui::GetFont(),fontSize,{min.x+6*m_graphZoom,min.y+6*m_graphZoom},IM_COL32(230,235,245,255),title,nullptr,0,&nodeClip);
+        draw->AddText(ImGui::GetFont(),fontSize*.82f,{min.x+6*m_graphZoom,min.y+28*m_graphZoom},IM_COL32(158,174,194,255),subtitle,nullptr,0,&nodeClip);
+        m_graphNodes.push_back({resource,index,rect,version});
+        if(underMouse)hoveredNode=m_graphNodes.size()-1;
     };
     for(size_t row=0;row<passOrder.size();++row) {
         const size_t p=passOrder[row];const float y=passY[p];const auto& pass=graph.passes[p];
-        drawNode(false,p,{passX[p],y,passX[p]+nodeWidth*m_graphZoom,y+nodeHeight*m_graphZoom},!m_flowSelectionIsResource&&p==m_selectedPass,false,
+        drawNode(false,p,0,{passX[p],y,passX[p]+nodeWidth*m_graphZoom,y+nodeHeight*m_graphZoom},!m_flowSelectionIsResource&&p==m_selectedPass,
             std::format("P{}  {}",p,pass.name).c_str(),std::format("View {} | {} accesses",pass.viewId,pass.accesses.size()).c_str());
     }
     for(size_t row=0;row<resourceOrder.size();++row) {
-        const size_t r=resourceOrder[row];const auto& resource=graph.resources[r];const float y=resourceY[r];
+        const auto [r,version]=resourceOrder[row];const auto& resource=graph.resources[r];const auto position=resourcePositions.at(resourceOrder[row]);
         const auto slot=resource.physicalSlot?std::to_string(resource.physicalSlot):resource.origin==ResourceOrigin::Transient?"unused":"external";
-        const auto subtitle=std::format("{} {}x{} | {}",Format(resource.format),resource.width,resource.height,slot);
-        drawNode(true,r,{resourceX[r],y,resourceX[r]+nodeWidth*m_graphZoom,y+nodeHeight*m_graphZoom},m_flowSelectionIsResource&&r==m_selectedResource,false,
-            std::format("R{}  {}",r,resource.name).c_str(),subtitle.c_str());
+        const auto subtitle=std::format("{} {}x{} | slot {}",Format(resource.format),resource.width,resource.height,slot);
+        const auto title=m_graphVersions?std::format("R{} v{}  {}",r,version,resource.name):std::format("R{}  {}",r,resource.name);
+        drawNode(true,r,version,{position.x,position.y,position.x+nodeWidth*m_graphZoom,position.y+nodeHeight*m_graphZoom},
+            m_flowSelectionIsResource&&r==m_selectedResource&&(!m_graphVersions||version==m_selectedVersion),title.c_str(),subtitle.c_str());
     }
     for(const auto& node:m_graphNodes)if(hovered&&io.MousePos.x>=node.rect[0]&&io.MousePos.x<=node.rect[2]&&io.MousePos.y>=node.rect[1]&&io.MousePos.y<=node.rect[3]) {
         if(node.resource) {
-            const auto& r=graph.resources[node.index];ImGui::SetTooltip("R%zu  %s\n%s | %ux%u | %s\nLive passes %zu-%zu | physical slot %llu",node.index,r.name.c_str(),Format(r.format),r.width,r.height,Origin(r.origin),r.lifetime.first,r.lifetime.last,r.physicalSlot);
+            const auto& r=graph.resources[node.index];ImGui::BeginTooltip();
+            ImGui::Text("R%zu%s  %s",node.index,m_graphVersions?std::format(" v{}",node.version).c_str():"",r.name.c_str());
+            ImGui::Text("%s | %ux%u | %s | slot %llu",Format(r.format),r.width,r.height,Origin(r.origin),r.physicalSlot);
+            if(m_graphVersions) {
+                ImGui::TextDisabled("Content state; same storage, no retained texture copy.");
+                if(node.version==0)ImGui::TextDisabled(r.lifetime.first==size_t(-1)?"Unused resource; no content access":"Initial imported content (for accessed ranges)");
+                for(size_t p=0;p<graph.passes.size();++p)for(size_t a=0;a<graph.passes[p].accesses.size();++a) {
+                    const auto& access=graph.passes[p].accesses[a];const auto& v=graph.passes[p].contentVersions[a];
+                    if(access.resource.index==node.index&&v.write==node.version)
+                        ImGui::Text("Produced by P%zu %s | mip %u +%u, layer %u +%u%s",p,graph.passes[p].name.c_str(),access.range.firstMip,access.range.mipCount,access.range.firstLayer,access.range.layerCount,access.store==AttachmentStore::Discard?" (discarded range)":"");
+                }
+            } else ImGui::Text("Live passes %zu-%zu",r.lifetime.first,r.lifetime.last);
+            ImGui::EndTooltip();
         } else ImGui::SetTooltip("P%zu  %s\nClick to select; double-click for pass details",node.index,graph.passes[node.index].name.c_str());
         if(ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            if(node.resource){m_selectedResource=node.index;m_flowSelectionIsResource=true;}else {m_selectedPass=node.index;m_flowSelectionIsResource=false;}
+            if(node.resource){m_selectedResource=node.index;m_selectedVersion=node.version;m_flowSelectionIsResource=true;}else {m_selectedPass=node.index;m_flowSelectionIsResource=false;}
             if(m_graphFocus)m_graphFit=true;
         }
     }
     if(hoveredNode==size_t(-1)&&hoveredEdge) {
-        const auto link=std::find_if(m_graphEdges.begin(),m_graphEdges.end(),[&](const auto& e){return e.pass==edgePass&&e.resource==edgeResource;});
-        const char* direction=link->read&&link->write?"Read / write":link->read?"Read":"Write";
-        ImGui::SetTooltip("%s  P%zu  %s\nR%zu  %s | %s",direction,edgePass,graph.passes[edgePass].name.c_str(),edgeResource,graph.resources[edgeResource].name.c_str(),Format(graph.resources[edgeResource].format));
-        if(ImGui::IsMouseClicked(ImGuiMouseButton_Left)){m_selectedResource=edgeResource;m_flowSelectionIsResource=true;if(m_graphFocus)m_graphFit=true;}
+        const auto& link=*hoveredEdge;const auto& pass=graph.passes[link.pass];
+        ImGui::BeginTooltip();ImGui::Text("P%zu  %s | R%zu%s  %s",link.pass,pass.name.c_str(),link.resource,
+            m_graphVersions?std::format(" v{}",link.version).c_str():"",graph.resources[link.resource].name.c_str());
+        for(size_t a=0;a<pass.accesses.size();++a) {
+            const auto& access=pass.accesses[a];const auto& v=pass.contentVersions[a];
+            if(access.resource.index==link.resource&&(!m_graphVersions||v.read==link.version||v.write==link.version))
+                ImGui::Text("%s | %s | mip %u +%u, layer %u +%u%s",Access(access.type),VersionText(v).c_str(),access.range.firstMip,access.range.mipCount,access.range.firstLayer,access.range.layerCount,access.store==AttachmentStore::Discard?" | discarded range":"");
+        }
+        ImGui::EndTooltip();
+        if(ImGui::IsMouseClicked(ImGuiMouseButton_Left)){m_selectedResource=link.resource;m_selectedVersion=link.version;m_flowSelectionIsResource=true;if(m_graphFocus)m_graphFit=true;}
     }
     ImGui::EndChild();
     ImGui::BeginChild("resource-flow-detail",{0,0});
     if(m_flowSelectionIsResource&&m_selectedResource<graph.resources.size()) {
         const auto& selected=graph.resources[m_selectedResource];
-        ImGui::TextWrapped("R%zu  %s | %s %ux%u | %s | slot %llu | lifetime %zu-%zu",m_selectedResource,selected.name.c_str(),Format(selected.format),selected.width,selected.height,Origin(selected.origin),selected.physicalSlot,selected.lifetime.first,selected.lifetime.last);
+        ImGui::TextWrapped("R%zu%s  %s | %s %ux%u | slot %llu",m_selectedResource,m_graphVersions?std::format(" v{}",m_selectedVersion).c_str():"",selected.name.c_str(),Format(selected.format),selected.width,selected.height,selected.physicalSlot);
         ImGui::SameLine();if(ImGui::SmallButton("Resource details"))SelectResource(m_selectedResource);
-        size_t shown=0;for(size_t p=0;p<graph.passes.size()&&shown<6;++p)for(const auto& access:graph.passes[p].accesses)if(access.resource.index==m_selectedResource&&shown<6) {
-            ImGui::SameLine();if(ImGui::SmallButton(std::format("P{} {}",p,Access(access.type)).c_str())){m_selectedPass=p;m_flowSelectionIsResource=false;if(m_graphFocus)m_graphFit=true;}++shown;
+        if(m_graphVersions)ImGui::TextDisabled(m_selectedVersion==0?"v0: initial content in accessed ranges (unused nodes have no content).":"Content states share storage; partial writes keep other ranges. No texture copies.");
+        size_t shown=0;for(size_t p=0;p<graph.passes.size()&&shown<6;++p)for(size_t a=0;a<graph.passes[p].accesses.size()&&shown<6;++a) {
+            const auto& access=graph.passes[p].accesses[a];const auto& version=graph.passes[p].contentVersions[a];
+            if(access.resource.index!=m_selectedResource||(m_graphVersions&&version.read!=m_selectedVersion&&version.write!=m_selectedVersion))continue;
+            ImGui::PushID(static_cast<int>(p));ImGui::PushID(static_cast<int>(a));
+            const auto label=std::format("P{} {}",p,VersionText(version));ContinueButtonRow(label,shown==0);
+            if(ImGui::SmallButton(label.c_str())){m_selectedPass=p;m_flowSelectionIsResource=false;if(m_graphFocus)m_graphFit=true;}
+            ImGui::PopID();ImGui::PopID();++shown;
         }
     } else if(m_selectedPass<graph.passes.size()) {
         const auto& selected=graph.passes[m_selectedPass];ImGui::TextWrapped("P%zu  %s",m_selectedPass,selected.name.c_str());
         ImGui::SameLine();if(ImGui::SmallButton("Pass details"))SelectPass(m_selectedPass);
         for(size_t i=0;i<std::min<size_t>(selected.accesses.size(),6);++i) {
-            const auto& access=selected.accesses[i];ImGui::SameLine();ImGui::PushID(static_cast<int>(i));
-            if(ImGui::SmallButton(std::format("{}  {}",Access(access.type),graph.resources[access.resource.index].name).c_str())){m_selectedResource=access.resource.index;m_flowSelectionIsResource=true;if(m_graphFocus)m_graphFit=true;}
+            const auto& access=selected.accesses[i];ImGui::PushID(static_cast<int>(i));
+            const auto& version=selected.contentVersions[i];
+            const auto label=std::format("{}  {}",VersionText(version),graph.resources[access.resource.index].name);ContinueButtonRow(label,i==0);
+            if(ImGui::SmallButton(label.c_str())){m_selectedResource=access.resource.index;m_selectedVersion=version.write.value_or(version.read.value_or(0));m_flowSelectionIsResource=true;if(m_graphFocus)m_graphFit=true;}
             ImGui::PopID();
         }
     } else ImGui::TextDisabled("No matching nodes");
@@ -525,7 +596,7 @@ void OvEditor::Panels::FrameGraph::DrawResources()
         ImGuiListClipper clipper;clipper.Begin(static_cast<int>(visible.size()));
         while(clipper.Step())for(int row=clipper.DisplayStart;row<clipper.DisplayEnd;++row) {
             const auto i=visible[row];const auto& resource=graph.resources[i];ImGui::PushID(static_cast<int>(i));ImGui::TableNextRow();ImGui::TableNextColumn();
-            if(ImGui::Selectable(resource.name.c_str(),m_selectedResource==i,ImGuiSelectableFlags_SpanAllColumns)){m_selectedResource=i;m_flowSelectionIsResource=true;}
+            if(ImGui::Selectable(resource.name.c_str(),m_selectedResource==i,ImGuiSelectableFlags_SpanAllColumns)){m_selectedResource=i;m_selectedVersion=resource.finalVersion;m_flowSelectionIsResource=true;}
             ImGui::TextDisabled("R%zu | %s",i,Format(resource.format));ImGui::TableNextColumn();
             ImGui::TextUnformatted(Origin(resource.origin));ImGui::TextDisabled("%ux%u %s",resource.width,resource.height,Kind(resource.kind));ImGui::TableNextColumn();
             ImGui::Text("%.2f",resource.lifetime.estimatedBytes/MiB);ImGui::TableNextColumn();Lifetime(resource,graph.passes.size());ImGui::TableNextColumn();
@@ -539,6 +610,9 @@ void OvEditor::Panels::FrameGraph::DrawResources()
     const auto selectedResource=m_selectedResource;
     const auto& selected=graph.resources[selectedResource];ImGui::Separator();ImGui::TextWrapped("R%zu  %s",selectedResource,selected.name.c_str());
     ImGui::TextDisabled("%u mips | %u layers | %u samples | version %u",selected.mips,selected.layers,selected.samples,selected.finalVersion);
+    ImGui::SameLine();if(ImGui::SmallButton("Show version flow")) {
+        m_flowSelectionIsResource=true;m_selectedVersion=selected.finalVersion;m_graphResourceFlow=true;m_graphVersions=true;m_graphFocus=true;m_graphFit=true;m_requestedTab=2;m_filter[0]=0;
+    }
     ImGui::BeginChild("resource-detail",{0,0});
     if(selected.physicalSlot) {
         ImGui::TextUnformatted("Same physical slot (nonoverlapping plan lifetimes):");
@@ -552,7 +626,8 @@ void OvEditor::Panels::FrameGraph::DrawResources()
         for(size_t a=0;a<graph.passes[p].accesses.size();++a) {
             const auto& access=graph.passes[p].accesses[a];if(access.resource.index!=selectedResource)continue;
             ImGui::PushID(static_cast<int>(a));
-            if(ImGui::Selectable(std::format("P{}  {} ({})",p,graph.passes[p].name,Access(access.type)).c_str()))SelectPass(p);
+            if(ImGui::Selectable(std::format("P{}  {} ({}, {})",p,graph.passes[p].name,Access(access.type),VersionText(graph.passes[p].contentVersions[a])).c_str()))SelectPass(p);
+            ImGui::TextDisabled("  mip %u +%u, layer %u +%u%s",access.range.firstMip,access.range.mipCount,access.range.firstLayer,access.range.layerCount,access.store==AttachmentStore::Discard?" | discarded range":"");
             ImGui::PopID();
         }
         ImGui::PopID();

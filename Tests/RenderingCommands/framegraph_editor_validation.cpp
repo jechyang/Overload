@@ -41,18 +41,32 @@ int main(int argc,char** argv) try
         Require(present!=initial->passes.end(),"diagnostic capture missed final window presentation");
         const auto passNodes=[&]{return static_cast<size_t>(std::count_if(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[](const auto& node){return !node.resource;}));};
         const auto resourceNodes=[&]{return static_cast<size_t>(std::count_if(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[](const auto& node){return node.resource;}));};
-        Require(panel.m_graphResourceFlow&&panel.m_graphFocus&&passNodes()>0&&resourceNodes()>0&&passNodes()<initial->passes.size()&&
+        Require(panel.m_graphResourceFlow&&panel.m_graphVersions&&panel.m_graphFocus&&passNodes()>0&&resourceNodes()>0&&passNodes()<initial->passes.size()&&
             std::any_of(panel.m_graphEdges.begin(),panel.m_graphEdges.end(),[](const auto& edge){return edge.read;})&&
             std::any_of(panel.m_graphEdges.begin(),panel.m_graphEdges.end(),[](const auto& edge){return edge.write;}),
             "resource flow did not open on a readable product cluster with separate read/write resource links");
         const size_t focusedPass=panel.m_selectedPass,focusedResource=panel.m_graphEdges.front().resource;
         panel.m_selectedResource=focusedResource;panel.m_flowSelectionIsResource=true;panel.m_graphFit=true;tick();
-        Require(resourceNodes()>0&&std::any_of(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[&](const auto& node){return node.resource&&node.index==focusedResource;})&&
+        Require(resourceNodes()>0&&std::any_of(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[&](const auto& node){return node.resource&&node.index==focusedResource&&node.version==panel.m_selectedVersion;})&&
             std::any_of(panel.m_graphEdges.begin(),panel.m_graphEdges.end(),[&](const auto& edge){return edge.resource==focusedResource;}),
             "selecting a resource did not focus its connected pass/resource flow");
         panel.m_selectedPass=focusedPass;panel.m_flowSelectionIsResource=false;panel.m_graphFit=true;tick();
         panel.m_graphFocus=false;panel.m_graphFit=true;tick();tick();
+        Require(passNodes()==initial->passes.size(),"version view lost product Pass nodes");
+        for(const auto& edge:panel.m_graphEdges) {
+            const auto& pass=panel.m_snapshot->passes[edge.pass];bool declared=false;
+            for(size_t a=0;a<pass.accesses.size();++a)if(pass.accesses[a].resource.index==edge.resource) {
+                const auto& v=pass.contentVersions[a];declared|=(edge.read&&v.read==edge.version)||(edge.write&&v.write==edge.version);
+            }
+            Require(declared&&std::any_of(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[&](const auto& node){return node.resource&&node.index==edge.resource&&node.version==edge.version;}),
+                "version graph link has no declared input/output version or matching resource node");
+        }
+        Require(std::any_of(panel.m_graphEdges.begin(),panel.m_graphEdges.end(),[](const auto& edge){return edge.read&&edge.version==0;})&&
+            std::any_of(panel.m_graphEdges.begin(),panel.m_graphEdges.end(),[](const auto& edge){return edge.write&&edge.load&&edge.version>1;}),
+            "real product graph did not show initial content and later Load output versions");
+        panel.m_graphVersions=false;panel.m_graphFit=true;tick();
         Require(passNodes()==initial->passes.size()&&resourceNodes()==initial->resources.size(),"full resource-flow view did not render every product pass and resource node");
+        panel.m_graphVersions=true;
         panel.m_graphResourceFlow=false;panel.m_graphFit=true;tick();
         Require(passNodes()==initial->passes.size(),"Pass dependency view did not remain available beside resource flow");
         panel.m_selectedPass=static_cast<size_t>(present-initial->passes.begin());tick();
@@ -69,13 +83,28 @@ int main(int argc,char** argv) try
         image("passes");
         panel.m_requestedTab=1;panel.m_transientOnly=true;tick();tick();image("resources");
         Require(panel.m_snapshot->resources[panel.m_selectedResource].origin==OvRendering::Data::ResourceOrigin::Transient,"transient filter left details on an imported resource");
-        panel.m_filter[0]=0;panel.m_graphFocus=true;panel.m_graphResourceFlow=true;
+        panel.m_filter[0]=0;panel.m_graphFocus=true;panel.m_graphResourceFlow=true;panel.m_flowSelectionIsResource=false;
         const auto composite=std::find_if(panel.m_snapshot->passes.begin(),panel.m_snapshot->passes.end(),[](const auto& pass){return pass.name.find("Bloom")!=std::string::npos;});
         if(composite!=panel.m_snapshot->passes.end())panel.m_selectedPass=static_cast<size_t>(composite-panel.m_snapshot->passes.begin());
         panel.m_graphFit=true;panel.m_requestedTab=2;tick();tick();image("dependencies-focused");
         Require(passNodes()>0&&passNodes()<panel.m_snapshot->passes.size()&&resourceNodes()>0&&
             std::any_of(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[&](const auto& node){return !node.resource&&node.index==panel.m_selectedPass;}),
             "selected dependency focus omitted the selected pass or failed to reduce an actual product graph");
+        const auto loadPass=std::find_if(panel.m_snapshot->passes.begin(),panel.m_snapshot->passes.end(),[](const auto& pass){
+            return pass.name.find("Bloom")!=std::string::npos&&std::any_of(pass.contentVersions.begin(),pass.contentVersions.end(),[](const auto& v){return v.read&&v.write;});
+        });
+        Require(loadPass!=panel.m_snapshot->passes.end(),"version UI fixture has no Bloom Load access");
+        const auto loadAccess=static_cast<size_t>(std::find_if(loadPass->contentVersions.begin(),loadPass->contentVersions.end(),[](const auto& v){return v.read&&v.write;})-loadPass->contentVersions.begin());
+        panel.m_selectedResource=loadPass->accesses[loadAccess].resource.index;panel.m_selectedVersion=*loadPass->contentVersions[loadAccess].write;
+        panel.m_flowSelectionIsResource=true;panel.m_graphFit=true;tick();tick();image("versions-resource");
+        const auto versionNode=std::find_if(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[&](const auto& node){return node.resource&&node.index==panel.m_selectedResource&&node.version==panel.m_selectedVersion;});
+        Require(versionNode!=panel.m_graphNodes.end(),"focused version node disappeared");
+        // Exercise real ImGui node hit testing instead of changing the selected version directly.
+        const auto rect=versionNode->rect;const auto clickedVersion=versionNode->version;auto& io=ImGui::GetIO();io.AddMousePosEvent((rect[0]+rect[2])*.5f,(rect[1]+rect[3])*.5f);
+        panel.m_selectedVersion=0;io.AddMouseButtonEvent(ImGuiMouseButton_Left,true);tick();
+        io.AddMouseButtonEvent(ImGuiMouseButton_Left,false);tick();
+        Require(panel.m_flowSelectionIsResource&&panel.m_selectedVersion==clickedVersion,"clicking a version node did not select its content state");
+        io.AddMousePosEvent(-100,-100);tick();
         std::copy_n("Bloom",sizeof("Bloom"),panel.m_filter.begin());panel.m_graphFit=true;tick();image("dependencies-filtered");
         Require(!panel.m_graphNodes.empty()&&std::any_of(panel.m_graphNodes.begin(),panel.m_graphNodes.end(),[&](const auto& node){
             if(node.resource)return panel.m_snapshot->resources[node.index].name.find("Bloom")!=std::string::npos;
@@ -105,7 +134,7 @@ int main(int argc,char** argv) try
         Require(after.evictions>before.evictions&&after.allocations>before.allocations&&after.idleBudget==before.idleBudget&&!panel.m_requests.trimIdle,"panel trim did not evict idle scratch and rebuild the next product frame safely");
         panel.Close();Require(!panel.m_snapshot,"closing the panel kept its frozen values");tick();
         Require(!frontend.GetFrameGraphDiagnostics()&&!panel.WantsCapture(),"closed panel kept collecting diagnostics");
-        std::printf("PASS: Frame Graph panel on %s owner: full/focused Pass-resource flow, read/write links, resource selection, Pass dependency view, filter, live auto-expiry, freeze/resize, thread guards, budget/trim; %zu passes / %zu resources\n",threaded?"Render":"Main",initial->passes.size(),initial->resources.size());
+        std::printf("PASS: Frame Graph panel on %s owner: full/focused content versions, declared read/write links, v0/Load, version node click, aggregate resource flow, Pass dependency view, filter, live auto-expiry, freeze/resize, thread guards, budget/trim; %zu passes / %zu resources\n",threaded?"Render":"Main",initial->passes.size(),initial->resources.size());
     }
     return 0;
 }

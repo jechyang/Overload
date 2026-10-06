@@ -23,9 +23,16 @@ namespace OvRendering::Data
         };
         struct Pass
         {
+            struct AccessVersion
+            {
+                // Whole-resource content state before/after this pass. Ranges
+                // remain in accesses; a version does not allocate a texture.
+                std::optional<uint32_t> read,write;
+            };
             std::string name;
             uint64_t viewId=0;
             std::vector<ResourceAccess> accesses;
+            std::vector<AccessVersion> contentVersions;
         };
         uint64_t scope=0,captureIndex=0;
         uint64_t logicalTransientBytes=0,estimatedPeakBytes=0,physicalTransientBytes=0;

@@ -59,9 +59,47 @@ namespace
         Require(diagnostics.resources.size()==2&&diagnostics.passes.size()==4&&diagnostics.dependencies.size()==compiled.dependencies.size(),"diagnostics omitted graph nodes/edges");
         Require(diagnostics.physicalTransientTargets==1&&diagnostics.physicalTransientBytes==64*32*16&&diagnostics.logicalTransientBytes==2*64*32*16&&diagnostics.estimatedPeakBytes==64*32*16,"diagnostics confused logical/peak/physical scratch bytes");
         Require(diagnostics.resources[0].physicalSlot==diagnostics.resources[1].physicalSlot&&diagnostics.resources[0].lifetime.last==1&&diagnostics.resources[1].lifetime.first==2&&diagnostics.passes[1].accesses[0].type==ResourceAccessType::Readback,"diagnostics lost aliases, lifetimes or accesses");
+        Require(!diagnostics.passes[0].contentVersions[0].read&&diagnostics.passes[0].contentVersions[0].write==1&&
+            diagnostics.passes[1].contentVersions[0].read==1&&!diagnostics.passes[1].contentVersions[0].write,
+            "clear/readback diagnostic versions do not match compiled content");
         auto foreignCompiled=compiled;++foreignCompiled.scope;bool diagnosticsRejected=false;
         try{CaptureFrameGraphDiagnostics(plan,foreignCompiled,*mapping);}catch(const std::invalid_argument&){diagnosticsRejected=true;}
         Require(diagnosticsRejected,"diagnostics accepted a foreign compiled graph");
+        {
+            RenderPlan states;auto cubeDesc=ColorDesc(16,16);cubeDesc.kind=PlanResourceKind::TextureCube;
+            cubeDesc.layers=6;cubeDesc.mips=5;cubeDesc.texture.useMipMaps=true;cubeDesc.texture.mutableDesc.reset();
+            const auto cube=states.CreateTransient("VersionedCube",cubeDesc);
+            const auto history=states.Import("History",mapping->TextureStorage(a),ResourceOrigin::History,{{}});
+            states.CreateTransient("Unused",ColorDesc());
+            states.passes.push_back(Node("Faces",{{cube,{ResourceAspect::Color,0,1,0,3},ResourceAccessType::Attachment,AttachmentLoad::Clear},
+                {cube,{ResourceAspect::Color,0,1,3,3},ResourceAccessType::Attachment,AttachmentLoad::Clear}}));
+            states.passes.push_back(Node("Mipmaps",{{cube,{ResourceAspect::Color,0,1,0,6},ResourceAccessType::MipmapSource},
+                {cube,{ResourceAspect::Color,1,4,0,6},ResourceAccessType::MipmapDestination,AttachmentLoad::DontCare,AttachmentStore::Store,true}}));
+            states.passes.push_back(Node("BlendFace",{{cube,{},ResourceAccessType::Attachment,AttachmentLoad::Load}}));
+            states.passes.push_back(Node("ReadUnchangedMip",{{cube,{ResourceAspect::Color,4,1,5,1},ResourceAccessType::Sample}}));
+            states.passes.push_back(Node("DiscardFace",{{cube,{},ResourceAccessType::Attachment,AttachmentLoad::DontCare,AttachmentStore::Discard,true}}));
+            states.passes.push_back(Node("ReadSurvivingMip",{{cube,{ResourceAspect::Color,4,1,5,1},ResourceAccessType::Sample}}));
+            states.passes.push_back(Node("HistoryRead",{{history,{},ResourceAccessType::Sample}}));
+            states.passes.push_back(Node("HistoryLoad",{{history,{},ResourceAccessType::Attachment,AttachmentLoad::Load}}));
+            states.passes.push_back(Node("HistoryExport",{{history,{},ResourceAccessType::Export}}));
+            const auto stateCompiled=states.Compile();OvRendering::Core::RenderTargetPool statePool;
+            auto realized=statePool.Realize(states,stateCompiled);const auto before=statePool.GetStatistics();
+            const auto frozen=CaptureFrameGraphDiagnostics(states,stateCompiled,*realized);const auto after=statePool.GetStatistics();
+            const auto& p=frozen.passes;
+            Require(p[0].contentVersions[0].write==1&&p[0].contentVersions[1].write==1&&
+                p[1].contentVersions[0].read==1&&p[1].contentVersions[1].write==2&&
+                p[2].contentVersions[0].read==2&&p[2].contentVersions[0].write==3&&p[3].contentVersions[0].read==3&&
+                !p[4].contentVersions[0].read&&p[4].contentVersions[0].write==4&&p[5].contentVersions[0].read==4&&
+                p[6].contentVersions[0].read==0&&p[7].contentVersions[0].read==0&&p[7].contentVersions[0].write==1&&p[8].contentVersions[0].read==1,
+                "version flow lost disjoint writes, mip generation, partial Load, Discard or initial history v0");
+            Require(frozen.resources[cube.index].finalVersion==4&&frozen.resources[history.index].finalVersion==1&&frozen.resources[2].finalVersion==0&&
+                before.allocations==after.allocations&&before.leasedBytes==after.leasedBytes&&before.idleBytes==after.idleBytes,
+                "version diagnostics changed storage or disagreed with final content states");
+            auto stale=stateCompiled;--stale.finalVersions[cube.index];bool rejected=false;
+            try{CaptureFrameGraphDiagnostics(states,stale,*realized);}catch(const std::invalid_argument&){rejected=true;}
+            Require(rejected,"diagnostic timeline accepted inconsistent compiled final versions");
+            std::cout<<"PASS: content version diagnostics: initial v0, Clear, Load, disjoint cube writes, mip generation, partial range preservation, Discard, Export and zero additional storage\n";
+        }
         {
             OvRendering::Core::RenderTargetPool inspectPool;inspectPool.SetFrameReserve(2);
             auto active=inspectPool.Realize(plan,compiled);const auto id=active->TextureStorage(a).GetID();
@@ -380,7 +418,10 @@ namespace
         ResourceAccess present{second,{},ResourceAccessType::Present};present.expectedVersion=1;
         laterVersion.passes.push_back(Node("later-present",{present}));
         RenderPlan versioned;versioned.Append(std::move(initial),0,0);versioned.Append(std::move(laterVersion),0,0);
-        Require(versioned.Compile().finalVersions[0]==2,"fragment content versions did not account for earlier product writes");
+        const auto versionCompiled=versioned.Compile();Require(versionCompiled.finalVersions[0]==2,"fragment content versions did not account for earlier product writes");
+        {auto map=pool.Realize(versioned,versionCompiled);const auto values=CaptureFrameGraphDiagnostics(versioned,versionCompiled,*map);
+            Require(values.passes[0].contentVersions[0].write==1&&values.passes[1].contentVersions[0].read==1&&values.passes[1].contentVersions[0].write==2&&values.passes[2].contentVersions[0].read==2,
+                "product version diagnostics restarted the counter at fragment boundaries");}
         std::cout<<"PASS: four viewport chains share physical scratch in one ordered plan; exact no-reuse images, final UI reads, frozen resize/destruction, fragment generations, GPU retirement and import promotion rejection\n";
     }
     void PostProcessValidation(const std::filesystem::path& output)

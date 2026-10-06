@@ -33,11 +33,13 @@ namespace OvEditor::Panels
         size_t m_selectedPass=0,m_selectedResource=0;
         std::array<char,128> m_filter{};
         bool m_graphFocus=true,m_graphFit=true,m_graphSelectionInitialized=false,m_graphResourceFlow=true,m_flowSelectionIsResource=false;
+        bool m_graphVersions=true;
+        uint32_t m_selectedVersion=0;
         float m_graphZoom=1;
         std::array<float,2> m_graphPan{};
         // Screen rectangles contain values only; also serve node hit testing.
-        struct GraphNode { bool resource;size_t index;std::array<float,4> rect; };
-        struct GraphEdge { size_t pass,resource;bool read,write; };
+        struct GraphNode { bool resource;size_t index;std::array<float,4> rect;uint32_t version=0; };
+        struct GraphEdge { size_t pass,resource;bool read,write;uint32_t version=0;bool load=false; };
         std::vector<GraphNode> m_graphNodes;
         std::vector<GraphEdge> m_graphEdges;
     };

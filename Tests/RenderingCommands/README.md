@@ -31,7 +31,7 @@ Build/Data，防止单独构建项目时遗漏资源发布、误用旧 shader。
 | --auxiliary / --postprocess | 主视图、阴影及全部 cubemap mip 的串行/双 Worker/单 Worker 精确对照；渐进捕获、曝光历史、失败恢复、源及目标生命周期 |
 | --pipeline | inspection_pipeline.h 的双视图配置；选择 Opaque/Transparent/SceneUI；声明多个附件；冻结配置、源销毁、无效资源/视图/Stage/尺寸诊断 |
 | --framegraph | 子资源/版本/Load/Store/反馈契约，真实池复用、外部 UI pin、GPU 退役及失败回滚；四视口共享、禁用复用逐字节对照；16 效果组合 × 四种尺寸、暖池零分配；诊断数据不持有 GPU 存储，TrimIdle 保留活动 lease/pin 和预算；80 组 R32F/RGBA32F 对照，全部 mip 红通道/渐进曝光历史/最终 HDR 浮点逐位一致，实际 GL 存储减少 75% |
-| --framegraph-editor --framegraph-baseline | 实际 Main/Render owner 多视口图的诊断面板：默认关闭、筛选和隐藏选项详情、冻结/恢复/resize、线程归属、缓存预算/闲置清理、关闭释放；同时执行真实产品和 27 组完整/单面板原生/拥有型 UI 精确对照，检查 F0 两份冻结图像 |
+| --framegraph-editor --framegraph-baseline | 实际 Main/Render owner 多视口图的诊断面板：默认关闭、Pass/资源版本图、每条读写边的版本和节点、v0/Load、真实版本节点点击、非版本总览、筛选和隐藏选项详情、冻结/恢复/resize、线程归属、缓存预算/闲置清理、关闭释放；同时执行真实产品和 27 组完整/单面板原生/拥有型 UI 精确对照，检查 F0 两份冻结图像 |
 | --parallel-recording | 延迟编码依赖图和共享材质压力；串行、单 Worker、多 Worker，确定命令顺序与资源退役 |
 | --editor --command-list --editor-ui --product-loop | Scene/Game/Asset 三视口、Grid/Outline/Gizmo/调试对象、真实 Picking、对象删除/场景替换、完整 UI 和产品循环 |
 | --editor-camera | 含 OverlayUI 时，未选中对象/选中 Canvas 的 Scene 相机旋转会改变网格和辅助图形像素，屏幕 UI 保持固定；注入右键事件验证控制器不依赖对象选择（不覆盖操作系统鼠标焦点） |

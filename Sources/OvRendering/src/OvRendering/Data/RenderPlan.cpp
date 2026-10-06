@@ -307,6 +307,10 @@ namespace
 {
     bool IsWrite(ResourceAccessType type)
     { return type==ResourceAccessType::Attachment||type==ResourceAccessType::CopyDestination||type==ResourceAccessType::MipmapDestination; }
+    bool IsRead(const ResourceAccess& access)
+    { return !IsWrite(access.type)||(access.type==ResourceAccessType::Attachment&&access.load==AttachmentLoad::Load); }
+    void AdvanceContentVersions(std::vector<uint32_t>& versions,const std::vector<bool>& written)
+    { for(size_t i=0;i<written.size();++i)if(written[i])++versions[i]; }
     struct Cell { bool initialized=false; size_t writer=size_t(-1);std::vector<size_t> readers; };
     struct AccessFlags { bool read=false,write=false,initialize=false,discard=false; };
     CompiledRenderPlan CompileAccesses(const RenderPlan& plan,std::span<const std::shared_ptr<const RenderSceneSnapshot>> views)
@@ -391,7 +395,7 @@ namespace
                 for(auto cell:cells(access.resource,access.range)) {
                     auto& value=flags[{index,cell}];
                     if(value.write||(write&&value.read))throw std::invalid_argument(scope+"Overlapping accesses; declare attachment Load for blending");
-                    value.read|=!write||(access.type==ResourceAccessType::Attachment&&access.load==AttachmentLoad::Load);
+                    value.read|=IsRead(access);
                     value.write|=write;value.discard|=write&&access.store==AttachmentStore::Discard;
                     value.initialize|=write&&(access.fullCoverage||(access.type==ResourceAccessType::Attachment&&access.load==AttachmentLoad::Clear));
                 }
@@ -408,7 +412,7 @@ namespace
                     cell.readers.clear();cell.writer=passIndex;cell.initialized=!value.discard&&(cell.initialized||value.initialize);
                 }
             }
-            for(size_t i=0;i<written.size();++i)if(written[i])++result.finalVersions[i];
+            AdvanceContentVersions(result.finalVersions,written);
         }
         for(size_t pass=0;pass<plan.passes.size();++pass) {
             uint64_t live=0;for(size_t i=0;i<result.lifetimes.size();++i)if(plan.resources[i].origin==ResourceOrigin::Transient&&result.lifetimes[i].first<=pass&&result.lifetimes[i].last>=pass)live+=result.lifetimes[i].estimatedBytes;
@@ -441,7 +445,23 @@ FrameGraphDiagnostics OvRendering::Data::CaptureFrameGraphDiagnostics(const Rend
         result.resources.push_back(std::move(record));
     }
     result.physicalTransientTargets=physical.size();
-    for(const auto& pass:plan.passes)result.passes.push_back({pass.name,pass.viewId,EffectiveAccesses(plan,pass,descriptors,views)});
+    std::vector<uint32_t> versions(plan.resources.size());
+    for(const auto& pass:plan.passes) {
+        FrameGraphDiagnostics::Pass record;
+        record.name=pass.name;record.viewId=pass.viewId;record.accesses=EffectiveAccesses(plan,pass,descriptors,views);
+        record.contentVersions.reserve(record.accesses.size());
+        std::vector<bool> written(plan.resources.size());
+        for(const auto& access:record.accesses) {
+            (void)plan.Resolve(access.resource);
+            const auto r=access.resource.index;FrameGraphDiagnostics::Pass::AccessVersion version;
+            if(IsRead(access))version.read=versions[r];
+            if(IsWrite(access.type)){version.write=versions[r]+1;written[r]=true;}
+            record.contentVersions.push_back(version);
+        }
+        // Several disjoint mip/layer writes in one pass share one new state.
+        AdvanceContentVersions(versions,written);result.passes.push_back(std::move(record));
+    }
+    if(versions!=compiled.finalVersions)throw std::invalid_argument("FrameGraph diagnostics: content versions differ from compiled plan");
     // Imported attachments often have no explicit logical name. Identify them
     // by their first use without retaining the originating texture/view owner.
     for(size_t i=0;i<plan.resources.size();++i)if(plan.resources[i].name.empty()) {

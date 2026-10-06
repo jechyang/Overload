@@ -89,6 +89,6 @@ Tests/RenderingCommands/inspection_pipeline.h 使用既有 Opaque/Transparent/Sc
 
 ComposeFrame 要求拥有型视图和完整资源契约；错误诊断定位到 Pass/View 或资源编号。缺少生产者、错误阶段/尺寸/附件或无效视图会被拒绝。需要跨帧历史的流程由 ExtractFrame 的相应 owner 构建，不能用手写计划绕过。ComposeFrames 合并未准备的拥有型片段，生产链在 PrepareFrame 中统一编译一次。
 
-编辑器 `Window > Frame Graph` 提供最近一次准备完成的产品图诊断：Pass 访问和依赖、子资源、资源存活区间与物理复用、池缓存统计和闲置预算/清理。诊断快照只保存值，冻结不会持有 GPU 存储；默认关闭，打开才采集，关闭即停止。冻结只固定计划，池计数保持更新；这是提交前计划，不代表 GPU 已完成。具体边界和验证见 [Frame Graph 诊断面板验收](FRAMEGRAPH_DIAGNOSTICS_VALIDATION.zh-CN.md)。
+编辑器 `Window > Frame Graph` 提供最近一次准备完成的产品图诊断：Pass 访问和依赖、子资源、资源存活区间与物理复用、池缓存统计和闲置预算/清理。资源流图可拆分内容版本，逐访问显示读入/写出版本及 mip/layer 范围；多个版本仍共享物理存储，不保留旧纹理内容。诊断快照只保存值，冻结不会持有 GPU 存储；默认关闭，打开才采集，关闭即停止。冻结只固定计划，池计数保持更新；这是提交前计划，不代表 GPU 已完成。具体边界和验证见 [Frame Graph 诊断面板验收](FRAMEGRAPH_DIAGNOSTICS_VALIDATION.zh-CN.md)。
 
 新增 CPU 功能应先确定快照字段及 owner，再实现局部 Processor/Preparer/Collector，并通过明确阶段/资源契约组合。当前没有可视化流水线编辑器、脚本 SRP SDK 或新的 Renderer 继承体系。运行入口和测试边界见 Tests/RenderingCommands/README.md。
