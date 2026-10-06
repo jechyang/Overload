@@ -16,16 +16,16 @@ const quat=([pitch=0,yaw=0,roll=0])=>{
 const component=(name,data)=>'<component>'+tag('type','class OvCore::ECS::Components::'+name)+'<data>'+data+'</data></component>';
 const transform=(pos=[0,0,0],scale=[1,1,1],rotation=[0,0,0])=>component('CTransform',vec('position',pos)+vec('rotation',quat(rotation))+vec('scale',scale));
 const materials={
-  Floor:{albedo:[.09,.12,.18,1],metal:.35,rough:.32},
+  Floor:{albedo:[.15,.19,.26,1],metal:.04,rough:.9},
   Stone:{albedo:[.24,.29,.36,1],metal:.1,rough:.7},
   Dark:{albedo:[.035,.055,.08,1],metal:.3,rough:.45},
-  Chrome:{albedo:[.78,.88,.97,1],metal:1,rough:.06},
-  Gold:{albedo:[.93,.48,.12,1],metal:.9,rough:.1},
-  Copper:{albedo:[.65,.2,.12,1],metal:.7,rough:.2},
+  Chrome:{albedo:[.78,.88,.97,1],metal:1,rough:.16},
+  Gold:{albedo:[.93,.48,.12,1],metal:.9,rough:.22},
+  Copper:{albedo:[.65,.2,.12,1],metal:.7,rough:.28},
   Warm:{albedo:[.85,.23,.06,1],metal:0,rough:.6},
   Cool:{albedo:[.02,.38,.5,1],metal:.1,rough:.4},
-  Cyan:{albedo:[.05,.5,.7,1],metal:0,rough:.4,emissive:[.08,.8,1],intensity:2},
-  Amber:{albedo:[.95,.34,.04,1],metal:0,rough:.4,emissive:[1,.28,.03],intensity:1.8},
+  Cyan:{albedo:[.05,.5,.7,1],metal:0,rough:.4,emissive:[.08,.8,1],intensity:1.2},
+  Amber:{albedo:[.95,.34,.04,1],metal:0,rough:.4,emissive:[1,.28,.03],intensity:1.1},
   Glass:{albedo:[.1,.65,.82,.28],metal:.05,rough:.1,glass:true},
 };
 for(const [name,m] of Object.entries(materials)){
@@ -33,7 +33,7 @@ for(const [name,m] of Object.entries(materials)){
     frontface_culling:false,depth_test:true,depth_writing:!m.glass,color_writing:true,cast_shadows:!m.glass,
     // Stable priorities make intersecting sculpture edges reproducible across
     // process-local shader/program identities. Normal depth testing stays on.
-    receive_shadows:!m.glass,receive_reflections:true,user_interface:false,gpu_instances:1,draw_order:100+Object.keys(materials).indexOf(name)});
+    receive_shadows:!m.glass,receive_reflections:!m.glass,user_interface:false,gpu_instances:1,draw_order:100+Object.keys(materials).indexOf(name)});
   const uniforms={u_Albedo:m.albedo,u_Metallic:m.metal,u_Roughness:m.rough,u_EmissiveColor:m.emissive??[0,0,0],
     u_EmissiveIntensity:m.intensity??0,u_BuiltInToneMapping:false,u_BuiltInGammaCorrection:false};
   fs.writeFileSync(path.join(assets,'Materials',name+'.ovmat'),'<root>'+tag('shader',':Shaders/Standard.ovfx')+'<settings>'+settings+'</settings><uniforms>'+Object.entries(uniforms).map(([k,v])=>'<uniform>'+tag('name',k)+'<value>'+ (Array.isArray(v)?fields(Object.fromEntries(v.map((x,i)=>[['x','y','z','w'][i],x]))):esc(v))+'</value></uniform>').join('')+'</uniforms><features/></root>\n');
@@ -51,14 +51,14 @@ function mesh(name,model,mat,pos,scale=[1,1,1],options={}){
     component('CMaterialRenderer','<materials>'+Array(options.skin?3:1).fill(tag('material','Materials/'+mat+'.ovmat')).join('')+'</materials><visibility_flags>7</visibility_flags>'),{...options,scale});
 }
 add('00 Lab Camera',[0,10,23],component('CCamera',fields({fov:45,size:5,near:.1,far:120,clear_color:[.025,.035,.06],frustum_geometry_culling:true,frustum_light_culling:true,projection_mode:1})),{rotation:[22,180,0]});
-add('01 Shadow Sun',[-8,14,6],component('CDirectionalLight',fields({color:[1,.89,.72],intensity:2.6,cast_shadows:true,shadow_area_size:38,shadow_follow_camera:false,shadow_map_resolution:1024})),{rotation:[55,-35,0]});
-add('02 Warm Point',[-6,4,1],component('CPointLight',fields({color:[1,.23,.06],intensity:15,constant:1,linear:.12,quadratic:.1})));
-add('03 Cool Point',[6,4,1],component('CPointLight',fields({color:[.05,.6,1],intensity:15,constant:1,linear:.12,quadratic:.1})));
+add('01 Shadow Sun',[-8,14,6],component('CDirectionalLight',fields({color:[1,.89,.72],intensity:2.3,cast_shadows:true,shadow_area_size:30,shadow_follow_camera:false,shadow_map_resolution:1024})),{rotation:[55,-35,0]});
+add('02 Warm Point',[-6,4,1],component('CPointLight',fields({color:[1,.23,.06],intensity:11,constant:1,linear:.12,quadratic:.1})));
+add('03 Cool Point',[6,4,1],component('CPointLight',fields({color:[.05,.6,1],intensity:11,constant:1,linear:.12,quadratic:.1})));
 add('04 Post Process',[0,0,0],component('CPostProcessStack',fields({auto_exposure_enabled:true,auto_exposure_center_weight_bias:.5,auto_exposure_luminance_min:-2,
-  auto_exposure_luminance_max:12,auto_exposure_exposure_compensation:0,auto_exposure_progressive:true,auto_exposure_speed_up:2,auto_exposure_speed_down:1,
-  bloom_enabled:true,bloom_intensity:.8,bloom_passes:5,tonemapping_enabled:true,tonemapping_exposure:1,tonemapping_mode:5,tonemapping_gamma_correction:true,fxaa_enabled:true})));
-add('05 Global Probe - Once',[0,3,0],component('CReflectionProbe',fields({refresh_mode:1,capture_speed:6,resolution:128,capture_position:[0,0,0],brightness:1,influence_policy:1,influence_size:[30,12,22],box_projection:false})));
-add('06 Local Probe - Progressive',[6,2.5,0],component('CReflectionProbe',fields({refresh_mode:0,capture_speed:1,resolution:128,capture_position:[0,0,0],brightness:1.2,influence_policy:0,influence_size:[8,8,9],box_projection:true})));
+  auto_exposure_luminance_max:12,auto_exposure_exposure_compensation:.35,auto_exposure_progressive:true,auto_exposure_speed_up:2,auto_exposure_speed_down:1,
+  bloom_enabled:true,bloom_intensity:.45,bloom_passes:5,tonemapping_enabled:true,tonemapping_exposure:1,tonemapping_mode:5,tonemapping_gamma_correction:true,fxaa_enabled:true})));
+add('05 Global Probe - Once',[0,6,12],component('CReflectionProbe',fields({refresh_mode:1,capture_speed:6,resolution:128,capture_position:[0,0,0],brightness:1,influence_policy:1,influence_size:[30,12,24],box_projection:false})));
+add('06 Local Probe - Progressive',[10,3,0],component('CReflectionProbe',fields({refresh_mode:0,capture_speed:1,resolution:128,capture_position:[0,0,0],brightness:1,influence_policy:0,influence_size:[16,8,16],box_projection:true})));
 add('07 Lab Controls',[0,0,0],'',{script:true});
 const architecture=add('10 Architecture',[0,0,0]);
 mesh('Floor','Cube','Floor',[0,-.2,0],[48,.35,40],{parent:architecture});
