@@ -18,6 +18,7 @@ namespace OvUI::Styling
 		IM_LIGHT_STYLE,
 		DUNE_DARK,			// https://www.unknowncheats.me/forum/direct3d/189635-imgui-style-settings.html
 		DEFAULT_DARK,
-		EVEN_DARKER
+		EVEN_DARKER,
+		UNITY_DARK			// Professional dark skin modeled after the Unity editor
 	};
 }

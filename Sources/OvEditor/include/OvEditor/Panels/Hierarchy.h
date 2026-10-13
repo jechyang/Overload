@@ -15,7 +15,10 @@
 #include <OvUI/Widgets/Layout/Group.h>
 #include <OvUI/Widgets/Layout/TreeNode.h>
 #include <OvUI/Widgets/InputFields/InputText.h>
+#include <OvUI/Widgets/Menu/MenuList.h>
 #include <OvUI/Widgets/Texts/Text.h>
+
+#include <memory>
 
 namespace OvEditor::Panels
 {
@@ -87,6 +90,8 @@ namespace OvEditor::Panels
 
 	private:
         void _Draw_Impl() override;
+        void DrawToolbar();
+        void DrawSceneRow();
         void ApplyFilter();
         void RemoveActorWidget(OvCore::ECS::Actor* p_actor);
         OvCore::SceneSystem::SceneManager& m_sceneManager;
@@ -95,11 +100,15 @@ namespace OvEditor::Panels
         bool m_revealSelection = false;
         uint64_t m_selectionAnchor = 0;
         std::string m_filter;
-        OvUI::Widgets::InputFields::InputText* m_searchBar = nullptr;
+        std::string m_searchInput;
+        std::unique_ptr<OvUI::Widgets::Menu::MenuList> m_createMenu;
+        OvUI::Internal::TextureID m_sceneIcon;
+        bool m_sceneExpanded = true;
+        bool m_actorsIndented = false;
         OvUI::Widgets::Texts::Text* m_status = nullptr;
         std::vector<OvUI::Widgets::Layout::TreeNode*> m_nodesToCollapse;
 		std::unordered_map<OvCore::ECS::Actor*, OvUI::Widgets::Layout::TreeNode*> m_widgetActorLink;
 		OvUI::Internal::WidgetContainer& m_actions;
-		OvUI::Internal::WidgetContainer& m_actors;
+		OvUI::Widgets::Layout::Group& m_actors;
 	};
 }

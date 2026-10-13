@@ -21,6 +21,7 @@
 #include <imgui.h>
 
 #include <OvDebug/Logger.h>
+#include <OvUI/Styling/Style.h>
 
 #include <OvCore/ECS/Components/CAudioSource.h>
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
@@ -433,11 +434,7 @@ OvEditor::Core::EditorActions::EditorActions(Context& p_context, PanelsManager& 
 		}
 	);
 
-	m_context.sceneManager.CurrentSceneSourcePathChangedEvent += [this](const std::string& p_newPath)
-	{
-		std::string titleExtra = " - " + (p_newPath.empty() ? "Untitled Scene" : GetResourcePath(p_newPath));
-		m_context.window->SetTitle(m_context.windowSettings.title + titleExtra);
-	};
+	m_context.sceneManager.CurrentSceneSourcePathChangedEvent += [this](const std::string&) { RefreshWindowTitle(); };
 }
 
 OvEditor::Core::EditorActions::~EditorActions()
@@ -479,6 +476,7 @@ void OvEditor::Core::EditorActions::CommitSceneEdit(bool force)
     edit.after = CaptureScene();
     if (edit.before.xml == edit.after.xml) return;
     m_redo.clear();
+    edit.revision = ++m_revisionCounter;
     m_undo.push_back(std::move(edit));
     size_t bytes = 0;
     for (const auto& entry : m_undo) bytes += entry.before.xml.size() + entry.after.xml.size();
@@ -486,6 +484,7 @@ void OvEditor::Core::EditorActions::CommitSceneEdit(bool force)
     while (m_undo.size() > 1 && (m_undo.size() > 100 || bytes > 64 * 1024 * 1024))
     {
         bytes -= m_undo.front().before.xml.size() + m_undo.front().after.xml.size();
+        m_baseRevision = m_undo.front().revision;
         m_undo.erase(m_undo.begin());
     }
 }
@@ -493,6 +492,77 @@ void OvEditor::Core::EditorActions::CommitSceneEdit(bool force)
 void OvEditor::Core::EditorActions::ClearHistory()
 {
     m_pendingEdit.reset(); m_undo.clear(); m_redo.clear(); m_transformOriginals.clear();
+    // A freshly loaded scene matches its file.
+    m_baseRevision = m_savedRevision = ++m_revisionCounter;
+}
+
+uint64_t OvEditor::Core::EditorActions::CurrentRevision() const
+{
+    return m_undo.empty() ? m_baseRevision : m_undo.back().revision;
+}
+
+bool OvEditor::Core::EditorActions::IsSceneModified() const
+{
+    return CurrentRevision() != m_savedRevision;
+}
+
+bool OvEditor::Core::EditorActions::ConfirmDiscardSceneChanges()
+{
+    if (m_editorMode != EEditorMode::EDIT) StopPlaying();
+    CommitSceneEdit(true);
+    if (!IsSceneModified()) return true;
+
+    using namespace OvWindowing::Dialogs;
+    const auto source = m_context.sceneManager.GetCurrentSceneSourcePath();
+    const auto sceneName = source.empty() ? std::string{ "Untitled" } : std::filesystem::path{ source }.stem().string();
+    MessageBox message(
+        "Scene Has Been Modified",
+        "Do you want to save the changes you made in the scene \"" + sceneName + "\"?\n\nYour changes will be lost if you don't save them.",
+        MessageBox::EMessageType::WARNING,
+        MessageBox::EButtonLayout::YES_NO_CANCEL,
+        true
+    );
+
+    switch (message.GetUserAction())
+    {
+    case MessageBox::EUserAction::YES: return SaveSceneChanges();
+    case MessageBox::EUserAction::NO: return true;
+    default: return false;
+    }
+}
+
+void OvEditor::Core::EditorActions::NewScene()
+{
+    if (ConfirmDiscardSceneChanges()) LoadEmptyScene();
+}
+
+void OvEditor::Core::EditorActions::OpenScene()
+{
+    OvWindowing::Dialogs::OpenFileDialog dialog("Open Scene");
+    dialog.SetInitialDirectory(m_context.projectAssetsPath.string());
+    dialog.AddFileType("Overload Scene (.ovscene)", "*.ovscene;");
+    dialog.Show();
+
+    if (dialog.HasSucceeded() && ConfirmDiscardSceneChanges())
+        LoadSceneFromDisk(dialog.GetSelectedFilePath(), true);
+}
+
+void OvEditor::Core::EditorActions::OpenScene(const std::string& p_path)
+{
+    if (ConfirmDiscardSceneChanges()) LoadSceneFromDisk(p_path);
+}
+
+void OvEditor::Core::EditorActions::RefreshWindowTitle()
+{
+    const auto source = m_context.sceneManager.GetCurrentSceneSourcePath();
+    const auto title = m_context.windowSettings.title + " - " + m_context.projectFile.stem().string() + " - " +
+        (source.empty() ? std::string{ "Untitled Scene" } : GetResourcePath(source)) + (IsSceneModified() ? "*" : "");
+
+    if (title != m_windowTitle)
+    {
+        m_windowTitle = title;
+        m_context.window->SetTitle(title);
+    }
 }
 
 bool OvEditor::Core::EditorActions::CanUndo() const { return m_editorMode == EEditorMode::EDIT && !m_undo.empty(); }
@@ -695,14 +765,25 @@ void OvEditor::Core::EditorActions::LoadEmptyScene()
 	OVLOG_INFO("New scene created");
 }
 
-void OvEditor::Core::EditorActions::SaveSceneToDisk(OvCore::SceneSystem::Scene& p_scene, const std::string& p_path)
+bool OvEditor::Core::EditorActions::SaveSceneToDisk(OvCore::SceneSystem::Scene& p_scene, const std::string& p_path)
 {
 	tinyxml2::XMLDocument doc;
 	tinyxml2::XMLNode* node = doc.NewElement("root");
 	doc.InsertFirstChild(node);
-	m_context.sceneManager.StoreCurrentSceneSourcePath(p_path);
+	// Other scenes (e.g. a new scene asset) are plain files and must not
+	// redirect where the open scene gets saved.
+	const bool isCurrentScene = &p_scene == m_context.sceneManager.GetCurrentScene();
+	if (isCurrentScene) m_context.sceneManager.StoreCurrentSceneSourcePath(p_path);
 	p_scene.OnSerialize(doc, node);
-	doc.SaveFile(p_path.c_str());
+
+	if (doc.SaveFile(p_path.c_str()) != tinyxml2::XML_SUCCESS)
+	{
+		OVLOG_ERROR("Failed to save scene to: " + p_path);
+		return false;
+	}
+
+	if (isCurrentScene) m_savedRevision = CurrentRevision();
+	return true;
 }
 
 void OvEditor::Core::EditorActions::LoadSceneFromDisk(const std::string& p_path, bool p_absolute)
@@ -727,12 +808,15 @@ bool OvEditor::Core::EditorActions::IsCurrentSceneLoadedFromDisk() const
 	return m_context.sceneManager.IsCurrentSceneLoadedFromDisk();
 }
 
-void OvEditor::Core::EditorActions::SaveSceneChanges()
+bool OvEditor::Core::EditorActions::SaveSceneChanges()
 {
 	if (m_editorMode != EEditorMode::EDIT)
 	{
-		return;
+		OVLOG_WARNING("Exit play mode to save the scene.");
+		return false;
 	}
+
+	CommitSceneEdit(true);
 
 	if (IsCurrentSceneLoadedFromDisk())
 	{
@@ -740,21 +824,23 @@ void OvEditor::Core::EditorActions::SaveSceneChanges()
 		OVASSERT(currentScene, "Current scene is null");
 
 		const std::string currentScenePath = m_context.sceneManager.GetCurrentSceneSourcePath();
-		SaveSceneToDisk(*currentScene, currentScenePath);
+		if (!SaveSceneToDisk(*currentScene, currentScenePath)) return false;
 		OVLOG_INFO("Current scene saved to: " + currentScenePath);
+		return true;
 	}
-	else
-	{
-		SaveAs();
-	}
+
+	return SaveAs();
 }
 
-void OvEditor::Core::EditorActions::SaveAs()
+bool OvEditor::Core::EditorActions::SaveAs()
 {
 	if (m_editorMode != EEditorMode::EDIT)
 	{
-		return;
+		OVLOG_WARNING("Exit play mode to save the scene.");
+		return false;
 	}
+
+	CommitSceneEdit(true);
 
 	OvWindowing::Dialogs::SaveFileDialog dialog("New Scene");
 	const auto initialPath = m_context.projectAssetsPath / "New Scene";
@@ -770,14 +856,17 @@ void OvEditor::Core::EditorActions::SaveAs()
 			switch (message.GetUserAction())
 			{
 			case OvWindowing::Dialogs::MessageBox::EUserAction::YES: break;
-			default: return;
+			default: return false;
 			}
 		}
 		
 		auto currentScene = m_context.sceneManager.GetCurrentScene();
-		SaveSceneToDisk(*currentScene, dialog.GetSelectedFilePath());
+		if (!SaveSceneToDisk(*currentScene, dialog.GetSelectedFilePath())) return false;
 		OVLOG_INFO("Current scene saved to: " + dialog.GetSelectedFilePath());
+		return true;
 	}
+
+	return false;
 }
 
 void OvEditor::Core::EditorActions::RefreshScripts()
@@ -1145,11 +1234,7 @@ void OvEditor::Core::EditorActions::SetActorSpawnMode(EActorSpawnMode p_value)
 
 void OvEditor::Core::EditorActions::ResetLayout()
 {
-	DelayAction([this]() {
-		m_context.uiManager->ResetLayout(
-			(std::filesystem::current_path() / "Config" / "layout.ini").string()
-		);
-	});
+	ApplyLayout(EEditorLayout::DEFAULT);
 }
 
 void OvEditor::Core::EditorActions::SetSceneViewCameraSpeed(int p_speed)
@@ -1190,7 +1275,22 @@ OvEditor::Core::EditorActions::EEditorMode OvEditor::Core::EditorActions::GetCur
 void OvEditor::Core::EditorActions::SetEditorMode(EEditorMode p_newEditorMode)
 {
 	m_editorMode = p_newEditorMode;
+	UpdatePlayModeTint();
 	EditorModeChangedEvent.Invoke(m_editorMode);
+}
+
+void OvEditor::Core::EditorActions::UpdatePlayModeTint()
+{
+	using Settings::EditorSettings;
+
+	const bool tinted = m_editorMode != EEditorMode::EDIT && EditorSettings::PlayModeTintEnabled.Get();
+	auto& style = OvUI::Styling::Style::Get();
+	style.backgroundTint = tinted
+		? OvUI::Types::Color{ EditorSettings::PlayModeTintR.Get(), EditorSettings::PlayModeTintG.Get(), EditorSettings::PlayModeTintB.Get(), 1.0f }
+		: OvUI::Types::Color{ 1.0f, 1.0f, 1.0f, 1.0f };
+
+	if (ImGui::GetCurrentContext())
+		style.ApplyColorsToImGui();
 }
 
 void OvEditor::Core::EditorActions::StartPlaying()
@@ -1260,6 +1360,18 @@ void OvEditor::Core::EditorActions::NextFrame()
 {
 	if (m_editorMode == EEditorMode::PLAY || m_editorMode == EEditorMode::PAUSE)
 		SetEditorMode(EEditorMode::FRAME_BY_FRAME);
+}
+
+void OvEditor::Core::EditorActions::TogglePlay()
+{
+	if (m_editorMode == EEditorMode::EDIT) StartPlaying();
+	else StopPlaying();
+}
+
+void OvEditor::Core::EditorActions::TogglePause()
+{
+	if (m_editorMode == EEditorMode::PLAY || m_editorMode == EEditorMode::FRAME_BY_FRAME) PauseGame();
+	else if (m_editorMode == EEditorMode::PAUSE) StartPlaying();
 }
 
 void OvEditor::Core::EditorActions::SetGizmoOperation(OvEditor::Core::EGizmoOperation p_operation)

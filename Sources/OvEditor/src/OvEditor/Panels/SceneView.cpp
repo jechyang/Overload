@@ -416,7 +416,7 @@ OvEditor::Rendering::PickingResult OvEditor::Panels::SceneView::GetPickingResult
 
 void OvEditor::Panels::SceneView::OnSceneDropped(const std::string& p_path)
 {
-	EDITOR_EXEC(LoadSceneFromDisk(p_path));
+	EDITOR_EXEC(DelayAction([p_path] { EDITOR_EXEC(OpenScene(p_path)); }, 0));
 }
 
 void OvEditor::Panels::SceneView::OnModelDropped(const std::string& p_path)
@@ -623,33 +623,16 @@ void OvEditor::Panels::SceneView::DrawViewportTools()
     m_toolsPopupOpen = false;
     m_toolsWidth = m_toolsHeight = 0;
     if (GetSize().x < 330*scale || GetSafeSize().second < 125*scale) return;
-    m_toolsWidth = std::min(356*scale,GetSize().x-16*scale);
-    m_toolsHeight = 3*ImGui::GetFrameHeight()+26*scale;
+    // Transform tools and handle settings live in the main toolbar (Unity layout);
+    // this overlay keeps snapping, framing and scene display options.
+    m_toolsWidth = std::min(292*scale,GetSize().x-16*scale);
+    m_toolsHeight = 2*ImGui::GetFrameHeight()+20*scale;
     const ImVec2 origin{content.x+8*scale,content.y+8*scale};
     draw->AddRectFilled(origin,{origin.x+m_toolsWidth,origin.y+m_toolsHeight},IM_COL32(24,25,29,230),6*scale);
     ImGui::PushID(this); ImGui::PushID("ViewportTools");
     ImGui::BeginDisabled(m_gizmoOperations.IsPicking() || m_boxPending || m_cameraController.IsOperating());
-    ImGui::SetCursorScreenPos({origin.x+6*scale,origin.y+6*scale});
-    const char* operations[] = {"Move", "Rotate", "Scale"};
-    for (int i=0;i<3;++i)
-    {
-        const bool active = int(m_currentOperation) == i;
-        if (active) ImGui::PushStyleColor(ImGuiCol_Button,ImVec4(.18f,.38f,.58f,1));
-        if (ImGui::Button(operations[i],{52*scale,0})) SetGizmoOperation(Core::EGizmoOperation(i));
-        if (active) ImGui::PopStyleColor();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s (%s)",operations[i],i==0 ? "W" : i==1 ? "E" : "R");
-        ImGui::SameLine(0,4*scale);
-    }
-    // World scaling of rotated TRS objects requires shear. Scale handles use
-    // local axes explicitly; translation and rotation support either space.
     const bool scaling = m_currentOperation == Core::EGizmoOperation::SCALE;
-    ImGui::BeginDisabled(scaling);
-    if (ImGui::Button(scaling || m_localSpace ? "Local" : "World",{61*scale,0})) SetLocalSpace(!m_localSpace);
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip(scaling ? "Scale uses local axes." : "Toggle world / local transform axes");
-    ImGui::EndDisabled(); ImGui::SameLine(0,4*scale);
-    if (ImGui::Button(m_centerPivot ? "Center" : "Pivot",{62*scale,0})) SetCenterPivot(!m_centerPivot);
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pivot: primary entity origin. Center: selection bounds center.");
-    ImGui::SetCursorScreenPos({origin.x+6*scale,origin.y+ImGui::GetFrameHeight()+12*scale});
+    ImGui::SetCursorScreenPos({origin.x+6*scale,origin.y+6*scale});
     bool snap = EditorSettings::SnapEnabled.Get();
     if (ImGui::Checkbox("Snap",&snap)) EditorSettings::SnapEnabled = snap;
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Snap to increments. Hold Ctrl to snap temporarily.");
@@ -682,7 +665,7 @@ void OvEditor::Panels::SceneView::DrawViewportTools()
         ImGui::EndPopup();
     }
     m_toolsPopupOpen = ImGui::IsPopupOpen("ViewportHelp");
-    ImGui::SetCursorScreenPos({origin.x+6*scale,origin.y+2*ImGui::GetFrameHeight()+18*scale});
+    ImGui::SetCursorScreenPos({origin.x+6*scale,origin.y+ImGui::GetFrameHeight()+12*scale});
     const char* modes[] = {"Lit", "Unlit", "Wireframe"};
     ImGui::SetNextItemWidth(118*scale);
     if (ImGui::BeginCombo("##DisplayMode",modes[int(GetDisplayMode())]))

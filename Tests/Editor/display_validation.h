@@ -209,7 +209,7 @@ static void ValidateSceneDisplay(OvEditor::Core::Context& context, OvEditor::Cor
     io.BackendFlags &= ~ImGuiBackendFlags_HasMouseHoveredViewport;
     ImGui_ImplGlfw_CursorEnterCallback(context.window->GetGlfwWindow(),true); io.AddFocusEvent(true);
     auto click = [&](ImVec2 p) { io.AddMousePosEvent(p.x,p.y); draw(); draw(); io.AddMouseButtonEvent(0,true); draw(); io.AddMouseButtonEvent(0,false); draw(); };
-    const auto pos = view.GetPosition(); const float row = pos.y+3*ImGui::GetFrameHeight()+26;
+    const auto pos = view.GetPosition(); const float row = pos.y+2*ImGui::GetFrameHeight()+20;
     click({pos.x+70,row+ImGui::GetFrameHeight()*.5f});
     auto popup = [&] { return ImGui::GetCurrentContext()->OpenPopupStack.empty() ? nullptr : ImGui::GetCurrentContext()->OpenPopupStack.back().Window; };
     Require(popup() != nullptr,"Scene display combo opens through real ImGui input");

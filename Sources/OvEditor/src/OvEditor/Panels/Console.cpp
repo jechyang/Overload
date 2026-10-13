@@ -5,6 +5,8 @@
 */
 
 #include <algorithm>
+#include <array>
+#include <functional>
 #include <cctype>
 #include <cstddef>
 #include <string>
@@ -16,7 +18,10 @@
 #include <OvEditor/Panels/Console.h>
 #include <OvEditor/Settings/EditorSettings.h>
 
+#include <OvCore/Global/ServiceLocator.h>
+#include <OvUI/Internal/Converter.h>
 #include <OvUI/Styling/Style.h>
+#include <imgui.h>
 #include <OvUI/Types/Color.h>
 #include <OvUI/Widgets/Buttons/Button.h>
 #include <OvUI/Widgets/InputFields/InputText.h>
@@ -73,6 +78,15 @@ namespace
 
 		return OVUI_STYLE(Text);
 	}
+
+	class ConsoleToolbar final : public OvUI::Widgets::AWidget
+	{
+	public:
+		explicit ConsoleToolbar(std::function<void()> p_draw) : m_draw(std::move(p_draw)) {}
+	private:
+		void _Draw_Impl() override { m_draw(); }
+		std::function<void()> m_draw;
+	};
 }
 
 using namespace OvUI::Widgets;
@@ -87,46 +101,7 @@ OvEditor::Panels::Console::Console
 {
 	scrollable = false;
 
-	auto& toolbar = CreateWidget<Layout::Group>();
-	toolbar.horizontal = true;
-
-	auto& clearButton = toolbar.CreateWidget<Buttons::Button>("Clear");
-	clearButton.backgroundColor = OVUI_STYLE(DangerButton);
-	clearButton.hoveredBackgroundColor = OVUI_STYLE(DangerButtonHovered);
-	clearButton.clickedBackgroundColor = OVUI_STYLE(DangerButtonActive);
-	clearButton.ClickedEvent += [this]
-	{
-		Clear();
-	};
-
-	auto& clearOnPlay = toolbar.CreateWidget<Selection::CheckBox>(m_clearOnPlay, "Clear on play");
-	auto& collapseIdentical = toolbar.CreateWidget<Selection::CheckBox>(m_collapseIdenticalLogs, "Collapse");
-	auto& enableDefault = toolbar.CreateWidget<Selection::CheckBox>(m_showDefaultLog, "Default");
-	auto& enableInfo = toolbar.CreateWidget<Selection::CheckBox>(m_showInfoLog, "Info");
-	auto& enableWarning = toolbar.CreateWidget<Selection::CheckBox>(m_showWarningLog, "Warning");
-	auto& enableError = toolbar.CreateWidget<Selection::CheckBox>(m_showErrorLog, "Error");
-
-	clearOnPlay.ValueChangedEvent += [this](bool p_value) { m_clearOnPlay = p_value; };
-	collapseIdentical.ValueChangedEvent += [this](bool p_value) { SetCollapseIdenticalLogs(p_value); };
-	enableDefault.ValueChangedEvent += [this](bool p_value) { SetShowDefaultLogs(p_value); };
-	enableInfo.ValueChangedEvent += [this](bool p_value) { SetShowInfoLogs(p_value); };
-	enableWarning.ValueChangedEvent += [this](bool p_value) { SetShowWarningLogs(p_value); };
-	enableError.ValueChangedEvent += [this](bool p_value) { SetShowErrorLogs(p_value); };
-
-	const auto searchIconID = []() -> OvUI::Internal::TextureID {
-		if (auto* tex = EDITOR_CONTEXT(editorResources)->GetTexture("Search"))
-			return tex->RetainTexture();
-		return 0u;
-	}();
-
-	m_searchField = &OvCore::Helpers::GUIDrawer::DrawSearchBar(toolbar, searchIconID);
-	toolbar.stretchWidget = 7;
-	m_searchField->ContentChangedEvent += [this](const std::string&)
-	{
-		FilterLogs();
-	};
-
-	CreateWidget<Visual::Separator>();
+	CreateWidget<ConsoleToolbar>([this] { DrawToolbar(); });
 	m_logsWidget = &CreateWidget<Layout::TextLogs>();
 	m_logsWidget->SetID("console-log-list");
 	m_logsWidget->emptyText = "No logs yet.";
@@ -147,8 +122,125 @@ OvEditor::Panels::Console::~Console()
 	OvDebug::Logger::LogEvent -= m_logListener;
 }
 
+void OvEditor::Panels::Console::DrawToolbar()
+{
+	const float scale = OVUI_SCALE;
+	const float spacing = 2.0f * scale;
+	const auto& style = OvUI::Styling::Style::Get();
+
+	ImGui::PushID("ConsoleToolbar");
+	ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+
+	if (ImGui::Button("Clear")) Clear();
+
+	ImGui::SameLine(0.0f, 8.0f * scale);
+	if (DrawToggle("Collapse", m_collapseIdenticalLogs, "Merge identical messages and show a count"))
+		SetCollapseIdenticalLogs(!m_collapseIdenticalLogs);
+	ImGui::SameLine(0.0f, spacing);
+	if (DrawToggle("Clear on Play", m_clearOnPlay, "Clear the Console when entering Play mode"))
+		m_clearOnPlay = !m_clearOnPlay;
+	ImGui::SameLine(0.0f, spacing);
+	if (DrawToggle("Error Pause", m_errorPause, "Pause Play mode when an error is logged"))
+		m_errorPause = !m_errorPause;
+
+	// Right side: search, then one toggle per severity with its count (Unity order).
+	size_t counts[3] = { 0, 0, 0 };
+	for (const auto& log : m_logs)
+	{
+		switch (log.data.logLevel)
+		{
+		case OvDebug::ELogLevel::LOG_WARNING: ++counts[1]; break;
+		case OvDebug::ELogLevel::LOG_ERROR:   ++counts[2]; break;
+		default:                              ++counts[0]; break;
+		}
+	}
+
+	const auto countLabel = [](size_t p_count) { return p_count > 999 ? std::string{ "999+" } : std::to_string(p_count); };
+	const float iconWidth = ImGui::GetFontSize() + 4.0f * scale;
+	const auto levelWidth = [&](size_t p_count) { return iconWidth + ImGui::CalcTextSize(countLabel(p_count).c_str()).x + ImGui::GetStyle().FramePadding.x * 2.0f; };
+	const float levelsWidth = levelWidth(counts[0]) + levelWidth(counts[1]) + levelWidth(counts[2]) + spacing * 2.0f;
+
+	ImGui::SameLine(0.0f, 8.0f * scale);
+	const float searchWidth = std::clamp(ImGui::GetContentRegionAvail().x - levelsWidth - 8.0f * scale, 60.0f * scale, 240.0f * scale);
+	ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - levelsWidth - searchWidth - 8.0f * scale));
+	std::array<char, 256> search{};
+	std::copy_n(m_search.data(), std::min(m_search.size(), search.size() - 1), search.data());
+	ImGui::SetNextItemWidth(searchWidth);
+	if (ImGui::InputTextWithHint("##Search", "Search", search.data(), search.size()))
+	{
+		m_search = search.data();
+		FilterLogs();
+	}
+
+	const auto level = [&](const char* p_id, size_t p_count, bool p_enabled, const ImVec4& p_color, int p_shape, const char* p_tooltip)
+	{
+		ImGui::SameLine(0.0f, spacing);
+		const std::string label = countLabel(p_count);
+		ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, { 1.0f, 0.5f });
+		const bool clicked = DrawToggle((label + p_id).c_str(), p_enabled, p_tooltip, levelWidth(p_count));
+		ImGui::PopStyleVar();
+
+		// Severity glyph: info circle, warning triangle, error disc.
+		const ImVec2 min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
+		const float size = ImGui::GetFontSize() * 0.75f;
+		const ImVec2 center{ min.x + ImGui::GetStyle().FramePadding.x + size * 0.5f, (min.y + max.y) * 0.5f };
+		auto* drawList = ImGui::GetWindowDrawList();
+		const ImU32 color = ImGui::GetColorU32(p_enabled ? p_color : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+		if (p_shape == 0) drawList->AddCircle(center, size * 0.45f, color, 0, 1.5f * scale);
+		else if (p_shape == 1) drawList->AddTriangleFilled({ center.x, center.y - size * 0.5f }, { center.x + size * 0.55f, center.y + size * 0.45f }, { center.x - size * 0.55f, center.y + size * 0.45f }, color);
+		else drawList->AddCircleFilled(center, size * 0.5f, color);
+		return clicked;
+	};
+
+	if (level("##Info", counts[0], m_showInfoLog || m_showDefaultLog, ImGui::GetStyleColorVec4(ImGuiCol_Text), 0, "Show messages"))
+	{
+		const bool show = !(m_showInfoLog || m_showDefaultLog);
+		m_showDefaultLog = show;
+		SetShowInfoLogs(show);
+	}
+	if (level("##Warning", counts[1], m_showWarningLog, OvUI::Internal::Converter::ToImVec4(style.Warning), 1, "Show warnings"))
+		SetShowWarningLogs(!m_showWarningLog);
+	if (level("##Error", counts[2], m_showErrorLog, OvUI::Internal::Converter::ToImVec4(style.Danger), 2, "Show errors"))
+		SetShowErrorLogs(!m_showErrorLog);
+
+	ImGui::PopStyleVar();
+	ImGui::PopID();
+}
+
+bool OvEditor::Panels::Console::DrawToggle(const char* p_label, bool p_active, const char* p_tooltip, float p_width)
+{
+	if (p_active)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_Text));
+	}
+	else
+	{
+		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{ 0.0f, 0.0f, 0.0f, 0.0f });
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+	}
+	const bool clicked = ImGui::Button(p_label, { p_width, 0.0f });
+	ImGui::PopStyleColor(2);
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("%s", p_tooltip);
+	return clicked;
+}
+
 void OvEditor::Panels::Console::OnLogIntercepted(const OvDebug::LogData& p_logData)
 {
+	// Pause at the next frame boundary rather than inside whatever code is logging.
+	if (m_errorPause && p_logData.logLevel == OvDebug::ELogLevel::LOG_ERROR)
+	{
+		if (auto* actions = OvCore::Global::ServiceLocator::TryGet<Core::EditorActions>();
+			actions && actions->GetCurrentEditorMode() == Core::EditorActions::EEditorMode::PLAY)
+		{
+			actions->DelayAction([]
+			{
+				if (EDITOR_EXEC(GetCurrentEditorMode()) == Core::EditorActions::EEditorMode::PLAY)
+					EDITOR_EXEC(PauseGame());
+			}, 0);
+		}
+	}
+
 	m_logs.push_back({ p_logData });
 	m_logsWidget->RequestScrollToBottom();
 	TruncateLogs();
@@ -294,5 +386,5 @@ void OvEditor::Panels::Console::RefreshDisplayedLogs()
 
 bool OvEditor::Panels::Console::MatchesSearch(const LogEntry& p_logEntry) const
 {
-	return !m_searchField || ContainsCaseInsensitive(p_logEntry.data.message, m_searchField->content);
+	return ContainsCaseInsensitive(p_logEntry.data.message, m_search);
 }

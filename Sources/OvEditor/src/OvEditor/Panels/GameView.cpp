@@ -9,6 +9,7 @@
 #include <OvUI/Styling/Style.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 #include "OvEditor/Panels/GameView.h"
 #include "OvEditor/Core/EditorActions.h"
@@ -137,12 +138,21 @@ void OvEditor::Panels::GameView::DrawViewport()
         ImGui::EndCombo();
     }
     const auto [width,height] = GetOutputSize();
-    if (ImGui::GetContentRegionAvail().x > 260*scale)
+    const float statsWidth = ImGui::CalcTextSize("Stats").x+ImGui::GetStyle().FramePadding.x*2;
+    if (ImGui::GetContentRegionAvail().x > 260*scale+statsWidth)
     {
         ImGui::SameLine();
         if (width && height) ImGui::TextDisabled("%u x %u",unsigned(width),unsigned(height));
         else ImGui::TextDisabled("Game preview");
     }
+    // Unity-style Stats toggle at the right end of the toolbar.
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(),ImGui::GetWindowContentRegionMax().x-statsWidth-4*scale));
+    ImGui::PushStyleColor(ImGuiCol_Button,m_showStats ? ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive) : ImVec4{0,0,0,0});
+    ImGui::PushStyleColor(ImGuiCol_Text,ImGui::GetStyleColorVec4(m_showStats ? ImGuiCol_Text : ImGuiCol_TextDisabled));
+    if (ImGui::Button("Stats")) m_showStats = !m_showStats;
+    ImGui::PopStyleColor(2);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("Show frame rate and resolution over the game view");
     if (GetPreviewMode() == PreviewMode::CUSTOM)
     {
         ImGui::SetCursorPosX(8*scale);
@@ -174,6 +184,18 @@ void OvEditor::Panels::GameView::DrawViewport()
         draw->AddImage(texture.id,{m_imagePosition.x,m_imagePosition.y},
             {m_imagePosition.x+m_imageSize.x,m_imagePosition.y+m_imageSize.y},{0,1},{1,0});
         draw->AddRect({m_imagePosition.x,m_imagePosition.y},{m_imagePosition.x+m_imageSize.x,m_imagePosition.y+m_imageSize.y},IM_COL32(62,65,73,255));
+        if (m_showStats)
+        {
+            const float fps = ImGui::GetIO().Framerate;
+            char stats[128];
+            std::snprintf(stats,sizeof(stats),"Statistics\n%.0f FPS (%.1f ms)\nResolution: %u x %u",fps,fps > 0 ? 1000.f/fps : 0.f,unsigned(width),unsigned(height));
+            const auto size = ImGui::CalcTextSize(stats);
+            const float pad = 8*scale;
+            const ImVec2 max{m_imagePosition.x+m_imageSize.x-pad,m_imagePosition.y+pad+size.y+pad*2};
+            const ImVec2 min{max.x-size.x-pad*2,m_imagePosition.y+pad};
+            draw->AddRectFilled(min,max,IM_COL32(20,20,20,200),4*scale);
+            draw->AddText({min.x+pad,min.y+pad},IM_COL32(230,230,230,255),stats);
+        }
     }
     else if (!GetCamera())
     {

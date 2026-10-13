@@ -66,10 +66,14 @@ void OvUI::Widgets::Layout::TextLogs::_Draw_Impl()
 			std::string rowBuffer = entry.content;
 			rowBuffer.push_back('\0');
 
+			// Header inline before the first line; further message lines hang under the message.
 			ImGui::PushID(static_cast<int>(index));
+			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetStyle().FramePadding.y);
 			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
 			ImGui::TextUnformatted(entry.header.c_str());
 			ImGui::PopStyleColor();
+			ImGui::SameLine(0.0f, 6.0f);
+			ImGui::SetCursorPosY(ImGui::GetCursorPosY() - ImGui::GetStyle().FramePadding.y);
 
 			ImGui::PushStyleColor(ImGuiCol_Text, Internal::Converter::ToImVec4(entry.contentColor.Resolve()));
 			ImGui::SetNextItemWidth(-FLT_MIN);
@@ -77,7 +81,7 @@ void OvUI::Widgets::Layout::TextLogs::_Draw_Impl()
 				"##log-line",
 				rowBuffer.data(),
 				static_cast<int>(rowBuffer.size()),
-				ImVec2(-FLT_MIN, rowHeight - ImGui::GetTextLineHeightWithSpacing() + 2.0f),
+				ImVec2(-FLT_MIN, rowHeight),
 				ImGuiInputTextFlags_ReadOnly
 			);
 			ImGui::PopStyleColor();
@@ -138,9 +142,7 @@ float OvUI::Widgets::Layout::TextLogs::CalculateRowHeight(const std::string& p_m
 
 	const float lineHeight = ImGui::GetTextLineHeight();
 	const float verticalPadding = ImGui::GetStyle().FramePadding.y * 2.0f;
-	const float timestampHeight = ImGui::GetTextLineHeightWithSpacing();
-	const float messageHeight = lineCount * lineHeight + verticalPadding + 2.0f;
-	return std::max(timestampHeight + lineHeight + verticalPadding, timestampHeight + messageHeight);
+	return lineCount * lineHeight + verticalPadding + 2.0f;
 }
 
 void OvUI::Widgets::Layout::TextLogs::RequestScrollToBottom(uint8_t p_frames)

@@ -35,6 +35,13 @@ namespace OvUI::Panels
 		*/
 		const std::string& GetPanelID() const;
 
+		/**
+		* Replace the generated panel ID with a stable one (e.g. "###Inspector") so persisted
+		* layouts survive panel creation order changes and display name changes.
+		* @param p_id
+		*/
+		void SetPanelID(const std::string& p_id);
+
 	protected:
 		virtual void _Draw_Impl() = 0;
 

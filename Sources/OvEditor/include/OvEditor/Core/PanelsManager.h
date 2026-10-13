@@ -39,6 +39,8 @@ namespace OvEditor::Core
 			{
 				m_panels.emplace(p_id, std::make_unique<T>(p_id, std::forward<Args>(p_args)...));
 				T& instance = *static_cast<T*>(m_panels.at(p_id).get());
+				// Stable ImGui identity: saved layouts survive panel order and display name changes.
+				instance.SetPanelID("###" + p_id);
 				GetPanelAs<OvEditor::Panels::MenuBar>("Menu Bar").RegisterPanel(instance.name, instance);
 			}
 			else
@@ -58,6 +60,11 @@ namespace OvEditor::Core
 		{
 			return *static_cast<T*>(m_panels[p_id].get());
 		}
+
+		/**
+		* Returns the canvas hosting the panels
+		*/
+		OvUI::Modules::Canvas& GetCanvas() { return m_canvas; }
 
 	private:
 		std::unordered_map<std::string, std::unique_ptr<OvUI::Panels::APanel>> m_panels;

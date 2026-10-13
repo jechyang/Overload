@@ -72,6 +72,12 @@ namespace OvEditor::Panels
 		bool IsAllowedByFilter(OvDebug::ELogLevel p_logLevel) const;
 
 		/**
+		* Pause Play mode when an error is logged (Unity's "Error Pause")
+		*/
+		void SetErrorPause(bool p_value) { m_errorPause = p_value; }
+		bool IsErrorPauseEnabled() const { return m_errorPause; }
+
+		/**
 		* Truncate the logs if the number of logs is greater than the max logs
 		*/
 		void TruncateLogs();
@@ -91,6 +97,8 @@ namespace OvEditor::Panels
 		};
 
 	private:
+		void DrawToolbar();
+		bool DrawToggle(const char* p_label, bool p_active, const char* p_tooltip, float p_width = 0.0f);
 		void SetShowDefaultLogs(bool p_value);
 		void SetShowInfoLogs(bool p_value);
 		void SetShowWarningLogs(bool p_value);
@@ -104,10 +112,11 @@ namespace OvEditor::Panels
 		std::vector<LogEntry> m_logs;
 		std::vector<VisibleLogEntry> m_visibleLogs;
 
-		OvUI::Widgets::InputFields::InputText* m_searchField = nullptr;
+		std::string m_search;
 		OvUI::Widgets::Layout::TextLogs* m_logsWidget = nullptr;
 
 		bool m_clearOnPlay = true;
+		bool m_errorPause = false;
 		bool m_showDefaultLog = true;
 		bool m_showInfoLog = true;
 		bool m_showWarningLog = true;

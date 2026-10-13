@@ -128,6 +128,14 @@ void OvUI::Styling::Style::SetSemanticDefaults(bool darkTheme, bool lighterOnAct
 	InspectorTitle = darkTheme ? Color{0.85f, 0.65f, 0.00f, 1.00f} : Color{0.55f, 0.35f, 0.00f, 1.00f};
 	Highlight      = darkTheme ? Color{1.00f, 1.00f, 0.00f, 1.00f} : Color{1.00f, 1.00f, 0.00f, 1.00f};
 
+	TabCloseButtonMinWidthSelected = -1.0f;
+	DockingNodeHasCloseButton = true;
+
+	distinctCollapsingHeader = false;
+	CollapsingHeader = Header;
+	CollapsingHeaderHovered = HeaderHovered;
+	CollapsingHeaderActive = HeaderActive;
+
 	// Button background colors -- muted enough to work as interactive backgrounds.
 	SuccessButton        = darkTheme ? Color{0.15f, 0.49f, 0.15f, 1.00f} : Color{0.22f, 0.75f, 0.22f, 1.00f};
 	SuccessButtonHovered = darkTheme ? Color{0.20f, 0.64f, 0.20f, 1.00f} : Color{0.32f, 0.85f, 0.32f, 1.00f};
@@ -414,73 +422,202 @@ void OvUI::Styling::Style::ApplyEvenDarkerStyle()
 	SetSemanticDefaults(true);
 }
 
+void OvUI::Styling::Style::ApplyUnityDarkStyle()
+{
+	// Neutral greys: #191919 gutters, #282828 tab bars, #383838 panels, #2A2A2A fields.
+	// A single steel-blue accent marks selection, focus and drop targets.
+	const Types::Color accent = { 0.23f, 0.47f, 0.73f, 1.00f };
+	const Types::Color selection = { 0.17f, 0.36f, 0.53f, 1.00f };
+
+	Text                        = { 0.82f, 0.82f, 0.82f, 1.00f };
+	TextDisabled                = { 0.50f, 0.50f, 0.50f, 1.00f };
+	WindowBg                    = { 0.22f, 0.22f, 0.22f, 1.00f };
+	ChildBg                     = { 0.00f, 0.00f, 0.00f, 0.00f };
+	PopupBg                     = { 0.19f, 0.19f, 0.19f, 0.98f };
+	Border                      = { 0.10f, 0.10f, 0.10f, 1.00f };
+	BorderShadow                = { 0.00f, 0.00f, 0.00f, 0.00f };
+	FrameBg                     = { 0.165f, 0.165f, 0.165f, 1.00f };
+	FrameBgHovered              = { 0.20f, 0.20f, 0.20f, 1.00f };
+	FrameBgActive               = { 0.14f, 0.14f, 0.14f, 1.00f };
+	TitleBg                     = { 0.157f, 0.157f, 0.157f, 1.00f };
+	TitleBgActive               = { 0.157f, 0.157f, 0.157f, 1.00f };
+	TitleBgCollapsed            = { 0.157f, 0.157f, 0.157f, 1.00f };
+	MenuBarBg                   = { 0.115f, 0.115f, 0.115f, 1.00f };
+	ScrollbarBg                 = { 0.00f, 0.00f, 0.00f, 0.00f };
+	ScrollbarGrab               = { 0.37f, 0.37f, 0.37f, 1.00f };
+	ScrollbarGrabHovered        = { 0.43f, 0.43f, 0.43f, 1.00f };
+	ScrollbarGrabActive         = { 0.50f, 0.50f, 0.50f, 1.00f };
+	CheckMark                   = { 0.86f, 0.86f, 0.86f, 1.00f };
+	SliderGrab                  = { 0.60f, 0.60f, 0.60f, 1.00f };
+	SliderGrabActive            = { 0.72f, 0.72f, 0.72f, 1.00f };
+	Button                      = { 0.345f, 0.345f, 0.345f, 1.00f };
+	ButtonHovered               = { 0.404f, 0.404f, 0.404f, 1.00f };
+	ButtonActive                = { 0.29f, 0.29f, 0.29f, 1.00f };
+	Header                      = selection;
+	HeaderHovered               = { 0.26f, 0.42f, 0.57f, 0.70f };
+	HeaderActive                = selection;
+	Separator                   = { 0.14f, 0.14f, 0.14f, 1.00f };
+	SeparatorHovered            = { accent.r, accent.g, accent.b, 0.78f };
+	SeparatorActive             = accent;
+	ResizeGrip                  = { 0.00f, 0.00f, 0.00f, 0.00f };
+	ResizeGripHovered           = { accent.r, accent.g, accent.b, 0.60f };
+	ResizeGripActive            = { accent.r, accent.g, accent.b, 0.90f };
+	InputTextCursor             = { 0.90f, 0.90f, 0.90f, 1.00f };
+	Tab                         = { 0.18f, 0.18f, 0.18f, 1.00f };
+	TabHovered                  = { 0.255f, 0.255f, 0.255f, 1.00f };
+	TabSelected                 = WindowBg;
+	TabSelectedOverline         = accent;
+	TabDimmed                   = { 0.157f, 0.157f, 0.157f, 1.00f };
+	TabDimmedSelected           = WindowBg;
+	TabDimmedSelectedOverline   = { 0.00f, 0.00f, 0.00f, 0.00f };
+	DockingPreview              = { accent.r, accent.g, accent.b, 0.70f };
+	DockingEmptyBg              = { 0.10f, 0.10f, 0.10f, 1.00f };
+	PlotLines                   = { 0.61f, 0.61f, 0.61f, 1.00f };
+	PlotLinesHovered            = { 0.45f, 0.70f, 1.00f, 1.00f };
+	PlotHistogram               = accent;
+	PlotHistogramHovered        = { 0.35f, 0.60f, 0.85f, 1.00f };
+	TableHeaderBg               = { 0.243f, 0.243f, 0.243f, 1.00f };
+	TableBorderStrong           = { 0.14f, 0.14f, 0.14f, 1.00f };
+	TableBorderLight            = { 0.18f, 0.18f, 0.18f, 1.00f };
+	TableRowBg                  = { 0.00f, 0.00f, 0.00f, 0.00f };
+	TableRowBgAlt               = { 1.00f, 1.00f, 1.00f, 0.025f };
+	TextLink                    = { 0.40f, 0.65f, 0.95f, 1.00f };
+	TextSelectedBg              = { accent.r, accent.g, accent.b, 0.45f };
+	TreeLines                   = { 0.35f, 0.35f, 0.35f, 1.00f };
+	DragDropTarget              = { 0.30f, 0.55f, 0.85f, 1.00f };
+	DragDropTargetBg            = { accent.r, accent.g, accent.b, 0.20f };
+	UnsavedMarker               = Text;
+	NavCursor                   = accent;
+	NavWindowingHighlight       = { 1.00f, 1.00f, 1.00f, 0.70f };
+	NavWindowingDimBg           = { 0.80f, 0.80f, 0.80f, 0.20f };
+	ModalWindowDimBg            = { 0.00f, 0.00f, 0.00f, 0.50f };
+
+	WindowPadding    = { 6.0f, 6.0f };
+	WindowRounding   = 0.0f;
+	WindowBorderSize = 1.0f;
+	FramePadding     = { 6.0f, 3.0f };
+	FrameRounding    = 3.0f;
+	FrameBorderSize  = 1.0f;
+	ItemSpacing      = { 6.0f, 4.0f };
+	ItemInnerSpacing = { 4.0f, 4.0f };
+	IndentSpacing    = 14.0f;
+	ScrollbarSize    = 12.0f;
+	ScrollbarRounding= 6.0f;
+	GrabMinSize      = 10.0f;
+	GrabRounding     = 2.0f;
+	TabRounding      = 3.0f;
+	ChildRounding    = 3.0f;
+	PopupRounding    = 3.0f;
+	PopupBorderSize  = 1.0f;
+
+	SetSemanticDefaults(true);
+
+	// Property labels stay neutral; the accent is reserved for state (active tool, selection).
+	InspectorTitle = { 0.76f, 0.76f, 0.76f, 1.00f };
+	Highlight      = { 0.45f, 0.70f, 1.00f, 1.00f };
+	Accent         = { 0.45f, 0.70f, 1.00f, 1.00f };
+
+	AccentButton        = selection;
+	AccentButtonHovered = { 0.21f, 0.44f, 0.63f, 1.00f };
+	AccentButtonActive  = { 0.13f, 0.29f, 0.44f, 1.00f };
+
+	// Clean tab bars: close buttons appear on hover, no close-all button per dock area.
+	TabCloseButtonMinWidthSelected = 0.0f;
+	DockingNodeHasCloseButton = false;
+
+	distinctCollapsingHeader = true;
+	CollapsingHeader        = { 0.243f, 0.243f, 0.243f, 1.00f };
+	CollapsingHeaderHovered = { 0.29f, 0.29f, 0.29f, 1.00f };
+	CollapsingHeaderActive  = { 0.27f, 0.27f, 0.27f, 1.00f };
+}
+
+void OvUI::Styling::Style::WriteColors(ImVec4* p_colors) const
+{
+	p_colors[ImGuiCol_Text]                     = ToImVec4(Text);
+	p_colors[ImGuiCol_TextDisabled]             = ToImVec4(TextDisabled);
+	p_colors[ImGuiCol_WindowBg]                 = ToImVec4(WindowBg);
+	p_colors[ImGuiCol_ChildBg]                  = ToImVec4(ChildBg);
+	p_colors[ImGuiCol_PopupBg]                  = ToImVec4(PopupBg);
+	p_colors[ImGuiCol_Border]                   = ToImVec4(Border);
+	p_colors[ImGuiCol_BorderShadow]             = ToImVec4(BorderShadow);
+	p_colors[ImGuiCol_FrameBg]                  = ToImVec4(FrameBg);
+	p_colors[ImGuiCol_FrameBgHovered]           = ToImVec4(FrameBgHovered);
+	p_colors[ImGuiCol_FrameBgActive]            = ToImVec4(FrameBgActive);
+	p_colors[ImGuiCol_TitleBg]                  = ToImVec4(TitleBg);
+	p_colors[ImGuiCol_TitleBgActive]            = ToImVec4(TitleBgActive);
+	p_colors[ImGuiCol_TitleBgCollapsed]         = ToImVec4(TitleBgCollapsed);
+	p_colors[ImGuiCol_MenuBarBg]                = ToImVec4(MenuBarBg);
+	p_colors[ImGuiCol_ScrollbarBg]              = ToImVec4(ScrollbarBg);
+	p_colors[ImGuiCol_ScrollbarGrab]            = ToImVec4(ScrollbarGrab);
+	p_colors[ImGuiCol_ScrollbarGrabHovered]     = ToImVec4(ScrollbarGrabHovered);
+	p_colors[ImGuiCol_ScrollbarGrabActive]      = ToImVec4(ScrollbarGrabActive);
+	p_colors[ImGuiCol_CheckMark]                = ToImVec4(CheckMark);
+	p_colors[ImGuiCol_SliderGrab]               = ToImVec4(SliderGrab);
+	p_colors[ImGuiCol_SliderGrabActive]         = ToImVec4(SliderGrabActive);
+	p_colors[ImGuiCol_Button]                   = ToImVec4(Button);
+	p_colors[ImGuiCol_ButtonHovered]            = ToImVec4(ButtonHovered);
+	p_colors[ImGuiCol_ButtonActive]             = ToImVec4(ButtonActive);
+	p_colors[ImGuiCol_Header]                   = ToImVec4(Header);
+	p_colors[ImGuiCol_HeaderHovered]            = ToImVec4(HeaderHovered);
+	p_colors[ImGuiCol_HeaderActive]             = ToImVec4(HeaderActive);
+	p_colors[ImGuiCol_Separator]                = ToImVec4(Separator);
+	p_colors[ImGuiCol_SeparatorHovered]         = ToImVec4(SeparatorHovered);
+	p_colors[ImGuiCol_SeparatorActive]          = ToImVec4(SeparatorActive);
+	p_colors[ImGuiCol_ResizeGrip]               = ToImVec4(ResizeGrip);
+	p_colors[ImGuiCol_ResizeGripHovered]        = ToImVec4(ResizeGripHovered);
+	p_colors[ImGuiCol_ResizeGripActive]         = ToImVec4(ResizeGripActive);
+	p_colors[ImGuiCol_InputTextCursor]          = ToImVec4(InputTextCursor);
+	p_colors[ImGuiCol_TabHovered]               = ToImVec4(TabHovered);
+	p_colors[ImGuiCol_Tab]                      = ToImVec4(Tab);
+	p_colors[ImGuiCol_TabSelected]              = ToImVec4(TabSelected);
+	p_colors[ImGuiCol_TabSelectedOverline]      = ToImVec4(TabSelectedOverline);
+	p_colors[ImGuiCol_TabDimmed]                = ToImVec4(TabDimmed);
+	p_colors[ImGuiCol_TabDimmedSelected]        = ToImVec4(TabDimmedSelected);
+	p_colors[ImGuiCol_TabDimmedSelectedOverline]= ToImVec4(TabDimmedSelectedOverline);
+	p_colors[ImGuiCol_DockingPreview]           = ToImVec4(DockingPreview);
+	p_colors[ImGuiCol_DockingEmptyBg]           = ToImVec4(DockingEmptyBg);
+	p_colors[ImGuiCol_PlotLines]                = ToImVec4(PlotLines);
+	p_colors[ImGuiCol_PlotLinesHovered]         = ToImVec4(PlotLinesHovered);
+	p_colors[ImGuiCol_PlotHistogram]            = ToImVec4(PlotHistogram);
+	p_colors[ImGuiCol_PlotHistogramHovered]     = ToImVec4(PlotHistogramHovered);
+	p_colors[ImGuiCol_TableHeaderBg]            = ToImVec4(TableHeaderBg);
+	p_colors[ImGuiCol_TableBorderStrong]        = ToImVec4(TableBorderStrong);
+	p_colors[ImGuiCol_TableBorderLight]         = ToImVec4(TableBorderLight);
+	p_colors[ImGuiCol_TableRowBg]               = ToImVec4(TableRowBg);
+	p_colors[ImGuiCol_TableRowBgAlt]            = ToImVec4(TableRowBgAlt);
+	p_colors[ImGuiCol_TextLink]                 = ToImVec4(TextLink);
+	p_colors[ImGuiCol_TextSelectedBg]           = ToImVec4(TextSelectedBg);
+	p_colors[ImGuiCol_TreeLines]                = ToImVec4(TreeLines);
+	p_colors[ImGuiCol_DragDropTarget]           = ToImVec4(DragDropTarget);
+	p_colors[ImGuiCol_DragDropTargetBg]         = ToImVec4(DragDropTargetBg);
+	p_colors[ImGuiCol_UnsavedMarker]            = ToImVec4(UnsavedMarker);
+	p_colors[ImGuiCol_NavCursor]                = ToImVec4(NavCursor);
+	p_colors[ImGuiCol_NavWindowingHighlight]    = ToImVec4(NavWindowingHighlight);
+	p_colors[ImGuiCol_NavWindowingDimBg]        = ToImVec4(NavWindowingDimBg);
+	p_colors[ImGuiCol_ModalWindowDimBg]         = ToImVec4(ModalWindowDimBg);
+
+	// Tint only surfaces so text, accents and selection keep their meaning.
+	for (const auto index : { ImGuiCol_WindowBg, ImGuiCol_ChildBg, ImGuiCol_PopupBg, ImGuiCol_MenuBarBg,
+		ImGuiCol_TitleBg, ImGuiCol_TitleBgActive, ImGuiCol_TitleBgCollapsed, ImGuiCol_Tab, ImGuiCol_TabHovered,
+		ImGuiCol_TabSelected, ImGuiCol_TabDimmed, ImGuiCol_TabDimmedSelected, ImGuiCol_DockingEmptyBg })
+	{
+		p_colors[index].x *= backgroundTint.r;
+		p_colors[index].y *= backgroundTint.g;
+		p_colors[index].z *= backgroundTint.b;
+	}
+}
+
+void OvUI::Styling::Style::ApplyColorsToImGui()
+{
+	WriteColors(ImGui::GetStyle().Colors);
+}
+
 void OvUI::Styling::Style::ApplyToImGui(float p_scale)
 {
 	scale = p_scale;
 	ImGuiStyle style;
 
-	style.Colors[ImGuiCol_Text]                     = ToImVec4(Text);
-	style.Colors[ImGuiCol_TextDisabled]             = ToImVec4(TextDisabled);
-	style.Colors[ImGuiCol_WindowBg]                 = ToImVec4(WindowBg);
-	style.Colors[ImGuiCol_ChildBg]                  = ToImVec4(ChildBg);
-	style.Colors[ImGuiCol_PopupBg]                  = ToImVec4(PopupBg);
-	style.Colors[ImGuiCol_Border]                   = ToImVec4(Border);
-	style.Colors[ImGuiCol_BorderShadow]             = ToImVec4(BorderShadow);
-	style.Colors[ImGuiCol_FrameBg]                  = ToImVec4(FrameBg);
-	style.Colors[ImGuiCol_FrameBgHovered]           = ToImVec4(FrameBgHovered);
-	style.Colors[ImGuiCol_FrameBgActive]            = ToImVec4(FrameBgActive);
-	style.Colors[ImGuiCol_TitleBg]                  = ToImVec4(TitleBg);
-	style.Colors[ImGuiCol_TitleBgActive]            = ToImVec4(TitleBgActive);
-	style.Colors[ImGuiCol_TitleBgCollapsed]         = ToImVec4(TitleBgCollapsed);
-	style.Colors[ImGuiCol_MenuBarBg]                = ToImVec4(MenuBarBg);
-	style.Colors[ImGuiCol_ScrollbarBg]              = ToImVec4(ScrollbarBg);
-	style.Colors[ImGuiCol_ScrollbarGrab]            = ToImVec4(ScrollbarGrab);
-	style.Colors[ImGuiCol_ScrollbarGrabHovered]     = ToImVec4(ScrollbarGrabHovered);
-	style.Colors[ImGuiCol_ScrollbarGrabActive]      = ToImVec4(ScrollbarGrabActive);
-	style.Colors[ImGuiCol_CheckMark]                = ToImVec4(CheckMark);
-	style.Colors[ImGuiCol_SliderGrab]               = ToImVec4(SliderGrab);
-	style.Colors[ImGuiCol_SliderGrabActive]         = ToImVec4(SliderGrabActive);
-	style.Colors[ImGuiCol_Button]                   = ToImVec4(Button);
-	style.Colors[ImGuiCol_ButtonHovered]            = ToImVec4(ButtonHovered);
-	style.Colors[ImGuiCol_ButtonActive]             = ToImVec4(ButtonActive);
-	style.Colors[ImGuiCol_Header]                   = ToImVec4(Header);
-	style.Colors[ImGuiCol_HeaderHovered]            = ToImVec4(HeaderHovered);
-	style.Colors[ImGuiCol_HeaderActive]             = ToImVec4(HeaderActive);
-	style.Colors[ImGuiCol_Separator]                = ToImVec4(Separator);
-	style.Colors[ImGuiCol_SeparatorHovered]         = ToImVec4(SeparatorHovered);
-	style.Colors[ImGuiCol_SeparatorActive]          = ToImVec4(SeparatorActive);
-	style.Colors[ImGuiCol_ResizeGrip]               = ToImVec4(ResizeGrip);
-	style.Colors[ImGuiCol_ResizeGripHovered]        = ToImVec4(ResizeGripHovered);
-	style.Colors[ImGuiCol_ResizeGripActive]         = ToImVec4(ResizeGripActive);
-	style.Colors[ImGuiCol_InputTextCursor]          = ToImVec4(InputTextCursor);
-	style.Colors[ImGuiCol_TabHovered]               = ToImVec4(TabHovered);
-	style.Colors[ImGuiCol_Tab]                      = ToImVec4(Tab);
-	style.Colors[ImGuiCol_TabSelected]              = ToImVec4(TabSelected);
-	style.Colors[ImGuiCol_TabSelectedOverline]      = ToImVec4(TabSelectedOverline);
-	style.Colors[ImGuiCol_TabDimmed]                = ToImVec4(TabDimmed);
-	style.Colors[ImGuiCol_TabDimmedSelected]        = ToImVec4(TabDimmedSelected);
-	style.Colors[ImGuiCol_TabDimmedSelectedOverline]= ToImVec4(TabDimmedSelectedOverline);
-	style.Colors[ImGuiCol_DockingPreview]           = ToImVec4(DockingPreview);
-	style.Colors[ImGuiCol_DockingEmptyBg]           = ToImVec4(DockingEmptyBg);
-	style.Colors[ImGuiCol_PlotLines]                = ToImVec4(PlotLines);
-	style.Colors[ImGuiCol_PlotLinesHovered]         = ToImVec4(PlotLinesHovered);
-	style.Colors[ImGuiCol_PlotHistogram]            = ToImVec4(PlotHistogram);
-	style.Colors[ImGuiCol_PlotHistogramHovered]     = ToImVec4(PlotHistogramHovered);
-	style.Colors[ImGuiCol_TableHeaderBg]            = ToImVec4(TableHeaderBg);
-	style.Colors[ImGuiCol_TableBorderStrong]        = ToImVec4(TableBorderStrong);
-	style.Colors[ImGuiCol_TableBorderLight]         = ToImVec4(TableBorderLight);
-	style.Colors[ImGuiCol_TableRowBg]               = ToImVec4(TableRowBg);
-	style.Colors[ImGuiCol_TableRowBgAlt]            = ToImVec4(TableRowBgAlt);
-	style.Colors[ImGuiCol_TextLink]                 = ToImVec4(TextLink);
-	style.Colors[ImGuiCol_TextSelectedBg]           = ToImVec4(TextSelectedBg);
-	style.Colors[ImGuiCol_TreeLines]                = ToImVec4(TreeLines);
-	style.Colors[ImGuiCol_DragDropTarget]           = ToImVec4(DragDropTarget);
-	style.Colors[ImGuiCol_DragDropTargetBg]         = ToImVec4(DragDropTargetBg);
-	style.Colors[ImGuiCol_UnsavedMarker]            = ToImVec4(UnsavedMarker);
-	style.Colors[ImGuiCol_NavCursor]                = ToImVec4(NavCursor);
-	style.Colors[ImGuiCol_NavWindowingHighlight]    = ToImVec4(NavWindowingHighlight);
-	style.Colors[ImGuiCol_NavWindowingDimBg]        = ToImVec4(NavWindowingDimBg);
-	style.Colors[ImGuiCol_ModalWindowDimBg]         = ToImVec4(ModalWindowDimBg);
+	WriteColors(style.Colors);
 
 	style.WindowPadding     = Internal::Converter::ToImVec2(WindowPadding);
 	style.WindowRounding    = WindowRounding;
@@ -499,6 +636,8 @@ void OvUI::Styling::Style::ApplyToImGui(float p_scale)
 	style.ChildRounding     = ChildRounding;
 	style.PopupRounding     = PopupRounding;
 	style.PopupBorderSize   = PopupBorderSize;
+	style.TabCloseButtonMinWidthSelected = TabCloseButtonMinWidthSelected;
+	style.DockingNodeHasCloseButton = DockingNodeHasCloseButton;
 
 	style.FontScaleMain = p_scale;
 	style.ScaleAllSizes(p_scale);

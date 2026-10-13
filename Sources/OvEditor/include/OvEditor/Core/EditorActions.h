@@ -43,6 +43,15 @@ namespace OvEditor::Core
 	std::string GetBuildTypeName(EBuildType p_buildType);
 
 	/**
+	* Built-in dock layouts, modeled after the Unity editor presets
+	*/
+	enum class EEditorLayout
+	{
+		DEFAULT,		// Hierarchy | Scene/Game | Inspector, with Project/Console below
+		TWO_BY_THREE	// Scene over Game | Hierarchy | Project | Inspector
+	};
+
+	/**
 	* A set of editor actions
 	*/
 	class EditorActions
@@ -71,6 +80,19 @@ namespace OvEditor::Core
         std::string UndoLabel() const;
         std::string RedoLabel() const;
         size_t UndoCount() const { return m_undo.size(); }
+
+        // Unsaved-change tracking follows the undo history: undoing back to the
+        // saved state clears the modified flag again.
+        bool IsSceneModified() const;
+        /**
+        * Offer to save a modified scene before it gets replaced or the editor closes.
+        * Returns false when the user cancels (or cancels the "Save As" dialog).
+        */
+        bool ConfirmDiscardSceneChanges();
+        void NewScene();
+        void OpenScene();
+        void OpenScene(const std::string& p_path);
+        void RefreshWindowTitle();
 
         std::vector<OvCore::ECS::Actor*> GetSelectedActors() const;
         void SetSelection(const std::vector<OvCore::ECS::Actor*>& actors);
@@ -117,6 +139,12 @@ namespace OvEditor::Core
 		* Reset the editor layout
 		*/
 		void ResetLayout();
+
+		/**
+		* Rebuild the dock layout from one of the built-in presets
+		* @param p_layout
+		*/
+		void ApplyLayout(EEditorLayout p_layout);
 
 		/**
 		* Defines the scene view camera speed
@@ -169,6 +197,11 @@ namespace OvEditor::Core
 		void SetEditorMode(EEditorMode p_newEditorMode);
 
 		/**
+		* Apply (or clear) the play mode tint according to the current mode and preferences
+		*/
+		void UpdatePlayModeTint();
+
+		/**
 		* Start playing the current scene and update the editor mode
 		*/
 		void StartPlaying();
@@ -187,6 +220,16 @@ namespace OvEditor::Core
 		* Play the current frame and pause the editor
 		*/
 		void NextFrame();
+
+		/**
+		* Enter play mode from edit mode, or leave it from any play state (Unity's Play button)
+		*/
+		void TogglePlay();
+
+		/**
+		* Pause while playing, or resume while paused
+		*/
+		void TogglePause();
 		#pragma endregion
 
 		#pragma region SCENE_VIEW
@@ -450,7 +493,7 @@ namespace OvEditor::Core
 		* @param p_sceneToSave
 		* @param p_path
 		*/
-		void SaveSceneToDisk(OvCore::SceneSystem::Scene& p_scene, const std::string& p_path);
+		bool SaveSceneToDisk(OvCore::SceneSystem::Scene& p_scene, const std::string& p_path);
 
 		/**
 		* Load a scene from the disk
@@ -466,13 +509,15 @@ namespace OvEditor::Core
 
 		/**
 		* Save the current scene to its disk location
+		* @return true if the scene was written
 		*/
-		void SaveSceneChanges();
+		bool SaveSceneChanges();
 
 		/**
 		* Save the current scene to a new disk location (Can create a duplication of the scene file)
+		* @return true if the scene was written
 		*/
-		void SaveAs();
+		bool SaveAs();
 		#pragma endregion
 
 		#pragma region SCRIPTING
@@ -538,13 +583,18 @@ namespace OvEditor::Core
 
 	private:
         struct SceneSnapshot { std::string xml; std::vector<uint64_t> selection; };
-        struct HistoryEntry { std::string label; SceneSnapshot before, after; };
+        struct HistoryEntry { std::string label; SceneSnapshot before, after; uint64_t revision = 0; };
         SceneSnapshot CaptureScene() const;
         bool RestoreScene(const SceneSnapshot& snapshot);
         void RestoreSelection(const std::vector<uint64_t>& selection);
         std::vector<HistoryEntry> m_undo, m_redo;
         std::optional<HistoryEntry> m_pendingEdit;
         bool m_restoringHistory = false;
+        // Scene revisions: each committed edit gets a new id. The base revision is the
+        // state below the oldest undo entry; the saved revision is the one on disk.
+        uint64_t CurrentRevision() const;
+        uint64_t m_revisionCounter = 0, m_baseRevision = 0, m_savedRevision = 0;
+        std::string m_windowTitle;
         uint64_t m_historyUnloadListener = 0;
         struct TransformState { uint64_t guid; OvMaths::FVector3 position, scale; OvMaths::FQuaternion rotation; };
         std::vector<TransformState> m_transformOriginals;

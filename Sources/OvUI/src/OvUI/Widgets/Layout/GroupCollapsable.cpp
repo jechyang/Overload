@@ -7,7 +7,9 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 
+#include "OvUI/Internal/Converter.h"
 #include "OvUI/Internal/TextureID.h"
+#include "OvUI/Styling/Style.h"
 #include "OvUI/Widgets/Layout/GroupCollapsable.h"
 
 OvUI::Widgets::Layout::GroupCollapsable::GroupCollapsable(const std::string & p_name) :
@@ -27,8 +29,16 @@ void OvUI::Widgets::Layout::GroupCollapsable::_Draw_Impl()
 
 	// Stable explicit IDs preserve expansion across Inspector rebuilds and keep
 	// equally named script/component sections independent.
+	const auto& style = Styling::Style::Get();
+	if (style.distinctCollapsingHeader)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Header, Internal::Converter::ToImVec4(style.CollapsingHeader));
+		ImGui::PushStyleColor(ImGuiCol_HeaderHovered, Internal::Converter::ToImVec4(style.CollapsingHeaderHovered));
+		ImGui::PushStyleColor(ImGuiCol_HeaderActive, Internal::Converter::ToImVec4(style.CollapsingHeaderActive));
+	}
 	bool isOpen = ImGui::CollapsingHeader(label.c_str(), closable ? &opened : nullptr,
 		defaultExpanded ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None);
+	if (style.distinctCollapsingHeader) ImGui::PopStyleColor(3);
     if (expandForSearch) storage->SetInt(id,previousExpansion);
     const ImVec2 headerMin = ImGui::GetItemRectMin();
     const ImVec2 headerMax = ImGui::GetItemRectMax();
@@ -52,8 +62,8 @@ void OvUI::Widgets::Layout::GroupCollapsable::_Draw_Impl()
 		const float padY = ImGui::GetStyle().FramePadding.y;
 		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{padY, padY});
 		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4{0, 0, 0, 0});
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_HeaderHovered));
-		ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, style.distinctCollapsingHeader ? Internal::Converter::ToImVec4(style.CollapsingHeaderHovered) : ImGui::GetStyleColorVec4(ImGuiCol_HeaderHovered));
+		ImGui::PushStyleColor(ImGuiCol_ButtonActive, style.distinctCollapsingHeader ? Internal::Converter::ToImVec4(style.CollapsingHeaderActive) : ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
         if (contextMenu)
         {
             ImGui::SetCursorScreenPos({rightEdge,headerMin.y});

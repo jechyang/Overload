@@ -148,12 +148,6 @@ OvEditor::Core::Context::Context(const std::filesystem::path& p_projectFolder) :
 		static_cast<OvUI::Styling::EStyle>(OvEditor::Settings::EditorSettings::ColorTheme.Get())
 	);
 
-	if (!std::filesystem::exists(OvEditor::Utils::FileSystem::kLayoutFilePath))
-	{
-		const auto defaultLayoutPath = std::filesystem::current_path() / "Config" / "layout.ini";
-		uiManager->ResetLayout(defaultLayoutPath.string());
-	}
-
 	const auto fontPath = editorAssetsPath / "Fonts" / "Roboto-Regular.ttf";
 	uiManager->LoadFont("Roboto", fontPath.string(), 15.0f);
 	uiManager->UseFont("Roboto");

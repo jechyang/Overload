@@ -61,6 +61,7 @@ void OvUI::Core::UIManager::ApplyStyle(Styling::EStyle p_style)
 	case DUNE_DARK:        style.ApplyDuneDarkStyle();    break;
 	case DEFAULT_DARK:     style.ApplyDefaultDarkStyle(); break;
 	case EVEN_DARKER:      style.ApplyEvenDarkerStyle();  break;
+	case UNITY_DARK:       style.ApplyUnityDarkStyle();   break;
 	}
 
 	style.ApplyToImGui(m_scale);

@@ -4,6 +4,8 @@
 #include <OvEditor/Rendering/PickingCollector.h>
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
 #include <OvEditor/Settings/EditorSettings.h>
+#include <OvEditor/Panels/Toolbar.h>
+#include <OvUI/Styling/Style.h>
 #include <OvRendering/Context/Driver.h>
 #include "Tests/Scripting/Integration/editor_gizmo_checks.h"
 
@@ -128,20 +130,28 @@ static void ValidateViewport(OvEditor::Core::Context& context, OvEditor::Core::E
     io.BackendFlags &= ~ImGuiBackendFlags_HasMouseHoveredViewport;
     ImGui_ImplGlfw_CursorEnterCallback(context.window->GetGlfwWindow(),true); io.AddFocusEvent(true);
     auto click = [&](float x,float y) { io.AddMousePosEvent(x,y); draw(); draw(); io.AddMouseButtonEvent(0,true); draw(); io.AddMouseButtonEvent(0,false); draw(); };
+    // The main toolbar is a viewport bar at the top; keep the view below it while clicking.
+    auto& toolbar = EDITOR_PANEL(OvEditor::Panels::Toolbar,"Toolbar");
+    view.SetPosition({0,60}); canvas.AddPanel(toolbar); draw(); draw();
+    const auto* bar = ImGui::FindWindowByName((toolbar.name+toolbar.GetPanelID()).c_str());
+    Require(bar != nullptr && bar->Pos.y + bar->Size.y <= view.GetPosition().y,"main toolbar is drawn as a bar above the panels");
+    const float scale = OVUI_SCALE, button = 26*scale, barX = bar->Pos.x+8*scale, barY = bar->Pos.y+bar->Size.y*.5f;
+    const float settingsX = barX+3*button+2*scale+10*scale;
+    click(barX+button*1.5f+scale,barY);
+    Require(view.GetGizmoOperation() == EGizmoOperation::ROTATE,"toolbar Rotate button changes the active gizmo through real ImGui input");
+    click(settingsX+64*scale+scale+32*scale,barY);
+    Require(!view.IsLocalSpace(),"toolbar space toggle changes the transform frame");
+    click(settingsX+32*scale,barY);
+    Require(!view.IsCenterPivot(),"toolbar pivot toggle changes the actual pivot mode");
+    canvas.RemovePanel(toolbar); view.SetPosition({0,0}); draw(); draw();
     const auto position = view.GetPosition(); const float top = position.y+ImGui::GetFrameHeight();
-    click(position.x+92,top+24);
-    Require(view.GetGizmoOperation() == EGizmoOperation::ROTATE,"viewport Rotate button changes the active gizmo through real ImGui input");
-    click(position.x+212,top+24);
-    Require(!view.IsLocalSpace(),"viewport space toggle changes the transform frame");
-    click(position.x+280,top+24);
-    Require(!view.IsCenterPivot(),"viewport pivot toggle changes the actual pivot mode");
-    const bool oldSnap = EditorSettings::SnapEnabled.Get(); click(position.x+25,top+ImGui::GetFrameHeight()+25);
+    const bool oldSnap = EditorSettings::SnapEnabled.Get(); click(position.x+25,top+24);
     Require(EditorSettings::SnapEnabled.Get() != oldSnap,"viewport Snap checkbox toggles persistent snapping");
     view.SetSize({400,700}); draw(); draw();
-    click(position.x+212,top+24);
-    Require(view.IsLocalSpace(),"narrow viewport keeps transform controls clickable");
+    click(position.x+25,top+24);
+    Require(EditorSettings::SnapEnabled.Get() == oldSnap,"narrow viewport keeps scene tools clickable");
     const auto projectionBefore = camera.GetProjectionMode();
-    click(position.x+400-164+42,top+16+(3*ImGui::GetFrameHeight()+26)+131);
+    click(position.x+400-164+42,top+16+(2*ImGui::GetFrameHeight()+20)+131);
     Require(camera.GetProjectionMode() != projectionBefore,"narrow viewport moves orientation controls below the transform toolbar");
     camera.SetProjectionMode(projectionBefore); view.SetLocalSpace(false);
     view.SetSize({960,700}); io.AddMousePosEvent(-10000,-10000);

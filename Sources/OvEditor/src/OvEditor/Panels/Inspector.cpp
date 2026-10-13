@@ -493,46 +493,53 @@ void OvEditor::Panels::Inspector::_DrawAddSection()
 {
 	auto& addButton = m_content->CreateWidget<Buttons::Button>("Add Component...", OvMaths::FVector2{ -1.f, 0 });
 	addButton.ClickedEvent += [this, ticket = m_viewCallbacks.Ticket()] {
-        if (ticket.expired()) return;
-		if (!m_targetActor.has_value())
-			return;
+        if (!ticket.expired()) OpenAddComponentPicker();
+	};
+}
 
-		const auto componentIconID = EDITOR_CONTEXT(editorResources)->GetTexture("Component")->RetainTexture();
-		const auto addScriptIconID = EDITOR_CONTEXT(editorResources)->GetTexture("Add_Script")->RetainTexture();
+void OvEditor::Panels::Inspector::OpenAddComponentPicker()
+{
+	if (!m_targetActor.has_value())
+		return;
 
-		OvCore::Helpers::GUIHelpers::PickerItemList items;
+	const auto ticket = m_viewCallbacks.Ticket();
 
-		for (const auto& info : GetComponentRegistry().Components())
-		{
+	const auto componentIconID = EDITOR_CONTEXT(editorResources)->GetTexture("Component")->RetainTexture();
+	const auto addScriptIconID = EDITOR_CONTEXT(editorResources)->GetTexture("Add_Script")->RetainTexture();
+
+	OvCore::Helpers::GUIHelpers::PickerItemList items;
+
+	for (const auto& info : GetComponentRegistry().Components())
+	{
             if (!std::all_of(m_targets.begin(), m_targets.end(), [&info](auto* actor) { return info.IsAddable(*actor); })) continue;
 
-			const std::string name = std::string(info.GetName());
-			items.Add({
-				name,
-				name,
-				name,
-				componentIconID,
-				[this, name, &info, ticket] {
+		const std::string name = std::string(info.GetName());
+		items.Add({
+			name,
+			name,
+			name,
+			componentIconID,
+			[this, name, &info, ticket] {
                     if (ticket.expired()) return;
-					if (!m_targetActor.has_value())
-						return;
+				if (!m_targetActor.has_value())
+					return;
 
-					if (!info.IsAddable(m_targetActor.value()))
-					{
-						OvWindowing::Dialogs::MessageBox(
-							"Component already attached",
-							"The component \"" + name + "\" is already attached to this actor.",
-							OvWindowing::Dialogs::MessageBox::EMessageType::ERROR,
-							OvWindowing::Dialogs::MessageBox::EButtonLayout::OK
-						);
-						return;
-					}
+				if (!info.IsAddable(m_targetActor.value()))
+				{
+					OvWindowing::Dialogs::MessageBox(
+						"Component already attached",
+						"The component \"" + name + "\" is already attached to this actor.",
+						OvWindowing::Dialogs::MessageBox::EMessageType::ERROR,
+						OvWindowing::Dialogs::MessageBox::EButtonLayout::OK
+					);
+					return;
+				}
 
                     EDITOR_EXEC(BeginSceneEdit("Add component"));
                     for (auto* actor : m_targets) if (info.IsAddable(*actor)) info.AddComponent(*actor);
-				}
-			});
-		}
+			}
+		});
+	}
 
         for (const auto& identity : EDITOR_CONTEXT(scriptEngine)->CSharpTypes())
         {
@@ -548,80 +555,79 @@ void OvEditor::Panels::Inspector::_DrawAddSection()
                 }
             }});
         }
-		OvEditor::Helpers::PickerHelpers::AddFileItems(
-			items,
-			OvTools::Utils::PathParser::EFileType::SCRIPT,
-			[this, ticket](const std::string& p_resourcePath) {
+	OvEditor::Helpers::PickerHelpers::AddFileItems(
+		items,
+		OvTools::Utils::PathParser::EFileType::SCRIPT,
+		[this, ticket](const std::string& p_resourcePath) {
                 if (ticket.expired()) return;
-				if (!m_targetActor.has_value())
-					return;
+			if (!m_targetActor.has_value())
+				return;
 
-				const std::string scriptPath = EDITOR_EXEC(GetScriptPath(p_resourcePath));
-				const std::string displayName = OvTools::Utils::PathParser::GetElementName(scriptPath);
+			const std::string scriptPath = EDITOR_EXEC(GetScriptPath(p_resourcePath));
+			const std::string displayName = OvTools::Utils::PathParser::GetElementName(scriptPath);
 
-				if (m_targetActor->GetBehaviour(scriptPath))
-				{
-					OvWindowing::Dialogs::MessageBox(
-						"Script already attached",
-						"The script \"" + displayName + "\" is already attached to this actor.",
-						OvWindowing::Dialogs::MessageBox::EMessageType::ERROR,
-						OvWindowing::Dialogs::MessageBox::EButtonLayout::OK
-					);
-					return;
-				}
+			if (m_targetActor->GetBehaviour(scriptPath))
+			{
+				OvWindowing::Dialogs::MessageBox(
+					"Script already attached",
+					"The script \"" + displayName + "\" is already attached to this actor.",
+					OvWindowing::Dialogs::MessageBox::EMessageType::ERROR,
+					OvWindowing::Dialogs::MessageBox::EButtonLayout::OK
+				);
+				return;
+			}
 
                 EDITOR_EXEC(BeginSceneEdit("Add script"));
                 for (auto* actor : m_targets) if (!actor->GetBehaviour(scriptPath)) actor->AddBehaviour(scriptPath);
-			},
-			true, false,
-			[this, ticket](const std::string& p_resourcePath) {
+		},
+		true, false,
+		[this, ticket](const std::string& p_resourcePath) {
                 auto extension = std::filesystem::path(p_resourcePath).extension().string();
                 std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
                 if (ticket.expired() || extension == ".cs") return false;
-				const std::string scriptPath = EDITOR_EXEC(GetScriptPath(p_resourcePath));
-				return std::none_of(m_targets.begin(), m_targets.end(), [&](auto* actor) { return actor->GetBehaviour(scriptPath) != nullptr; });
-			}
-		);
+			const std::string scriptPath = EDITOR_EXEC(GetScriptPath(p_resourcePath));
+			return std::none_of(m_targets.begin(), m_targets.end(), [&](auto* actor) { return actor->GetBehaviour(scriptPath) != nullptr; });
+		}
+	);
 
-		items.Add({
-			"Create Script...",
-			"Create Script...",
-			"Create Script...",
-			addScriptIconID,
-			[this, ticket] {
+	items.Add({
+		"Create Script...",
+		"Create Script...",
+		"Create Script...",
+		addScriptIconID,
+		[this, ticket] {
                 if (ticket.expired()) return;
-				if (!m_targetActor.has_value())
-					return;
+			if (!m_targetActor.has_value())
+				return;
 
-				const std::string searchText = OvCore::Helpers::GUIHelpers::GetPickerSearchText();
-				const std::string initialDir = EDITOR_CONTEXT(projectAssetsPath).string();
-				const std::string destination = EDITOR_EXEC(CreateScript(initialDir, searchText));
+			const std::string searchText = OvCore::Helpers::GUIHelpers::GetPickerSearchText();
+			const std::string initialDir = EDITOR_CONTEXT(projectAssetsPath).string();
+			const std::string destination = EDITOR_EXEC(CreateScript(initialDir, searchText));
 
-				if (ticket.expired() || destination.empty())
-					return;
+			if (ticket.expired() || destination.empty())
+				return;
 
-				const std::string scriptPath = EDITOR_EXEC(GetScriptPath(destination));
-				const std::string displayName = OvTools::Utils::PathParser::GetElementName(scriptPath);
+			const std::string scriptPath = EDITOR_EXEC(GetScriptPath(destination));
+			const std::string displayName = OvTools::Utils::PathParser::GetElementName(scriptPath);
 
-				if (m_targetActor->GetBehaviour(scriptPath))
-				{
-					OvWindowing::Dialogs::MessageBox(
-						"Script already attached",
-						"The script \"" + displayName + "\" is already attached to this actor.",
-						OvWindowing::Dialogs::MessageBox::EMessageType::ERROR,
-						OvWindowing::Dialogs::MessageBox::EButtonLayout::OK
-					);
-					return;
-				}
+			if (m_targetActor->GetBehaviour(scriptPath))
+			{
+				OvWindowing::Dialogs::MessageBox(
+					"Script already attached",
+					"The script \"" + displayName + "\" is already attached to this actor.",
+					OvWindowing::Dialogs::MessageBox::EMessageType::ERROR,
+					OvWindowing::Dialogs::MessageBox::EButtonLayout::OK
+				);
+				return;
+			}
 
                 EDITOR_EXEC(BeginSceneEdit("Add script"));
                 for (auto* actor : m_targets) if (!actor->GetBehaviour(scriptPath)) actor->AddBehaviour(scriptPath);
-			},
-			true  /* alwaysVisible */
-		});
+		},
+		true  /* alwaysVisible */
+	});
 
-		OvCore::Helpers::GUIHelpers::OpenPicker(std::move(items), "Add Component");
-	};
+	OvCore::Helpers::GUIHelpers::OpenPicker(std::move(items), "Add Component");
 }
 
 void OvEditor::Panels::Inspector::_DrawComponent(AComponent& p_component, int p_index, int p_total)

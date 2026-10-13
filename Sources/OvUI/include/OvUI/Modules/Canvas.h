@@ -7,6 +7,7 @@
 #pragma once
 
 #include <algorithm>
+#include <functional>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -53,6 +54,14 @@ namespace OvUI::Modules
 		bool IsDockspace() const;
 
 		/**
+		* Rebuild the dockspace layout on the next frame. The builder is invoked inside the
+		* dockspace host, before the dockspace is submitted, with its ID and available size,
+		* so it can use the ImGui DockBuilder API.
+		* @param p_builder
+		*/
+		void RequestDockspaceLayout(std::function<void(ImGuiID, ImVec2)> p_builder);
+
+		/**
 		* Draw the canvas (Draw every panels)
 		*/
 		void Draw() override;
@@ -63,5 +72,6 @@ namespace OvUI::Modules
 	private:
 		std::vector<std::reference_wrapper<Panels::APanel>> m_panels;
 		bool m_isDockspace = false;
+		std::function<void(ImGuiID, ImVec2)> m_pendingLayout;
 	};
 }

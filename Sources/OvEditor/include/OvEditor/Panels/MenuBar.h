@@ -6,22 +6,27 @@
 
 #pragma once
 
+#include <unordered_map>
+#include <vector>
+
 #include <OvUI/Panels/PanelMenuBar.h>
 #include <OvUI/Panels/PanelWindow.h>
 #include <OvUI/Widgets/Menu/MenuItem.h>
+#include <OvUI/Widgets/Menu/MenuList.h>
 
 namespace OvEditor::Panels
 {
+	/**
+	* Main menu, organized like Unity's: File, Edit, Assets, GameObject, Component, Window, Help
+	*/
 	class MenuBar : public OvUI::Panels::PanelMenuBar
 	{
-		using PanelMap = std::unordered_map<std::string, std::pair<std::reference_wrapper<OvUI::Panels::PanelWindow>, std::reference_wrapper<OvUI::Widgets::Menu::MenuItem>>>;
-
 	public:
 		/**
 		* Constructor
 		*/
 		MenuBar();
-		
+
 		/**
 		* Check inputs for menubar shortcuts
 		* @param p_deltaTime
@@ -29,35 +34,39 @@ namespace OvEditor::Panels
 		void HandleShortcuts(float p_deltaTime);
 
 		/**
-		* Register a panel to the menu bar window menu
+		* Register a panel so it can be toggled from the Window menu
 		*/
 		void RegisterPanel(const std::string& p_name, OvUI::Panels::PanelWindow& p_panel);
 
 		/**
-		* @note This needs to be called after all other panels have been intialized, as the content of other
-		* panels is required to initialize some settings
+		* Build the menus that depend on other panels (Window, Edit > Preferences)
+		* @note This needs to be called after all other panels have been initialized and named
 		*/
 		void InitializeSettingsMenu();
 
 	private:
 		void CreateFileMenu();
-        void CreateEditMenu();
-		void CreateBuildMenu();
+		void CreateEditMenu();
+		void CreateAssetsMenu();
+		void CreateGameObjectMenu();
+		void CreateComponentMenu();
 		void CreateWindowMenu();
-		void CreateActorsMenu();
-		void CreateResourcesMenu();
-		void CreateToolsMenu();
-		void CreateSettingsMenu();
-		void CreateLayoutMenu();
 		void CreateHelpMenu();
 
+		void InitializeWindowMenu();
+		void AddPanelToggle(OvUI::Widgets::Menu::MenuList& p_menu, const std::string& p_panelID);
 		void UpdateToggleableItems();
-		void OpenEveryWindows(bool p_state);
 
 	private:
-		PanelMap m_panels;
-        OvUI::Widgets::Menu::MenuItem* m_undoItem = nullptr;
-        OvUI::Widgets::Menu::MenuItem* m_redoItem = nullptr;
+		std::unordered_map<std::string, std::reference_wrapper<OvUI::Panels::PanelWindow>> m_panels;
+		std::vector<std::pair<OvUI::Widgets::Menu::MenuItem*, OvUI::Panels::PanelWindow*>> m_panelToggles;
+		OvUI::Widgets::Menu::MenuItem* m_undoItem = nullptr;
+		OvUI::Widgets::Menu::MenuItem* m_redoItem = nullptr;
+		OvUI::Widgets::Menu::MenuItem* m_playItem = nullptr;
+		OvUI::Widgets::Menu::MenuItem* m_pauseItem = nullptr;
+		OvUI::Widgets::Menu::MenuItem* m_stepItem = nullptr;
+		OvUI::Widgets::Menu::MenuItem* m_saveItem = nullptr;
+		OvUI::Widgets::Menu::MenuItem* m_saveAsItem = nullptr;
 		OvUI::Widgets::Menu::MenuList* m_settingsMenu = nullptr;
 		OvUI::Widgets::Menu::MenuList* m_windowMenu = nullptr;
 	};

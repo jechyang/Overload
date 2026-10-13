@@ -22,20 +22,24 @@ bool OvUI::Modules::Canvas::BuildFrame(bool p_beginRendererFrame)
 
 		if (m_isDockspace)
 		{
+			// The work area excludes viewport side bars (main menu, toolbar, status bar).
 			ImGuiViewport* viewport = ImGui::GetMainViewport();
-			ImGui::SetNextWindowPos(viewport->Pos);
-			ImGui::SetNextWindowSize(viewport->Size);
+			ImGui::SetNextWindowPos(viewport->WorkPos);
+			ImGui::SetNextWindowSize(viewport->WorkSize);
 			ImGui::SetNextWindowViewport(viewport->ID);
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 
-			ImGui::Begin("##dockspace", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking);
+			ImGui::Begin("##dockspace", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoDocking);
 			ImGuiID dockspace_id = ImGui::GetID("MyDockspace");
+			if (m_pendingLayout)
+			{
+				auto builder = std::move(m_pendingLayout);
+				m_pendingLayout = nullptr;
+				builder(dockspace_id, viewport->WorkSize);
+			}
 			ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), static_cast<ImGuiDockNodeFlags>(static_cast<int>(ImGuiDockNodeFlags_PassthruCentralNode) | static_cast<int>(ImGuiDockNodeFlags_NoWindowMenuButton)));
-			ImGui::SetWindowPos({ 0.f, 0.f });
-			ImVec2 displaySize = ImGui::GetIO().DisplaySize;
-			ImGui::SetWindowSize({ (float)displaySize.x, (float)displaySize.y });
 			ImGui::End();
 
 			ImGui::PopStyleVar(3);
@@ -71,6 +75,11 @@ void OvUI::Modules::Canvas::RemoveAllPanels()
 void OvUI::Modules::Canvas::MakeDockspace(bool p_state)
 {
 	m_isDockspace = p_state;
+}
+
+void OvUI::Modules::Canvas::RequestDockspaceLayout(std::function<void(ImGuiID, ImVec2)> p_builder)
+{
+	m_pendingLayout = std::move(p_builder);
 }
 
 bool OvUI::Modules::Canvas::IsDockspace() const

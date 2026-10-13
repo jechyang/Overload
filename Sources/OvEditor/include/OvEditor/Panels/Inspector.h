@@ -55,6 +55,11 @@ namespace OvEditor::Panels
 		* @param p_target
 		*/
 		void FocusActor(OvCore::ECS::Actor& p_target);
+
+		/**
+		* Open the searchable "Add Component" picker for the current selection
+		*/
+		void OpenAddComponentPicker();
         void FocusActors(const std::vector<OvCore::ECS::Actor*>& targets);
         const std::vector<OvCore::ECS::Actor*>& GetTargetActors() const { return m_targets; }
         // Scene selection remains independent when the Inspector is locked.

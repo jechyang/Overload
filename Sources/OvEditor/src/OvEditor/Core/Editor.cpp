@@ -39,9 +39,11 @@
 #include <OvEditor/Panels/MenuBar.h>
 #include <OvEditor/Panels/ProjectSettings.h>
 #include <OvEditor/Panels/SceneView.h>
+#include <OvEditor/Panels/StatusBar.h>
 #include <OvEditor/Panels/TextureDebugger.h>
 #include <OvEditor/Panels/Toolbar.h>
 #include <OvEditor/Settings/EditorSettings.h>
+#include <OvEditor/Utils/FileSystem.h>
 #include <OvPhysics/Core/PhysicsEngine.h>
 #include <OvUI/Settings/PanelWindowSettings.h>
 
@@ -146,7 +148,8 @@ void OvEditor::Core::Editor::SetupUI()
 			}
 			else if (fileType == EFileType::SCENE)
 			{
-				EDITOR_EXEC(LoadSceneFromDisk(path));
+				// May prompt to save the current scene: run outside of UI drawing.
+				EDITOR_EXEC(DelayAction([path] { EDITOR_EXEC(OpenScene(path)); }, 0));
 			}
 			else if (fileType == EFileType::SCRIPT || fileType == EFileType::SHADER || fileType == EFileType::SHADER_PART)
 			{
@@ -207,7 +210,7 @@ void OvEditor::Core::Editor::SetupUI()
 	m_panelsManager.CreatePanel<Panels::MenuBar>("Menu Bar");
 	m_panelsManager.CreatePanel<Panels::AssetBrowser>("Asset Browser", true, settings);
 	m_panelsManager.CreatePanel<Panels::HardwareInfo>("Hardware Info", false, settings);
-	m_panelsManager.CreatePanel<Panels::FrameInfo>("Frame Info", true, settings);
+	m_panelsManager.CreatePanel<Panels::FrameInfo>("Frame Info", false, settings);
 	m_panelsManager.CreatePanel<Panels::Console>("Console", true, settings);
 	m_panelsManager.CreatePanel<Panels::AssetView>("Asset View", false, settings);
 	m_panelsManager.CreatePanel<Panels::Hierarchy>("Hierarchy", true, settings);
@@ -215,6 +218,7 @@ void OvEditor::Core::Editor::SetupUI()
 	m_panelsManager.CreatePanel<Panels::SceneView>("Scene View", true, settings);
 	m_panelsManager.CreatePanel<Panels::GameView>("Game View", true, settings);
 	m_panelsManager.CreatePanel<Panels::Toolbar>("Toolbar", true, settings);
+	m_panelsManager.CreatePanel<Panels::StatusBar>("Status Bar");
     m_panelsManager.CreatePanel<Panels::CSharpScripts>("C# Scripts", true, settings);
 	m_panelsManager.CreatePanel<Panels::MaterialEditor>("Material Editor", false, settings);
 	m_panelsManager.CreatePanel<Panels::ProjectSettings>("Project Settings", false, settings);
@@ -225,8 +229,17 @@ void OvEditor::Core::Editor::SetupUI()
         m_panelsManager.GetPanelAs<Panels::TextureDebugger>("Texture Debugger").ShowCapturedTexture(std::move(image));
     };
 
+	// Unity names for the main windows. Panel keys and ImGui IDs are unchanged.
+	m_panelsManager.GetPanelAs<OvUI::Panels::PanelWindow>("Asset Browser").name = "Project";
+	m_panelsManager.GetPanelAs<OvUI::Panels::PanelWindow>("Scene View").name = "Scene";
+	m_panelsManager.GetPanelAs<OvUI::Panels::PanelWindow>("Game View").name = "Game";
+
 	// Needs to be called after all panels got created, because some settings in this menu depend on other panels
 	m_panelsManager.GetPanelAs<Panels::MenuBar>("Menu Bar").InitializeSettingsMenu();
+
+	// First launch (or a layout saved before stable panel IDs): start from the default layout.
+	if (!std::filesystem::exists(Utils::FileSystem::kLayoutFilePath))
+		m_editorActions.ApplyLayout(Core::EEditorLayout::DEFAULT);
 
 	m_canvas.MakeDockspace(true);
 	m_context.uiManager->SetCanvas(m_canvas);
@@ -262,6 +275,7 @@ void OvEditor::Core::Editor::Update(float p_deltaTime)
 
 	HandleGlobalShortcuts();
 	UpdateCurrentEditorMode(p_deltaTime);
+	m_editorActions.RefreshWindowTitle();
     if (m_frameSubmissionEnabled) m_pendingFrame.emplace(RecordRenderFrame(p_deltaTime));
     else
     {

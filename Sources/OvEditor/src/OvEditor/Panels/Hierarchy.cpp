@@ -10,12 +10,18 @@
 #include <algorithm>
 #include <cstdint>
 #include <cctype>
+#include <array>
+#include <cfloat>
+#include <filesystem>
+#include <functional>
 #include <unordered_set>
 #include <imgui.h>
+#include <imgui_internal.h>
 
 #include <OvUI/Styling/Style.h>
 #include <OvUI/Widgets/Buttons/Button.h>
 #include <OvUI/Widgets/Selection/CheckBox.h>
+#include <OvUI/Widgets/Texts/TextDisabled.h>
 #include <OvUI/Widgets/Visual/Separator.h>
 #include <OvUI/Plugins/DDSource.h>
 #include <OvUI/Plugins/DDTarget.h>
@@ -70,6 +76,15 @@ namespace
 	{
 		return GetPrefabInstanceRoot(p_actor) != nullptr;
 	}
+
+	class HierarchyCustomDraw final : public OvUI::Widgets::AWidget
+	{
+	public:
+		explicit HierarchyCustomDraw(std::function<void()> p_draw) : m_draw(std::move(p_draw)) {}
+	private:
+		void _Draw_Impl() override { m_draw(); }
+		std::function<void()> m_draw;
+	};
 }
 
 class ActorContextualMenu : public OvUI::Plugins::ContextualMenu
@@ -339,29 +354,19 @@ OvEditor::Panels::Hierarchy::Hierarchy
 	m_actions(CreateWidget<OvUI::Widgets::Layout::Group>()),
 	m_actors(CreateWidget<OvUI::Widgets::Layout::Group>())
 {
-	const auto searchIconID = []() -> OvUI::Internal::TextureID {
-		if (auto* tex = EDITOR_CONTEXT(editorResources)->GetTexture("Search"))
-			return tex->RetainTexture();
-		return 0u;
-	}();
+	if (auto* sceneTexture = EDITOR_CONTEXT(editorResources)->GetTexture("Scene"))
+		m_sceneIcon = OvUI::Internal::TextureID{ sceneTexture->RetainTexture() };
 
-	auto& createButton = m_actions.CreateWidget<OvUI::Widgets::Buttons::Button>("+ Create");
-	createButton.tooltip = "Create an empty entity. Right-click the tree for primitives, lights and prefabs.";
-	createButton.lineBreak = false;
-	createButton.ClickedEvent += [] { EDITOR_EXEC(CreateEmptyActor(true)); };
-	auto& expand = m_actions.CreateWidget<OvUI::Widgets::Buttons::Button>("Expand All");
-	expand.lineBreak = false;
-	expand.ClickedEvent += [this] { for (auto& [actor, node] : m_widgetActorLink) node->Open(); };
-	m_actions.CreateWidget<OvUI::Widgets::Buttons::Button>("Collapse All").ClickedEvent += [this]
-	{
-		SetSearchFilter("");
-		for (auto& [actor, node] : m_widgetActorLink) node->Close();
-	};
-	m_searchBar = &OvCore::Helpers::GUIDrawer::DrawSearchBar(m_actions, searchIconID);
-	m_searchBar->tooltip = "Filter entities by name or tag";
-	m_searchBar->ContentChangedEvent += [this](const std::string& content) { SetSearchFilter(content); };
-	m_status = &m_actions.CreateWidget<OvUI::Widgets::Texts::Text>();
-	m_actions.CreateWidget<OvUI::Widgets::Visual::Separator>();
+	m_createMenu = std::make_unique<OvUI::Widgets::Menu::MenuList>("Create");
+	OvEditor::Utils::ActorCreationMenu::GenerateActorCreationMenu(*m_createMenu);
+
+	// Unity layout: "+" create dropdown and search on one row, then the scene root row.
+	m_actions.CreateWidget<HierarchyCustomDraw>([this] { DrawToolbar(); });
+	m_status = &m_actions.CreateWidget<OvUI::Widgets::Texts::TextDisabled>();
+	m_actions.CreateWidget<HierarchyCustomDraw>([this] { DrawSceneRow(); });
+
+	// Entities are drawn as children of the scene row.
+	CreateWidget<HierarchyCustomDraw>([this] { if (m_actorsIndented) ImGui::Unindent(); m_actorsIndented = false; });
 
 	auto& windowDDTarget = AddPlugin<OvUI::Plugins::DDTarget<std::pair<OvCore::ECS::Actor*, OvUI::Widgets::Layout::TreeNode*>>>("Actor");
 	windowDDTarget.showYellowRect = false;
@@ -491,7 +496,7 @@ void OvEditor::Panels::Hierarchy::Synchronize()
 	for (auto& [actor, node] : m_widgetActorLink)
 	{
 		auto parent = m_widgetActorLink.find(actor->GetParent());
-		OvUI::Internal::WidgetContainer* destination = parent == m_widgetActorLink.end() ? &m_actors : parent->second;
+		OvUI::Internal::WidgetContainer* destination = parent == m_widgetActorLink.end() ? static_cast<OvUI::Internal::WidgetContainer*>(&m_actors) : parent->second;
 		if (node->GetParent() != destination && node->HasParent()) node->GetParent()->UnconsiderWidget(*node);
 	}
 	if (scene) for (auto* actor : scene->GetActors())
@@ -501,7 +506,7 @@ void OvEditor::Panels::Hierarchy::Synchronize()
 		if (!node->HasParent())
 		{
 			auto parent = m_widgetActorLink.find(actor->GetParent());
-			OvUI::Internal::WidgetContainer* destination = parent == m_widgetActorLink.end() ? &m_actors : parent->second;
+			OvUI::Internal::WidgetContainer* destination = parent == m_widgetActorLink.end() ? static_cast<OvUI::Internal::WidgetContainer*>(&m_actors) : parent->second;
 			destination->ConsiderWidget(*node);
 		}
 		node->name = actor->GetName();
@@ -515,16 +520,131 @@ void OvEditor::Panels::Hierarchy::Synchronize()
 		{
 			// Explicit selection/creation must remain visible through an old search.
 			if (!selected->second->enabled) SetSearchFilter("");
+			m_sceneExpanded = true;
 			SelectActorByWidget(*selected->second);
 			m_revealSelection = false;
 		}
 	}
 }
 
+void OvEditor::Panels::Hierarchy::DrawToolbar()
+{
+	const float scale = OVUI_SCALE;
+	ImGui::PushID("HierarchyToolbar");
+
+	const float arrowSpace = 12.0f * scale;
+	ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, { 0.0f, 0.5f });
+	const bool openCreate = ImGui::Button("+##Create", { ImGui::CalcTextSize("+").x + ImGui::GetStyle().FramePadding.x * 2.0f + arrowSpace, 0.0f });
+	ImGui::PopStyleVar();
+	const ImVec2 min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
+	const float arrowScale = 0.6f;
+	ImGui::RenderArrow(ImGui::GetWindowDrawList(), { max.x - arrowSpace, min.y + (max.y - min.y - ImGui::GetFontSize() * arrowScale) * 0.5f },
+		ImGui::GetColorU32(ImGuiCol_Text), ImGuiDir_Down, arrowScale);
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort) && !ImGui::IsPopupOpen("##Create"))
+		ImGui::SetTooltip("Create entities, primitives, lights and prefabs");
+	if (openCreate) ImGui::OpenPopup("##Create");
+	ImGui::SetNextWindowPos({ min.x, max.y + 2.0f * scale });
+	if (ImGui::BeginPopup("##Create"))
+	{
+		m_createMenu->DrawWidgets();
+		ImGui::EndPopup();
+	}
+
+	ImGui::SameLine(0.0f, 4.0f * scale);
+	std::array<char, 256> search{};
+	std::copy_n(m_searchInput.data(), std::min(m_searchInput.size(), search.size() - 1), search.data());
+	ImGui::SetNextItemWidth(-FLT_MIN);
+	if (ImGui::InputTextWithHint("##Search", "Search", search.data(), search.size()))
+		SetSearchFilter(search.data());
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal))
+		ImGui::SetTooltip("Filter entities by name or tag");
+
+	ImGui::PopID();
+}
+
+void OvEditor::Panels::Hierarchy::DrawSceneRow()
+{
+	auto* scene = m_sceneManager.GetCurrentScene();
+	m_actors.enabled = scene != nullptr;
+	if (!scene) return;
+
+	const auto source = m_sceneManager.GetCurrentSceneSourcePath();
+	const std::string name = (source.empty() ? std::string{ "Untitled" } : std::filesystem::path{ source }.stem().string())
+		+ (EDITOR_EXEC(IsSceneModified()) ? "*" : "");
+
+	// A search always shows its matches.
+	const bool searching = !m_filter.empty();
+	ImGui::SetNextItemOpen(m_sceneExpanded || searching, ImGuiCond_Always);
+	ImGui::PushStyleColor(ImGuiCol_Header, ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
+	ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImGui::GetStyleColorVec4(ImGuiCol_FrameBgHovered));
+	ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImGui::GetStyleColorVec4(ImGuiCol_FrameBgActive));
+	const bool open = ImGui::TreeNodeEx("##SceneRoot",
+		ImGuiTreeNodeFlags_Framed | ImGuiTreeNodeFlags_SpanFullWidth | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick,
+		"%s", "");
+	ImGui::PopStyleColor(3);
+
+	// Scene icon and name after the arrow.
+	{
+		const ImVec2 min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
+		const float icon = ImGui::GetTextLineHeight();
+		const float x = min.x + ImGui::GetTreeNodeToLabelSpacing();
+		const float y = (min.y + max.y - icon) * 0.5f;
+		auto* drawList = ImGui::GetWindowDrawList();
+		if (m_sceneIcon.id != 0)
+		{
+			m_sceneIcon.RetainForCapture();
+			drawList->AddImage(m_sceneIcon.id, { x, y }, { x + icon, y + icon }, { 0.0f, 1.0f }, { 1.0f, 0.0f });
+		}
+		drawList->AddText({ x + icon + 4.0f * OVUI_SCALE, y }, ImGui::GetColorU32(ImGuiCol_Text), name.c_str());
+	}
+	if (ImGui::IsItemToggledOpen() && !searching) m_sceneExpanded = open;
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !source.empty())
+		ImGui::SetTooltip("%s", source.c_str());
+
+	// Dropping an entity on the scene row moves it to the root.
+	if (ImGui::BeginDragDropTarget())
+	{
+		if (const auto* payload = ImGui::AcceptDragDropPayload("Actor"))
+		{
+			const auto element = *static_cast<const std::pair<OvCore::ECS::Actor*, OvUI::Widgets::Layout::TreeNode*>*>(payload->Data);
+			if (auto found = m_widgetActorLink.find(element.first); found != m_widgetActorLink.end() && found->second == element.second && element.first->IsAlive())
+				EDITOR_EXEC(ReparentSelection(*element.first, nullptr));
+		}
+		ImGui::EndDragDropTarget();
+	}
+
+	if (ImGui::BeginPopupContextItem("##SceneContext"))
+	{
+		if (ImGui::MenuItem("Save Scene", "Ctrl+S")) EDITOR_EXEC(DelayAction([] { EDITOR_EXEC(SaveSceneChanges()); }, 0));
+		ImGui::Separator();
+		if (ImGui::MenuItem("Expand All"))
+		{
+			m_sceneExpanded = true;
+			for (auto& [actor, node] : m_widgetActorLink) node->Open();
+		}
+		if (ImGui::MenuItem("Collapse All"))
+		{
+			SetSearchFilter("");
+			for (auto& [actor, node] : m_widgetActorLink) node->Close();
+		}
+		ImGui::Separator();
+		if (ImGui::BeginMenu("Create"))
+		{
+			m_createMenu->DrawWidgets();
+			ImGui::EndMenu();
+		}
+		ImGui::EndPopup();
+	}
+
+	m_actors.enabled = open;
+	m_actorsIndented = open;
+	if (open) ImGui::Indent();
+}
+
 void OvEditor::Panels::Hierarchy::SetSearchFilter(const std::string& p_filter)
 {
 	m_filter = p_filter;
-	m_searchBar->content = p_filter;
+	m_searchInput = p_filter;
 	std::transform(m_filter.begin(), m_filter.end(), m_filter.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 	ApplyFilter();
 }
@@ -552,11 +672,11 @@ void OvEditor::Panels::Hierarchy::ApplyFilter()
 		for (auto* node : matches)
 			if (auto* parent = dynamic_cast<OvUI::Widgets::Layout::TreeNode*>(node->GetParent()))
 				ExpandTreeNodeAndEnable(*parent, m_nodesToCollapse);
-	m_status->content = m_filter.empty()
-		? std::to_string(m_widgetActorLink.size()) + " entities"
-		: std::to_string(matches.size()) + " matches / " + std::to_string(m_widgetActorLink.size()) + " entities";
-	if (m_widgetActorLink.empty()) m_status->content += " - Use + Create to get started";
-	else if (matches.empty()) m_status->content += " - No matching entities";
+	// Like Unity, counts only appear while searching; an empty scene gets a hint.
+	m_status->enabled = !m_filter.empty() || m_widgetActorLink.empty();
+	if (m_widgetActorLink.empty()) m_status->content = "Empty scene. Use + to create an entity.";
+	else if (matches.empty()) m_status->content = "No matching entities";
+	else m_status->content = std::to_string(matches.size()) + " of " + std::to_string(m_widgetActorLink.size()) + " entities";
 }
 
 void OvEditor::Panels::Hierarchy::RemoveActorWidget(OvCore::ECS::Actor* p_actor)
@@ -619,12 +739,11 @@ void OvEditor::Panels::Hierarchy::AddActorByInstance(OvCore::ECS::Actor & p_acto
 	OvCore::ECS::Actor* targetPtr = &p_actor;
 	dispatcher.RegisterGatherer([targetPtr, &textSelectable, actorIconID, prefabIconID]
 	{
-		const bool isActive = targetPtr->IsActive();
-		textSelectable.labelColor = isActive
-			? OVUI_STYLE(Text)
-			: OVUI_STYLE(TextDisabled);
+		// Unity colors: prefab instances blue, inactive entities dimmed.
+		const bool prefab = IsPartOfPrefabInstance(*targetPtr);
+		textSelectable.labelColor = !targetPtr->IsActive() ? OVUI_STYLE(TextDisabled) : prefab ? OVUI_STYLE(Accent) : OVUI_STYLE(Text);
 
-		textSelectable.iconTextureID = IsPartOfPrefabInstance(*targetPtr) && prefabIconID.id != 0 ? prefabIconID : actorIconID;
+		textSelectable.iconTextureID = prefab && prefabIconID.id != 0 ? prefabIconID : actorIconID;
 
 		return targetPtr->GetName();
 	});

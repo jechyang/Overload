@@ -27,3 +27,8 @@ const std::string & OvUI::Panels::APanel::GetPanelID() const
 {
 	return m_panelID;
 }
+
+void OvUI::Panels::APanel::SetPanelID(const std::string& p_id)
+{
+	m_panelID = p_id;
+}

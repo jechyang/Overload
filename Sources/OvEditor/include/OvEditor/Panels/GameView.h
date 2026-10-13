@@ -41,6 +41,8 @@ namespace OvEditor::Panels
         void RefreshInputViewport();
         enum class PreviewMode { FREE, WIDE, PORTRAIT, CLASSIC, SQUARE, HD, FULL_HD, PHONE, CUSTOM };
         void SetPreviewMode(PreviewMode mode);
+        void SetStatsVisible(bool visible) { m_showStats = visible; }
+        bool IsStatsVisible() const { return m_showStats; }
         PreviewMode GetPreviewMode() const;
         void SetCustomResolution(int width, int height);
         std::pair<uint16_t,uint16_t> GetSafeSize() const override;
@@ -53,6 +55,7 @@ namespace OvEditor::Panels
 		OvCore::SceneSystem::SceneManager& m_sceneManager;
         OvMaths::FVector2 m_availableSize{}, m_imagePosition{}, m_imageSize{};
         bool m_controlsActive = false;
+        bool m_showStats = false;
 	};
 
     // An offscreen view owned by SceneView. Camera references are resolved on

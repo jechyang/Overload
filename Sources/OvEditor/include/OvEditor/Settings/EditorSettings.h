@@ -109,7 +109,11 @@ namespace OvEditor::Settings
         inline static Property<bool> SceneShowCameraFrustums = { true };
 		inline static Property<float> RotationSnapUnit = { 15.0f };
 		inline static Property<float> ScalingSnapUnit = { 0.1f };
-		inline static Property<int> ColorTheme = { static_cast<int>(OvUI::Styling::EStyle::DEFAULT_DARK) };
+		inline static Property<int> ColorTheme = { static_cast<int>(OvUI::Styling::EStyle::UNITY_DARK) };
+		inline static Property<bool> PlayModeTintEnabled = { true };
+		inline static Property<float> PlayModeTintR = { 0.80f };
+		inline static Property<float> PlayModeTintG = { 0.88f };
+		inline static Property<float> PlayModeTintB = { 1.00f };
 		inline static Property<int> ConsoleMaxLogs = { 500 };
 		inline static Property<int> UIScale = { 100 };
 		inline static Property<bool> BetaDpiAwarenessDialogPresented = { false };

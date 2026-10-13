@@ -4,19 +4,13 @@
 * @licence: MIT
 */
 
-#include <OvTools/Utils/SystemCalls.h>
+#include <algorithm>
+#include <filesystem>
+#include <optional>
+#include <string_view>
 
-#include <OvCore/ECS/Components/CCamera.h>
-#include <OvCore/ECS/Components/CPointLight.h>
-#include <OvCore/ECS/Components/CDirectionalLight.h>
-#include <OvCore/ECS/Components/CSpotLight.h>
-#include <OvCore/ECS/Components/CAmbientBoxLight.h>
-#include <OvCore/ECS/Components/CAmbientSphereLight.h>
-#include <OvCore/ECS/Components/CPhysicalBox.h>
-#include <OvCore/ECS/Components/CPhysicalSphere.h>
-#include <OvCore/ECS/Components/CPhysicalCapsule.h>
-#include <OvCore/ECS/Components/CAudioSource.h>
-#include <OvCore/ECS/Components/CAudioListener.h>
+#include <OvDebug/Logger.h>
+#include <OvTools/Utils/SystemCalls.h>
 
 #include <OvUI/Widgets/Visual/Separator.h>
 #include <OvUI/Widgets/Sliders/SliderInt.h>
@@ -25,85 +19,281 @@
 #include <OvUI/Widgets/InputFields/InputText.h>
 #include <OvUI/Widgets/Selection/ColorEdit.h>
 #include <OvUI/Widgets/Selection/ComboBox.h>
-#include <filesystem>
-#include <optional>
+#include <OvUI/Widgets/Texts/Text.h>
 
 #include "OvEditor/Core/EditorActions.h"
+#include "OvEditor/Panels/AssetBrowser.h"
 #include "OvEditor/Panels/AssetView.h"
 #include "OvEditor/Panels/Console.h"
+#include "OvEditor/Panels/Inspector.h"
 #include "OvEditor/Panels/MenuBar.h"
 #include "OvEditor/Panels/SceneView.h"
 #include "OvEditor/Settings/EditorSettings.h"
 #include "OvEditor/Utils/ActorCreationMenu.h"
-#include "OvUI/Widgets/Selection/CheckBox.h"
 
 using namespace OvUI::Panels;
 using namespace OvUI::Widgets;
 using namespace OvUI::Widgets::Menu;
-using namespace OvCore::ECS::Components;
+
+namespace
+{
+	// Scene-replacing and dialog-opening actions run after the current frame is submitted.
+	template<typename Action>
+	auto Deferred(Action p_action)
+	{
+		return [p_action] { EDITOR_EXEC(DelayAction(p_action, 0)); };
+	}
+
+	bool IsDown(OvWindowing::Inputs::InputManager& p_input, OvWindowing::Inputs::EKey p_left, OvWindowing::Inputs::EKey p_right)
+	{
+		using OvWindowing::Inputs::EKeyState;
+		return p_input.GetKeyState(p_left) == EKeyState::KEY_DOWN || p_input.GetKeyState(p_right) == EKeyState::KEY_DOWN;
+	}
+}
 
 OvEditor::Panels::MenuBar::MenuBar()
 {
 	CreateFileMenu();
 	CreateEditMenu();
-	CreateBuildMenu();
+	CreateAssetsMenu();
+	CreateGameObjectMenu();
+	CreateComponentMenu();
 	CreateWindowMenu();
-	CreateActorsMenu();
-	CreateResourcesMenu();
-	CreateToolsMenu();
-	CreateSettingsMenu();
-	CreateLayoutMenu();
 	CreateHelpMenu();
 }
 
 void OvEditor::Panels::MenuBar::HandleShortcuts(float p_deltaTime)
 {
-    m_undoItem->name = "Undo " + EDITOR_EXEC(UndoLabel());
-    m_redoItem->name = "Redo " + EDITOR_EXEC(RedoLabel());
-    m_undoItem->disabled = !EDITOR_EXEC(CanUndo());
-    m_redoItem->disabled = !EDITOR_EXEC(CanRedo());
-	auto& inputManager = *EDITOR_CONTEXT(inputManager);
+	using EEditorMode = Core::EditorActions::EEditorMode;
+	using OvWindowing::Inputs::EKey;
 
-	if (inputManager.GetKeyState(OvWindowing::Inputs::EKey::KEY_LEFT_CONTROL) == OvWindowing::Inputs::EKeyState::KEY_DOWN)
+	const auto mode = EDITOR_EXEC(GetCurrentEditorMode());
+	m_undoItem->name = "Undo " + EDITOR_EXEC(UndoLabel());
+	m_redoItem->name = "Redo " + EDITOR_EXEC(RedoLabel());
+	m_undoItem->disabled = !EDITOR_EXEC(CanUndo());
+	m_redoItem->disabled = !EDITOR_EXEC(CanRedo());
+	m_saveItem->disabled = m_saveAsItem->disabled = mode != EEditorMode::EDIT;
+	m_playItem->checked = mode != EEditorMode::EDIT;
+	m_pauseItem->checked = mode == EEditorMode::PAUSE;
+	m_pauseItem->disabled = m_stepItem->disabled = mode == EEditorMode::EDIT;
+	UpdateToggleableItems();
+
+	auto& input = *EDITOR_CONTEXT(inputManager);
+	if (!IsDown(input, EKey::KEY_LEFT_CONTROL, EKey::KEY_RIGHT_CONTROL))
+		return;
+
+	const bool shift = IsDown(input, EKey::KEY_LEFT_SHIFT, EKey::KEY_RIGHT_SHIFT);
+	const bool alt = IsDown(input, EKey::KEY_LEFT_ALT, EKey::KEY_RIGHT_ALT);
+
+	if (input.IsKeyPressed(EKey::KEY_N)) Deferred([] { EDITOR_EXEC(NewScene()); })();
+	if (input.IsKeyPressed(EKey::KEY_O)) Deferred([] { EDITOR_EXEC(OpenScene()); })();
+	if (input.IsKeyPressed(EKey::KEY_S))
 	{
-		if (inputManager.IsKeyPressed(OvWindowing::Inputs::EKey::KEY_N))
-			EDITOR_EXEC(LoadEmptyScene());
-
-		if (inputManager.IsKeyPressed(OvWindowing::Inputs::EKey::KEY_S))
-		{
-			if (inputManager.GetKeyState(OvWindowing::Inputs::EKey::KEY_LEFT_SHIFT) == OvWindowing::Inputs::EKeyState::KEY_UP)
-				EDITOR_EXEC(SaveSceneChanges());
-			else
-				EDITOR_EXEC(SaveAs());
-		}
+		if (shift) Deferred([] { EDITOR_EXEC(SaveAs()); })();
+		else Deferred([] { EDITOR_EXEC(SaveSceneChanges()); })();
 	}
+	if (input.IsKeyPressed(EKey::KEY_B)) Deferred([] { EDITOR_EXEC(Build(true, false)); })();
+	if (input.IsKeyPressed(EKey::KEY_P))
+	{
+		if (alt) Deferred([] { EDITOR_EXEC(NextFrame()); })();
+		else if (shift) Deferred([] { EDITOR_EXEC(TogglePause()); })();
+		else Deferred([] { EDITOR_EXEC(TogglePlay()); })();
+	}
+}
+
+void OvEditor::Panels::MenuBar::CreateFileMenu()
+{
+	auto& fileMenu = CreateWidget<MenuList>("File");
+	fileMenu.CreateWidget<MenuItem>("New Scene", "Ctrl+N").ClickedEvent += Deferred([] { EDITOR_EXEC(NewScene()); });
+	fileMenu.CreateWidget<MenuItem>("Open Scene...", "Ctrl+O").ClickedEvent += Deferred([] { EDITOR_EXEC(OpenScene()); });
+	fileMenu.CreateWidget<Visual::Separator>();
+	m_saveItem = &fileMenu.CreateWidget<MenuItem>("Save", "Ctrl+S");
+	m_saveItem->ClickedEvent += Deferred([] { EDITOR_EXEC(SaveSceneChanges()); });
+	m_saveAsItem = &fileMenu.CreateWidget<MenuItem>("Save As...", "Ctrl+Shift+S");
+	m_saveAsItem->ClickedEvent += Deferred([] { EDITOR_EXEC(SaveAs()); });
+	fileMenu.CreateWidget<Visual::Separator>();
+	fileMenu.CreateWidget<MenuItem>("Build...").ClickedEvent += Deferred([] { EDITOR_EXEC(Build(false, false)); });
+	fileMenu.CreateWidget<MenuItem>("Build And Run", "Ctrl+B").ClickedEvent += Deferred([] { EDITOR_EXEC(Build(true, false)); });
+	fileMenu.CreateWidget<MenuItem>("Temporary Build And Run").ClickedEvent += Deferred([] { EDITOR_EXEC(Build(true, true)); });
+	fileMenu.CreateWidget<Visual::Separator>();
+	fileMenu.CreateWidget<MenuItem>("Exit", "Alt+F4").ClickedEvent += [] { EDITOR_CONTEXT(window)->SetShouldClose(true); };
 }
 
 void OvEditor::Panels::MenuBar::CreateEditMenu()
 {
-    auto& menu = CreateWidget<MenuList>("Edit");
-    m_undoItem = &menu.CreateWidget<MenuItem>("Undo", "Ctrl+Z");
-    m_redoItem = &menu.CreateWidget<MenuItem>("Redo", "Ctrl+Y / Ctrl+Shift+Z");
-    m_undoItem->ClickedEvent += [] { EDITOR_EXEC(DelayAction([] { EDITOR_EXEC(Undo()); }, 0)); };
-    m_redoItem->ClickedEvent += [] { EDITOR_EXEC(DelayAction([] { EDITOR_EXEC(Redo()); }, 0)); };
-    menu.CreateWidget<Visual::Separator>();
-    menu.CreateWidget<MenuItem>("Duplicate Selection", "Ctrl+D").ClickedEvent += [] { EDITOR_EXEC(DelayAction([] { EDITOR_EXEC(DuplicateSelectedActors()); }, 0)); };
-    menu.CreateWidget<MenuItem>("Delete Selection", "Delete").ClickedEvent += [] { EDITOR_EXEC(DelayAction([] { EDITOR_EXEC(DestroySelectedActors()); }, 0)); };
+	auto& menu = CreateWidget<MenuList>("Edit");
+	m_undoItem = &menu.CreateWidget<MenuItem>("Undo", "Ctrl+Z");
+	m_redoItem = &menu.CreateWidget<MenuItem>("Redo", "Ctrl+Y");
+	m_undoItem->ClickedEvent += Deferred([] { EDITOR_EXEC(Undo()); });
+	m_redoItem->ClickedEvent += Deferred([] { EDITOR_EXEC(Redo()); });
+	menu.CreateWidget<Visual::Separator>();
+
+	menu.CreateWidget<MenuItem>("Select All", "Ctrl+A").ClickedEvent += Deferred([] {
+		if (auto* scene = EDITOR_CONTEXT(sceneManager).GetCurrentScene()) EDITOR_EXEC(SetSelection(scene->GetActors()));
+	});
+	menu.CreateWidget<MenuItem>("Deselect All").ClickedEvent += Deferred([] { EDITOR_EXEC(UnselectActor()); });
+	menu.CreateWidget<Visual::Separator>();
+
+	menu.CreateWidget<MenuItem>("Copy", "Ctrl+C").ClickedEvent += [] {
+		if (EDITOR_EXEC(IsAnyActorSelected())) EDITOR_EXEC(CopyActor(EDITOR_EXEC(GetSelectedActor())));
+	};
+	menu.CreateWidget<MenuItem>("Paste", "Ctrl+V").ClickedEvent += Deferred([] {
+		EDITOR_EXEC(PasteActor(EDITOR_EXEC(IsAnyActorSelected()) ? &EDITOR_EXEC(GetSelectedActor()) : nullptr));
+	});
+	menu.CreateWidget<MenuItem>("Duplicate", "Ctrl+D").ClickedEvent += Deferred([] { EDITOR_EXEC(DuplicateSelectedActors()); });
+	menu.CreateWidget<MenuItem>("Delete", "Delete").ClickedEvent += Deferred([] { EDITOR_EXEC(DestroySelectedActors()); });
+	menu.CreateWidget<Visual::Separator>();
+
+	menu.CreateWidget<MenuItem>("Frame Selected", "F").ClickedEvent += Deferred([] {
+		if (EDITOR_EXEC(IsAnyActorSelected())) EDITOR_PANEL(SceneView, "Scene View").FrameSelection();
+	});
+	menu.CreateWidget<Visual::Separator>();
+
+	m_playItem = &menu.CreateWidget<MenuItem>("Play", "Ctrl+P", true);
+	m_playItem->ClickedEvent += Deferred([] { EDITOR_EXEC(TogglePlay()); });
+	m_pauseItem = &menu.CreateWidget<MenuItem>("Pause", "Ctrl+Shift+P", true);
+	m_pauseItem->ClickedEvent += Deferred([] { EDITOR_EXEC(TogglePause()); });
+	m_stepItem = &menu.CreateWidget<MenuItem>("Step", "Ctrl+Alt+P");
+	m_stepItem->ClickedEvent += Deferred([] { EDITOR_EXEC(NextFrame()); });
+	menu.CreateWidget<Visual::Separator>();
+
+	menu.CreateWidget<MenuItem>("Project Settings...").ClickedEvent += [] {
+		auto& panel = EDITOR_PANEL(OvUI::Panels::PanelWindow, "Project Settings");
+		panel.Open();
+		panel.Focus();
+	};
+	m_settingsMenu = &menu.CreateWidget<MenuList>("Preferences");
+}
+
+void OvEditor::Panels::MenuBar::CreateAssetsMenu()
+{
+	auto& menu = CreateWidget<MenuList>("Assets");
+	menu.CreateWidget<MenuItem>("Import New Asset...").ClickedEvent += Deferred([] {
+		EDITOR_EXEC(ImportAsset(EDITOR_CONTEXT(projectAssetsPath).string()));
+	});
+	menu.CreateWidget<MenuItem>("Refresh").ClickedEvent += [] { EDITOR_PANEL(AssetBrowser, "Asset Browser").Refresh(); };
+	menu.CreateWidget<MenuItem>("Show in Explorer").ClickedEvent += [] {
+		OvTools::Utils::SystemCalls::ShowInExplorer(EDITOR_CONTEXT(projectAssetsPath).string());
+	};
+	menu.CreateWidget<Visual::Separator>();
+	menu.CreateWidget<MenuItem>("Open Code Editor").ClickedEvent += [] { EDITOR_EXEC(OpenInCodeEditor(EDITOR_CONTEXT(projectFolder))); };
+	menu.CreateWidget<MenuItem>("Regenerate Scripting Project Files").ClickedEvent += EDITOR_BIND(RegenerateScriptingProjectFiles);
+	menu.CreateWidget<MenuItem>("Reload Scripts").ClickedEvent += EDITOR_BIND(RefreshScripts);
+	menu.CreateWidget<Visual::Separator>();
+	menu.CreateWidget<MenuItem>("Compile Shaders").ClickedEvent += EDITOR_BIND(CompileShaders);
+	menu.CreateWidget<MenuItem>("Save Materials").ClickedEvent += EDITOR_BIND(SaveMaterials);
+}
+
+void OvEditor::Panels::MenuBar::CreateGameObjectMenu()
+{
+	auto& menu = CreateWidget<MenuList>("GameObject");
+	Utils::ActorCreationMenu::GenerateActorCreationMenu(menu);
+
+	auto& emptyChild = menu.CreateWidget<MenuItem>("Create Empty Child");
+	emptyChild.ClickedEvent += [] {
+		if (EDITOR_EXEC(IsAnyActorSelected())) EDITOR_EXEC(CreateEmptyActor(true, &EDITOR_EXEC(GetSelectedActor())));
+	};
+	menu.CreateWidget<Visual::Separator>();
+	menu.CreateWidget<MenuItem>("Frame Selected", "F").ClickedEvent += Deferred([] {
+		if (EDITOR_EXEC(IsAnyActorSelected())) EDITOR_PANEL(SceneView, "Scene View").FrameSelection();
+	});
+}
+
+void OvEditor::Panels::MenuBar::CreateComponentMenu()
+{
+	auto& menu = CreateWidget<MenuList>("Component");
+	menu.CreateWidget<MenuItem>("Add...").ClickedEvent += Deferred([] {
+		if (!EDITOR_EXEC(IsAnyActorSelected()))
+		{
+			OVLOG_WARNING("Select an entity to add a component to.");
+			return;
+		}
+
+		auto& inspector = EDITOR_PANEL(Inspector, "Inspector");
+		inspector.Open();
+		inspector.OpenAddComponentPicker();
+	});
+}
+
+void OvEditor::Panels::MenuBar::CreateWindowMenu()
+{
+	m_windowMenu = &CreateWidget<MenuList>("Window");
+}
+
+void OvEditor::Panels::MenuBar::InitializeWindowMenu()
+{
+	auto& layouts = m_windowMenu->CreateWidget<MenuList>("Layouts");
+	layouts.CreateWidget<MenuItem>("Default").ClickedEvent += [] { EDITOR_EXEC(ApplyLayout(Core::EEditorLayout::DEFAULT)); };
+	layouts.CreateWidget<MenuItem>("2 by 3").ClickedEvent += [] { EDITOR_EXEC(ApplyLayout(Core::EEditorLayout::TWO_BY_THREE)); };
+	m_windowMenu->CreateWidget<Visual::Separator>();
+
+	const std::pair<const char*, std::vector<std::string>> groups[] = {
+		{ "General", { "Scene View", "Game View", "Inspector", "Hierarchy", "Asset Browser", "Console", "Toolbar" } },
+		{ "Rendering", { "Material Editor", "Asset View", "Texture Debugger", "Frame Graph" } },
+		{ "Analysis", { "Frame Info", "Hardware Info" } },
+		{ "Scripting", { "C# Scripts" } }
+	};
+
+	std::vector<std::string> listed;
+	for (const auto& [group, panels] : groups)
+	{
+		auto& menu = m_windowMenu->CreateWidget<MenuList>(group);
+		for (const auto& id : panels)
+		{
+			AddPanelToggle(menu, id);
+			listed.push_back(id);
+		}
+
+// No Tracy profiler (front-end) on non-Windows platforms at the moment.
+// You'll need to build it yourself if you want to use it on other platforms.
+// https://github.com/Overload-Technologies/Overload/issues/614
+#ifdef _WIN32
+		if (std::string_view{ group } == "Analysis")
+		{
+			menu.CreateWidget<Visual::Separator>();
+			menu.CreateWidget<MenuItem>("Profiler").ClickedEvent += EDITOR_BIND(OpenProfiler);
+		}
+#endif
+	}
+
+	m_windowMenu->CreateWidget<Visual::Separator>();
+	for (const auto& [id, panel] : m_panels)
+		if (std::find(listed.begin(), listed.end(), id) == listed.end())
+			AddPanelToggle(*m_windowMenu, id);
+}
+
+void OvEditor::Panels::MenuBar::AddPanelToggle(MenuList& p_menu, const std::string& p_panelID)
+{
+	const auto found = m_panels.find(p_panelID);
+	if (found == m_panels.end())
+		return;
+
+	auto& panel = found->second.get();
+	auto& item = p_menu.CreateWidget<MenuItem>(panel.name, "", true, panel.IsOpened());
+	item.ValueChangedEvent += [&panel](bool p_opened)
+	{
+		panel.SetOpened(p_opened);
+		if (p_opened) panel.Focus();
+	};
+	m_panelToggles.emplace_back(&item, &panel);
 }
 
 void OvEditor::Panels::MenuBar::InitializeSettingsMenu()
 {
+	InitializeWindowMenu();
+
 	auto& appearanceButton = m_settingsMenu->CreateWidget<MenuList>("Appearance");
 	appearanceButton.CreateWidget<Texts::Text>("Some themes may require a restart");
 
 	auto& colorTheme = appearanceButton.CreateWidget<Selection::ComboBox>(static_cast<int>(Settings::EditorSettings::ColorTheme.Get()));
 	colorTheme.choices = {
+		{ static_cast<int>(OvUI::Styling::EStyle::UNITY_DARK), "Unity Dark (Default)"},
+		{ static_cast<int>(OvUI::Styling::EStyle::DEFAULT_DARK), "Alternative Dark"},
+		{ static_cast<int>(OvUI::Styling::EStyle::EVEN_DARKER), "Even Darker"},
+		{ static_cast<int>(OvUI::Styling::EStyle::DUNE_DARK), "Dune Dark"},
 		{ static_cast<int>(OvUI::Styling::EStyle::IM_CLASSIC_STYLE), "ImGui Classic"},
 		{ static_cast<int>(OvUI::Styling::EStyle::IM_DARK_STYLE), "ImGui Dark"},
-		{ static_cast<int>(OvUI::Styling::EStyle::IM_LIGHT_STYLE), "ImGui Light"},
-		{ static_cast<int>(OvUI::Styling::EStyle::DUNE_DARK), "Dune Dark"},
-		{ static_cast<int>(OvUI::Styling::EStyle::DEFAULT_DARK), "Alternative Dark"},
-		{ static_cast<int>(OvUI::Styling::EStyle::EVEN_DARKER), "Even Darker"}
+		{ static_cast<int>(OvUI::Styling::EStyle::IM_LIGHT_STYLE), "ImGui Light"}
 	};
 	colorTheme.ValueChangedEvent += [this](int p_value)
 	{
@@ -121,6 +311,27 @@ void OvEditor::Panels::MenuBar::InitializeSettingsMenu()
 	uiScale.ValueChangedEvent += [this](int p_value) {
 		Settings::EditorSettings::UIScale = p_value;
 		EDITOR_CONTEXT(uiManager)->SetScale(p_value == 0 ? std::nullopt : std::make_optional(p_value / 100.0f));
+	};
+
+	// Unity-style play mode tint: the whole editor is tinted while the game runs.
+	appearanceButton.CreateWidget<Visual::Separator>();
+	auto& tintEnabled = appearanceButton.CreateWidget<MenuItem>("Play Mode Tint", "", true, Settings::EditorSettings::PlayModeTintEnabled.Get());
+	tintEnabled.ValueChangedEvent += [](bool p_value)
+	{
+		Settings::EditorSettings::PlayModeTintEnabled = p_value;
+		EDITOR_EXEC(UpdatePlayModeTint());
+	};
+	auto& tintColor = appearanceButton.CreateWidget<Selection::ColorEdit>(false, OvUI::Types::Color{
+		Settings::EditorSettings::PlayModeTintR.Get(),
+		Settings::EditorSettings::PlayModeTintG.Get(),
+		Settings::EditorSettings::PlayModeTintB.Get()
+	});
+	tintColor.ColorChangedEvent += [](const auto& p_color)
+	{
+		Settings::EditorSettings::PlayModeTintR = p_color.r;
+		Settings::EditorSettings::PlayModeTintG = p_color.g;
+		Settings::EditorSettings::PlayModeTintB = p_color.b;
+		EDITOR_EXEC(UpdatePlayModeTint());
 	};
 
 	m_settingsMenu->CreateWidget<MenuItem>("Spawn actors at origin", "", true, true).ValueChangedEvent += EDITOR_BIND(SetActorSpawnAtOrigin, std::placeholders::_1);
@@ -210,13 +421,13 @@ void OvEditor::Panels::MenuBar::InitializeSettingsMenu()
 	debuggingMenu.CreateWidget<MenuItem>("Debug Frustum Culling", "", true, Settings::EditorSettings::DebugFrustumCulling).ValueChangedEvent += [this](bool p_value) { Settings::EditorSettings::DebugFrustumCulling = p_value; };
 	debuggingMenu.CreateWidget<MenuItem>("Editor Frustum Geometry Culling", "", true, Settings::EditorSettings::EditorFrustumGeometryCulling).ValueChangedEvent += [this](bool p_value) { Settings::EditorSettings::EditorFrustumGeometryCulling = p_value; };
 	debuggingMenu.CreateWidget<MenuItem>("Editor Frustum Light Culling", "", true, Settings::EditorSettings::EditorFrustumLightCulling).ValueChangedEvent += [this](bool p_value) { Settings::EditorSettings::EditorFrustumLightCulling = p_value; };
-	
+
 	auto& scriptingMenu = m_settingsMenu->CreateWidget<MenuList>("Scripting");
 	scriptingMenu.CreateWidget<MenuItem>("Regenerate Scripting Project Files On Startup", "", true, Settings::EditorSettings::RegenerateScriptingProjectFilesOnStartup).ValueChangedEvent += [this](bool p_value) { Settings::EditorSettings::RegenerateScriptingProjectFilesOnStartup = p_value; };
 
 	auto& consoleSettingsMenu = m_settingsMenu->CreateWidget<MenuList>("Console Settings");
 	auto& consoleMaxLogsSlider = consoleSettingsMenu.CreateWidget<OvUI::Widgets::Sliders::SliderInt>(1, 1000, Settings::EditorSettings::ConsoleMaxLogs.Get(), OvUI::Widgets::Sliders::ESliderOrientation::HORIZONTAL, "Max Logs");
-	consoleMaxLogsSlider.ValueChangedEvent += [this](int p_value) { 
+	consoleMaxLogsSlider.ValueChangedEvent += [this](int p_value) {
 		Settings::EditorSettings::ConsoleMaxLogs = p_value;
 		EDITOR_PANEL(Panels::Console, "Console").TruncateLogs();
 	};
@@ -229,71 +440,6 @@ void OvEditor::Panels::MenuBar::InitializeSettingsMenu()
 	{
 		Settings::EditorSettings::CodeEditorCommand = p_value;
 	};
-}
-
-void OvEditor::Panels::MenuBar::CreateFileMenu()
-{
-	auto& fileMenu = CreateWidget<MenuList>("File");
-	fileMenu.CreateWidget<MenuItem>("New Scene", "CTRL + N").ClickedEvent					+= EDITOR_BIND(LoadEmptyScene);
-	fileMenu.CreateWidget<MenuItem>("Save Scene", "CTRL + S").ClickedEvent					+= EDITOR_BIND(SaveSceneChanges);
-	fileMenu.CreateWidget<MenuItem>("Save Scene As...", "CTRL + SHIFT + S").ClickedEvent	+= EDITOR_BIND(SaveAs);
-	fileMenu.CreateWidget<MenuItem>("Exit", "ALT + F4").ClickedEvent						+= [] { EDITOR_CONTEXT(window)->SetShouldClose(true); };
-}
-
-void OvEditor::Panels::MenuBar::CreateBuildMenu()
-{
-	auto& buildMenu = CreateWidget<MenuList>("Build");
-	buildMenu.CreateWidget<MenuItem>("Build game").ClickedEvent					+=	EDITOR_BIND(Build, false, false);
-	buildMenu.CreateWidget<MenuItem>("Build game and run").ClickedEvent			+=	EDITOR_BIND(Build, true, false);
-	buildMenu.CreateWidget<Visual::Separator>();
-	buildMenu.CreateWidget<MenuItem>("Temporary build").ClickedEvent			+=	EDITOR_BIND(Build, true, true);
-}
-
-void OvEditor::Panels::MenuBar::CreateWindowMenu()
-{
-	m_windowMenu = &CreateWidget<MenuList>("Window");
-	m_windowMenu->CreateWidget<MenuItem>("Close all").ClickedEvent	+= std::bind(&MenuBar::OpenEveryWindows, this, false);
-	m_windowMenu->CreateWidget<MenuItem>("Open all").ClickedEvent		+= std::bind(&MenuBar::OpenEveryWindows, this, true);
-	m_windowMenu->CreateWidget<Visual::Separator>();
-
-	/* When the menu is opened, we update which window is marked as "Opened" or "Closed" */
-	m_windowMenu->ClickedEvent += std::bind(&MenuBar::UpdateToggleableItems, this);
-}
-
-void OvEditor::Panels::MenuBar::CreateActorsMenu()
-{
-	auto& actorsMenu = CreateWidget<MenuList>("Actors");
-    Utils::ActorCreationMenu::GenerateActorCreationMenu(actorsMenu);
-}
-
-void OvEditor::Panels::MenuBar::CreateResourcesMenu()
-{
-	auto& resourcesMenu = CreateWidget<MenuList>("Resources");
-	resourcesMenu.CreateWidget<MenuItem>("Compile shaders").ClickedEvent += EDITOR_BIND(CompileShaders);
-	resourcesMenu.CreateWidget<MenuItem>("Save materials").ClickedEvent += EDITOR_BIND(SaveMaterials);
-	resourcesMenu.CreateWidget<MenuItem>("Regenerate Scripting Project Files").ClickedEvent += EDITOR_BIND(RegenerateScriptingProjectFiles);
-}
-
-void OvEditor::Panels::MenuBar::CreateToolsMenu()
-{
-// No Tracy profiler (front-end) on non-Windows platforms at the moment.
-// You'll need to build it yourself if you want to use it on other platforms.
-// https://github.com/Overload-Technologies/Overload/issues/614
-#ifdef _WIN32
-	auto& toolsMenu = CreateWidget<MenuList>("Tools");
-	toolsMenu.CreateWidget<MenuItem>("Open Profiler").ClickedEvent += EDITOR_BIND(OpenProfiler);
-#endif
-}
-
-void OvEditor::Panels::MenuBar::CreateSettingsMenu()
-{
-	m_settingsMenu = &CreateWidget<MenuList>("Settings");
-}
-
-void OvEditor::Panels::MenuBar::CreateLayoutMenu() 
-{
-	auto& layoutMenu = CreateWidget<MenuList>("Layout");
-	layoutMenu.CreateWidget<MenuItem>("Reset").ClickedEvent += EDITOR_BIND(ResetLayout);
 }
 
 void OvEditor::Panels::MenuBar::CreateHelpMenu()
@@ -320,20 +466,11 @@ void OvEditor::Panels::MenuBar::CreateHelpMenu()
 
 void OvEditor::Panels::MenuBar::RegisterPanel(const std::string& p_name, OvUI::Panels::PanelWindow& p_panel)
 {
-	auto& menuItem = m_windowMenu->CreateWidget<MenuItem>(p_name, "", true, true);
-	menuItem.ValueChangedEvent += std::bind(&OvUI::Panels::PanelWindow::SetOpened, &p_panel, std::placeholders::_1);
-
-	m_panels.emplace(p_name, std::make_pair(std::ref(p_panel), std::ref(menuItem)));
+	m_panels.emplace(p_name, std::ref(p_panel));
 }
 
 void OvEditor::Panels::MenuBar::UpdateToggleableItems()
 {
-	for (auto&[name, panel] : m_panels)
-		panel.second.get().checked = panel.first.get().IsOpened();
-}
-
-void OvEditor::Panels::MenuBar::OpenEveryWindows(bool p_state)
-{
-	for (auto&[name, panel] : m_panels)
-		panel.first.get().SetOpened(p_state);
+	for (auto& [item, panel] : m_panelToggles)
+		item->checked = panel->IsOpened();
 }

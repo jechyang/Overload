@@ -46,6 +46,13 @@ namespace OvUI::Styling
 		void ApplyDuneDarkStyle();
 		void ApplyDefaultDarkStyle();
 		void ApplyEvenDarkerStyle();
+		void ApplyUnityDarkStyle();
+
+		/**
+		* Re-applies only the colors (including the background tint) to the active ImGui context.
+		* Safe to call mid-frame; dimensions and font scale are left untouched.
+		*/
+		void ApplyColorsToImGui();
 
 		/**
 		* Sync current style data to the active ImGui context.
@@ -170,12 +177,31 @@ namespace OvUI::Styling
 		Types::Color AccentButtonHovered;
 		Types::Color AccentButtonActive;
 
+		// Collapsing section headers (e.g. Inspector components). ImGui draws these with the
+		// selection Header colors; themes whose selection is a strong accent can opt into a
+		// neutral header instead. Reset to "follow Header" by SetSemanticDefaults().
+		bool distinctCollapsingHeader = false;
+		Types::Color CollapsingHeader;
+		Types::Color CollapsingHeaderHovered;
+		Types::Color CollapsingHeaderActive;
+
+		// Multiplier applied to window, title, tab and menu backgrounds when synced to ImGui
+		// (e.g. the editor play mode tint). Survives preset changes; white means no tint.
+		Types::Color backgroundTint = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+		// Tab and dock chrome (ImGui defaults, restored by SetSemanticDefaults()).
+		float TabCloseButtonMinWidthSelected = -1.0f;	// -1: always visible, 0: only when hovered
+		bool DockingNodeHasCloseButton = true;			// Close-all button at the end of each dock tab bar
+
 	private:
 		Style();
 
 		// Populates all 62 ImGui color members + dimension members from a pre-built ImGuiStyle.
 		// Does NOT set semantic colors -- call SetSemanticDefaults() after this.
 		void PopulateFromImGuiStyle(const struct ImGuiStyle& p_style);
+
+		// Writes every ImGuiCol_* entry (with backgroundTint applied) into p_colors.
+		void WriteColors(struct ImVec4* p_colors) const;
 
 		// Sets semantic colors. Pass darkTheme=true for dark backgrounds, false for light.
 		// Pass lighterOnActive=true to match ImGui built-in styles (active brighter than hover),

@@ -7,18 +7,19 @@
 #pragma once
 
 #include <filesystem>
-#include <queue>
-#include <unordered_map>
+#include <memory>
+#include <string>
 
-#include <OvRendering/Resources/Loaders/TextureLoader.h>
 #include <OvUI/Panels/PanelWindow.h>
-#include <OvUI/Widgets/Layout/TreeNode.h>
-#include <OvUI/Widgets/Layout/Group.h>
+
+namespace OvUI::Plugins { class ContextualMenu; }
 
 namespace OvEditor::Panels
 {
 	/**
-	* A panel that handle asset management
+	* Project window, laid out like Unity's two-column Project browser: a folder tree on the
+	* left, the selected folder's content as a thumbnail grid (or list) on the right, with
+	* breadcrumbs, search and a zoom slider.
 	*/
 	class AssetBrowser : public OvUI::Panels::PanelWindow
 	{
@@ -26,7 +27,7 @@ namespace OvEditor::Panels
 		/**
 		* Constructor
 		* @param p_title
-		* @parma p_opened
+		* @param p_opened
 		* @param p_windowSettings
 		*/
 		AssetBrowser(
@@ -35,27 +36,46 @@ namespace OvEditor::Panels
 			const OvUI::Settings::PanelWindowSettings& p_windowSettings
 		);
 
-		/**
-		* Fill the asset browser panels with widgets corresponding to elements in the asset folder
-		*/
-		void Fill();
+		~AssetBrowser() override;
 
 		/**
-		* Clear the asset browser widgets
-		*/
-		void Clear();
-
-		/**
-		* Refresh the asset browser widgets (Clear + Fill)
+		* Rescan the asset folders on the next draw
 		*/
 		void Refresh();
 
-	private:
-		void ParseFolder(OvUI::Widgets::Layout::TreeNode& p_root, const std::filesystem::directory_entry& p_directory, bool p_isEngineItem);
-		void ConsiderItem(OvUI::Widgets::Layout::TreeNode* p_root, const std::filesystem::directory_entry& p_entry, bool p_isEngineItem, bool p_autoOpen = false);
+		/**
+		* Show the given folder in the content area and reveal it in the folder tree
+		* @param p_folder
+		*/
+		void ShowFolder(const std::filesystem::path& p_folder);
+
+		/**
+		* Returns the folder currently shown in the content area
+		*/
+		const std::filesystem::path& GetCurrentFolder() const;
 
 	private:
-		OvUI::Widgets::Layout::Group* m_assetList;
-		std::unordered_map<OvUI::Widgets::Layout::TreeNode*, std::filesystem::path> m_pathUpdate;
+		struct State;
+
+		void DrawBrowser();
+		void Rebuild();
+		void DrawToolbar();
+		void DrawFolderTree();
+		void DrawFolderNode(const std::filesystem::path& p_folder, const std::string& p_label);
+		void DrawContent();
+		void DrawFooter();
+		void HandleShortcuts();
+		void AcceptDrops(const std::filesystem::path& p_folder);
+		void AcceptPayloads(const std::filesystem::path& p_folder);
+		OvUI::Plugins::ContextualMenu& FolderMenu(const std::filesystem::path& p_folder);
+		void Wire(OvUI::Plugins::ContextualMenu& p_menu, bool p_directory, bool p_script);
+		void MoveInto(const std::filesystem::path& p_folder, const std::string& p_resourcePath, bool p_directory);
+		void OnRenamed(const std::filesystem::path& p_previous, const std::filesystem::path& p_next, bool p_directory, bool p_script);
+		void OnDestroyed(const std::filesystem::path& p_path);
+		void Select(const std::filesystem::path& p_path);
+		bool IsEngine(const std::filesystem::path& p_path) const;
+
+	private:
+		std::unique_ptr<State> m_state;
 	};
 }

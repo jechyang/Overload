@@ -19,6 +19,9 @@ void LoadIniEntry(OvTools::Filesystem::IniFile& iniFile, const std::string& entr
 	}
 }
 
+// Bump when a new default theme should replace the previous default on upgrade.
+constexpr int kThemeRevision = 1;
+
 OvTools::Filesystem::IniFile GetEditorIniFile()
 {
 	const auto filePath = std::filesystem::path{ OvTools::Utils::SystemCalls::GetPathToAppdata() } /
@@ -57,6 +60,11 @@ void OvEditor::Settings::EditorSettings::Save()
 	iniFile.Add("rotation_snap_unit", RotationSnapUnit.Get());
 	iniFile.Add("scaling_snap_unit", ScalingSnapUnit.Get());
 	iniFile.Add("color_theme", ColorTheme.Get());
+	iniFile.Add("ui_theme_revision", kThemeRevision);
+	iniFile.Add("play_mode_tint_enabled", PlayModeTintEnabled.Get());
+	iniFile.Add("play_mode_tint_r", PlayModeTintR.Get());
+	iniFile.Add("play_mode_tint_g", PlayModeTintG.Get());
+	iniFile.Add("play_mode_tint_b", PlayModeTintB.Get());
 	iniFile.Add("ui_scale", UIScale.Get());
 	iniFile.Add("beta_dpi_awareness_dialog_presented", BetaDpiAwarenessDialogPresented.Get());
 	iniFile.Add("console_max_logs", ConsoleMaxLogs.Get());
@@ -92,6 +100,14 @@ void OvEditor::Settings::EditorSettings::Load()
 	LoadIniEntry<float>(iniFile, "rotation_snap_unit", RotationSnapUnit);
 	LoadIniEntry<float>(iniFile, "scaling_snap_unit", ScalingSnapUnit);
 	LoadIniEntry<int>(iniFile, "color_theme", ColorTheme);
+	// Settings written before the Unity skin existed still carry the previous default theme;
+	// move those users to the new default once. Explicitly chosen themes are preserved.
+	if (!iniFile.IsKeyExisting("ui_theme_revision") && ColorTheme.Get() == static_cast<int>(OvUI::Styling::EStyle::DEFAULT_DARK))
+		ColorTheme = static_cast<int>(OvUI::Styling::EStyle::UNITY_DARK);
+	LoadIniEntry<bool>(iniFile, "play_mode_tint_enabled", PlayModeTintEnabled);
+	LoadIniEntry<float>(iniFile, "play_mode_tint_r", PlayModeTintR);
+	LoadIniEntry<float>(iniFile, "play_mode_tint_g", PlayModeTintG);
+	LoadIniEntry<float>(iniFile, "play_mode_tint_b", PlayModeTintB);
 	LoadIniEntry<int>(iniFile, "ui_scale", UIScale);
 	LoadIniEntry<bool>(iniFile, "beta_dpi_awareness_dialog_presented", BetaDpiAwarenessDialogPresented);
 	LoadIniEntry<int>(iniFile, "console_max_logs", ConsoleMaxLogs);
