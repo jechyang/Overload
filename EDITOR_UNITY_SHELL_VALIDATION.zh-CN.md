@@ -58,3 +58,19 @@ node Tests/Editor/run-panel-validation.mjs
 - `node Tests/Editor/run-shell-validation.mjs`：48 项通过（新增 Error Pause 三项、文件夹树宽度恢复、
   Console / Hierarchy 搜索 / Game Stats 截图 `7-console`、`8-hierarchy-search`、`9-game-stats`）。
 - `node Tests/Editor/run-panel-validation.mjs`：默认渲染与 RenderThread 各 574 项通过。
+
+## 第三轮（2026-10-14）
+
+- **Inspector 顶部**：改为 Unity 式“激活勾选框 + 名称”同一行，Tag 在下一行。行内保留隐藏的
+  Active / Name 标题，多选批量编辑、(Mixed) 标记、属性右键菜单（复制/粘贴/重置）照常工作；
+  默认值键改为 `0/1/Active`、`1/1/Tag`。OvUI 横向 `Group` 现在不为禁用的子控件分配列。
+- **Hierarchy 原地重命名**：F2 或右键 *Rename* 在行内显示输入框，Enter 或点击别处提交、Esc 取消；
+  提交是可撤销的场景编辑。取代原来的 “Rename to...” 子菜单。实现位于 OvUI `TreeNode::BeginRename()`。
+- **Console 详情区**：点击日志行即选中（高亮），列表下方显示完整消息（可选中复制），
+  中间分隔条可拖动调整高度。
+
+### 验证
+
+- `node Tests/Editor/run-shell-validation.mjs`：59 项通过。新增真实键盘输入的 F2 重命名
+  （提交、Esc 取消、撤销恢复）与 Console 详情区检查，截图 `10-hierarchy-rename`、`11-console-detail`。
+- `node Tests/Editor/run-panel-validation.mjs`：默认渲染与 RenderThread 各 574 项通过。

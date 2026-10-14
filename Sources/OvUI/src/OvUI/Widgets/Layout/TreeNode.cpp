@@ -4,6 +4,8 @@
 * @licence: MIT
 */
 
+#include <algorithm>
+
 #include <imgui.h>
 
 #include <OvUI/Internal/Converter.h>
@@ -29,6 +31,46 @@ void OvUI::Widgets::Layout::TreeNode::Close()
 	m_shouldOpen = false;
 }
 
+void OvUI::Widgets::Layout::TreeNode::BeginRename()
+{
+	m_renaming = true;
+	m_focusRename = true;
+	m_renameBuffer = name;
+	m_renameBuffer.resize(std::max<size_t>(name.size() + 64, 256), '\0');
+	m_scrollIntoView = true;
+}
+
+void OvUI::Widgets::Layout::TreeNode::DrawRenameField(float p_textX)
+{
+	// Overlay the field on the row: same line as the node, starting where the label starts.
+	const ImVec2 rowMin = ImGui::GetItemRectMin(), rowMax = ImGui::GetItemRectMax();
+	ImGui::PushID("##Rename");
+	ImGui::SameLine();
+	ImGui::SetCursorScreenPos({ p_textX - ImGui::GetStyle().FramePadding.x, rowMin.y });
+	ImGui::SetNextItemWidth(std::max(40.0f, rowMax.x - p_textX));
+	if (m_focusRename)
+	{
+		ImGui::SetKeyboardFocusHere();
+		m_focusRename = false;
+	}
+
+	// Same height as the row so the rows below do not move.
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { ImGui::GetStyle().FramePadding.x, std::max(0.0f, (rowMax.y - rowMin.y - ImGui::GetFontSize()) * 0.5f) });
+	ImGui::InputText("##Field", m_renameBuffer.data(), m_renameBuffer.size(), ImGuiInputTextFlags_AutoSelectAll);
+	ImGui::PopStyleVar();
+	const bool deactivated = ImGui::IsItemDeactivated();
+	const bool lostFocus = !ImGui::IsItemActive() && !ImGui::IsItemActivated() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::IsItemHovered();
+	ImGui::PopID();
+
+	if (deactivated || lostFocus)
+	{
+		m_renaming = false;
+		const std::string edited = m_renameBuffer.c_str();
+		if (!ImGui::IsKeyPressed(ImGuiKey_Escape, false) && !edited.empty() && edited != name)
+			RenamedEvent.Invoke(edited);
+	}
+}
+
 bool OvUI::Widgets::Layout::TreeNode::IsOpened() const
 {
 	return m_shouldOpen || (m_opened && !m_shouldClose);
@@ -50,6 +92,7 @@ void OvUI::Widgets::Layout::TreeNode::_Draw_Impl()
 	}
 
 	ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth;
+	if (m_renaming)			ImGui::SetNextItemAllowOverlap();
 	if (m_arrowClickToOpen) flags |= ImGuiTreeNodeFlags_OpenOnArrow;
 	if (selected)			flags |= ImGuiTreeNodeFlags_Selected;
 	if (leaf)				flags |= ImGuiTreeNodeFlags_Leaf;
@@ -59,6 +102,7 @@ void OvUI::Widgets::Layout::TreeNode::_Draw_Impl()
 	iconTextureID.RetainForCapture();
 	const bool hasIcon = iconTextureID.id != 0;
 	bool opened;
+	float labelX = 0.0f;
 	if (hasIcon)
 	{
 		flags |= ImGuiTreeNodeFlags_SpanAvailWidth;
@@ -76,12 +120,14 @@ void OvUI::Widgets::Layout::TreeNode::_Draw_Impl()
 		const ImVec2 iconMax(startX + iconSize, centerY + iconSize * 0.5f);
 		drawList->AddImage(iconTextureID.id, iconMin, iconMax, ImVec2(0.f, 1.f), ImVec2(1.f, 0.f), tintCol);
 
-		const float textX = startX + iconSize + ImGui::GetStyle().ItemSpacing.x;
-		drawList->AddText(ImVec2(textX, ImGui::GetItemRectMin().y), tintCol, name.c_str());
+		labelX = startX + iconSize + ImGui::GetStyle().ItemSpacing.x;
+		if (!m_renaming)
+			drawList->AddText(ImVec2(labelX, ImGui::GetItemRectMin().y), tintCol, name.c_str());
 	}
 	else
 	{
-		opened = ImGui::TreeNodeEx((name + "###" + m_widgetID).c_str(), flags);
+		opened = ImGui::TreeNodeEx(((m_renaming ? std::string{} : name) + "###" + m_widgetID).c_str(), flags);
+		labelX = ImGui::GetItemRectMin().x + ImGui::GetTreeNodeToLabelSpacing();
 	}
 
 	if (m_scrollIntoView)
@@ -107,6 +153,11 @@ void OvUI::Widgets::Layout::TreeNode::_Draw_Impl()
 
 	ImGui::PopStyleColor();
 
+	// While renaming, the field is the last item; plugins (menus, drag and drop) wait.
+	const bool renaming = m_renaming;
+	if (renaming)
+		DrawRenameField(labelX);
+
 	if (opened)
 	{
 		if (!prevOpened)
@@ -114,7 +165,7 @@ void OvUI::Widgets::Layout::TreeNode::_Draw_Impl()
 
 		m_opened = true;
 
-		ExecutePlugins(Plugins::EPluginExecutionContext::WIDGET); // Manually execute plugins to make plugins considering the TreeNode and no childs
+		if (!renaming) ExecutePlugins(Plugins::EPluginExecutionContext::WIDGET); // Manually execute plugins to make plugins considering the TreeNode and no childs
 
 		DrawWidgets();
 
@@ -127,6 +178,6 @@ void OvUI::Widgets::Layout::TreeNode::_Draw_Impl()
 
 		m_opened = false;
 
-		ExecutePlugins(Plugins::EPluginExecutionContext::WIDGET); // Manually execute plugins to make plugins considering the TreeNode and no childs
+		if (!renaming) ExecutePlugins(Plugins::EPluginExecutionContext::WIDGET); // Manually execute plugins to make plugins considering the TreeNode and no childs
 	}
 }

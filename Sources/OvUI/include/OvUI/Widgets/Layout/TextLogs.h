@@ -28,6 +28,7 @@ namespace OvUI::Widgets::Layout
 			std::string content;
 			Types::ColorEffector contentColor = OVUI_STYLE(Text);
 			uint32_t count = 1;
+			uint64_t id = 0;
 		};
 
 	protected:
@@ -48,6 +49,8 @@ namespace OvUI::Widgets::Layout
 		std::vector<Entry> entries;
 		std::string emptyText = "No entries.";
 		float badgeColumnWidth = 40.0f;
+		float height = 0.0f;		// Child height (0 fills, negative leaves room below)
+		uint64_t selectedId = 0;	// Clicked entry id; 0 when none
 
 	private:
 		uint8_t m_scrollToBottomFrames = 0;

@@ -106,6 +106,7 @@ OvEditor::Panels::Console::Console
 	m_logsWidget->SetID("console-log-list");
 	m_logsWidget->emptyText = "No logs yet.";
 	m_defaultLogEmptyText = m_logsWidget->emptyText;
+	CreateWidget<ConsoleToolbar>([this] { DrawDetails(); });
 
 	EDITOR_EVENT(PlayEvent) += [this]
 	{
@@ -120,6 +121,49 @@ OvEditor::Panels::Console::Console
 OvEditor::Panels::Console::~Console()
 {
 	OvDebug::Logger::LogEvent -= m_logListener;
+}
+
+void OvEditor::Panels::Console::SelectDisplayedLog(int p_index)
+{
+	const auto& entries = m_logsWidget->entries;
+	m_logsWidget->selectedId = p_index >= 0 && static_cast<size_t>(p_index) < entries.size() ? entries[p_index].id : 0;
+}
+
+std::string OvEditor::Panels::Console::GetSelectedLogMessage() const
+{
+	const auto found = std::find_if(m_logs.begin(), m_logs.end(), [this](const LogEntry& p_log) { return p_log.id == m_logsWidget->selectedId; });
+	return m_logsWidget->selectedId != 0 && found != m_logs.end() ? found->data.message : std::string{};
+}
+
+void OvEditor::Panels::Console::DrawDetails()
+{
+	// Unity layout: the list above, the selected message's full text below a draggable splitter.
+	const float scale = OVUI_SCALE;
+	const float splitter = 6.0f * scale;
+	ImGui::PushID("ConsoleDetails");
+	ImGui::InvisibleButton("##Splitter", { std::max(1.0f, ImGui::GetContentRegionAvail().x), splitter });
+	const bool active = ImGui::IsItemActive();
+	if (ImGui::IsItemHovered() || active) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+	if (active) m_detailHeight -= ImGui::GetIO().MouseDelta.y / scale;
+	{
+		const ImVec2 min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
+		const float y = (min.y + max.y) * 0.5f;
+		ImGui::GetWindowDrawList()->AddLine({ min.x, y }, { max.x, y },
+			ImGui::GetColorU32(active ? ImGuiCol_SeparatorActive : ImGui::IsItemHovered() ? ImGuiCol_SeparatorHovered : ImGuiCol_Separator), scale);
+	}
+
+	const std::string message = GetSelectedLogMessage();
+	if (message.empty())
+	{
+		ImGui::TextDisabled("Select a message to see its full text.");
+	}
+	else
+	{
+		std::string buffer = message;
+		buffer.push_back('\0');
+		ImGui::InputTextMultiline("##Message", buffer.data(), buffer.size(), { -FLT_MIN, -FLT_MIN }, ImGuiInputTextFlags_ReadOnly);
+	}
+	ImGui::PopID();
 }
 
 void OvEditor::Panels::Console::DrawToolbar()
@@ -205,6 +249,11 @@ void OvEditor::Panels::Console::DrawToolbar()
 
 	ImGui::PopStyleVar();
 	ImGui::PopID();
+
+	// Reserve room under the list for the splitter and the detail area.
+	const float available = ImGui::GetContentRegionAvail().y;
+	m_detailHeight = std::clamp(m_detailHeight, 30.0f, std::max(30.0f, available / scale - 80.0f));
+	m_logsWidget->height = -(m_detailHeight * scale + ImGui::GetStyle().ItemSpacing.y * 2.0f + 6.0f * scale);
 }
 
 bool OvEditor::Panels::Console::DrawToggle(const char* p_label, bool p_active, const char* p_tooltip, float p_width)
@@ -241,7 +290,7 @@ void OvEditor::Panels::Console::OnLogIntercepted(const OvDebug::LogData& p_logDa
 		}
 	}
 
-	m_logs.push_back({ p_logData });
+	m_logs.push_back({ p_logData, m_nextLogId++ });
 	m_logsWidget->RequestScrollToBottom();
 	TruncateLogs();
 }
@@ -379,7 +428,8 @@ void OvEditor::Panels::Console::RefreshDisplayedLogs()
 			FormatLogDate(logEntry.data.date),
 			logEntry.data.message,
 			GetLogLevelColor(logEntry.data.logLevel),
-			visibleEntry.count
+			visibleEntry.count,
+			logEntry.id
 		});
 	}
 }

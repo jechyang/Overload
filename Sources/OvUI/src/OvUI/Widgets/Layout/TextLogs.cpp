@@ -15,7 +15,7 @@
 void OvUI::Widgets::Layout::TextLogs::_Draw_Impl()
 {
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-	const bool childVisible = ImGui::BeginChild(("text_logs" + m_widgetID).c_str(), ImVec2(0.0f, 0.0f), true, ImGuiWindowFlags_HorizontalScrollbar);
+	const bool childVisible = ImGui::BeginChild(("text_logs" + m_widgetID).c_str(), ImVec2(0.0f, height), true, ImGuiWindowFlags_HorizontalScrollbar);
 	ImGui::PopStyleVar();
 
 	if (!childVisible)
@@ -61,7 +61,11 @@ void OvUI::Widgets::Layout::TextLogs::_Draw_Impl()
 			ImGui::TableNextRow(ImGuiTableRowFlags_None, rowHeight);
 			ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, GetRowBackgroundColor(static_cast<int>(index)));
 
+			if (entry.id != 0 && entry.id == selectedId)
+				ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, ImGui::GetColorU32(ImGuiCol_Header));
+
 			ImGui::TableSetColumnIndex(0);
+			const float rowTop = ImGui::GetCursorScreenPos().y;
 
 			std::string rowBuffer = entry.content;
 			rowBuffer.push_back('\0');
@@ -98,6 +102,12 @@ void OvUI::Widgets::Layout::TextLogs::_Draw_Impl()
 			}
 
 			ImGui::PopID();
+
+			// Clicking anywhere on the row selects it (the message field stays selectable for copy).
+			const float mouseY = ImGui::GetMousePos().y;
+			if (entry.id != 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) &&
+				mouseY >= rowTop && mouseY < rowTop + rowHeight)
+				selectedId = entry.id;
 		}
 
 		ImGui::EndTable();

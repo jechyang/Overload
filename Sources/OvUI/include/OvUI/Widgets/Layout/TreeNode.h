@@ -48,6 +48,17 @@ namespace OvUI::Widgets::Layout
 
 		void ScrollIntoView() { m_scrollIntoView = true; }
 
+		/**
+		* Replace the label with a text field (Enter or clicking away commits, Escape cancels).
+		* RenamedEvent fires with the new name when it is committed and changed.
+		*/
+		void BeginRename();
+
+		/**
+		* Returns true while the inline rename field is shown
+		*/
+		bool IsRenaming() const { return m_renaming; }
+
 	protected:
 		virtual void _Draw_Impl() override;
 
@@ -64,6 +75,7 @@ namespace OvUI::Widgets::Layout
 		OvTools::Eventing::Event<> DoubleClickedEvent;
 		OvTools::Eventing::Event<> OpenedEvent;
 		OvTools::Eventing::Event<> ClosedEvent;
+		OvTools::Eventing::Event<std::string> RenamedEvent;
 
 	private:
 		bool m_arrowClickToOpen = false;
@@ -71,5 +83,10 @@ namespace OvUI::Widgets::Layout
 		bool m_shouldClose = false;
 		bool m_opened = false;
 		bool m_scrollIntoView = false;
+		bool m_renaming = false;
+		bool m_focusRename = false;
+		std::string m_renameBuffer;
+
+		void DrawRenameField(float p_textX);
 	};
 }

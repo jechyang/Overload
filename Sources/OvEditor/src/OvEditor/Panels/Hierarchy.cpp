@@ -90,8 +90,9 @@ namespace
 class ActorContextualMenu : public OvUI::Plugins::ContextualMenu
 {
 public:
-	ActorContextualMenu(OvCore::ECS::Actor* p_target) :
-		m_targetActor(p_target)
+	ActorContextualMenu(OvCore::ECS::Actor* p_target, std::function<void()> p_rename = {}) :
+		m_targetActor(p_target),
+		m_rename(std::move(p_rename))
 	{
 		using namespace OvUI::Panels;
 		using namespace OvUI::Widgets;
@@ -223,26 +224,11 @@ public:
 				}
 			};
 
-			auto& renameMenu = CreateWidget<OvUI::Widgets::Menu::MenuList>("Rename to...");
-
-			auto& nameEditor = renameMenu.CreateWidget<OvUI::Widgets::InputFields::InputText>("");
-			nameEditor.selectAllOnClick = true;
-
-			renameMenu.ClickedEvent += [this, &nameEditor]
+			// Rename in place on the row, like Unity (also F2).
+			auto& renameButton = CreateWidget<OvUI::Widgets::Menu::MenuItem>("Rename", "F2");
+			renameButton.ClickedEvent += [this]
 			{
-				if (auto* target = GetTargetActor())
-				{
-					nameEditor.content = target->GetName();
-				}
-			};
-
-			nameEditor.EnterPressedEvent += [this](std::string p_newName)
-			{
-				if (auto* target = GetTargetActor())
-				{
-					EDITOR_EXEC(BeginSceneEdit("Rename entity"));
-					target->SetName(p_newName);
-				}
+				if (GetTargetActor() && m_rename) m_rename();
 			};
 		}
 		else
@@ -306,6 +292,7 @@ private:
 	}
 
 	OvCore::ECS::Actor* m_targetActor = nullptr;
+	std::function<void()> m_rename;
 	OvUI::Widgets::Menu::MenuItem* m_applyToPrefabButton = nullptr;
 	OvUI::Widgets::Menu::MenuItem* m_revertToPrefabButton = nullptr;
 };
@@ -468,7 +455,22 @@ void OvEditor::Panels::Hierarchy::_Draw_Impl()
 	// CreatedEvent fires before scene ownership is assigned. Reconcile the
 	// committed scene at the UI boundary, including runtime and prefab batches.
 	Synchronize();
+	if (IsFocused() && !ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F2, false))
+		BeginRenameSelection();
 	PanelWindow::_Draw_Impl();
+}
+
+bool OvEditor::Panels::Hierarchy::BeginRenameSelection()
+{
+	const auto selection = EDITOR_EXEC(GetSelectedActors());
+	if (selection.size() != 1) return false;
+	const auto found = m_widgetActorLink.find(selection.front());
+	if (found == m_widgetActorLink.end()) return false;
+	if (!found->second->enabled) SetSearchFilter("");
+	m_sceneExpanded = true;
+	SelectActorByWidget(*found->second);
+	found->second->BeginRename();
+	return true;
 }
 
 void OvEditor::Panels::Hierarchy::Synchronize()
@@ -716,7 +718,12 @@ void OvEditor::Panels::Hierarchy::AddActorByInstance(OvCore::ECS::Actor & p_acto
 
 	textSelectable.iconTextureID = IsPartOfPrefabInstance(p_actor) && prefabIconID.id != 0 ? prefabIconID : actorIconID;
 
-	textSelectable.AddPlugin<ActorContextualMenu>(&p_actor);
+	textSelectable.AddPlugin<ActorContextualMenu>(&p_actor, [&textSelectable] { textSelectable.BeginRename(); });
+	textSelectable.RenamedEvent += [&p_actor](std::string p_name)
+	{
+		EDITOR_EXEC(BeginSceneEdit("Rename entity"));
+		p_actor.SetName(p_name);
+	};
 	textSelectable.AddPlugin<OvUI::Plugins::DDSource<std::pair<OvCore::ECS::Actor*, OvUI::Widgets::Layout::TreeNode*>>>("Actor", "Attach to...", std::make_pair(&p_actor, &textSelectable));
 	textSelectable.AddPlugin<OvUI::Plugins::DDTarget<std::pair<OvCore::ECS::Actor*, OvUI::Widgets::Layout::TreeNode*>>>("Actor").DataReceivedEvent += [this, &p_actor](std::pair<OvCore::ECS::Actor*, OvUI::Widgets::Layout::TreeNode*> p_element)
 	{

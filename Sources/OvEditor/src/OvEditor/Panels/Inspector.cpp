@@ -412,30 +412,40 @@ void OvEditor::Panels::Inspector::_Populate()
 void OvEditor::Panels::Inspector::_PopulateActorInfo()
 {
     auto ticket = m_viewCallbacks.Ticket();
-    auto populate = [ticket](OvUI::Internal::WidgetContainer& columns, Actor& actor)
+    // Unity header: active toggle and name share one row, Tag below. The row keeps its
+    // (hidden) titles so bindings, mixed-value labels and property menus still have names.
+    auto populate = [ticket](OvUI::Internal::WidgetContainer& root, Actor& actor)
     {
-        OvCore::Helpers::GUIDrawer::DrawString(columns, "Name",
+        auto& row = root.CreateWidget<Layout::Group>();
+        row.horizontal = true;
+        row.stretchWidget = 3;
+        OvCore::Helpers::GUIDrawer::DrawBoolean(row, "Active",
+            [&actor, ticket] { return !ticket.expired() && actor.IsSelfActive(); },
+            [&actor, ticket](bool value) { if (!ticket.expired()) actor.SetActive(value); });
+        OvCore::Helpers::GUIDrawer::DrawString(row, "Name",
             [&actor, ticket] { return ticket.expired() ? std::string{} : actor.GetName(); },
             [&actor, ticket](const std::string& value) { if (!ticket.expired()) actor.SetName(value); });
+        row.GetWidgets()[0].first->enabled = false;
+        row.GetWidgets()[2].first->enabled = false;
+        row.GetWidgets()[1].first->tooltip = "Active";
+
+        auto& columns = root.CreateWidget<Layout::Columns<2>>();
+        columns.widths[0] = 140 * OVUI_SCALE;
         OvCore::Helpers::GUIDrawer::DrawString(columns, "Tag",
             [&actor, ticket] { return ticket.expired() ? std::string{} : actor.GetTag(); },
             [&actor, ticket](const std::string& value) { if (!ticket.expired()) actor.SetTag(value); });
-        OvCore::Helpers::GUIDrawer::DrawBoolean(columns, "Active",
-            [&actor, ticket] { return !ticket.expired() && actor.IsSelfActive(); },
-            [&actor, ticket](bool value) { if (!ticket.expired()) actor.SetActive(value); });
     };
-    auto& headerColumns = m_content->CreateWidget<Layout::Columns<2>>();
-    headerColumns.SetID("inspector_actor_header");
-    headerColumns.widths[0] = 140 * OVUI_SCALE;
-    populate(headerColumns, m_targetActor.value());
-    std::vector<OvUI::Internal::WidgetContainer*> roots{&headerColumns};
+    auto& header = m_content->CreateWidget<Layout::Group>();
+    header.SetID("inspector_actor_header");
+    populate(header, m_targetActor.value());
+    std::vector<OvUI::Internal::WidgetContainer*> roots{&header};
     for (size_t i = 1; i < m_targets.size(); ++i)
     {
         auto controls = std::make_unique<OvUI::Internal::WidgetContainer>();
         populate(*controls, *m_targets[i]);
         roots.push_back(controls.get()); m_batchControls.push_back(std::move(controls));
     }
-    static const InspectorBindings::PropertyDefaults actorDefaults{{"3/Tag",std::string{}},{"5/Active",true}};
+    static const InspectorBindings::PropertyDefaults actorDefaults{{"1/1/Tag",std::string{}},{"0/1/Active",true}};
     InspectorBindings::Connect(roots, ticket,_PropertyContext(&actorDefaults));
     if (m_targets.size() > 1) return;
 

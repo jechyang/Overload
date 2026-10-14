@@ -73,6 +73,11 @@ namespace OvEditor::Panels
 		void SetSearchFilter(const std::string& p_filter);
 
 		/**
+		* Rename the single selected entity in place (F2). Returns false without a single selection.
+		*/
+		bool BeginRenameSelection();
+
+		/**
 		* Delete the widget referencing the given actor
 		* @param p_actor
 		*/

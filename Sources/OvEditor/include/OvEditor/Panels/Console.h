@@ -78,6 +78,12 @@ namespace OvEditor::Panels
 		bool IsErrorPauseEnabled() const { return m_errorPause; }
 
 		/**
+		* Select a message by its position among the displayed rows (-1 clears); its full text shows below the list
+		*/
+		void SelectDisplayedLog(int p_index);
+		std::string GetSelectedLogMessage() const;
+
+		/**
 		* Truncate the logs if the number of logs is greater than the max logs
 		*/
 		void TruncateLogs();
@@ -88,6 +94,7 @@ namespace OvEditor::Panels
 		struct LogEntry
 		{
 			OvDebug::LogData data;
+			uint64_t id = 0;
 		};
 
 		struct VisibleLogEntry
@@ -98,6 +105,7 @@ namespace OvEditor::Panels
 
 	private:
 		void DrawToolbar();
+		void DrawDetails();
 		bool DrawToggle(const char* p_label, bool p_active, const char* p_tooltip, float p_width = 0.0f);
 		void SetShowDefaultLogs(bool p_value);
 		void SetShowInfoLogs(bool p_value);
@@ -114,6 +122,8 @@ namespace OvEditor::Panels
 
 		std::string m_search;
 		OvUI::Widgets::Layout::TextLogs* m_logsWidget = nullptr;
+		uint64_t m_nextLogId = 1;
+		float m_detailHeight = 90.0f;
 
 		bool m_clearOnPlay = true;
 		bool m_errorPause = false;

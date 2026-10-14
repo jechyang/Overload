@@ -29,7 +29,7 @@ namespace {
     void Require(bool condition, const std::string& label) {
         if (!condition) throw std::runtime_error("FAIL: " + label);
         ++passed;
-        std::cout << "PASS: " << label << '\n';
+        std::cout << "PASS: " << label << std::endl;
     }
 }
 
@@ -229,6 +229,39 @@ int main(int argc, char** argv) try {
     capture("6-project-engine-textures");
     (void)clickOnce;
     io.AddMousePosEvent(-10000, -10000); tick(1);
+
+    // Hierarchy: F2 renames in place with real keyboard input; Escape cancels; undo restores.
+    scene = context.sceneManager.GetCurrentScene(); // Play/Stop reloaded the scene
+    auto& renameTarget = *scene->FindActorByName("03 Cool Point");
+    const auto renameGUID = renameTarget.GetGUID();
+    const auto pressKey = [&](ImGuiKey key) { io.AddKeyEvent(key, true); tick(1); io.AddKeyEvent(key, false); tick(2); };
+    actions.SelectActor(renameTarget); hierarchyPanel.Focus(); tick(3);
+    Require(hierarchyPanel.BeginRenameSelection(), "F2 rename starts on the selected entity");
+    tick(3);
+    Require(io.WantTextInput, "the rename field takes keyboard focus");
+    io.AddInputCharactersUTF8("Renamed Light"); tick(2);
+    capture("10-hierarchy-rename");
+    pressKey(ImGuiKey_Enter);
+    Require(scene->FindActorByGUID(renameGUID)->GetName() == "Renamed Light", "Enter commits the inline rename");
+    actions.CommitSceneEdit(true);
+    Require(hierarchyPanel.BeginRenameSelection(), "rename can start again");
+    tick(3); io.AddInputCharactersUTF8("Discarded"); tick(2);
+    pressKey(ImGuiKey_Escape);
+    Require(scene->FindActorByGUID(renameGUID)->GetName() == "Renamed Light", "Escape cancels the inline rename");
+    Require(actions.Undo() && context.sceneManager.GetCurrentScene()->FindActorByGUID(renameGUID)->GetName() == "03 Cool Point", "undo restores the previous name");
+
+    // Console: the selected message's full text shows in the detail area.
+    OVLOG_WARNING("Detail line one\nDetail line two\nDetail line three");
+    consolePanel.Focus(); tick(3);
+    consolePanel.SelectDisplayedLog(static_cast<int>(1e9)); tick(1);
+    Require(consolePanel.GetSelectedLogMessage().empty(), "out-of-range selection clears the detail area");
+    consolePanel.SelectDisplayedLog(0); tick(1);
+    Require(!consolePanel.GetSelectedLogMessage().empty(), "selecting a row exposes its full message");
+    for (int index = 0; index < 1000 && consolePanel.GetSelectedLogMessage().find("Detail line two") == std::string::npos; ++index)
+        consolePanel.SelectDisplayedLog(index);
+    Require(consolePanel.GetSelectedLogMessage().find("Detail line three") != std::string::npos, "the detail area keeps multi-line messages whole");
+    tick(3);
+    capture("11-console-detail");
     ImGui_ImplGlfw_CursorEnterCallback(context.window->GetGlfwWindow(), false);
 
     std::cout << passed << " checks passed\n";
