@@ -31,7 +31,10 @@ namespace OvEditor::Core
         void EnsureProject();
         void ResolveTools();
         void Launch();
-        void Fail(const std::string& error);
+        void Fail(const std::string& error, bool log = true);
+        // Logs each compiler diagnostic as its own Console entry; returns the errors.
+        std::vector<std::string> ReportDiagnostics(const std::string& log);
+        static std::string Tail(const std::string& text, size_t lines);
         std::string Snapshot() const;
         Context& m_context;
         const std::thread::id m_main = std::this_thread::get_id();

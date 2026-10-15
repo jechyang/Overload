@@ -2,6 +2,39 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 
+// The pinned private SDK, driven the same way as BuildCSharp.mjs: Roslyn runs as `dotnet csc.dll`
+// (the SDK csc.exe apphost fails CET checks on some Windows builds), without a shared compiler server.
+export function dotnetToolchain(root, configuration) {
+  const lock = JSON.parse(fs.readFileSync(path.join(root, 'Tools/OvCSharp/toolchain.lock.json'), 'utf8'));
+  const pin = JSON.parse(fs.readFileSync(path.join(root, 'global.json'), 'utf8')).sdk;
+  if (pin.version !== lock.sdk_version || pin.rollForward !== 'disable') throw Error('SDK lock/global.json mismatch.');
+  const sdk = path.join(root, 'Build/Toolchains/dotnet-' + lock.sdk_version);
+  const dotnet = path.join(sdk, 'dotnet.exe');
+  const compiler = path.join(sdk, 'sdk', lock.sdk_version, 'Roslyn/bincore/csc.dll');
+  for (const file of [dotnet, compiler]) if (!fs.existsSync(file)) throw Error('Missing ' + file + '; run InstallCSharpToolchain.mjs.');
+  const env = { ...process.env };
+  const overrides = /^(CscToolExe|CscToolPath|CscEnvironment|RoslynTargetsPath|RoslynCompilerType|SkipCompilerExecution|UseSharedCompilation|UseHostCompilerIfAvailable|MSBuildSDKsPath|CompilerToolPath)$/i;
+  for (const key of Object.keys(env)) if (overrides.test(key)) delete env[key];
+  Object.assign(env, { DOTNET_ROOT: sdk, DOTNET_ROOT_X64: sdk, DOTNET_HOST_PATH: dotnet,
+    DOTNET_MULTILEVEL_LOOKUP: '0', DOTNET_CLI_HOME: path.join(root, 'Build/CSharpCompat/cli'),
+    NUGET_PACKAGES: path.join(root, 'Build/CSharpCompat/packages'), DOTNET_CLI_TELEMETRY_OPTOUT: '1',
+    DOTNET_NOLOGO: '1', DOTNET_ADD_GLOBAL_TOOLS_TO_PATH: '0', OV_CSC_DOTNET: dotnet, OV_CSC_DLL: compiler,
+    // English diagnostics: the editor Console font covers Latin only.
+    DOTNET_CLI_UI_LANGUAGE: 'en-US' });
+  const properties = ['-p:Configuration=' + configuration, '-p:ReflectionConfiguration=' + configuration,
+    '-p:UseSharedCompilation=false', '-p:UseHostCompilerIfAvailable=false', '-p:SkipCompilerExecution=false',
+    '-p:CscToolPath=' + path.join(root, 'Tools/OvCSharp'), '-p:CscToolExe=csc-dotnet.cmd',
+    '-p:CustomAfterMicrosoftCommonTargets=' + path.join(root, 'Sources/OvManaged/Serialization.targets')];
+  // Compiler diagnostics stay one per line (file(line,col): error CSxxxx: ...) for the editor Console.
+  const run = (argv) => {
+    const result = spawnSync(dotnet, [...argv, '-nologo'], { cwd: root, env, windowsHide: true, encoding: 'utf8', timeout: 600000, maxBuffer: 64 * 1024 * 1024 });
+    const text = (result.stdout || '') + (result.stderr || '') + (result.error ? String(result.error) : '');
+    process.stdout.write(text);
+    return { ok: !result.error && result.status === 0, text };
+  };
+  return { sdkVersion: lock.sdk_version, runtimeVersion: lock.runtime_version, properties, run };
+}
+
 // Probe in the build worker, never on the editor Main thread. No shell or PATH changes.
 export function resolvePython(root, explicit, env = process.env) {
   const candidates = [];

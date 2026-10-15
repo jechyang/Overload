@@ -77,7 +77,30 @@ namespace OvEditor::Core
     }
     CSharpProject::~CSharpProject() {if(m_job)CloseHandle(m_job);if(m_process)CloseHandle(m_process);}
     void CSharpProject::CheckMain() const {if(std::this_thread::get_id()!=m_main)throw std::logic_error("C# editor workflow requires Main");}
-    void CSharpProject::Fail(const std::string& error) {m_status=m_applied.empty()?"C#: build failed; fix the error and save or retry":"C#: failed; previous version retained";m_diagnostics=error;OVLOG_ERROR(error);}
+    void CSharpProject::Fail(const std::string& error, bool log) {m_status=m_applied.empty()?"C#: build failed; fix the error and save or retry":"C#: failed; previous version retained";m_diagnostics=error;if(log)OVLOG_ERROR(error);}
+    std::vector<std::string> CSharpProject::ReportDiagnostics(const std::string& log)
+    {
+        // MSBuild prints "file(line,col): error CS1002: message [project]", once inline and once in its summary.
+        static const std::regex pattern(R"(^\s*(.*?)(?:\((\d+),(\d+)\))?\s*:\s*(error|warning)\s+([A-Za-z]+\d+)\s*:\s*(.*?)(?:\s+\[[^\]]*\])?\s*$)");
+        std::vector<std::string> errors;std::set<std::string> seen;std::istringstream lines(log);std::string line,location;
+        while(std::getline(lines,line)) {
+            if(!line.empty()&&line.back()=='\r')line.pop_back();
+            std::smatch m;if(!std::regex_match(line,m,pattern))continue;
+            location=m[1].str();
+            const auto relative=fs::path(Paths::FromUtf8(location)).lexically_relative(m_context.projectFolder);
+            if(!relative.empty()&&*relative.begin()!="..")location=Utf8(relative);
+            const auto text=location+(m[2].matched?"("+m[2].str()+","+m[3].str()+")":"")+": "+m[4].str()+" "+m[5].str()+": "+m[6].str();
+            if(!seen.insert(text).second)continue;
+            if(m[4]=="error"){errors.push_back(text);OVLOG_ERROR(text);}else OVLOG_WARNING(text);
+        }
+        return errors;
+    }
+    std::string CSharpProject::Tail(const std::string& text, size_t lines)
+    {
+        size_t position=text.size();
+        while(position>0&&lines>0){position=text.find_last_of('\n',position-1);if(position==std::string::npos){position=0;break;}--lines;}
+        return text.substr(position==0?0:position+1);
+    }
     void CSharpProject::SetAutomaticBuild(bool enabled)
     {
         CheckMain();watch=enabled;m_dirty=false;
@@ -169,9 +192,18 @@ namespace OvEditor::Core
             }
             if(m_process && WaitForSingleObject(m_process,0)==WAIT_OBJECT_0) {
                 DWORD code=1;GetExitCodeProcess(m_process,&code);CloseHandle(m_process);m_process=nullptr;CloseHandle(m_job);m_job=nullptr;
-                m_diagnostics=Read(m_log);
-                if(code!=0)Fail(m_diagnostics+"\nLog: "+Utf8(m_log));
-                else if(!m_requested&&!m_dirty&&m_buildConfiguration==m_configuration) {
+                const auto log=Read(m_log);
+                if(code==3) {
+                    // Sources changed mid-build: not an error; the watcher queues the next build.
+                    m_diagnostics.clear();m_status="C#: sources changed; rebuilding";
+                    if(!m_requested&&!m_dirty){m_dirty=true;m_changed=now;}
+                }
+                else if(code!=0) {
+                    const auto errors=ReportDiagnostics(log);
+                    Fail(errors.empty()?Tail(log,40)+"\nLog: "+Utf8(m_log):std::to_string(errors.size())+(errors.size()==1?" compiler error":" compiler errors")+"; see the Console.\nLog: "+Utf8(m_log),errors.empty());
+                    if(!errors.empty())for(const auto& error:errors)m_diagnostics+="\n"+error;
+                }
+                else if(ReportDiagnostics(log);!m_requested&&!m_dirty&&m_buildConfiguration==m_configuration) {
                     tinyxml2::XMLDocument doc;const auto text=Read(m_result);
                     if(doc.Parse(text.c_str())!=tinyxml2::XML_SUCCESS||!doc.RootElement()||!doc.RootElement()->Attribute("generation"))throw std::runtime_error("Missing complete build receipt");
                     m_pending=Paths::FromUtf8(doc.RootElement()->Attribute("generation"));m_status=hotReload?"C#: built; reload pending Main safe point":"C#: built; reload pending Stop";
