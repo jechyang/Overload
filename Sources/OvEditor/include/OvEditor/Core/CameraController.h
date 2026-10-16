@@ -41,6 +41,8 @@ namespace OvEditor::Core
 
         void SetInputBlocked(bool blocked) { m_inputBlocked = blocked; }
         void SetProjectionMode(OvRendering::Settings::EProjectionMode mode);
+        void Set2D(bool p_2d);
+        bool Is2D() const { return m_is2D; }
         // Outward direction from the focus point toward the camera.
         void SetViewDirection(const OvMaths::FVector3& direction);
         void Zoom(float scroll);
@@ -132,6 +134,9 @@ namespace OvEditor::Core
 		bool m_inputBlocked = false;
 		bool m_middleMousePressed = false;
 		bool m_rightMousePressed = false;
+		bool m_is2D = false;
+		OvMaths::FVector3 m_saved3DPosition{};
+		OvMaths::FQuaternion m_saved3DRotation = OvMaths::FQuaternion::Identity;
 
 		OvMaths::FVector3 m_targetSpeed;
 		OvMaths::FVector3 m_currentMovementSpeed;

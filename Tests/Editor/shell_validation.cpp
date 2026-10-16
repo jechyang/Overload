@@ -546,6 +546,26 @@ int main(int argc, char** argv) try {
     sceneViewPanel.FrameSelection();
     tick(3);
 
+    // Verify SceneView 2D / 3D mode toggle
+    Require(!sceneViewPanel.Is2D(), "SceneView begins in 3D perspective mode");
+    sceneViewPanel.Set2D(true);
+    tick(5);
+    Require(sceneViewPanel.Is2D(), "SceneView toggles into 2D mode");
+    Require(sceneViewPanel.GetCamera()->GetProjectionMode() == OvRendering::Settings::EProjectionMode::ORTHOGRAPHIC,
+        "SceneView switches camera to orthographic in 2D mode");
+    Require(sceneViewPanel.GetCamera()->GetRotation() == OvMaths::FQuaternion::Identity,
+        "SceneView aligns camera perpendicular to 2D XY plane (Identity rotation)");
+
+    sceneViewPanel.Set2D(false);
+    tick(5);
+    Require(!sceneViewPanel.Is2D(), "SceneView toggles back to 3D mode");
+    Require(sceneViewPanel.GetCamera()->GetProjectionMode() == OvRendering::Settings::EProjectionMode::PERSPECTIVE,
+        "SceneView restores perspective projection when leaving 2D mode");
+
+    // Re-enable 2D for capture
+    sceneViewPanel.Set2D(true);
+    tick(5);
+
     capture("19-ugui-editor-workflow");
 
     std::error_code shellPrefabEc;

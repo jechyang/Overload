@@ -143,6 +143,7 @@ void OvEditor::Panels::SceneView::Update(float p_deltaTime)
 		}
         const auto& input = *EDITOR_CONTEXT(inputManager);
         const bool reverse = input.GetKeyState(EKey::KEY_LEFT_CONTROL) == EKeyState::KEY_DOWN || input.GetKeyState(EKey::KEY_RIGHT_CONTROL) == EKeyState::KEY_DOWN;
+        if (input.IsKeyPressed(EKey::KEY_2)) Set2D(!Is2D());
         if (input.IsKeyPressed(EKey::KEY_KP_5)) ToggleProjection();
         if (input.IsKeyPressed(EKey::KEY_KP_1)) SetViewDirection(reverse ? -OvMaths::FVector3::Forward : OvMaths::FVector3::Forward);
         if (input.IsKeyPressed(EKey::KEY_KP_3)) SetViewDirection(reverse ? -OvMaths::FVector3::Right : OvMaths::FVector3::Right);
@@ -156,6 +157,7 @@ OvEditor::Rendering::EditorOverlayRequest OvEditor::Panels::SceneView::CreateOve
     auto request=AViewControllable::CreateOverlayRequest();request.debugObjects=true;
     using Settings::EditorSettings;
     request.grid = EditorSettings::SceneShowGrid.Get();
+    request.is2D = Is2D();
     request.lightIcons = EditorSettings::SceneShowLightIcons.Get();
     request.cameraIcons = EditorSettings::SceneShowCameraIcons.Get();
     request.reflectionIcons = EditorSettings::SceneShowReflectionIcons.Get();
@@ -480,6 +482,18 @@ void OvEditor::Panels::SceneView::InvalidateNavigationPicking()
     m_highlightedGizmoDirection.reset();
 }
 
+void OvEditor::Panels::SceneView::Set2D(bool p_2d)
+{
+    if (m_gizmoOperations.IsPicking() || m_cameraController.IsOperating()) return;
+    m_cameraController.Set2D(p_2d);
+    InvalidateNavigationPicking();
+}
+
+bool OvEditor::Panels::SceneView::Is2D() const
+{
+    return m_cameraController.Is2D();
+}
+
 void OvEditor::Panels::SceneView::ToggleProjection()
 {
     if (m_gizmoOperations.IsPicking() || m_cameraController.IsOperating()) return;
@@ -625,7 +639,7 @@ void OvEditor::Panels::SceneView::DrawViewportTools()
     if (GetSize().x < 330*scale || GetSafeSize().second < 125*scale) return;
     // Transform tools and handle settings live in the main toolbar (Unity layout);
     // this overlay keeps snapping, framing and scene display options.
-    m_toolsWidth = std::min(292*scale,GetSize().x-16*scale);
+    m_toolsWidth = std::min(300*scale,GetSize().x-16*scale);
     m_toolsHeight = 2*ImGui::GetFrameHeight()+20*scale;
     const ImVec2 origin{content.x+8*scale,content.y+8*scale};
     draw->AddRectFilled(origin,{origin.x+m_toolsWidth,origin.y+m_toolsHeight},IM_COL32(24,25,29,230),6*scale);
@@ -709,7 +723,22 @@ void OvEditor::Panels::SceneView::DrawViewportTools()
         }
         ImGui::EndPopup();
     }
-    m_toolsPopupOpen |= ImGui::IsPopupOpen("SceneOverlays");
+        m_toolsPopupOpen |= ImGui::IsPopupOpen("SceneOverlays");
+    ImGui::SameLine(0,6*scale);
+    const bool is2d = Is2D();
+    if (is2d)
+    {
+        const auto accent = ImGui::GetStyleColorVec4(ImGuiCol_Header);
+        ImGui::PushStyleColor(ImGuiCol_Button, accent);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, accent);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, accent);
+    }
+    if (ImGui::Button("2D##Mode", {38*scale, 0}))
+    {
+        Set2D(!is2d);
+    }
+    if (is2d) ImGui::PopStyleColor(3);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Toggle 2D / 3D mode (2). Aligns camera orthographically with 2D/UI plane.");
     ImGui::EndDisabled(); ImGui::PopID(); ImGui::PopID();
     const auto count = EDITOR_EXEC(GetSelectedActors()).size();
     if (count && GetSafeSize().second > 160*scale)
@@ -789,6 +818,7 @@ void OvEditor::Panels::SceneView::DrawNavigationOverlay()
     if(ImGui::BeginPopup("ViewsMenu")) {
         for(int i=0;i<6;++i)if(ImGui::MenuItem(names[i]))SetViewDirection(axes[i/2]*float(i%2 ? -1 : 1));
         ImGui::Separator();
+        if(ImGui::MenuItem("2D Mode","2",Is2D()))Set2D(!Is2D());
         if(ImGui::MenuItem("Perspective",nullptr,!ortho)&&ortho)ToggleProjection();
         if(ImGui::MenuItem("Orthographic",nullptr,ortho)&&!ortho)ToggleProjection();
         ImGui::EndPopup();

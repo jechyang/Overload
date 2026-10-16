@@ -81,6 +81,8 @@ namespace OvEditor::Panels
 		Core::EGizmoOperation GetGizmoOperation() const;
 
         void ToggleProjection();
+        void Set2D(bool p_2d);
+        bool Is2D() const;
         enum class DisplayMode { LIT, UNLIT, WIREFRAME };
         void SetDisplayMode(DisplayMode mode);
         DisplayMode GetDisplayMode() const;

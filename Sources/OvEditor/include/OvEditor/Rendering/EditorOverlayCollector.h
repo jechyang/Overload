@@ -6,7 +6,7 @@ namespace OvEditor::Rendering
 {
     struct EditorOverlayRequest
     {
-        bool grid = false, debugObjects = false, picking = false;
+        bool grid = false, debugObjects = false, picking = false, is2D = false;
         bool lightIcons = true, cameraIcons = true, reflectionIcons = true;
         bool colliders = true, cameraFrustums = true;
         bool geometryBounds = false, lightBounds = false;

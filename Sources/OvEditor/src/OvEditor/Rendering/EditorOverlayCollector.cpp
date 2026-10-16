@@ -782,26 +782,42 @@ struct OvEditor::Rendering::EditorOverlayCollector::Impl
         gridMaterial.SetBlendable(true);gridMaterial.SetBackfaceCulling(false);
         gridMaterial.SetDepthWriting(false);gridMaterial.SetDepthTest(true);
     }
-    void Grid(const EditorOverlayRequest& request,const OvRendering::Data::RenderView& view)
+        void Grid(const EditorOverlayRequest& request,const OvRendering::Data::RenderView& view)
     {
         const auto pso=tools.CreatePipelineState();
 	constexpr float gridSize = 5000.0f;
 
-	OvMaths::FMatrix4 model =
-		OvMaths::FMatrix4::Translation({ view.input.position.x, 0.0f, view.input.position.z }) *
-		OvMaths::FMatrix4::Scaling({ gridSize * 2.0f, 1.f, gridSize * 2.0f });
+	if (request.is2D)
+	{
+		OvMaths::FMatrix4 model =
+			OvMaths::FMatrix4::Translation({ view.input.position.x, view.input.position.y, 0.0f }) *
+			OvMaths::FQuaternion::ToMatrix4(OvMaths::FQuaternion(OvMaths::FVector3(90.0f, 0.0f, 0.0f))) *
+			OvMaths::FMatrix4::Scaling({ gridSize * 2.0f, 1.f, gridSize * 2.0f });
 
-	gridMaterial.SetProperty("u_Color", request.gridColor);
+		gridMaterial.SetProperty("u_Color", request.gridColor);
 
-	tools
-		.CollectModel(pso, *EDITOR_CONTEXT(editorResources)->GetModel("Plane"), gridMaterial, model);
+		tools.CollectModel(pso, *EDITOR_CONTEXT(editorResources)->GetModel("Plane"), gridMaterial, model);
 
-	constexpr float kLineWidth = 1.0f;
+		constexpr float kLineWidth = 1.0f;
+		shapes.DrawLine(pso, OvMaths::FVector3(-gridSize + view.input.position.x, 0.0f, 0.0f), OvMaths::FVector3(gridSize + view.input.position.x, 0.0f, 0.0f), OvMaths::FVector3::Right, kLineWidth);
+		shapes.DrawLine(pso, OvMaths::FVector3(0.0f, -gridSize + view.input.position.y, 0.0f), OvMaths::FVector3(0.0f, gridSize + view.input.position.y, 0.0f), OvMaths::FVector3::Up, kLineWidth);
+	}
+	else
+	{
+		OvMaths::FMatrix4 model =
+			OvMaths::FMatrix4::Translation({ view.input.position.x, 0.0f, view.input.position.z }) *
+			OvMaths::FMatrix4::Scaling({ gridSize * 2.0f, 1.f, gridSize * 2.0f });
 
-	shapes.DrawLine(pso, OvMaths::FVector3(-gridSize + view.input.position.x, 0.0f, 0.0f), OvMaths::FVector3(gridSize + view.input.position.x, 0.0f, 0.0f), OvMaths::FVector3::Right, kLineWidth);
-	shapes.DrawLine(pso, OvMaths::FVector3(0.0f, -gridSize + view.input.position.y, 0.0f), OvMaths::FVector3(0.0f, gridSize + view.input.position.y, 0.0f), OvMaths::FVector3::Up, kLineWidth);
-	shapes.DrawLine(pso, OvMaths::FVector3(0.0f, 0.0f, -gridSize + view.input.position.z), OvMaths::FVector3(0.0f, 0.0f, gridSize + view.input.position.z), OvMaths::FVector3::Forward, kLineWidth);
+		gridMaterial.SetProperty("u_Color", request.gridColor);
 
+		tools.CollectModel(pso, *EDITOR_CONTEXT(editorResources)->GetModel("Plane"), gridMaterial, model);
+
+		constexpr float kLineWidth = 1.0f;
+
+		shapes.DrawLine(pso, OvMaths::FVector3(-gridSize + view.input.position.x, 0.0f, 0.0f), OvMaths::FVector3(gridSize + view.input.position.x, 0.0f, 0.0f), OvMaths::FVector3::Right, kLineWidth);
+		shapes.DrawLine(pso, OvMaths::FVector3(0.0f, -gridSize + view.input.position.y, 0.0f), OvMaths::FVector3(0.0f, gridSize + view.input.position.y, 0.0f), OvMaths::FVector3::Up, kLineWidth);
+		shapes.DrawLine(pso, OvMaths::FVector3(0.0f, 0.0f, -gridSize + view.input.position.z), OvMaths::FVector3(0.0f, 0.0f, gridSize + view.input.position.z), OvMaths::FVector3::Forward, kLineWidth);
+	}
     }
 };
 OvEditor::Rendering::EditorOverlayCollector::EditorOverlayCollector() : m_impl(std::make_unique<Impl>()) {}

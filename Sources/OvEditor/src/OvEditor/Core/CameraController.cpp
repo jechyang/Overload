@@ -17,6 +17,7 @@
 #include <OvEditor/Core/CameraController.h>
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Core/SelectionBounds.h>
+#include <OvCore/ECS/Components/CUI.h>
 
 OvEditor::Core::CameraController::CameraController(
 	OvEditor::Panels::AView& p_view,
@@ -180,14 +181,17 @@ void OvEditor::Core::CameraController::HandleInputs(float p_deltaTime)
 
 			if (m_rightMousePressed)
 			{
-				HandleCameraFPSMouse(mouseOffset, wasFirstMouse);
+				if (m_is2D)
+					HandleCameraPanning(mouseOffset, wasFirstMouse);
+				else
+					HandleCameraFPSMouse(mouseOffset, wasFirstMouse);
 			}
 			else
 			{
 				if (m_middleMousePressed)
 				{
-					if (m_inputManager.GetKeyState(OvWindowing::Inputs::EKey::KEY_LEFT_ALT) == OvWindowing::Inputs::EKeyState::KEY_DOWN ||
-						m_inputManager.GetKeyState(OvWindowing::Inputs::EKey::KEY_LEFT_CONTROL) == OvWindowing::Inputs::EKeyState::KEY_DOWN)
+					if (!m_is2D && (m_inputManager.GetKeyState(OvWindowing::Inputs::EKey::KEY_LEFT_ALT) == OvWindowing::Inputs::EKeyState::KEY_DOWN ||
+						m_inputManager.GetKeyState(OvWindowing::Inputs::EKey::KEY_LEFT_CONTROL) == OvWindowing::Inputs::EKeyState::KEY_DOWN))
 					{
 						if (auto target = GetTargetActor())
 						{
@@ -384,10 +388,73 @@ OvMaths::FVector3 OvEditor::Core::CameraController::GetFocusPoint() const
     return m_camera.GetPosition() + m_camera.transform->GetWorldForward() * m_focusDistance;
 }
 
+void OvEditor::Core::CameraController::Set2D(bool p_2d)
+{
+    using namespace OvMaths;
+    if (m_is2D == p_2d) return;
+    StopMotion();
+    m_is2D = p_2d;
+
+    if (m_is2D)
+    {
+        m_saved3DPosition = m_camera.GetPosition();
+        m_saved3DRotation = m_camera.GetRotation();
+
+        m_camera.SetProjectionMode(OvRendering::Settings::EProjectionMode::ORTHOGRAPHIC);
+        m_camera.SetRotation(FQuaternion::Identity);
+
+        std::vector<OvCore::ECS::Actor*> targets;
+        if (EDITOR_EXEC(IsAnyActorSelected()))
+        {
+            targets = EDITOR_EXEC(GetSelectedActors());
+        }
+        else if (auto* scene = m_view.GetScene())
+        {
+            for (auto* actor : scene->GetActors())
+            {
+                if (actor->GetComponent<OvCore::ECS::Components::CCanvas>())
+                {
+                    targets.push_back(actor);
+                    break;
+                }
+            }
+        }
+
+        if (!targets.empty())
+        {
+            FrameSelection(targets);
+        }
+        else
+        {
+            const auto focus = GetFocusPoint();
+            m_focusDistance = std::max(10.0f, m_camera.GetNear() * 2);
+            m_camera.SetPosition({focus.x, focus.y, -m_focusDistance});
+            m_camera.SetSize(600.0f);
+        }
+    }
+    else
+    {
+        m_camera.SetProjectionMode(OvRendering::Settings::EProjectionMode::PERSPECTIVE);
+        if (m_saved3DRotation != FQuaternion::Identity)
+        {
+            m_camera.SetRotation(m_saved3DRotation);
+            m_camera.SetPosition(m_saved3DPosition);
+        }
+        else
+        {
+            const auto focus = GetFocusPoint();
+            const auto offset = FVector3(0.0f, 10.0f, -20.0f);
+            m_camera.SetPosition(focus + offset);
+            m_camera.SetRotation(FQuaternion::LookAt(-offset, FVector3::Up));
+        }
+    }
+}
+
 void OvEditor::Core::CameraController::SetProjectionMode(OvRendering::Settings::EProjectionMode mode)
 {
     using namespace OvMaths;
     if (m_camera.GetProjectionMode() == mode) return;
+    if (mode == OvRendering::Settings::EProjectionMode::PERSPECTIVE && m_is2D) m_is2D = false;
     StopMotion();
     const auto forward = m_camera.transform->GetWorldForward();
     const auto focus = GetFocusPoint();
@@ -454,9 +521,9 @@ void OvEditor::Core::CameraController::HandleCameraFPSKeyboard(float p_deltaTime
 		float velocity = m_cameraMoveSpeed * p_deltaTime * (run ? 2.0f : 1.0f);
 
 		if (m_inputManager.GetKeyState(OvWindowing::Inputs::EKey::KEY_W) == OvWindowing::Inputs::EKeyState::KEY_DOWN)
-			m_targetSpeed += m_camera.transform->GetWorldForward() * velocity;
+			m_targetSpeed += (m_is2D ? OvMaths::FVector3::Up : m_camera.transform->GetWorldForward()) * velocity;
 		if (m_inputManager.GetKeyState(OvWindowing::Inputs::EKey::KEY_S) == OvWindowing::Inputs::EKeyState::KEY_DOWN)
-			m_targetSpeed += m_camera.transform->GetWorldForward() * -velocity;
+			m_targetSpeed += (m_is2D ? -OvMaths::FVector3::Up : -m_camera.transform->GetWorldForward()) * velocity;
 		if (m_inputManager.GetKeyState(OvWindowing::Inputs::EKey::KEY_A) == OvWindowing::Inputs::EKeyState::KEY_DOWN)
 			m_targetSpeed += m_camera.transform->GetWorldRight() * velocity;
 		if (m_inputManager.GetKeyState(OvWindowing::Inputs::EKey::KEY_D) == OvWindowing::Inputs::EKeyState::KEY_DOWN)
