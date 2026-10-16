@@ -125,6 +125,22 @@ template<class Draw> static void ValidateInspectorWorkflow(OvEditor::Core::Conte
     Require(inspector.ResetComponentValues(transformType) && actions.UndoCount() == 0,
         "resetting an already-default component creates no history entry"); draw(); draw();
 
+    // Component menu: Remove Component and Paste Component As New.
+    actions.SelectActor(*b()); draw(); draw(); actions.ClearHistory();
+    Require(inspector.CopyComponentValues(lightType),"copy captures the light before it is removed");
+    const float copiedIntensity = b()->GetComponent<CPointLight>()->GetIntensity();
+    Require(!inspector.CanPasteComponentAsNew() && !inspector.PasteComponentAsNew() && actions.UndoCount() == 0,
+        "paste as new is refused while every target already owns the copied component");
+    Require(inspector.RemoveComponents(lightType),"menu removal succeeds"); actions.CommitSceneEdit(true); draw(); draw();
+    Require(b()->GetComponent<CPointLight>() == nullptr && actions.UndoCount() == 1,"menu removal is a single undo step");
+    Require(inspector.CanPasteComponentAsNew() && inspector.PasteComponentAsNew(),"paste as new re-adds the copied component"); draw(); draw();
+    Require(b()->GetComponent<CPointLight>() != nullptr && b()->GetComponent<CPointLight>()->GetIntensity() == copiedIntensity &&
+        actions.UndoCount() == 2 && !inspector.CanPasteComponentAsNew(),
+        "paste as new applies copied values as one undo step and is then unavailable");
+    Require(actions.Undo() && b()->GetComponent<CPointLight>() == nullptr,"undo paste as new removes the component"); draw(); draw();
+    Require(actions.Redo() && b()->GetComponent<CPointLight>() != nullptr &&
+        b()->GetComponent<CPointLight>()->GetIntensity() == copiedIntensity,"redo paste as new restores values"); draw(); draw();
+
     auto& materialSource = scene()->CreateActor("Material source");
     auto& materialTarget = scene()->CreateActor("Material target");
     const auto materialSourceID = materialSource.GetGUID();
@@ -170,9 +186,15 @@ template<class Draw> static void ValidateInspectorWorkflow(OvEditor::Core::Conte
     inspector.SetSearchFilter("point light"); draw(); draw();
     auto& probe = header("Point Light").AddPlugin<InspectorHeaderProbe>(); draw();
     ImVec2 resetMin{}, resetMax{};
+    // The menu ends with "Reset component", a separator, then "Remove component"; the last item is Remove.
+    auto captureReset = [&] {
+        resetMin = ImGui::GetItemRectMin(); resetMax = ImGui::GetItemRectMax();
+        const float shift = (resetMax.y-resetMin.y) + 2*ImGui::GetStyle().ItemSpacing.y + 1;
+        resetMin.y -= shift; resetMax.y -= shift;
+    };
     auto menu = header("Point Light").contextMenu;
     header("Point Light").contextMenu = [&,menu] {
-        menu(); resetMin = ImGui::GetItemRectMin(); resetMax = ImGui::GetItemRectMax();
+        menu(); captureReset();
     };
     auto& io = ImGui::GetIO(); const auto flags = io.BackendFlags;
     io.BackendFlags &= ~ImGuiBackendFlags_HasMouseHoveredViewport;
@@ -202,7 +224,7 @@ template<class Draw> static void ValidateInspectorWorkflow(OvEditor::Core::Conte
     auto& staleProbe = header("Point Light").AddPlugin<InspectorHeaderProbe>();
     menu = header("Point Light").contextMenu;
     header("Point Light").contextMenu = [&,menu] {
-        menu(); resetMin = ImGui::GetItemRectMin(); resetMax = ImGui::GetItemRectMax();
+        menu(); captureReset();
     };
     actions.ClearHistory(); draw();
     click({staleProbe.min.x+70,(staleProbe.min.y+staleProbe.max.y)*.5f},1);

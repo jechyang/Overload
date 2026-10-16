@@ -369,17 +369,57 @@ bool OvEditor::Panels::Inspector::ResetComponentValues(const std::string& type)
     return component && _ApplyComponentValues(type,ComponentXML(*component),"Reset component values");
 }
 
-void OvEditor::Panels::Inspector::_AttachComponentMenu(Layout::GroupCollapsable& header, const std::string& type)
+bool OvEditor::Panels::Inspector::CanPasteComponentAsNew() const
 {
-    header.contextMenu = [this,type,ticket = m_viewCallbacks.Ticket()] {
+    if (m_clipboardXML.empty() || m_targets.empty()) return false;
+    const auto* description = GetComponentRegistry().Find(m_clipboardType);
+    return description && std::all_of(m_targets.begin(),m_targets.end(),[&](auto* actor) { return actor->IsAlive() && description->IsAddable(*actor); });
+}
+
+bool OvEditor::Panels::Inspector::PasteComponentAsNew()
+{
+    if (!CanPasteComponentAsNew()) return false;
+    tinyxml2::XMLDocument doc;
+    if (doc.Parse(m_clipboardXML.c_str()) != tinyxml2::XML_SUCCESS || !doc.FirstChildElement("data")) return false;
+    const auto* description = GetComponentRegistry().Find(m_clipboardType);
+    EDITOR_EXEC(CommitSceneEdit(true)); EDITOR_EXEC(BeginSceneEdit("Paste component as new"));
+    for (auto* actor : m_targets)
+    {
+        description->AddComponent(*actor);
+        if (auto* component = FindComponent(*actor,m_clipboardType)) component->OnDeserialize(doc,doc.FirstChildElement("data"));
+    }
+    _QueueRefresh(); EDITOR_EXEC(CommitSceneEdit(true)); return true;
+}
+
+bool OvEditor::Panels::Inspector::RemoveComponents(const std::string& type)
+{
+    if (m_targets.empty()) return false;
+    EDITOR_EXEC(BeginSceneEdit("Remove component"));
+    for (auto* actor : m_targets)
+        for (const auto& component : actor->GetComponents())
+            if (component->GetTypeName() == type) { actor->RemoveComponent(*component); break; }
+    return true;
+}
+
+void OvEditor::Panels::Inspector::_AttachComponentMenu(Layout::GroupCollapsable& header, const std::string& type, bool removable)
+{
+    header.contextMenu = [this,type,removable,ticket = m_viewCallbacks.Ticket()] {
         if (ticket.expired()) return;
         if (ImGui::MenuItem("Copy component values")) CopyComponentValues(type);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Copy values from the primary inspected entity");
         if (ImGui::MenuItem("Paste component values",nullptr,false,CanPasteComponentValues(type)))
             m_callbacks.defer([this,type,ticket] { if (!ticket.expired()) PasteComponentValues(type); });
+        if (ImGui::MenuItem("Paste component as new",nullptr,false,CanPasteComponentAsNew()))
+            m_callbacks.defer([this,ticket] { if (!ticket.expired()) PasteComponentAsNew(); });
         ImGui::Separator();
         if (ImGui::MenuItem("Reset component"))
             m_callbacks.defer([this,type,ticket] { if (!ticket.expired()) ResetComponentValues(type); });
+        if (removable)
+        {
+            ImGui::Separator();
+            if (ImGui::MenuItem("Remove component"))
+                m_callbacks.defer([this,type,ticket] { if (!ticket.expired()) RemoveComponents(type); });
+        }
     };
 }
 
@@ -644,17 +684,13 @@ void OvEditor::Panels::Inspector::_DrawComponent(AComponent& p_component, int p_
 {
 	auto& header = m_content->CreateWidget<Layout::GroupCollapsable>(p_component.GetName());
     m_sections.push_back(&header);
-    _AttachComponentMenu(header,p_component.GetTypeName());
-	header.SetID("inspector_component_" + p_component.GetName());
 	const bool isTransform = dynamic_cast<CTransform*>(&p_component) != nullptr;
+    _AttachComponentMenu(header,p_component.GetTypeName(),!isTransform);
+	header.SetID("inspector_component_" + p_component.GetName());
 	header.closable = !isTransform;
 	header.CloseEvent += [this, &p_component, ticket = m_viewCallbacks.Ticket()] {
         if (ticket.expired()) return;
-        EDITOR_EXEC(BeginSceneEdit("Remove component"));
-        const auto type = p_component.GetTypeName();
-        for (auto* actor : m_targets)
-            for (const auto& component : actor->GetComponents())
-                if (component->GetTypeName() == type) { actor->RemoveComponent(*component); break; }
+        RemoveComponents(p_component.GetTypeName());
 	};
 
 	if (!isTransform)

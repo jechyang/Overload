@@ -74,6 +74,10 @@ namespace OvEditor::Panels
         bool PasteComponentValues(const std::string& type);
         bool ResetComponentValues(const std::string& type);
         bool CanPasteComponentValues(const std::string& type) const;
+        // Unity "Paste Component As New": adds the copied component type to every target.
+        bool CanPasteComponentAsNew() const;
+        bool PasteComponentAsNew();
+        bool RemoveComponents(const std::string& type);
 
 		/**
 		* Clear scene selection; locked inspection targets are retained.
@@ -97,7 +101,7 @@ namespace OvEditor::Panels
         void _ClearTargets();
         void _DrawToolbar();
         void _ApplySearchFilter();
-        void _AttachComponentMenu(OvUI::Widgets::Layout::GroupCollapsable& header, const std::string& type);
+        void _AttachComponentMenu(OvUI::Widgets::Layout::GroupCollapsable& header, const std::string& type, bool removable);
         bool _ApplyComponentValues(const std::string& type, const std::string& xml, const std::string& label);
         void _QueueRefresh();
         void _InvalidateView();
