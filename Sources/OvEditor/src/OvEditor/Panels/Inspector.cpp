@@ -895,9 +895,13 @@ void OvEditor::Panels::Inspector::_PopulateActorInfo()
 void OvEditor::Panels::Inspector::_PopulateActorComponents()
 {
 	auto& components = m_targetActor->GetComponents();
+	const bool hasRectTransform = m_targetActor->GetComponent<OvCore::ECS::Components::CRectTransform>() != nullptr;
 	const int total = static_cast<int>(components.size());
 	for (int i = 0; i < total; ++i)
 	{
+		if (hasRectTransform && dynamic_cast<OvCore::ECS::Components::CTransform*>(components[i].get()) != nullptr)
+			continue;
+
         const auto type = components[i]->GetTypeName();
         const bool common = std::all_of(m_targets.begin(), m_targets.end(), [&type](auto* actor) {
             return std::any_of(actor->GetComponents().begin(), actor->GetComponents().end(), [&type](const auto& c) { return c->GetTypeName() == type; });
@@ -1074,6 +1078,16 @@ void OvEditor::Panels::Inspector::_DrawComponent(AComponent& p_component, int p_
         if (ticket.expired()) return;
         RemoveComponents(p_component.GetTypeName());
 	};
+
+	if (isRectTransform)
+	{
+		if (auto* rectComp = dynamic_cast<OvCore::ECS::Components::CRectTransform*>(&p_component))
+		{
+			rectComp->LayoutChangedEvent += [this, ticket = m_viewCallbacks.Ticket()] {
+				if (!ticket.expired()) _QueueRefresh();
+			};
+		}
+	}
 
 	if (!isSpatialTransform)
 	{

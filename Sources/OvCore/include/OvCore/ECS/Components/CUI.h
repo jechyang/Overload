@@ -13,6 +13,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <OvTools/Eventing/Event.h>
 
 namespace OvRendering::Resources { class Texture; }
 namespace OvCore::UI::Fonts { struct AtlasPage; }
@@ -34,6 +35,18 @@ namespace OvCore::ECS::Components
         UI::DrivenProperties& GetDrivenProperties() { return m_driven; }
         enum class Axis { Horizontal, Vertical };
         enum class Edge { Left, Right, Top, Bottom };
+        enum class AnchorPreset
+        {
+            TopLeft, TopCenter, TopRight, TopStretch,
+            MiddleLeft, MiddleCenter, MiddleRight, MiddleStretch,
+            BottomLeft, BottomCenter, BottomRight, BottomStretch,
+            StretchLeft, StretchCenter, StretchRight, StretchAll,
+            Custom
+        };
+        AnchorPreset GetAnchorPreset() const;
+        void ApplyAnchorPreset(AnchorPreset preset, bool setPivot = true, bool setPosition = true);
+        static std::string GetAnchorPresetName(AnchorPreset preset);
+        OvTools::Eventing::Event<> LayoutChangedEvent;
         OvMaths::FVector2 GetAnchorMin() const { return m_layout.anchorMin; }
         OvMaths::FVector2 GetAnchorMax() const { return m_layout.anchorMax; }
         OvMaths::FVector2 GetPivot() const { return m_layout.pivot; }

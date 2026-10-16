@@ -10,6 +10,7 @@
 #include <OvUI/Widgets/InputFields/ActorField.h>
 #include <OvUI/Widgets/Layout/TreeNode.h>
 #include <OvUI/Widgets/Selection/ComboBox.h>
+#include <OvUI/Widgets/Buttons/Button.h>
 #include <tinyxml2.h>
 #include <algorithm>
 #include <cmath>
@@ -47,11 +48,83 @@ std::string CRectTransform::GetTypeName() { return std::string(ComponentTraits<C
 void CRectTransform::OnInspector(OvUI::Internal::WidgetContainer& root)
 {
     if (m_driven.Mask()) GUIDrawer::CreateTitle(root, "Driven by managed layout (mask " + std::to_string(m_driven.Mask()) + ")");
-    GUIDrawer::DrawVec2(root, "Anchor Min", std::function<OvMaths::FVector2()>([this] { return m_layout.anchorMin; }), std::function<void(OvMaths::FVector2)>([this](OvMaths::FVector2 value) { SetAnchorMin(value); }), 0.01f);
-    GUIDrawer::DrawVec2(root, "Anchor Max", std::function<OvMaths::FVector2()>([this] { return m_layout.anchorMax; }), std::function<void(OvMaths::FVector2)>([this](OvMaths::FVector2 value) { SetAnchorMax(value); }), 0.01f);
-    GUIDrawer::DrawVec2(root, "Pivot", std::function<OvMaths::FVector2()>([this] { return m_layout.pivot; }), std::function<void(OvMaths::FVector2)>([this](OvMaths::FVector2 value) { SetPivot(value); }), 0.01f);
-    GUIDrawer::DrawVec2(root, "Anchored Position", std::function<OvMaths::FVector2()>([this] { return m_layout.anchoredPosition; }), std::function<void(OvMaths::FVector2)>([this](OvMaths::FVector2 value) { SetAnchoredPosition(value); }), 0.01f);
-    GUIDrawer::DrawVec2(root, "Size Delta", std::function<OvMaths::FVector2()>([this] { return m_layout.sizeDelta; }), std::function<void(OvMaths::FVector2)>([this](OvMaths::FVector2 value) { SetSizeDelta(value); }), 0.01f);
+
+    // 1. Anchor Preset Selector
+    GUIDrawer::CreateTitle(root, "Anchor Preset");
+    auto& presetBtn = root.CreateWidget<OvUI::Widgets::Buttons::Button>(GetAnchorPresetName(GetAnchorPreset()));
+    auto token = std::make_shared<bool>(true);
+    presetBtn.ClickedEvent += [this, token, &presetBtn] {
+        std::weak_ptr<bool> weak = token;
+        GUIHelpers::PickerItemList items;
+        const std::vector<std::pair<AnchorPreset, std::string>> presets = {
+            { AnchorPreset::TopLeft, "Top - Left (Anchor: 0, 1 | Pivot: 0, 1)" },
+            { AnchorPreset::TopCenter, "Top - Center (Anchor: 0.5, 1 | Pivot: 0.5, 1)" },
+            { AnchorPreset::TopRight, "Top - Right (Anchor: 1, 1 | Pivot: 1, 1)" },
+            { AnchorPreset::TopStretch, "Top - Stretch (Horizontal Stretch at Top)" },
+            { AnchorPreset::MiddleLeft, "Middle - Left (Anchor: 0, 0.5 | Pivot: 0, 0.5)" },
+            { AnchorPreset::MiddleCenter, "Middle - Center (Anchor: 0.5, 0.5 | Pivot: 0.5, 0.5)" },
+            { AnchorPreset::MiddleRight, "Middle - Right (Anchor: 1, 0.5 | Pivot: 1, 0.5)" },
+            { AnchorPreset::MiddleStretch, "Middle - Stretch (Horizontal Stretch in Center)" },
+            { AnchorPreset::BottomLeft, "Bottom - Left (Anchor: 0, 0 | Pivot: 0, 0)" },
+            { AnchorPreset::BottomCenter, "Bottom - Center (Anchor: 0.5, 0 | Pivot: 0.5, 0)" },
+            { AnchorPreset::BottomRight, "Bottom - Right (Anchor: 1, 0 | Pivot: 1, 0)" },
+            { AnchorPreset::BottomStretch, "Bottom - Stretch (Horizontal Stretch at Bottom)" },
+            { AnchorPreset::StretchLeft, "Stretch - Left (Vertical Stretch on Left)" },
+            { AnchorPreset::StretchCenter, "Stretch - Center (Vertical Stretch in Center)" },
+            { AnchorPreset::StretchRight, "Stretch - Right (Vertical Stretch on Right)" },
+            { AnchorPreset::StretchAll, "Stretch - All (Stretch and Fill Entire Parent)" },
+        };
+        for (const auto& [p, desc] : presets)
+        {
+            const auto name = GetAnchorPresetName(p);
+            items.Add({
+                name, name, desc, 0u,
+                [this, p, weak, &presetBtn] {
+                    if (weak.expired()) return;
+                    ApplyAnchorPreset(p, true, true);
+                    presetBtn.label = GetAnchorPresetName(p);
+                }
+            });
+        }
+        GUIHelpers::OpenPicker(std::move(items), "Select Anchor Preset");
+    };
+
+    // 2. Dynamic Point vs Stretch fields (matching Unity RectTransform inspector)
+    const bool stretchX = m_layout.anchorMin.x != m_layout.anchorMax.x;
+    const bool stretchY = m_layout.anchorMin.y != m_layout.anchorMax.y;
+
+    if (!stretchX)
+    {
+        GUIDrawer::DrawScalar<float>(root, "Pos X", [this] { return m_layout.anchoredPosition.x; }, [this](float v) { SetAnchoredPosition({v, m_layout.anchoredPosition.y}); }, 1.0f);
+        GUIDrawer::DrawScalar<float>(root, "Width", [this] { return m_layout.sizeDelta.x; }, [this](float v) { SetSizeDelta({v, m_layout.sizeDelta.y}); }, 1.0f);
+    }
+    else
+    {
+        GUIDrawer::DrawScalar<float>(root, "Left", [this] { return GetOffsetMin().x; }, [this](float v) { SetOffsetMin({v, GetOffsetMin().y}); }, 1.0f);
+        GUIDrawer::DrawScalar<float>(root, "Right", [this] { return -GetOffsetMax().x; }, [this](float v) { SetOffsetMax({-v, GetOffsetMax().y}); }, 1.0f);
+    }
+
+    if (!stretchY)
+    {
+        GUIDrawer::DrawScalar<float>(root, "Pos Y", [this] { return m_layout.anchoredPosition.y; }, [this](float v) { SetAnchoredPosition({m_layout.anchoredPosition.x, v}); }, 1.0f);
+        GUIDrawer::DrawScalar<float>(root, "Height", [this] { return m_layout.sizeDelta.y; }, [this](float v) { SetSizeDelta({m_layout.sizeDelta.x, v}); }, 1.0f);
+    }
+    else
+    {
+        GUIDrawer::DrawScalar<float>(root, "Top", [this] { return -GetOffsetMax().y; }, [this](float v) { SetOffsetMax({GetOffsetMax().x, -v}); }, 1.0f);
+        GUIDrawer::DrawScalar<float>(root, "Bottom", [this] { return GetOffsetMin().y; }, [this](float v) { SetOffsetMin({GetOffsetMin().x, v}); }, 1.0f);
+    }
+
+    GUIDrawer::DrawScalar<float>(root, "Pos Z", [this] { return owner.transform.GetLocalPosition().z; }, [this](float v) { auto pos = owner.transform.GetLocalPosition(); pos.z = v; owner.transform.SetLocalPosition(pos); }, 1.0f);
+
+    // 3. Raw Anchors & Pivot
+    GUIDrawer::DrawVec2(root, "Anchor Min", [this] { return m_layout.anchorMin; }, [this](OvMaths::FVector2 v) { SetAnchorMin(v); }, 0.01f, 0.0f, 1.0f);
+    GUIDrawer::DrawVec2(root, "Anchor Max", [this] { return m_layout.anchorMax; }, [this](OvMaths::FVector2 v) { SetAnchorMax(v); }, 0.01f, 0.0f, 1.0f);
+    GUIDrawer::DrawVec2(root, "Pivot", [this] { return m_layout.pivot; }, [this](OvMaths::FVector2 v) { SetPivot(v); }, 0.01f, 0.0f, 1.0f);
+
+    // 4. Rotation & Scale (matching Unity RectTransform layout)
+    GUIDrawer::DrawQuat(root, "Rotation", [this] { return owner.transform.GetLocalRotation(); }, [this](OvMaths::FQuaternion q) { owner.transform.SetLocalRotation(q); });
+    GUIDrawer::DrawVec3(root, "Scale", [this] { return owner.transform.GetLocalScale(); }, [this](OvMaths::FVector3 v) { owner.transform.SetLocalScale(v); }, 0.01f);
 }
 
 std::string CCanvas::GetName() { return "Canvas"; }
@@ -189,8 +262,137 @@ std::string CCanvasGroup::GetName() { return "Canvas Group"; }
 std::string CCanvasGroup::GetTypeName() { return std::string(ComponentTraits<CCanvasGroup>::Name); }
 std::string CRectMask2D::GetName() { return "Rect Mask 2D"; }
 std::string CRectMask2D::GetTypeName() { return std::string(ComponentTraits<CRectMask2D>::Name); }
-void CRectTransform::SetAnchorMin(OvMaths::FVector2 value) { Finite(value); m_layout.anchorMin = value; }
-void CRectTransform::SetAnchorMax(OvMaths::FVector2 value) { Finite(value); m_layout.anchorMax = value; }
+void CRectTransform::SetAnchorMin(OvMaths::FVector2 value)
+{
+    Finite(value);
+    const bool wasStretchX = m_layout.anchorMin.x != m_layout.anchorMax.x;
+    const bool wasStretchY = m_layout.anchorMin.y != m_layout.anchorMax.y;
+    m_layout.anchorMin = value;
+    const bool isStretchX = m_layout.anchorMin.x != m_layout.anchorMax.x;
+    const bool isStretchY = m_layout.anchorMin.y != m_layout.anchorMax.y;
+    if (wasStretchX != isStretchX || wasStretchY != isStretchY) LayoutChangedEvent.Invoke();
+}
+
+void CRectTransform::SetAnchorMax(OvMaths::FVector2 value)
+{
+    Finite(value);
+    const bool wasStretchX = m_layout.anchorMin.x != m_layout.anchorMax.x;
+    const bool wasStretchY = m_layout.anchorMin.y != m_layout.anchorMax.y;
+    m_layout.anchorMax = value;
+    const bool isStretchX = m_layout.anchorMin.x != m_layout.anchorMax.x;
+    const bool isStretchY = m_layout.anchorMin.y != m_layout.anchorMax.y;
+    if (wasStretchX != isStretchX || wasStretchY != isStretchY) LayoutChangedEvent.Invoke();
+}
+
+CRectTransform::AnchorPreset CRectTransform::GetAnchorPreset() const
+{
+    auto match = [](float a, float b) { return std::abs(a - b) < 0.002f; };
+    const auto& min = m_layout.anchorMin;
+    const auto& max = m_layout.anchorMax;
+
+    if (match(min.x, 0.0f) && match(max.x, 0.0f)) {
+        if (match(min.y, 1.0f) && match(max.y, 1.0f)) return AnchorPreset::TopLeft;
+        if (match(min.y, 0.5f) && match(max.y, 0.5f)) return AnchorPreset::MiddleLeft;
+        if (match(min.y, 0.0f) && match(max.y, 0.0f)) return AnchorPreset::BottomLeft;
+        if (match(min.y, 0.0f) && match(max.y, 1.0f)) return AnchorPreset::StretchLeft;
+    }
+    if (match(min.x, 0.5f) && match(max.x, 0.5f)) {
+        if (match(min.y, 1.0f) && match(max.y, 1.0f)) return AnchorPreset::TopCenter;
+        if (match(min.y, 0.5f) && match(max.y, 0.5f)) return AnchorPreset::MiddleCenter;
+        if (match(min.y, 0.0f) && match(max.y, 0.0f)) return AnchorPreset::BottomCenter;
+        if (match(min.y, 0.0f) && match(max.y, 1.0f)) return AnchorPreset::StretchCenter;
+    }
+    if (match(min.x, 1.0f) && match(max.x, 1.0f)) {
+        if (match(min.y, 1.0f) && match(max.y, 1.0f)) return AnchorPreset::TopRight;
+        if (match(min.y, 0.5f) && match(max.y, 0.5f)) return AnchorPreset::MiddleRight;
+        if (match(min.y, 0.0f) && match(max.y, 0.0f)) return AnchorPreset::BottomRight;
+        if (match(min.y, 0.0f) && match(max.y, 1.0f)) return AnchorPreset::StretchRight;
+    }
+    if (match(min.x, 0.0f) && match(max.x, 1.0f)) {
+        if (match(min.y, 1.0f) && match(max.y, 1.0f)) return AnchorPreset::TopStretch;
+        if (match(min.y, 0.5f) && match(max.y, 0.5f)) return AnchorPreset::MiddleStretch;
+        if (match(min.y, 0.0f) && match(max.y, 0.0f)) return AnchorPreset::BottomStretch;
+        if (match(min.y, 0.0f) && match(max.y, 1.0f)) return AnchorPreset::StretchAll;
+    }
+    return AnchorPreset::Custom;
+}
+
+std::string CRectTransform::GetAnchorPresetName(AnchorPreset preset)
+{
+    switch (preset) {
+        case AnchorPreset::TopLeft: return "Top Left";
+        case AnchorPreset::TopCenter: return "Top Center";
+        case AnchorPreset::TopRight: return "Top Right";
+        case AnchorPreset::TopStretch: return "Top Stretch";
+        case AnchorPreset::MiddleLeft: return "Middle Left";
+        case AnchorPreset::MiddleCenter: return "Middle Center";
+        case AnchorPreset::MiddleRight: return "Middle Right";
+        case AnchorPreset::MiddleStretch: return "Middle Stretch";
+        case AnchorPreset::BottomLeft: return "Bottom Left";
+        case AnchorPreset::BottomCenter: return "Bottom Center";
+        case AnchorPreset::BottomRight: return "Bottom Right";
+        case AnchorPreset::BottomStretch: return "Bottom Stretch";
+        case AnchorPreset::StretchLeft: return "Stretch Left";
+        case AnchorPreset::StretchCenter: return "Stretch Center";
+        case AnchorPreset::StretchRight: return "Stretch Right";
+        case AnchorPreset::StretchAll: return "Stretch All";
+        default: return "Custom";
+    }
+}
+
+void CRectTransform::ApplyAnchorPreset(AnchorPreset preset, bool setPivot, bool setPosition)
+{
+    OvMaths::FVector2 newMin = m_layout.anchorMin, newMax = m_layout.anchorMax;
+    OvMaths::FVector2 newPivot = m_layout.pivot;
+
+    switch (preset) {
+        case AnchorPreset::TopLeft:       newMin = {0.0f, 1.0f}; newMax = {0.0f, 1.0f}; newPivot = {0.0f, 1.0f}; break;
+        case AnchorPreset::TopCenter:     newMin = {0.5f, 1.0f}; newMax = {0.5f, 1.0f}; newPivot = {0.5f, 1.0f}; break;
+        case AnchorPreset::TopRight:      newMin = {1.0f, 1.0f}; newMax = {1.0f, 1.0f}; newPivot = {1.0f, 1.0f}; break;
+        case AnchorPreset::TopStretch:    newMin = {0.0f, 1.0f}; newMax = {1.0f, 1.0f}; newPivot = {0.5f, 1.0f}; break;
+        case AnchorPreset::MiddleLeft:    newMin = {0.0f, 0.5f}; newMax = {0.0f, 0.5f}; newPivot = {0.0f, 0.5f}; break;
+        case AnchorPreset::MiddleCenter:  newMin = {0.5f, 0.5f}; newMax = {0.5f, 0.5f}; newPivot = {0.5f, 0.5f}; break;
+        case AnchorPreset::MiddleRight:   newMin = {1.0f, 0.5f}; newMax = {1.0f, 0.5f}; newPivot = {1.0f, 0.5f}; break;
+        case AnchorPreset::MiddleStretch: newMin = {0.0f, 0.5f}; newMax = {1.0f, 0.5f}; newPivot = {0.5f, 0.5f}; break;
+        case AnchorPreset::BottomLeft:    newMin = {0.0f, 0.0f}; newMax = {0.0f, 0.0f}; newPivot = {0.0f, 0.0f}; break;
+        case AnchorPreset::BottomCenter:  newMin = {0.5f, 0.0f}; newMax = {0.5f, 0.0f}; newPivot = {0.5f, 0.0f}; break;
+        case AnchorPreset::BottomRight:   newMin = {1.0f, 0.0f}; newMax = {1.0f, 0.0f}; newPivot = {1.0f, 0.0f}; break;
+        case AnchorPreset::BottomStretch: newMin = {0.0f, 0.0f}; newMax = {1.0f, 0.0f}; newPivot = {0.5f, 0.0f}; break;
+        case AnchorPreset::StretchLeft:   newMin = {0.0f, 0.0f}; newMax = {0.0f, 1.0f}; newPivot = {0.0f, 0.5f}; break;
+        case AnchorPreset::StretchCenter: newMin = {0.5f, 0.0f}; newMax = {0.5f, 1.0f}; newPivot = {0.5f, 0.5f}; break;
+        case AnchorPreset::StretchRight:  newMin = {1.0f, 0.0f}; newMax = {1.0f, 1.0f}; newPivot = {1.0f, 0.5f}; break;
+        case AnchorPreset::StretchAll:    newMin = {0.0f, 0.0f}; newMax = {1.0f, 1.0f}; newPivot = {0.5f, 0.5f}; break;
+        default: return;
+    }
+
+    SetAnchorMin(newMin);
+    SetAnchorMax(newMax);
+
+    if (setPivot)
+    {
+        SetPivot(newPivot);
+    }
+
+    if (setPosition)
+    {
+        const bool stretchH = newMin.x != newMax.x;
+        const bool stretchV = newMin.y != newMax.y;
+        if (stretchH) {
+            SetOffsetMin({0.0f, GetOffsetMin().y});
+            SetOffsetMax({0.0f, GetOffsetMax().y});
+        } else {
+            SetAnchoredPosition({0.0f, m_layout.anchoredPosition.y});
+        }
+        if (stretchV) {
+            SetOffsetMin({GetOffsetMin().x, 0.0f});
+            SetOffsetMax({GetOffsetMax().x, 0.0f});
+        } else {
+            SetAnchoredPosition({m_layout.anchoredPosition.x, 0.0f});
+        }
+    }
+
+    LayoutChangedEvent.Invoke();
+}
 void CRectTransform::SetPivot(OvMaths::FVector2 value) { Finite(value); m_layout.pivot = value; }
 void CRectTransform::SetAnchoredPosition(OvMaths::FVector2 value) { Finite(value); m_layout.anchoredPosition = value; }
 void CRectTransform::SetSizeDelta(OvMaths::FVector2 value) { Finite(value); m_layout.sizeDelta = value; }

@@ -495,6 +495,49 @@ int main(int argc, char** argv) try {
     Require(rectTransformHeader != nullptr && !rectTransformHeader->closable && !rectTransformHeader->checkable,
         "Rect Transform in Inspector is non-closable and non-checkable matching Transform and Unity parity");
 
+    auto hasWidgetText = [](OvUI::Internal::WidgetContainer& root, const std::string& label) -> bool {
+        bool found = false;
+        std::function<void(OvUI::Internal::WidgetContainer&)> search = [&](OvUI::Internal::WidgetContainer& c) {
+            for (auto [w, mode] : c.GetWidgets()) {
+                if (auto* t = dynamic_cast<OvUI::Widgets::Texts::Text*>(w); t && t->content == label) { found = true; return; }
+                if (auto* sub = dynamic_cast<OvUI::Internal::WidgetContainer*>(w)) search(*sub);
+            }
+        };
+        search(root);
+        return found;
+    };
+
+    // Verify Point Anchor displays Pos X / Width on Button
+    actions.SelectActor(buttonActor);
+    inspectorPanel.Focus();
+    inspectorPanel.Refresh();
+    tick(3);
+    Require(hasWidgetText(inspectorPanel, "Pos X") && hasWidgetText(inspectorPanel, "Width") &&
+        hasWidgetText(inspectorPanel, "Pos Y") && hasWidgetText(inspectorPanel, "Height"),
+        "Point-anchored UI elements dynamically expose Pos X, Width, Pos Y, Height fields");
+
+    // Verify Stretch Anchor displays Left / Right / Top / Bottom on Panel
+    actions.SelectActor(panelActor);
+    inspectorPanel.Focus();
+    inspectorPanel.Refresh();
+    tick(3);
+    Require(hasWidgetText(inspectorPanel, "Left") && hasWidgetText(inspectorPanel, "Right") &&
+        hasWidgetText(inspectorPanel, "Top") && hasWidgetText(inspectorPanel, "Bottom"),
+        "Stretch-anchored UI elements dynamically expose Left, Right, Top, Bottom margin fields");
+
+    // Test ApplyAnchorPreset
+    auto* panelRect = panelActor.GetComponent<OvCore::ECS::Components::CRectTransform>();
+    panelRect->ApplyAnchorPreset(OvCore::ECS::Components::CRectTransform::AnchorPreset::TopLeft, true, true);
+    Require(panelRect->GetAnchorPreset() == OvCore::ECS::Components::CRectTransform::AnchorPreset::TopLeft &&
+        panelRect->GetAnchorMin().x == 0.0f && panelRect->GetAnchorMin().y == 1.0f,
+        "ApplyAnchorPreset(TopLeft) sets AnchorMin/Max and Pivot correctly");
+
+    // Select Canvas again for framing
+    actions.SelectActor(canvasActor);
+    inspectorPanel.Focus();
+    inspectorPanel.Refresh();
+    tick(3);
+
     // Verify 2D bounds framing
     auto uiBounds = OvEditor::Core::SelectionBounds::From({&canvasActor});
     Require(uiBounds.valid && uiBounds.Radius() > 100.0f,
