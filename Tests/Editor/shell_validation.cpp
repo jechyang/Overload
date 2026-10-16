@@ -582,6 +582,13 @@ int main(int argc, char** argv) try {
     Require(buttonActor.GetComponent<OvCore::ECS::Components::CRectTransform>() != nullptr,
         "Rect Tool operates on entities with CRectTransform");
 
+    buttonActor.transform.SetLocalPosition({0.0f, 60.0f, 0.0f});
+    if (auto* rect = buttonActor.GetComponent<OvCore::ECS::Components::CRectTransform>())
+    {
+        rect->SetAnchoredPosition({0.0f, 60.0f});
+    }
+    tick(2);
+
     // Verify SceneView UI direct mouse picking
     actions.UnselectActor();
     tick(2);
@@ -612,8 +619,57 @@ int main(int argc, char** argv) try {
     Require(actions.IsAnyActorSelected() && actions.GetSelectedActor().GetGUID() == buttonActor.GetGUID(),
         "Direct SceneView mouse picking selects UI Button on Canvas");
 
+    // Verify SceneView UI direct drag and move
+    const uint64_t buttonGUID = buttonActor.GetGUID();
+    auto* btnRect = buttonActor.GetComponent<OvCore::ECS::Components::CRectTransform>();
+    Require(btnRect != nullptr, "Button has CRectTransform for drag");
+    const auto initialAnchoredPos = btnRect->GetAnchoredPosition();
+
+    // 1. Mouse down at button center in SceneView
+    io.AddMousePosEvent(float(pickCursorX), float(pickCursorY));
+    tick(1);
+    io.AddMouseButtonEvent(0, true);
+    tick(2);
+
+    // 2. Mouse drag by +50 pixels on X and -30 pixels on Y (moving up-right in viewport)
+    io.AddMousePosEvent(float(pickCursorX + 50.0f), float(pickCursorY - 30.0f));
+    tick(2);
+
+    Require(sceneViewPanel.IsUIDragging(), "SceneView enters UI dragging state during mouse move");
+    const auto draggedAnchoredPos = btnRect->GetAnchoredPosition();
+    Require(draggedAnchoredPos.x > initialAnchoredPos.x, "UI element anchored position X moved with mouse drag");
+
+    // 3. Mouse release commits the drag
+    io.AddMouseButtonEvent(0, false);
+    tick(2);
+    Require(!sceneViewPanel.IsUIDragging(), "UI dragging finishes on mouse release");
+
+    const auto committedAnchoredPos = btnRect->GetAnchoredPosition();
+
+    // 4. Undo restores initial position
+    Require(actions.Undo(), "Undo UI drag succeeds");
+    tick(2);
+    auto* currentBtn = context.sceneManager.GetCurrentScene()->FindActorByGUID(buttonGUID);
+    Require(currentBtn != nullptr, "Button actor resolved after Undo");
+    auto* currentBtnRect = currentBtn->GetComponent<OvCore::ECS::Components::CRectTransform>();
+    Require(currentBtnRect != nullptr, "Button CRectTransform resolved after Undo");
+    Require(std::abs(currentBtnRect->GetAnchoredPosition().x - initialAnchoredPos.x) < 0.1f &&
+            std::abs(currentBtnRect->GetAnchoredPosition().y - initialAnchoredPos.y) < 0.1f,
+            "Undo restores UI element original position after SceneView drag");
+
+    // 5. Redo restores dragged position
+    Require(actions.Redo(), "Redo UI drag succeeds");
+    tick(2);
+    currentBtn = context.sceneManager.GetCurrentScene()->FindActorByGUID(buttonGUID);
+    Require(currentBtn != nullptr, "Button actor resolved after Redo");
+    currentBtnRect = currentBtn->GetComponent<OvCore::ECS::Components::CRectTransform>();
+    Require(currentBtnRect != nullptr, "Button CRectTransform resolved after Redo");
+    Require(std::abs(currentBtnRect->GetAnchoredPosition().x - committedAnchoredPos.x) < 0.1f &&
+            std::abs(currentBtnRect->GetAnchoredPosition().y - committedAnchoredPos.y) < 0.1f,
+            "Redo restores dragged UI element position");
+
     // Verify 9-Sliced Image support
-    auto* btnImage = buttonActor.GetComponent<OvCore::ECS::Components::CUIImage>();
+    auto* btnImage = currentBtn->GetComponent<OvCore::ECS::Components::CUIImage>();
     Require(btnImage != nullptr, "Button has CUIImage");
     Require(btnImage->GetImageType() == OvCore::ECS::Components::CUIImage::ImageType::Simple,
         "Image defaults to Simple ImageType");
@@ -636,7 +692,7 @@ int main(int argc, char** argv) try {
     bool foundSlicedMesh = false;
     for (const auto& m : slicedFrame.meshes)
     {
-        if (m.actorGuid == buttonActor.GetGUID())
+        if (m.actorGuid == buttonGUID)
         {
             foundSlicedMesh = true;
             Require(m.vertices.size() == 16, "9-Sliced Image generates 16 grid vertices");
@@ -652,7 +708,7 @@ int main(int argc, char** argv) try {
     bool foundNoCenterMesh = false;
     for (const auto& m : slicedNoCenterFrame.meshes)
     {
-        if (m.actorGuid == buttonActor.GetGUID())
+        if (m.actorGuid == buttonGUID)
         {
             foundNoCenterMesh = true;
             Require(m.indices.size() == 48, "9-Sliced Image with Fill Center off omits center quad (48 indices)");

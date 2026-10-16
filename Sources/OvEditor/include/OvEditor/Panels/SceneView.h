@@ -88,7 +88,8 @@ namespace OvEditor::Panels
         DisplayMode GetDisplayMode() const;
         void SetViewDirection(const OvMaths::FVector3& direction);
         bool IsNavigationHovered() const;
-        bool IsTransformEditing() const { return m_gizmoOperations.IsPicking(); }
+        bool IsUIDragging() const;
+        bool IsTransformEditing() const;
         bool IsSelecting() const { return m_boxPending; }
         void FrameSelection();
         void SetLocalSpace(bool local);
@@ -144,5 +145,23 @@ namespace OvEditor::Panels
 
 		OvTools::Utils::OptRef<OvCore::ECS::Actor> m_highlightedActor;
 		std::optional<OvEditor::Core::GizmoBehaviour::EDirection> m_highlightedGizmoDirection;
+
+        struct UIDragTarget
+        {
+            uint64_t guid = 0;
+            OvMaths::FVector3 startWorldPos{};
+            OvMaths::FVector2 startAnchoredPos{};
+        };
+        struct UIDragState
+        {
+            OvCore::SceneSystem::Scene::LifetimeToken scene;
+            std::vector<UIDragTarget> targets;
+            OvMaths::FVector2 startMouse{};
+            OvMaths::FVector3 dragPlanePoint{};
+            OvMaths::FVector3 dragPlaneNormal{};
+            OvMaths::FVector3 startHitPoint{};
+            bool dragging = false;
+        };
+        std::optional<UIDragState> m_uiDrag;
 	};
 }

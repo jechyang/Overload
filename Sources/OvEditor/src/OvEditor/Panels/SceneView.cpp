@@ -98,6 +98,17 @@ OvCore::ECS::Actor* PickUIActor(OvCore::SceneSystem::Scene& scene, const OvMaths
         return nullptr;
     }
 
+    bool IntersectRayPlane(const OvMaths::FVector3& rayOrigin, const OvMaths::FVector3& rayDir,
+        const OvMaths::FVector3& planePoint, const OvMaths::FVector3& planeNormal,
+        OvMaths::FVector3& outIntersection)
+    {
+        const float denom = OvMaths::FVector3::Dot(rayDir, planeNormal);
+        if (std::abs(denom) < 1e-5f) return false;
+        const float t = OvMaths::FVector3::Dot(planePoint - rayOrigin, planeNormal) / denom;
+        outIntersection = rayOrigin + rayDir * t;
+        return true;
+    }
+
     class NavigationWidget final : public OvUI::Widgets::AWidget
     {
     public:
@@ -136,6 +147,11 @@ OvEditor::Panels::SceneView::SceneView
     CreateWidget<NavigationWidget>([this] { DrawViewportTools(); DrawNavigationOverlay(); DrawCameraPreview(); });
     m_focusLostListener = EDITOR_CONTEXT(window)->LostFocusEvent += [this] {
         m_boxPending = false;
+        if (m_uiDrag && m_uiDrag->dragging)
+        {
+            EDITOR_EXEC(EndTransformEdit(true));
+            m_uiDrag.reset();
+        }
         if (m_gizmoOperations.IsPicking())
         {
             m_gizmoOperations.StopPicking(); EDITOR_EXEC(EndTransformEdit()); m_gizmoTargetGUID = 0;
@@ -169,6 +185,17 @@ OvEditor::Panels::SceneView::SceneView
 	
 	m_destroyedListener = OvCore::ECS::Actor::DestroyedEvent += [this](const OvCore::ECS::Actor& actor)
 	{
+		if (m_uiDrag)
+		{
+			for (const auto& t : m_uiDrag->targets)
+			{
+				if (t.guid == actor.GetGUID())
+				{
+					m_uiDrag.reset();
+					break;
+				}
+			}
+		}
 		if (m_gizmoTargetGUID == actor.GetGUID()) { m_gizmoOperations.StopPicking(); m_gizmoTargetGUID = 0; }
 		if (m_highlightedActor.has_value() && m_highlightedActor.value().GetID() == actor.GetID())
 		{
@@ -197,12 +224,12 @@ void OvEditor::Panels::SceneView::Update(float p_deltaTime)
 {
     GetCameraPreviewView();
     if (m_boxPending && (!IsOpened() || !GetScene() || m_boxScene != GetScene()->GetLifetimeToken())) m_boxPending = false;
-    m_cameraController.SetInputBlocked((IsNavigationHovered() && !m_cameraController.IsOperating()) || m_gizmoOperations.IsPicking() || m_boxPending);
+    m_cameraController.SetInputBlocked((IsNavigationHovered() && !m_cameraController.IsOperating()) || m_gizmoOperations.IsPicking() || m_boxPending || IsUIDragging());
 	AViewControllable::Update(p_deltaTime);
 
 	using namespace OvWindowing::Inputs;
 
-	if (IsFocused() && !m_navigationPopupOpen && !m_toolsPopupOpen && !m_boxPending && !m_cameraController.IsOperating() && !ImGui::IsAnyItemActive() && !ImGui::GetIO().WantTextInput && !m_gizmoOperations.IsPicking())
+	if (IsFocused() && !m_navigationPopupOpen && !m_toolsPopupOpen && !m_boxPending && !m_cameraController.IsOperating() && !ImGui::IsAnyItemActive() && !ImGui::GetIO().WantTextInput && !m_gizmoOperations.IsPicking() && !IsUIDragging())
 	{
 		if (EDITOR_CONTEXT(inputManager)->IsKeyPressed(EKey::KEY_W))
 		{
@@ -247,7 +274,7 @@ OvEditor::Rendering::EditorOverlayRequest OvEditor::Panels::SceneView::CreateOve
     request.cameraFrustums = EditorSettings::SceneShowCameraFrustums.Get();
     request.geometryBounds = EditorSettings::ShowGeometryBounds.Get();
     request.lightBounds = EditorSettings::ShowLightBounds.Get();
-    request.picking=(m_boxPending || (IsHovered()&&!IsNavigationHovered()))&&!m_gizmoOperations.IsPicking()&&!m_cameraController.IsOperating();
+    request.picking=(m_boxPending || (IsHovered()&&!IsNavigationHovered()))&&!m_gizmoOperations.IsPicking()&&!IsUIDragging()&&!m_cameraController.IsOperating();
     request.operation=m_currentOperation;request.highlightedDirection=m_highlightedGizmoDirection;
     if(EDITOR_EXEC(IsAnyActorSelected()))request.selected=EDITOR_EXEC(GetSelectedActor()).GetGUID();
     for (auto* actor : EDITOR_EXEC(GetSelectedActors())) request.selection.push_back(actor->GetGUID());
@@ -341,15 +368,20 @@ std::shared_ptr<OvEditor::Panels::SceneView::Interaction> OvEditor::Panels::Scen
     using namespace OvWindowing::Inputs;
     auto input = std::make_shared<Interaction>();
     auto& manager = *EDITOR_CONTEXT(inputManager);
-    const auto [x,y] = manager.GetMousePosition();
+    auto [x,y] = manager.GetMousePosition();
+    if (ImGui::GetCurrentContext() && ImGui::IsMousePosValid())
+    {
+        x = ImGui::GetIO().MousePos.x;
+        y = ImGui::GetIO().MousePos.y;
+    }
     const auto [width,height] = GetSafeSize();
     input->mouse = {float(x-m_position.x), float(y-m_position.y-ImGui::GetFrameHeight())};
     input->size = {float(width),float(height)};
     input->hovered = IsHovered() && !IsNavigationHovered(); input->resizing = IsResizing();
     input->navigationRevision = m_navigationRevision;
-    input->pressed = manager.IsMouseButtonPressed(EMouseButton::MOUSE_BUTTON_LEFT);
-    input->released = manager.IsMouseButtonReleased(EMouseButton::MOUSE_BUTTON_LEFT);
-    input->cancelled = manager.IsKeyPressed(EKey::KEY_ESCAPE);
+    input->pressed = manager.IsMouseButtonPressed(EMouseButton::MOUSE_BUTTON_LEFT) || (ImGui::GetCurrentContext() && ImGui::IsMouseClicked(0));
+    input->released = manager.IsMouseButtonReleased(EMouseButton::MOUSE_BUTTON_LEFT) || (ImGui::GetCurrentContext() && ImGui::IsMouseReleased(0));
+    input->cancelled = manager.IsKeyPressed(EKey::KEY_ESCAPE) || (ImGui::GetCurrentContext() && ImGui::IsKeyPressed(ImGuiKey_Escape));
     input->additiveSelection = manager.GetKeyState(EKey::KEY_LEFT_CONTROL) == EKeyState::KEY_DOWN || manager.GetKeyState(EKey::KEY_RIGHT_CONTROL) == EKeyState::KEY_DOWN;
     input->rightPressed = m_cameraController.IsRightMousePressed() || manager.GetMouseButtonState(EMouseButton::MOUSE_BUTTON_RIGHT) == EMouseButtonState::MOUSE_DOWN;
     input->cameraPosition = m_camera.GetPosition(); input->view = m_camera.GetViewMatrix(); input->projection = m_camera.GetProjectionMatrix();
@@ -391,7 +423,7 @@ void OvEditor::Panels::SceneView::HandleActorPicking()
 {
     const auto input = CaptureInteraction();
     Rendering::PickingResult result;
-    if ((!m_gizmoOperations.IsPicking() || input->released) && input->hovered && !input->resizing && input->pickingAvailable)
+    if ((!m_gizmoOperations.IsPicking() || input->released) && input->hovered && !input->resizing && input->pickingAvailable && !IsUIDragging())
         result = GetPickingResult();
     ApplyInteraction(*input, result);
 }
@@ -405,6 +437,88 @@ void OvEditor::Panels::SceneView::ApplyInteraction(const Interaction& input, Ren
     std::vector<uint64_t> currentSelection;
     for (auto* actor : EDITOR_EXEC(GetSelectedActors())) currentSelection.push_back(actor->GetGUID());
     const bool selectionMatches = selected == input.selectedGUID && m_currentOperation == input.operation && currentSelection == input.selection;
+    if (m_uiDrag)
+    {
+        if (input.cancelled || input.rightPressed || input.scene != m_uiDrag->scene)
+        {
+            if (m_uiDrag->dragging)
+            {
+                for (const auto& target : m_uiDrag->targets)
+                {
+                    if (auto* actor = scene->FindActorByGUID(target.guid))
+                    {
+                        actor->transform.SetWorldPosition(target.startWorldPos);
+                        if (auto* rect = actor->GetComponent<OvCore::ECS::Components::CRectTransform>())
+                        {
+                            rect->SetAnchoredPosition(target.startAnchoredPos);
+                            rect->LayoutChangedEvent.Invoke();
+                        }
+                    }
+                }
+                EDITOR_EXEC(EndTransformEdit(true));
+            }
+            m_uiDrag.reset();
+            return;
+        }
+
+        if (input.released)
+        {
+            if (m_uiDrag->dragging)
+            {
+                EDITOR_EXEC(EndTransformEdit(false));
+            }
+            m_uiDrag.reset();
+            return;
+        }
+
+        const float mouseDist = OvMaths::FVector2::Length(input.mouse - m_uiDrag->startMouse);
+        if (!m_uiDrag->dragging && mouseDist >= 3.0f * OVUI_SCALE)
+        {
+            m_uiDrag->dragging = true;
+            EDITOR_EXEC(BeginTransformEdit());
+        }
+
+        if (m_uiDrag->dragging && input.size.x > 0 && input.size.y > 0)
+        {
+            const auto ray = Core::GizmoMath::UnprojectRay(input.mouse, input.view, input.projection, input.size);
+            OvMaths::FVector3 currentHitPoint;
+            if (IntersectRayPlane(ray.origin, ray.direction, m_uiDrag->dragPlanePoint, m_uiDrag->dragPlaneNormal, currentHitPoint))
+            {
+                OvMaths::FVector3 worldDelta = currentHitPoint - m_uiDrag->startHitPoint;
+
+                if (input.snapping.enabled)
+                {
+                    const float snapUnit = input.snapping.translation;
+                    worldDelta.x = Core::GizmoMath::Snap(worldDelta.x, snapUnit);
+                    worldDelta.y = Core::GizmoMath::Snap(worldDelta.y, snapUnit);
+                    worldDelta.z = Core::GizmoMath::Snap(worldDelta.z, snapUnit);
+                }
+
+                for (const auto& target : m_uiDrag->targets)
+                {
+                    if (auto* actor = scene->FindActorByGUID(target.guid))
+                    {
+                        OvMaths::FVector3 localDelta = worldDelta;
+                        if (auto* parent = actor->GetParent())
+                        {
+                            const auto invParent = OvMaths::FMatrix4::Inverse(parent->transform.GetWorldMatrix());
+                            const auto p0 = invParent * OvMaths::FVector4{target.startWorldPos.x, target.startWorldPos.y, target.startWorldPos.z, 1.0f};
+                            const auto p1 = invParent * OvMaths::FVector4{target.startWorldPos.x + worldDelta.x, target.startWorldPos.y + worldDelta.y, target.startWorldPos.z + worldDelta.z, 1.0f};
+                            localDelta = {p1.x - p0.x, p1.y - p0.y, p1.z - p0.z};
+                        }
+
+                        actor->transform.SetWorldPosition(target.startWorldPos + worldDelta);
+                        if (auto* rect = actor->GetComponent<OvCore::ECS::Components::CRectTransform>())
+                        {
+                            rect->SetAnchoredPosition(target.startAnchoredPos + OvMaths::FVector2{localDelta.x, localDelta.y});
+                            rect->LayoutChangedEvent.Invoke();
+                        }
+                    }
+                }
+            }
+        }
+        return;
+    }
     if (m_boxPending)
     {
         if (input.cancelled || input.rightPressed || input.scene != m_boxScene || currentSelection != m_boxSelection || input.size.x != m_boxSize.x || input.size.y != m_boxSize.y)
@@ -462,8 +576,73 @@ void OvEditor::Panels::SceneView::ApplyInteraction(const Interaction& input, Ren
             }
             else if (m_highlightedActor)
             {
-                if (input.additiveSelection) EDITOR_EXEC(ToggleActorSelection(m_highlightedActor.value()));
-                else EDITOR_EXEC(SelectActor(m_highlightedActor.value()));
+                auto& actor = m_highlightedActor.value();
+                if (input.additiveSelection)
+                {
+                    EDITOR_EXEC(ToggleActorSelection(actor));
+                }
+                else
+                {
+                    if (!EDITOR_EXEC(IsActorSelected(actor)))
+                    {
+                        EDITOR_EXEC(SelectActor(actor));
+                    }
+
+                    if (auto* rect = actor.GetComponent<OvCore::ECS::Components::CRectTransform>())
+                    {
+                        if (!actor.GetComponent<OvCore::ECS::Components::CCanvas>())
+                        {
+                            UIDragState dragState;
+                            dragState.scene = input.scene;
+                            dragState.startMouse = input.mouse;
+                            dragState.dragPlanePoint = actor.transform.GetWorldPosition();
+                            dragState.dragPlaneNormal = actor.transform.GetWorldForward();
+                            if (std::abs(dragState.dragPlaneNormal.z) < 0.5f)
+                            {
+                                dragState.dragPlaneNormal = {0.0f, 0.0f, 1.0f};
+                            }
+
+                            const auto ray = Core::GizmoMath::UnprojectRay(input.mouse, input.view, input.projection, input.size);
+                            if (!IntersectRayPlane(ray.origin, ray.direction, dragState.dragPlanePoint, dragState.dragPlaneNormal, dragState.startHitPoint))
+                            {
+                                dragState.startHitPoint = dragState.dragPlanePoint;
+                            }
+
+                            const auto allSelected = EDITOR_EXEC(GetSelectedActors());
+                            for (auto* selectedTarget : allSelected)
+                            {
+                                if (auto* targetRect = selectedTarget->GetComponent<OvCore::ECS::Components::CRectTransform>())
+                                {
+                                    if (!selectedTarget->GetComponent<OvCore::ECS::Components::CCanvas>())
+                                    {
+                                        bool hasSelectedAncestor = false;
+                                        for (auto* other : allSelected)
+                                        {
+                                            if (other != selectedTarget && selectedTarget->IsDescendantOf(other))
+                                            {
+                                                hasSelectedAncestor = true;
+                                                break;
+                                            }
+                                        }
+                                        if (!hasSelectedAncestor)
+                                        {
+                                            dragState.targets.push_back({
+                                                selectedTarget->GetGUID(),
+                                                selectedTarget->transform.GetWorldPosition(),
+                                                targetRect->GetAnchoredPosition()
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (!dragState.targets.empty())
+                            {
+                                m_uiDrag = std::move(dragState);
+                            }
+                        }
+                    }
+                }
             }
             else
             {
@@ -620,6 +799,16 @@ void OvEditor::Panels::SceneView::Set2D(bool p_2d)
 bool OvEditor::Panels::SceneView::Is2D() const
 {
     return m_cameraController.Is2D();
+}
+
+bool OvEditor::Panels::SceneView::IsUIDragging() const
+{
+    return m_uiDrag.has_value() && m_uiDrag->dragging;
+}
+
+bool OvEditor::Panels::SceneView::IsTransformEditing() const
+{
+    return m_gizmoOperations.IsPicking() || IsUIDragging();
 }
 
 void OvEditor::Panels::SceneView::ToggleProjection()
