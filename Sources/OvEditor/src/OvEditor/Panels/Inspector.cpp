@@ -22,9 +22,11 @@
 #include <OvEditor/Helpers/PickerHelpers.h>
 #include <OvEditor/Panels/Inspector.h>
 #include <OvEditor/Panels/InspectorBindings.h>
+#include <OvEditor/Panels/ProjectSettings.h>
 #include <OvCore/Resources/Material.h>
 #include <OvEditor/Panels/SceneView.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <OvTools/Utils/PathParser.h>
 #include <OvUI/Widgets/Buttons/Button.h>
 #include <OvUI/Widgets/Layout/Columns.h>
@@ -46,6 +48,64 @@ namespace
     private:
         void _Draw_Impl() override { m_draw(); }
         std::function<void()> m_draw;
+    };
+
+    class TagSelector final : public DataWidget<std::string>
+    {
+    public:
+        explicit TagSelector(Texts::TextColored* label = nullptr)
+            : DataWidget<std::string>(content), m_label(label) {}
+
+        std::string content;
+
+    private:
+        void _Draw_Impl() override
+        {
+            const bool mixed = m_label && m_label->content.ends_with(" (Mixed)");
+            const std::string preview = mixed ? "-- (Mixed)" : (content.empty() ? "Untagged" : content);
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::BeginCombo(("##Tag" + m_widgetID).c_str(), preview.c_str(), ImGuiComboFlags_HeightLarge))
+            {
+                const auto comboItem = GImGui->LastItemData;
+                const bool untaggedSelected = !mixed && content.empty();
+                if (ImGui::Selectable("Untagged", untaggedSelected))
+                {
+                    content.clear();
+                    NotifyChange();
+                }
+                if (untaggedSelected)
+                    ImGui::SetItemDefaultFocus();
+
+                std::vector<std::string> tags = OvEditor::Core::Context::GetBuiltInTags();
+                if (auto* actions = OvCore::Global::ServiceLocator::TryGet<OvEditor::Core::EditorActions>())
+                    tags = actions->GetContext().GetAvailableTags();
+                if (!mixed && !content.empty() && std::find(tags.begin(), tags.end(), content) == tags.end())
+                    tags.push_back(content);
+
+                for (const auto& tag : tags)
+                {
+                    const bool selected = !mixed && content == tag;
+                    if (ImGui::Selectable(tag.c_str(), selected))
+                    {
+                        content = tag;
+                        NotifyChange();
+                    }
+                    if (selected)
+                        ImGui::SetItemDefaultFocus();
+                }
+
+                ImGui::Separator();
+                if (ImGui::Selectable("Add Tag...", false))
+                {
+                    if (auto* actions = OvCore::Global::ServiceLocator::TryGet<OvEditor::Core::EditorActions>())
+                        actions->GetPanelsManager().GetPanelAs<OvEditor::Panels::ProjectSettings>("Project Settings").FocusTags();
+                }
+                ImGui::EndCombo();
+                GImGui->LastItemData = comboItem;
+            }
+        }
+
+        Texts::TextColored* m_label = nullptr;
     };
     std::string Lower(std::string value)
     {
@@ -148,7 +208,10 @@ OvEditor::Panels::Inspector::Inspector(
         {
             auto remaining = m_selection;
             std::erase(remaining, &destroyed);
+            const bool previousNav = m_navigatingSelectionHistory;
+            m_navigatingSelectionHistory = true;
             FocusActors(remaining);
+            m_navigatingSelectionHistory = previousNav;
         }
         if (std::find(m_targets.begin(),m_targets.end(),&destroyed) != m_targets.end())
         {
@@ -179,6 +242,7 @@ void OvEditor::Panels::Inspector::FocusActors(const std::vector<Actor*>& targets
     for (auto* actor : targets)
         if (actor && actor->IsAlive() && std::find(unique.begin(), unique.end(), actor) == unique.end()) unique.push_back(actor);
     if (unique == m_selection) return;
+    _RecordSelectionHistory(unique);
     auto* previous = m_selection.empty() ? nullptr : m_selection.front();
     m_selection = unique;
     if (previous) m_callbacks.unselected(*previous);
@@ -275,10 +339,120 @@ void OvEditor::Panels::Inspector::RestoreLockedTargets(const std::vector<uint64_
     _SetTargets(targets); m_locked = true;
 }
 
+std::vector<Actor*> OvEditor::Panels::Inspector::_ResolveHistoryEntry(const std::vector<uint64_t>& guids) const
+{
+    std::vector<Actor*> resolved;
+    if (m_sceneManager && m_sceneManager->GetCurrentScene())
+    {
+        auto* scene = m_sceneManager->GetCurrentScene();
+        for (auto guid : guids)
+            if (auto* actor = scene->FindActorByGUID(guid); actor && actor->IsAlive() &&
+                std::find(resolved.begin(), resolved.end(), actor) == resolved.end())
+                resolved.push_back(actor);
+    }
+    return resolved;
+}
+
+void OvEditor::Panels::Inspector::_RecordSelectionHistory(const std::vector<Actor*>& selection)
+{
+    if (m_navigatingSelectionHistory || selection.empty()) return;
+    std::vector<uint64_t> guids;
+    for (auto* actor : selection) if (actor && actor->IsAlive()) guids.push_back(actor->GetGUID());
+    if (guids.empty()) return;
+    if (!m_selectionHistory.empty() && m_selectionHistoryIndex < m_selectionHistory.size() &&
+        m_selectionHistory[m_selectionHistoryIndex] == guids)
+        return;
+    if (!m_selectionHistory.empty() && m_selectionHistoryIndex + 1 < m_selectionHistory.size())
+        m_selectionHistory.erase(m_selectionHistory.begin() + static_cast<std::ptrdiff_t>(m_selectionHistoryIndex + 1), m_selectionHistory.end());
+    if (m_selectionHistory.empty() || m_selectionHistory.back() != guids)
+    {
+        m_selectionHistory.push_back(std::move(guids));
+        if (m_selectionHistory.size() > 64)
+            m_selectionHistory.erase(m_selectionHistory.begin());
+    }
+    m_selectionHistoryIndex = m_selectionHistory.size() - 1;
+}
+
+bool OvEditor::Panels::Inspector::CanSelectBack() const
+{
+    if (m_selectionHistory.empty() || m_selectionHistoryIndex >= m_selectionHistory.size()) return false;
+    const int start = m_selection.empty() ? static_cast<int>(m_selectionHistoryIndex) : static_cast<int>(m_selectionHistoryIndex) - 1;
+    for (int i = start; i >= 0; --i)
+    {
+        const auto resolved = _ResolveHistoryEntry(m_selectionHistory[static_cast<size_t>(i)]);
+        if (!resolved.empty() && resolved != m_selection) return true;
+    }
+    return false;
+}
+
+bool OvEditor::Panels::Inspector::CanSelectForward() const
+{
+    if (m_selectionHistory.empty() || m_selectionHistoryIndex >= m_selectionHistory.size()) return false;
+    for (size_t i = m_selectionHistoryIndex + 1; i < m_selectionHistory.size(); ++i)
+    {
+        const auto resolved = _ResolveHistoryEntry(m_selectionHistory[i]);
+        if (!resolved.empty() && resolved != m_selection) return true;
+    }
+    return false;
+}
+
+bool OvEditor::Panels::Inspector::SelectBack()
+{
+    if (m_selectionHistory.empty() || m_selectionHistoryIndex >= m_selectionHistory.size()) return false;
+    const int start = m_selection.empty() ? static_cast<int>(m_selectionHistoryIndex) : static_cast<int>(m_selectionHistoryIndex) - 1;
+    for (int i = start; i >= 0; --i)
+    {
+        const auto resolved = _ResolveHistoryEntry(m_selectionHistory[static_cast<size_t>(i)]);
+        if (!resolved.empty() && resolved != m_selection)
+        {
+            m_selectionHistoryIndex = static_cast<size_t>(i);
+            m_navigatingSelectionHistory = true;
+            FocusActors(resolved);
+            m_navigatingSelectionHistory = false;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool OvEditor::Panels::Inspector::SelectForward()
+{
+    if (m_selectionHistory.empty() || m_selectionHistoryIndex >= m_selectionHistory.size()) return false;
+    for (size_t i = m_selectionHistoryIndex + 1; i < m_selectionHistory.size(); ++i)
+    {
+        const auto resolved = _ResolveHistoryEntry(m_selectionHistory[i]);
+        if (!resolved.empty() && resolved != m_selection)
+        {
+            m_selectionHistoryIndex = i;
+            m_navigatingSelectionHistory = true;
+            FocusActors(resolved);
+            m_navigatingSelectionHistory = false;
+            return true;
+        }
+    }
+    return false;
+}
+
+void OvEditor::Panels::Inspector::ClearSelectionHistory()
+{
+    m_selectionHistory.clear();
+    m_selectionHistoryIndex = 0;
+}
+
 void OvEditor::Panels::Inspector::_DrawToolbar()
 {
     const float scale = OVUI_SCALE;
     ImGui::PushID(this); ImGui::PushID("InspectorToolbar");
+    ImGui::BeginDisabled(!CanSelectBack());
+    if (ImGui::Button("<##SelectBack",{22*scale,0})) SelectBack();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Previous selection");
+    ImGui::EndDisabled(); ImGui::SameLine(0,2*scale);
+    ImGui::BeginDisabled(!CanSelectForward());
+    if (ImGui::Button(">##SelectForward",{22*scale,0})) SelectForward();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Next selection");
+    ImGui::EndDisabled(); ImGui::SameLine(0,6*scale);
     ImGui::BeginDisabled(m_targets.empty());
     if (ImGui::Button(m_locked ? "Locked" : "Lock",{64*scale,0})) SetLocked(!m_locked);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -471,9 +645,12 @@ void OvEditor::Panels::Inspector::_PopulateActorInfo()
 
         auto& columns = root.CreateWidget<Layout::Columns<2>>();
         columns.widths[0] = 140 * OVUI_SCALE;
-        OvCore::Helpers::GUIDrawer::DrawString(columns, "Tag",
-            [&actor, ticket] { return ticket.expired() ? std::string{} : actor.GetTag(); },
-            [&actor, ticket](const std::string& value) { if (!ticket.expired()) actor.SetTag(value); });
+        OvCore::Helpers::GUIDrawer::CreateTitle(columns, "Tag");
+        auto* tagLabel = dynamic_cast<Texts::TextColored*>(columns.GetWidgets().back().first);
+        auto& tagWidget = columns.CreateWidget<TagSelector>(tagLabel);
+        auto& tagDispatcher = tagWidget.AddPlugin<OvUI::Plugins::DataDispatcher<std::string>>();
+        tagDispatcher.RegisterGatherer([&actor, ticket] { return ticket.expired() ? std::string{} : actor.GetTag(); });
+        tagDispatcher.RegisterProvider([&actor, ticket](const std::string& value) { if (!ticket.expired()) actor.SetTag(value); });
     };
     auto& header = m_content->CreateWidget<Layout::Group>();
     header.SetID("inspector_actor_header");

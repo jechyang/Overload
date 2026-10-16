@@ -75,6 +75,12 @@ namespace OvEditor::Core
 		*/
 		void ApplyProjectSettings();
 
+		static const std::vector<std::string>& GetBuiltInTags();
+		std::vector<std::string> GetCustomTags() const;
+		std::vector<std::string> GetAvailableTags() const;
+		bool AddCustomTag(const std::string& p_tag);
+		bool RemoveCustomTag(const std::string& p_tag);
+
 	public:
 		const std::filesystem::path projectFolder;
 		const std::filesystem::path projectFile;

@@ -9,6 +9,7 @@
 #include <OvEditor/Panels/Hierarchy.h>
 #include <OvEditor/Panels/GameView.h>
 #include <OvEditor/Panels/Inspector.h>
+#include <OvEditor/Panels/ProjectSettings.h>
 #include <OvEditor/Settings/EditorSettings.h>
 #include <OvUI/Styling/Style.h>
 #include <imgui.h>
@@ -262,6 +263,49 @@ int main(int argc, char** argv) try {
     Require(consolePanel.GetSelectedLogMessage().find("Detail line three") != std::string::npos, "the detail area keeps multi-line messages whole");
     tick(3);
     capture("11-console-detail");
+
+    // Inspector: Tag dropdown, Project Settings -> Tags, and Component action menu captures.
+    auto& inspectorPanel = panels.GetPanelAs<OvEditor::Panels::Inspector>("Inspector");
+    context.AddCustomTag("Enemy");
+    context.AddCustomTag("Interactable");
+    actions.SelectActor(*context.sceneManager.GetCurrentScene()->FindActorByGUID(renameGUID));
+    inspectorPanel.Focus(); tick(3);
+    inspector = window("Inspector");
+    const ImVec2 tagComboPos{ inspector->Pos.x + inspector->Size.x - 60.0f * OVUI_SCALE, inspector->DC.CursorStartPos.y + 68.0f * OVUI_SCALE };
+    clickOnce(tagComboPos); tick(3);
+    Require(!GImGui->OpenPopupStack.empty(), "clicking the Inspector Tag combo opens the tag dropdown");
+    capture("12-inspector-tag-dropdown");
+    pressKey(ImGuiKey_Escape); tick(2);
+
+    struct RectProbe : OvUI::Plugins::IPlugin {
+        ImVec2 min{}, max{};
+        void Execute(OvUI::Plugins::EPluginExecutionContext) override { min = ImGui::GetItemRectMin(); max = ImGui::GetItemRectMax(); }
+    };
+    OvUI::Widgets::Layout::GroupCollapsable* lightHeader = nullptr;
+    std::function<void(OvUI::Internal::WidgetContainer&)> findHeader = [&](OvUI::Internal::WidgetContainer& root) {
+        for (auto [w, mode] : root.GetWidgets()) {
+            if (auto* g = dynamic_cast<OvUI::Widgets::Layout::GroupCollapsable*>(w); g && g->name == "Point Light") lightHeader = g;
+            if (auto* c = dynamic_cast<OvUI::Internal::WidgetContainer*>(w)) findHeader(*c);
+        }
+    };
+    findHeader(inspectorPanel);
+    Require(lightHeader != nullptr, "found Point Light component header in Inspector");
+    inspectorPanel.CopyComponentValues("OvCore::ECS::Components::CPointLight");
+    auto& lightProbe = lightHeader->AddPlugin<RectProbe>(); tick(2);
+    const ImVec2 lightHeaderPos{ lightProbe.min.x + 70.0f * OVUI_SCALE, (lightProbe.min.y + lightProbe.max.y) * 0.5f };
+    io.AddMousePosEvent(lightHeaderPos.x, lightHeaderPos.y); tick(2);
+    io.AddMouseButtonEvent(1, true); tick(1); io.AddMouseButtonEvent(1, false); tick(3);
+    Require(!GImGui->OpenPopupStack.empty(), "right-clicking component header opens component menu in shell");
+    capture("14-inspector-component-menu");
+    pressKey(ImGuiKey_Escape); tick(2);
+
+    auto& projectSettingsPanel = panels.GetPanelAs<OvEditor::Panels::ProjectSettings>("Project Settings");
+    projectSettingsPanel.FocusTags(); tick(4);
+    Require(projectSettingsPanel.IsOpened(), "FocusTags opens Project Settings panel");
+    capture("13-project-settings-tags");
+    projectSettingsPanel.Close();
+    context.RemoveCustomTag("Enemy");
+    context.RemoveCustomTag("Interactable");
     ImGui_ImplGlfw_CursorEnterCallback(context.window->GetGlfwWindow(), false);
 
     std::cout << passed << " checks passed\n";

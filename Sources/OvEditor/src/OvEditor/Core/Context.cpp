@@ -272,3 +272,98 @@ void OvEditor::Core::Context::ApplyProjectSettings()
 {
 	physicsEngine->SetGravity({ 0.0f, projectSettings.Get<float>("gravity"), 0.0f });
 }
+
+namespace
+{
+	std::string TrimTag(std::string value)
+	{
+		const auto first = value.find_first_not_of(" \t\r\n");
+		if (first == std::string::npos) return {};
+		const auto last = value.find_last_not_of(" \t\r\n");
+		return value.substr(first, last - first + 1);
+	}
+
+	void SaveCustomTags(OvTools::Filesystem::IniFile& settings, const std::vector<std::string>& tags)
+	{
+		std::string joined;
+		for (size_t i = 0; i < tags.size(); ++i)
+		{
+			if (i > 0) joined += ',';
+			joined += tags[i];
+		}
+		if (!settings.Set<std::string>("tags", joined))
+			settings.Add<std::string>("tags", joined);
+		settings.Rewrite();
+	}
+}
+
+const std::vector<std::string>& OvEditor::Core::Context::GetBuiltInTags()
+{
+	static const std::vector<std::string> kBuiltInTags{
+		"Respawn",
+		"Finish",
+		"EditorOnly",
+		"MainCamera",
+		"Player",
+		"GameController"
+	};
+	return kBuiltInTags;
+}
+
+std::vector<std::string> OvEditor::Core::Context::GetCustomTags() const
+{
+	std::vector<std::string> result;
+	const auto raw = projectSettings.GetOrDefault<std::string>("tags", "");
+	const auto& builtIn = GetBuiltInTags();
+	size_t start = 0;
+	while (start <= raw.size())
+	{
+		const auto comma = raw.find(',', start);
+		const auto token = TrimTag(raw.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+		if (!token.empty() && token != "Untagged" &&
+			std::find(builtIn.begin(), builtIn.end(), token) == builtIn.end() &&
+			std::find(result.begin(), result.end(), token) == result.end())
+		{
+			result.push_back(token);
+		}
+		if (comma == std::string::npos) break;
+		start = comma + 1;
+	}
+	return result;
+}
+
+std::vector<std::string> OvEditor::Core::Context::GetAvailableTags() const
+{
+	auto tags = GetBuiltInTags();
+	const auto custom = GetCustomTags();
+	tags.insert(tags.end(), custom.begin(), custom.end());
+	return tags;
+}
+
+bool OvEditor::Core::Context::AddCustomTag(const std::string& p_tag)
+{
+	const auto trimmed = TrimTag(p_tag);
+	if (trimmed.empty() || trimmed == "Untagged" || trimmed.find(',') != std::string::npos)
+		return false;
+	const auto& builtIn = GetBuiltInTags();
+	if (std::find(builtIn.begin(), builtIn.end(), trimmed) != builtIn.end())
+		return false;
+	auto custom = GetCustomTags();
+	if (std::find(custom.begin(), custom.end(), trimmed) != custom.end())
+		return false;
+	custom.push_back(trimmed);
+	SaveCustomTags(projectSettings, custom);
+	return true;
+}
+
+bool OvEditor::Core::Context::RemoveCustomTag(const std::string& p_tag)
+{
+	const auto trimmed = TrimTag(p_tag);
+	auto custom = GetCustomTags();
+	const auto it = std::find(custom.begin(), custom.end(), trimmed);
+	if (it == custom.end())
+		return false;
+	custom.erase(it);
+	SaveCustomTags(projectSettings, custom);
+	return true;
+}

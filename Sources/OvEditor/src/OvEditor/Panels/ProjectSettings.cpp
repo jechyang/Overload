@@ -8,6 +8,7 @@
 #include "OvEditor/Core/EditorActions.h"
 #include "OvTools/Utils/PathParser.h"
 
+#include <imgui.h>
 #include <OvCore/Resources/Loaders/MaterialLoader.h>
 #include <OvCore/Helpers/GUIDrawer.h>
 #include <OvUI/Styling/Style.h>
@@ -21,6 +22,18 @@
 using namespace OvUI::Panels;
 using namespace OvUI::Widgets;
 using namespace OvCore::Helpers;
+
+namespace
+{
+	class CustomCallbackWidget final : public AWidget
+	{
+	public:
+		explicit CustomCallbackWidget(std::function<void()> draw) : m_draw(std::move(draw)) {}
+	private:
+		void _Draw_Impl() override { m_draw(); }
+		std::function<void()> m_draw;
+	};
+}
 
 OvEditor::Panels::ProjectSettings::ProjectSettings(const std::string & p_title, bool p_opened, const OvUI::Settings::PanelWindowSettings & p_windowSettings) :
 	PanelWindow(p_title, p_opened, p_windowSettings),
@@ -108,4 +121,84 @@ OvEditor::Panels::ProjectSettings::ProjectSettings(const std::string & p_title, 
 
 		GUIDrawer::DrawScene(columns, "Start scene", GenerateGatherer<std::string>("start_scene"), GenerateProvider<std::string>("start_scene"));
 	}
+
+	{
+		/* Tags settings (Unity Tags & Layers style) */
+		m_tagsGroup = &CreateWidget<Layout::GroupCollapsable>("Tags");
+		m_tagsGroup->SetID("project_settings_tags");
+		m_tagsGroup->CreateWidget<CustomCallbackWidget>([this]
+		{
+			if (m_tagsGroup && m_tagsGroup->expandForSearch)
+			{
+				ImGui::GetStateStorage()->SetInt(ImGui::GetID("Tags###project_settings_tags"), 1);
+				m_tagsGroup->expandForSearch = false;
+			}
+			const float scale = OVUI_SCALE;
+			ImGui::PushID("ProjectSettingsTags");
+			ImGui::PushTextWrapPos(0.0f);
+			ImGui::TextDisabled("Built-in: Untagged, Respawn, Finish, EditorOnly, MainCamera, Player, GameController");
+			ImGui::PopTextWrapPos();
+			const auto customTags = EDITOR_CONTEXT(GetCustomTags)();
+			if (customTags.empty())
+			{
+				ImGui::TextDisabled("No custom tags");
+			}
+			else
+			{
+				for (size_t i = 0; i < customTags.size(); ++i)
+				{
+					ImGui::PushID(static_cast<int>(i));
+					ImGui::AlignTextToFramePadding();
+					ImGui::Text("Tag %zu", i);
+					ImGui::SameLine(125.0f * scale);
+					const float removeWidth = 24.0f * scale;
+					char buffer[256]{};
+					std::copy_n(customTags[i].data(), std::min(customTags[i].size(), sizeof(buffer) - 1), buffer);
+					ImGui::SetNextItemWidth(std::max(60.0f * scale, ImGui::GetContentRegionAvail().x - removeWidth - 6.0f * scale));
+					ImGui::InputText("##TagValue", buffer, sizeof(buffer), ImGuiInputTextFlags_ReadOnly);
+					ImGui::SameLine(0.0f, 6.0f * scale);
+					if (ImGui::Button("-##RemoveTag", { removeWidth, 0.0f }))
+						EDITOR_CONTEXT(RemoveCustomTag)(customTags[i]);
+					if (ImGui::IsItemHovered())
+						ImGui::SetTooltip("Remove custom tag");
+					ImGui::PopID();
+				}
+			}
+
+			char draft[256]{};
+			std::copy_n(m_newTagDraft.data(), std::min(m_newTagDraft.size(), sizeof(draft) - 1), draft);
+			const float addWidth = 64.0f * scale;
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted("New Tag");
+			ImGui::SameLine(125.0f * scale);
+			ImGui::SetNextItemWidth(std::max(60.0f * scale, ImGui::GetContentRegionAvail().x - addWidth - 6.0f * scale));
+			if (m_focusTagInput)
+			{
+				ImGui::SetKeyboardFocusHere();
+				m_focusTagInput = false;
+			}
+			const bool enterPressed = ImGui::InputTextWithHint("##NewTag", "New tag name", draft, sizeof(draft), ImGuiInputTextFlags_EnterReturnsTrue);
+			m_newTagDraft = draft;
+			ImGui::SameLine(0.0f, 6.0f * scale);
+			const bool canAdd = !m_newTagDraft.empty();
+			ImGui::BeginDisabled(!canAdd);
+			const bool addClicked = ImGui::Button("+ Add", { addWidth, 0.0f });
+			ImGui::EndDisabled();
+			if ((enterPressed || addClicked) && EDITOR_CONTEXT(AddCustomTag)(m_newTagDraft))
+				m_newTagDraft.clear();
+			ImGui::PopID();
+		});
+	}
+}
+
+void OvEditor::Panels::ProjectSettings::FocusTags()
+{
+	Open();
+	Focus();
+	if (m_tagsGroup)
+	{
+		m_tagsGroup->opened = true;
+		m_tagsGroup->expandForSearch = true;
+	}
+	m_focusTagInput = true;
 }

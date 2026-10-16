@@ -1,5 +1,6 @@
 #pragma once
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
+#include <OvEditor/Panels/ProjectSettings.h>
 #include <OvUI/Widgets/Texts/TextDisabled.h>
 
 class InspectorHeaderProbe : public OvUI::Plugins::IPlugin
@@ -237,7 +238,13 @@ template<class Draw> static void ValidateInspectorWorkflow(OvEditor::Core::Conte
     actions.SelectActor(*scene()->FindActorByGUID(pinID)); draw(); draw();
     window = ImGui::FindWindowByName((inspector.name+inspector.GetPanelID()).c_str());
     const ImVec2 toolbar = window->DC.CursorStartPos;
-    click({toolbar.x+32*OVUI_SCALE,toolbar.y+ImGui::GetFrameHeight()*.5f});
+    click({toolbar.x+11*OVUI_SCALE,toolbar.y+ImGui::GetFrameHeight()*.5f});
+    Require(actions.GetSelectedActor().GetGUID() == selectionID && inspector.CanSelectForward(),
+        "native toolbar back button restores previous selection");
+    click({toolbar.x+35*OVUI_SCALE,toolbar.y+ImGui::GetFrameHeight()*.5f});
+    Require(actions.GetSelectedActor().GetGUID() == pinID,
+        "native toolbar forward button advances selection history");
+    click({toolbar.x+84*OVUI_SCALE,toolbar.y+ImGui::GetFrameHeight()*.5f});
     Require(inspector.IsLocked(),"native toolbar button locks the Inspector");
     inspector.SetSearchFilter(""); draw(); draw();
     click({toolbar.x+160*OVUI_SCALE,toolbar.y+ImGui::GetFrameHeight()*.5f});
@@ -259,5 +266,51 @@ template<class Draw> static void ValidateInspectorWorkflow(OvEditor::Core::Conte
     };
     if (context.renderThread) context.renderThread->Invoke([&](auto&) { capture(); }); else capture();
     io.BackendFlags = flags; ImGui_ImplGlfw_CursorEnterCallback(context.window->GetGlfwWindow(),false);
-    inspector.SetSearchFilter(""); inspector.SetLocked(false); context.sceneManager.LoadEmptyScene(); draw(); draw();
+    inspector.SetSearchFilter(""); inspector.SetLocked(false);
+
+    // Custom Tags & Project Settings Tags workflow (I3)
+    const auto initialCustomTags = context.GetCustomTags();
+    for (const auto& tag : initialCustomTags) context.RemoveCustomTag(tag);
+    Require(context.GetCustomTags().empty(),"clearing custom tags resets custom tag list");
+    Require(!context.AddCustomTag("") && !context.AddCustomTag("Untagged") && !context.AddCustomTag("Player"),
+        "AddCustomTag rejects empty, Untagged, and built-in tags");
+    Require(context.AddCustomTag("Enemy") && context.AddCustomTag("Interactable") && !context.AddCustomTag("Enemy"),
+        "AddCustomTag persists unique custom tags and rejects duplicates");
+    const auto availableTags = context.GetAvailableTags();
+    Require(std::find(availableTags.begin(),availableTags.end(),"Player") != availableTags.end() &&
+        std::find(availableTags.begin(),availableTags.end(),"Enemy") != availableTags.end() &&
+        std::find(availableTags.begin(),availableTags.end(),"Interactable") != availableTags.end(),
+        "GetAvailableTags merges built-in and custom project tags");
+    auto& projectSettings = actions.GetPanelsManager().GetPanelAs<OvEditor::Panels::ProjectSettings>("Project Settings");
+    projectSettings.Close();
+    projectSettings.FocusTags();
+    Require(projectSettings.IsOpened(),"ProjectSettings::FocusTags opens the Project Settings panel");
+    Require(context.RemoveCustomTag("Enemy") && !context.RemoveCustomTag("Enemy") && context.RemoveCustomTag("Interactable"),
+        "RemoveCustomTag removes existing custom tags");
+    for (const auto& tag : initialCustomTags) context.AddCustomTag(tag);
+
+    // Selection History: Back / Forward & destroyed actor skipping (I4)
+    context.sceneManager.LoadEmptyScene(); draw(); draw();
+    inspector.ClearSelectionHistory();
+    Require(!inspector.CanSelectBack() && !inspector.CanSelectForward(),"ClearSelectionHistory resets navigation state");
+    auto& histA = actions.CreateEmptyActor(false,nullptr,"HistA");
+    auto& histB = actions.CreateEmptyActor(false,nullptr,"HistB");
+    auto& histC = actions.CreateEmptyActor(false,nullptr,"HistC");
+    const auto histAID = histA.GetGUID(), histBID = histB.GetGUID(), histCID = histC.GetGUID();
+    actions.SelectActor(histA); draw();
+    Require(!inspector.CanSelectBack() && !inspector.CanSelectForward(),"first selection has no back or forward history");
+    actions.SelectActor(histB); draw();
+    actions.SelectActor(histC); draw();
+    Require(inspector.CanSelectBack() && !inspector.CanSelectForward(),"subsequent selections enable back navigation");
+    Require(inspector.SelectBack() && actions.GetSelectedActor().GetGUID() == histBID && inspector.CanSelectForward(),
+        "SelectBack navigates to previous selection and enables forward navigation");
+    actions.UnselectActor(); draw();
+    Require(inspector.CanSelectBack() && inspector.CanSelectForward(),"clearing selection preserves selection history");
+    actions.DestroyActor(*scene()->FindActorByGUID(histBID)); draw();
+    Require(inspector.SelectBack() && actions.GetSelectedActor().GetGUID() == histAID,
+        "SelectBack skips destroyed actors in history");
+    Require(inspector.SelectForward() && actions.GetSelectedActor().GetGUID() == histCID,
+        "SelectForward skips destroyed actors in history");
+    inspector.ClearSelectionHistory();
+    context.sceneManager.LoadEmptyScene(); draw(); draw();
 }

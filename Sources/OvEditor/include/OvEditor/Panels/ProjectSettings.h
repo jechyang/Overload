@@ -4,10 +4,16 @@
 * @licence: MIT
 */
 
+#pragma once
+
+#include <string>
+
 #include <OvUI/Widgets/Texts/Text.h>
 #include <OvUI/Panels/PanelWindow.h>
 
 #include <OvTools/Filesystem/IniFile.h>
+
+namespace OvUI::Widgets::Layout { class GroupCollapsable; }
 
 namespace OvEditor::Panels
 {
@@ -26,6 +32,11 @@ namespace OvEditor::Panels
 			bool p_opened,
 			const OvUI::Settings::PanelWindowSettings& p_windowSettings
 		);
+
+		/**
+		* Open Project Settings and focus the Tags section (Unity "Add Tag...")
+		*/
+		void FocusTags();
 
 		/**
 		* Generate a gatherer that will get the value associated to the given key
@@ -49,5 +60,8 @@ namespace OvEditor::Panels
 
 	private:
 		OvTools::Filesystem::IniFile& m_projectFile;
+		OvUI::Widgets::Layout::GroupCollapsable* m_tagsGroup = nullptr;
+		std::string m_newTagDraft;
+		bool m_focusTagInput = false;
 	};
 }

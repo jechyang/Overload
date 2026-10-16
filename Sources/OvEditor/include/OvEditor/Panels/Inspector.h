@@ -78,6 +78,11 @@ namespace OvEditor::Panels
         bool CanPasteComponentAsNew() const;
         bool PasteComponentAsNew();
         bool RemoveComponents(const std::string& type);
+        bool CanSelectBack() const;
+        bool CanSelectForward() const;
+        bool SelectBack();
+        bool SelectForward();
+        void ClearSelectionHistory();
 
 		/**
 		* Clear scene selection; locked inspection targets are retained.
@@ -101,6 +106,8 @@ namespace OvEditor::Panels
         void _ClearTargets();
         void _DrawToolbar();
         void _ApplySearchFilter();
+        std::vector<OvCore::ECS::Actor*> _ResolveHistoryEntry(const std::vector<uint64_t>& guids) const;
+        void _RecordSelectionHistory(const std::vector<OvCore::ECS::Actor*>& selection);
         void _AttachComponentMenu(OvUI::Widgets::Layout::GroupCollapsable& header, const std::string& type, bool removable);
         bool _ApplyComponentValues(const std::string& type, const std::string& xml, const std::string& label);
         void _QueueRefresh();
@@ -117,6 +124,9 @@ namespace OvEditor::Panels
 		OvTools::Utils::OptRef<OvCore::ECS::Actor> m_targetActor = std::nullopt;
         std::vector<OvCore::ECS::Actor*> m_targets;
         std::vector<OvCore::ECS::Actor*> m_selection;
+        std::vector<std::vector<uint64_t>> m_selectionHistory;
+        size_t m_selectionHistoryIndex = 0;
+        bool m_navigatingSelectionHistory = false;
         bool m_locked = false;
         bool m_proportionalScale = false;
         std::string m_searchFilter, m_clipboardType, m_clipboardXML;

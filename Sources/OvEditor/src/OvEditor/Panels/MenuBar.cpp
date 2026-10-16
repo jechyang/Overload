@@ -76,6 +76,12 @@ void OvEditor::Panels::MenuBar::HandleShortcuts(float p_deltaTime)
 	m_playItem->checked = mode != EEditorMode::EDIT;
 	m_pauseItem->checked = mode == EEditorMode::PAUSE;
 	m_pauseItem->disabled = m_stepItem->disabled = mode == EEditorMode::EDIT;
+	if (m_selectBackItem && m_selectForwardItem)
+	{
+		const auto& inspector = EDITOR_PANEL(Inspector, "Inspector");
+		m_selectBackItem->disabled = !inspector.CanSelectBack();
+		m_selectForwardItem->disabled = !inspector.CanSelectForward();
+	}
 	UpdateToggleableItems();
 
 	auto& input = *EDITOR_CONTEXT(inputManager);
@@ -132,6 +138,10 @@ void OvEditor::Panels::MenuBar::CreateEditMenu()
 		if (auto* scene = EDITOR_CONTEXT(sceneManager).GetCurrentScene()) EDITOR_EXEC(SetSelection(scene->GetActors()));
 	});
 	menu.CreateWidget<MenuItem>("Deselect All").ClickedEvent += Deferred([] { EDITOR_EXEC(UnselectActor()); });
+	m_selectBackItem = &menu.CreateWidget<MenuItem>("Previous Selection");
+	m_selectBackItem->ClickedEvent += Deferred([] { EDITOR_PANEL(Inspector, "Inspector").SelectBack(); });
+	m_selectForwardItem = &menu.CreateWidget<MenuItem>("Next Selection");
+	m_selectForwardItem->ClickedEvent += Deferred([] { EDITOR_PANEL(Inspector, "Inspector").SelectForward(); });
 	menu.CreateWidget<Visual::Separator>();
 
 	menu.CreateWidget<MenuItem>("Copy", "Ctrl+C").ClickedEvent += [] {

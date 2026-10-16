@@ -67,6 +67,8 @@ namespace OvEditor::Panels
 		OvUI::Widgets::Menu::MenuItem* m_stepItem = nullptr;
 		OvUI::Widgets::Menu::MenuItem* m_saveItem = nullptr;
 		OvUI::Widgets::Menu::MenuItem* m_saveAsItem = nullptr;
+		OvUI::Widgets::Menu::MenuItem* m_selectBackItem = nullptr;
+		OvUI::Widgets::Menu::MenuItem* m_selectForwardItem = nullptr;
 		OvUI::Widgets::Menu::MenuList* m_settingsMenu = nullptr;
 		OvUI::Widgets::Menu::MenuList* m_windowMenu = nullptr;
 	};
