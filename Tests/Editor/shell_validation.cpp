@@ -7,6 +7,8 @@
 #include <OvCore/SceneSystem/Scene.h>
 #include <OvEditor/Core/Editor.h>
 #include <OvEditor/Core/SelectionBounds.h>
+#include <OvEditor/Core/GizmoMath.h>
+#include <GLFW/glfw3.h>
 #include <OvDebug/Logger.h>
 #include <OvEditor/Panels/AssetBrowser.h>
 #include <OvEditor/Panels/Console.h>
@@ -579,6 +581,36 @@ int main(int argc, char** argv) try {
     tick(3);
     Require(buttonActor.GetComponent<OvCore::ECS::Components::CRectTransform>() != nullptr,
         "Rect Tool operates on entities with CRectTransform");
+
+    // Verify SceneView UI direct mouse picking
+    actions.UnselectActor();
+    tick(2);
+    Require(!actions.IsAnyActorSelected(), "Unselecting clears active selection");
+
+    const auto [viewW, viewH] = sceneViewPanel.GetSafeSize();
+    const auto btnWorldPos = buttonActor.transform.GetWorldPosition();
+    const auto btnScreenPos = OvEditor::Core::GizmoMath::Project(btnWorldPos,
+        sceneViewPanel.GetCamera()->GetViewMatrix(),
+        sceneViewPanel.GetCamera()->GetProjectionMatrix(),
+        {float(viewW), float(viewH)});
+
+    // Position cursor over the Button in SceneView content and trigger picking
+    const auto viewContentPos = sceneViewPanel.GetPosition();
+    const double pickCursorX = viewContentPos.x + btnScreenPos.x;
+    const double pickCursorY = viewContentPos.y + ImGui::GetFrameHeight() + btnScreenPos.y;
+    io.AddMousePosEvent(float(pickCursorX), float(pickCursorY));
+    tick(2);
+
+    auto pickResult = sceneViewPanel.GetPickingResult();
+    Require(pickResult.has_value() && std::holds_alternative<OvTools::Utils::OptRef<OvCore::ECS::Actor>>(*pickResult) &&
+        std::get<OvTools::Utils::OptRef<OvCore::ECS::Actor>>(*pickResult).value().GetGUID() == buttonActor.GetGUID(),
+        "SceneView direct picking resolves UI Button at screen position");
+
+    actions.SelectActor(std::get<OvTools::Utils::OptRef<OvCore::ECS::Actor>>(*pickResult).value());
+    tick(3);
+
+    Require(actions.IsAnyActorSelected() && actions.GetSelectedActor().GetGUID() == buttonActor.GetGUID(),
+        "Direct SceneView mouse picking selects UI Button on Canvas");
 
     capture("19-ugui-editor-workflow");
 

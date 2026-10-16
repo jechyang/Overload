@@ -99,6 +99,7 @@ namespace OvEditor::Panels
         AView* GetCameraPreviewView();
         bool IsCameraPreviewHovered() const;
         std::pair<OvMaths::FVector2,OvMaths::FVector2> GetCameraPreviewRect() const { return {m_previewPosition,m_previewSize}; }
+        OvEditor::Rendering::PickingResult GetPickingResult();
 
 	protected:
 		OvCore::Rendering::SceneRenderRequest CreateSceneRequest() override;
@@ -126,7 +127,6 @@ namespace OvEditor::Panels
         void ApplyInteraction(const Interaction& input, Rendering::PickingResult result);
         void ApplyMaterialDrop(const std::string& path, Rendering::PickingResult result);
 		void HandleActorPicking();
-		OvEditor::Rendering::PickingResult GetPickingResult();
 		void OnSceneDropped(const std::string& p_path);
 		void OnModelDropped(const std::string& p_path);
 		void OnMaterialDropped(const std::string& p_path);

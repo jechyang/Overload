@@ -4,6 +4,7 @@
 * @licence: MIT
 */
 
+#include <iostream>
 #include <cmath>
 #include <algorithm>
 #include <array>
@@ -13,6 +14,8 @@
 
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Core/SelectionBounds.h>
+#include <OvCore/ECS/Components/CUI.h>
+#include <OvEditor/Core/GizmoMath.h>
 #include <OvEditor/Panels/SceneView.h>
 #include <OvEditor/Panels/GameView.h>
 #include <OvEditor/Settings/EditorSettings.h>
@@ -21,6 +24,80 @@
 
 namespace
 {
+OvCore::ECS::Actor* PickUIActor(OvCore::SceneSystem::Scene& scene, const OvMaths::FVector2& mousePos,
+                                    const OvMaths::FMatrix4& view, const OvMaths::FMatrix4& proj, const OvMaths::FVector2& viewSize)
+    {
+        if (viewSize.x <= 0 || viewSize.y <= 0) return nullptr;
+
+        std::vector<std::pair<int, OvCore::ECS::Actor*>> uiActors;
+
+        std::function<void(OvCore::ECS::Actor*, int)> collect = [&](OvCore::ECS::Actor* actor, int depth)
+        {
+            if (!actor || !actor->IsActive() || !actor->IsAlive()) return;
+            // Skip root Canvas from direct picking so clicking empty canvas does not steal picking
+            if (actor->GetComponent<OvCore::ECS::Components::CRectTransform>() && !actor->GetComponent<OvCore::ECS::Components::CCanvas>())
+            {
+                uiActors.push_back({depth, actor});
+            }
+            for (auto* child : actor->GetChildren())
+            {
+                collect(child, depth + 1);
+            }
+        };
+
+        for (auto* root : scene.GetActors())
+        {
+            if (!root->GetParent())
+                collect(root, 0);
+        }
+
+        // Deepest leaf elements first (so buttons/images are hit before parent panels)
+        std::stable_sort(uiActors.begin(), uiActors.end(), [](const auto& a, const auto& b) {
+            return a.first > b.first;
+        });
+
+        for (auto [depth, actor] : uiActors)
+        {
+            auto* rect = actor->GetComponent<OvCore::ECS::Components::CRectTransform>();
+            if (!rect) continue;
+
+            const auto localCorners = rect->GetLocalCorners();
+            const auto worldMatrix = actor->transform.GetWorldMatrix();
+            std::array<OvMaths::FVector2, 4> screenCorners;
+
+            for (size_t i = 0; i < 4; ++i)
+            {
+                const auto p = worldMatrix * OvMaths::FVector4{localCorners[i].x, localCorners[i].y, 0.0f, 1.0f};
+                screenCorners[i] = OvEditor::Core::GizmoMath::Project({p.x, p.y, p.z}, view, proj, viewSize);
+            }
+
+            auto crossProduct = [](const OvMaths::FVector2& a, const OvMaths::FVector2& b, const OvMaths::FVector2& p) {
+                return (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+            };
+
+            bool hasPos = false, hasNeg = false;
+            for (size_t i = 0; i < 4; ++i)
+            {
+                float cp = crossProduct(screenCorners[i], screenCorners[(i + 1) % 4], mousePos);
+                if (cp > 0.001f) hasPos = true;
+                if (cp < -0.001f) hasNeg = true;
+            }
+
+                        if (!(hasPos && hasNeg))
+            {
+                if (actor->GetParent() && !actor->GetParent()->GetComponent<OvCore::ECS::Components::CCanvas>())
+                {
+                    if (!actor->GetComponent<OvCore::ECS::Components::CUIImage>() && actor->GetParent()->GetComponent<OvCore::ECS::Components::CUIImage>())
+                    {
+                        return actor->GetParent();
+                    }
+                }
+                return actor;
+            }
+        }
+        return nullptr;
+    }
+
     class NavigationWidget final : public OvUI::Widgets::AWidget
     {
     public:
@@ -359,11 +436,21 @@ void OvEditor::Panels::SceneView::ApplyInteraction(const Interaction& input, Ren
     m_highlightedActor.reset(); m_highlightedGizmoDirection.reset();
     if (!m_gizmoOperations.IsPicking() && input.hovered && !input.resizing && input.pickingAvailable)
     {
-        if (!input.rightPressed && result)
+                if (!input.rightPressed)
         {
-            if (auto* actor = std::get_if<OvTools::Utils::OptRef<OvCore::ECS::Actor>>(&*result)) m_highlightedActor = *actor;
-            else if (selectionMatches && selected && (!input.readback || input.readback->GetGizmoActorGUID() == selected))
-                m_highlightedGizmoDirection = std::get<Core::GizmoBehaviour::EDirection>(*result);
+            if (result)
+            {
+                if (auto* actor = std::get_if<OvTools::Utils::OptRef<OvCore::ECS::Actor>>(&*result)) m_highlightedActor = *actor;
+                else if (selectionMatches && selected && (!input.readback || input.readback->GetGizmoActorGUID() == selected))
+                    m_highlightedGizmoDirection = std::get<Core::GizmoBehaviour::EDirection>(*result);
+            }
+            if (!m_highlightedActor && !m_highlightedGizmoDirection)
+            {
+                if (auto* uiActor = PickUIActor(*scene, input.mouse, input.view, input.projection, input.size))
+                {
+                    m_highlightedActor = *uiActor;
+                }
+            }
         }
         if (input.pressed && !input.rightPressed && selectionMatches)
         {
@@ -397,6 +484,11 @@ void OvEditor::Panels::SceneView::ApplyInteraction(const Interaction& input, Ren
 OvEditor::Rendering::PickingResult OvEditor::Panels::SceneView::GetPickingResult()
 {
 	auto [mouseX, mouseY] = EDITOR_CONTEXT(inputManager)->GetMousePosition();
+    if (ImGui::GetCurrentContext() && ImGui::IsMousePosValid())
+    {
+        mouseX = ImGui::GetIO().MousePos.x;
+        mouseY = ImGui::GetIO().MousePos.y;
+    }
 	mouseX -= m_position.x;
 	mouseY -= m_position.y;
 	mouseY = GetSafeSize().second - mouseY + ImGui::GetFrameHeight();
@@ -405,20 +497,51 @@ OvEditor::Rendering::PickingResult OvEditor::Panels::SceneView::GetPickingResult
     if (!currentScene) return std::nullopt;
     auto& scene = *currentScene;
 
-	if(!m_picking)return std::nullopt;
-
-    const auto readback = m_picking->GetReadback();
     const auto [width, height] = GetSafeSize();
     if (!std::isfinite(mouseX) || !std::isfinite(mouseY) || mouseX < 0 || mouseY < 0 || mouseX >= width || mouseY >= height) return std::nullopt;
-    if (readback && readback->GetSize() != std::pair<uint32_t, uint32_t>{width, height}) return std::nullopt;
-	auto result = readback ? readback->Resolve(scene,static_cast<uint32_t>(mouseX),static_cast<uint32_t>(mouseY)) : Rendering::PickingResult{};
-    if (readback && result && std::holds_alternative<Core::GizmoBehaviour::EDirection>(*result))
+
+    // 1. Check Gizmo handle first if ready
+    if (m_picking)
     {
-        if (!EDITOR_EXEC(IsAnyActorSelected()) ||
-            EDITOR_EXEC(GetSelectedActor()).GetGUID() != readback->GetGizmoActorGUID() ||
-            m_currentOperation != readback->GetGizmoOperation()) return std::nullopt;
+        const auto readback = m_picking->GetReadback();
+        if (readback && readback->GetSize() == std::pair<uint32_t, uint32_t>{width, height})
+        {
+            auto result = readback->Resolve(scene, static_cast<uint32_t>(mouseX), static_cast<uint32_t>(mouseY));
+            if (result && std::holds_alternative<Core::GizmoBehaviour::EDirection>(*result))
+            {
+                if (EDITOR_EXEC(IsAnyActorSelected()) &&
+                    EDITOR_EXEC(GetSelectedActor()).GetGUID() == readback->GetGizmoActorGUID() &&
+                    m_currentOperation == readback->GetGizmoOperation())
+                {
+                    return result;
+                }
+            }
+        }
     }
-    return result;
+
+    // 2. Check UI picking before 3D scene picking (UI is rendered on top of 3D)
+    {
+        const auto [rawX, rawY] = (ImGui::GetCurrentContext() && ImGui::IsMousePosValid()) ?
+            std::pair<double, double>{ImGui::GetIO().MousePos.x, ImGui::GetIO().MousePos.y} :
+            EDITOR_CONTEXT(inputManager)->GetMousePosition();
+        const OvMaths::FVector2 screenMouse{float(rawX - m_position.x), float(rawY - m_position.y - ImGui::GetFrameHeight())};
+        if (auto* uiActor = PickUIActor(scene, screenMouse, m_camera.GetViewMatrix(), m_camera.GetProjectionMatrix(), {float(width), float(height)}))
+        {
+            return *uiActor;
+        }
+    }
+
+    // 3. Fallback to 3D scene picking
+    if (m_picking)
+    {
+        const auto readback = m_picking->GetReadback();
+        if (readback && readback->GetSize() == std::pair<uint32_t, uint32_t>{width, height})
+        {
+            return readback->Resolve(scene, static_cast<uint32_t>(mouseX), static_cast<uint32_t>(mouseY));
+        }
+    }
+
+    return std::nullopt;
 }
 
 void OvEditor::Panels::SceneView::OnSceneDropped(const std::string& p_path)

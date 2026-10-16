@@ -323,7 +323,25 @@ public:
                 const OvMaths::FVector4 color = primary ? kSelectedOutlineColor : OvMaths::FVector4{.25f,.65f,1.f,1.f};
                 m_collector.Clear(false,false,true);
                 m_collector.SetPassName("Editor.Outline");m_outline.DrawOutline(*actor,color,primary ? kSelectedOutlineWidth : 3.f,false);
-                if (!actor->GetComponent<OvCore::ECS::Components::CModelRenderer>() && !actor->GetComponent<OvCore::ECS::Components::CCamera>())
+                if (auto* rect = actor->GetComponent<OvCore::ECS::Components::CRectTransform>())
+                {
+                    auto pso = m_collector.CreatePipelineState();
+                    pso.depthTest = false;
+                    const auto localCorners = rect->GetLocalCorners();
+                    const auto worldMatrix = actor->transform.GetWorldMatrix();
+                    std::array<OvMaths::FVector3, 4> worldCorners;
+                    for (size_t i = 0; i < 4; ++i)
+                    {
+                        const auto p = worldMatrix * OvMaths::FVector4{localCorners[i].x, localCorners[i].y, 0.0f, 1.0f};
+                        worldCorners[i] = {p.x, p.y, p.z};
+                    }
+                    const OvMaths::FVector3 lineColor{color.x, color.y, color.z};
+                    for (size_t i = 0; i < 4; ++i)
+                    {
+                        m_debugShapeFeature.DrawLine(pso, worldCorners[i], worldCorners[(i + 1) % 4], lineColor, primary ? 2.5f * OVUI_SCALE : 1.5f * OVUI_SCALE, false);
+                    }
+                }
+                else if (!actor->GetComponent<OvCore::ECS::Components::CModelRenderer>() && !actor->GetComponent<OvCore::ECS::Components::CCamera>())
                 {
                     const auto& view = m_collector.GetView();
                     const auto position = actor->transform.GetWorldPosition();
@@ -340,9 +358,14 @@ public:
             if (auto* canvas = FindRootCanvas(selectedActor)) DrawCanvasRect(*canvas);
             m_collector.SetPassName("Editor.GizmoDepthStencil");m_collector.Clear(false,true,false);
             if (HasEditableTransformGizmo(selectedActor))
-                m_gizmo.DrawGizmo(debugSceneDescriptor.frame ? debugSceneDescriptor.frame->position : selectedActor.transform.GetWorldPosition(),
-                    debugSceneDescriptor.frame ? debugSceneDescriptor.frame->rotation : selectedActor.transform.GetWorldRotation(),
-                    debugSceneDescriptor.gizmoOperation,false,debugSceneDescriptor.highlightedGizmoDirection);
+            {
+                if (debugSceneDescriptor.gizmoOperation == OvEditor::Core::EGizmoOperation::RECT)
+                    DrawRectGizmo(selectedActor, debugSceneDescriptor.highlightedGizmoDirection);
+                else
+                    m_gizmo.DrawGizmo(debugSceneDescriptor.frame ? debugSceneDescriptor.frame->position : selectedActor.transform.GetWorldPosition(),
+                        debugSceneDescriptor.frame ? debugSceneDescriptor.frame->rotation : selectedActor.transform.GetWorldRotation(),
+                        debugSceneDescriptor.gizmoOperation,false,debugSceneDescriptor.highlightedGizmoDirection);
+            }
         }
 
 		if (debugSceneDescriptor.highlightedActor)
@@ -353,6 +376,24 @@ public:
 			if (!drawn.contains(&highlightedActor))
 			{
 				m_collector.SetPassName("Editor.Outline");m_outline.DrawOutline(highlightedActor, kHoveredOutlineColor, kHoveredOutlineWidth);
+				if (auto* rect = highlightedActor.GetComponent<OvCore::ECS::Components::CRectTransform>())
+				{
+					auto pso = m_collector.CreatePipelineState();
+					pso.depthTest = false;
+					const auto localCorners = rect->GetLocalCorners();
+					const auto worldMatrix = highlightedActor.transform.GetWorldMatrix();
+					std::array<OvMaths::FVector3, 4> worldCorners;
+					for (size_t i = 0; i < 4; ++i)
+					{
+						const auto p = worldMatrix * OvMaths::FVector4{localCorners[i].x, localCorners[i].y, 0.0f, 1.0f};
+						worldCorners[i] = {p.x, p.y, p.z};
+					}
+					const OvMaths::FVector3 lineColor{kHoveredOutlineColor.x, kHoveredOutlineColor.y, kHoveredOutlineColor.z};
+					for (size_t i = 0; i < 4; ++i)
+					{
+						m_debugShapeFeature.DrawLine(pso, worldCorners[i], worldCorners[(i + 1) % 4], lineColor, 2.0f * OVUI_SCALE, false);
+					}
+				}
 			}
 		}
 	}
