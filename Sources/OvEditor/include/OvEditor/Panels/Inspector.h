@@ -5,12 +5,15 @@
 */
 
 #pragma once
+#include <OvTools/Filesystem/IniFile.h>
 #include <OvTools/Utils/CallbackScope.h>
+#include <OvTools/Utils/PathParser.h>
 #include <OvEditor/Panels/InspectorPropertyContext.h>
 
 #include <OvRendering/Resources/Loaders/TextureLoader.h>
 
 #include <OvUI/Panels/PanelWindow.h>
+#include <OvUI/Widgets/Layout/Columns.h>
 #include <OvUI/Widgets/Layout/GroupCollapsable.h>
 #include <OvUI/Widgets/Visual/Separator.h>
 #include <OvUI/Widgets/Selection/CheckBox.h>
@@ -64,6 +67,14 @@ namespace OvEditor::Panels
         const std::vector<OvCore::ECS::Actor*>& GetTargetActors() const { return m_targets; }
         // Scene selection remains independent when the Inspector is locked.
         const std::vector<OvCore::ECS::Actor*>& GetSelectedActors() const { return m_selection; }
+        void FocusAsset(const std::string& p_path);
+        const std::string& GetTargetAsset() const { return m_targetAsset; }
+        const std::string& GetSelectedAsset() const { return m_selectedAsset; }
+        OvTools::Filesystem::IniFile* GetAssetMetadata() { return m_assetMetadata.get(); }
+        void ApplyAssetSettings();
+        void RevertAssetSettings();
+        void ResetAssetSettings();
+        void PreviewAsset();
         void SetLocked(bool locked);
         bool IsLocked() const { return m_locked; }
         std::vector<uint64_t> GetLockedTargetGUIDs() const;
@@ -102,7 +113,10 @@ namespace OvEditor::Panels
 	private:
 		void _Draw_Impl() override;
 		void _Populate();
+        void _PopulateAsset();
+        void _PopulateAssetSettings(OvUI::Widgets::Layout::Columns<2>& p_columns, OvTools::Utils::PathParser::EFileType p_fileType);
         void _SetTargets(const std::vector<OvCore::ECS::Actor*>& targets);
+        void _SetAssetTarget(const std::string& p_resourcePath);
         void _ClearTargets();
         void _DrawToolbar();
         void _ApplySearchFilter();
@@ -124,6 +138,10 @@ namespace OvEditor::Panels
 		OvTools::Utils::OptRef<OvCore::ECS::Actor> m_targetActor = std::nullopt;
         std::vector<OvCore::ECS::Actor*> m_targets;
         std::vector<OvCore::ECS::Actor*> m_selection;
+        std::string m_targetAsset;
+        std::string m_selectedAsset;
+        mutable std::string m_restorableLockedAsset;
+        std::unique_ptr<OvTools::Filesystem::IniFile> m_assetMetadata;
         std::vector<std::vector<uint64_t>> m_selectionHistory;
         size_t m_selectionHistoryIndex = 0;
         bool m_navigatingSelectionHistory = false;

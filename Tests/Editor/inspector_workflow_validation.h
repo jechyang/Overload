@@ -312,5 +312,40 @@ template<class Draw> static void ValidateInspectorWorkflow(OvEditor::Core::Conte
     Require(inspector.SelectForward() && actions.GetSelectedActor().GetGUID() == histCID,
         "SelectForward skips destroyed actors in history");
     inspector.ClearSelectionHistory();
+
+    // Unified Asset Inspection in Inspector + Preview Area (I5)
+    actions.SelectActor(*scene()->FindActorByGUID(histAID)); draw(); draw();
+    inspector.FocusAsset(":Textures\\Default_Standard_Diffuse.png"); draw(); draw();
+    Require(!inspector.GetTargetActor().has_value() && inspector.GetTargetAsset() == ":Textures\\Default_Standard_Diffuse.png",
+        "FocusAsset switches Inspector from actor to asset target");
+    Require(header("Import Settings").visible && header("Asset Info").visible && header("Preview").visible,
+        "Asset Inspector populates Import Settings, Asset Info, and Preview sections");
+    inspector.SetSearchFilter("mipmapping"); draw();
+    Require(header("Import Settings").visible && !header("Asset Info").visible && !header("Preview").visible,
+        "Inspector search filter works on asset Import Settings properties");
+    inspector.SetSearchFilter(""); draw();
+    inspector.SetLocked(true);
+    actions.SelectActor(*scene()->FindActorByGUID(histCID)); draw(); draw();
+    Require(inspector.IsLocked() && !inspector.GetTargetActor().has_value() &&
+        inspector.GetTargetAsset() == ":Textures\\Default_Standard_Diffuse.png" &&
+        actions.GetSelectedActor().GetGUID() == histCID,
+        "locking an asset in Inspector retains the asset while scene selection changes");
+    inspector.SetLocked(false); draw(); draw();
+    Require(inspector.GetTargetActor().has_value() && inspector.GetTargetActor()->GetGUID() == histCID &&
+        inspector.GetTargetAsset().empty(),
+        "unlocking Inspector returns to the selected scene entity");
+    inspector.SetLocked(true);
+    inspector.FocusAsset(":Materials\\Default.ovmat"); draw(); draw();
+    Require(inspector.GetTargetActor().has_value() && inspector.GetTargetActor()->GetGUID() == histCID &&
+        inspector.GetSelectedAsset() == ":Materials\\Default.ovmat",
+        "locked actor Inspector ignores asset selection until unlocked");
+    inspector.SetLocked(false); draw(); draw();
+    Require(!inspector.GetTargetActor().has_value() && inspector.GetTargetAsset() == ":Materials\\Default.ovmat",
+        "unlocking switches Inspector to the pending selected asset");
+    actions.SelectActor(*scene()->FindActorByGUID(histCID)); draw(); draw();
+    Require(inspector.GetTargetActor().has_value() && inspector.GetTargetActor()->GetGUID() == histCID &&
+        inspector.GetTargetAsset().empty(),
+        "re-selecting the same scene entity switches Inspector back from asset to entity");
+
     context.sceneManager.LoadEmptyScene(); draw(); draw();
 }

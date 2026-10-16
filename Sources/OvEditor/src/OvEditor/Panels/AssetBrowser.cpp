@@ -583,11 +583,13 @@ namespace
 			auto& editMetadata = CreateWidget<OvUI::Widgets::Menu::MenuItem>("Properties");
 
 			editMetadata.ClickedEvent += [this] {
-				auto& panel = EDITOR_PANEL(OvEditor::Panels::AssetProperties, "Asset Properties");
 				const std::string resourcePath = EDITOR_EXEC(GetResourcePath(filePath.string(), m_protected));
+				auto& inspector = EDITOR_PANEL(OvEditor::Panels::Inspector, "Inspector");
+				inspector.FocusAsset(resourcePath);
+				inspector.Open();
+				inspector.Focus();
+				auto& panel = EDITOR_PANEL(OvEditor::Panels::AssetProperties, "Asset Properties");
 				panel.SetTarget(resourcePath);
-				panel.Open();
-				panel.Focus();
 			};
 		}
 
@@ -1438,7 +1440,12 @@ void OvEditor::Panels::AssetBrowser::DrawContent()
 
 	const auto handleItem = [&](Entry& p_entry, bool p_hovered)
 	{
-		if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || ImGui::IsItemClicked(ImGuiMouseButton_Right)) state.selected = p_entry.Key();
+		if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || ImGui::IsItemClicked(ImGuiMouseButton_Right))
+		{
+			state.selected = p_entry.Key();
+			if (!p_entry.directory)
+				EDITOR_PANEL(OvEditor::Panels::Inspector, "Inspector").FocusAsset(p_entry.resourcePath);
+		}
 		if (p_hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) activate(p_entry);
 		if (state.scrollToSelection && state.selected == p_entry.Key())
 		{

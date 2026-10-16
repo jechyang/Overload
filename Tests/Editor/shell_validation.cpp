@@ -306,6 +306,23 @@ int main(int argc, char** argv) try {
     projectSettingsPanel.Close();
     context.RemoveCustomTag("Enemy");
     context.RemoveCustomTag("Interactable");
+
+    // I5: Clicking a file tile in Project (AssetBrowser) inspects the asset and shows its Preview in Inspector.
+    browser.Open();
+    browser.Focus();
+    browser.ShowFolder(std::filesystem::path(context.engineAssetsPath) / "Textures");
+    tick(4);
+    project = window("Asset Browser");
+    content = nullptr;
+    for (auto* candidate : ImGui::GetCurrentContext()->Windows)
+        if (candidate->ParentWindow == project && std::string_view(candidate->Name).find("##Content") != std::string_view::npos)
+            content = candidate;
+    Require(content != nullptr, "found Project content child window for asset click");
+    const ImVec2 textureTile{ content->DC.CursorStartPos.x + 4.0f * OVUI_SCALE + 36.0f * OVUI_SCALE, content->DC.CursorStartPos.y + 40.0f * OVUI_SCALE };
+    clickOnce(textureTile); tick(4);
+    Require(!inspectorPanel.GetTargetAsset().empty() && !inspectorPanel.GetTargetActor().has_value(),
+        "clicking a texture in Project inspects the asset in Inspector");
+    capture("15-inspector-asset-preview");
     ImGui_ImplGlfw_CursorEnterCallback(context.window->GetGlfwWindow(), false);
 
     std::cout << passed << " checks passed\n";

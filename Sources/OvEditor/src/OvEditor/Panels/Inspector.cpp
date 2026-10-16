@@ -17,20 +17,29 @@
 #include <OvCore/Helpers/GUIDrawer.h>
 #include <OvCore/Helpers/ManagedFieldInput.h>
 #include <OvCore/Helpers/GUIHelpers.h>
+#include <OvCore/ResourceManagement/MaterialManager.h>
+#include <OvCore/ResourceManagement/ModelManager.h>
+#include <OvCore/ResourceManagement/TextureManager.h>
 #include <OvEditor/Core/EditorActions.h>
 #include <OvEditor/Core/EditorResources.h>
 #include <OvEditor/Helpers/PickerHelpers.h>
+#include <OvEditor/Panels/AssetView.h>
 #include <OvEditor/Panels/Inspector.h>
 #include <OvEditor/Panels/InspectorBindings.h>
+#include <OvEditor/Panels/MaterialEditor.h>
 #include <OvEditor/Panels/ProjectSettings.h>
 #include <OvCore/Resources/Material.h>
 #include <OvEditor/Panels/SceneView.h>
+#include <OvRendering/Resources/Parsers/EmbeddedAssetPath.h>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <OvTools/Utils/PathParser.h>
+#include <OvTools/Utils/SizeConverter.h>
+#include <OvUI/Internal/TextureID.h>
 #include <OvUI/Widgets/Buttons/Button.h>
 #include <OvUI/Widgets/Layout/Columns.h>
 #include <OvUI/Widgets/Layout/Spacing.h>
+#include <OvUI/Widgets/Selection/ComboBox.h>
 #include <OvUI/Widgets/Texts/TextDisabled.h>
 #include <OvUI/Styling/Style.h>
 #include <OvWindowing/Dialogs/MessageBox.h>
@@ -241,18 +250,61 @@ void OvEditor::Panels::Inspector::FocusActors(const std::vector<Actor*>& targets
     std::vector<Actor*> unique;
     for (auto* actor : targets)
         if (actor && actor->IsAlive() && std::find(unique.begin(), unique.end(), actor) == unique.end()) unique.push_back(actor);
-    if (unique == m_selection) return;
-    _RecordSelectionHistory(unique);
-    auto* previous = m_selection.empty() ? nullptr : m_selection.front();
-    m_selection = unique;
-    if (previous) m_callbacks.unselected(*previous);
-    if (!m_locked) _SetTargets(unique);
-    if (!m_selection.empty()) m_callbacks.selected(*m_selection.front());
+    const bool hadAsset = !m_selectedAsset.empty() || (!m_locked && !m_targetAsset.empty());
+    if (!unique.empty()) m_selectedAsset.clear();
+    if (unique == m_selection && !hadAsset) return;
+    if (unique != m_selection)
+    {
+        _RecordSelectionHistory(unique);
+        auto* previous = m_selection.empty() ? nullptr : m_selection.front();
+        m_selection = unique;
+        if (previous) m_callbacks.unselected(*previous);
+        if (!m_locked) _SetTargets(unique);
+        if (!m_selection.empty()) m_callbacks.selected(*m_selection.front());
+    }
+    else if (!m_locked && !unique.empty())
+    {
+        _SetTargets(unique);
+    }
+}
+
+void OvEditor::Panels::Inspector::FocusAsset(const std::string& p_path)
+{
+    if (p_path.empty())
+    {
+        m_selectedAsset.clear();
+        if (!m_locked && !m_targetAsset.empty())
+        {
+            _ClearTargets();
+            if (!m_selection.empty()) _SetTargets(m_selection);
+        }
+        return;
+    }
+
+    std::string resourcePath = p_path;
+    if (auto* actions = OvCore::Global::ServiceLocator::TryGet<OvEditor::Core::EditorActions>())
+    {
+        if (!p_path.starts_with(":") && !OvRendering::Resources::Parsers::ParseEmbeddedAssetPath(p_path).has_value() &&
+            std::filesystem::path(p_path).is_absolute())
+        {
+            const auto norm = std::filesystem::path(p_path).lexically_normal().string();
+            const auto eng = std::filesystem::path(actions->GetContext().engineAssetsPath).lexically_normal().string();
+            resourcePath = actions->GetResourcePath(norm, norm.starts_with(eng));
+        }
+        else if (!p_path.starts_with(":") && !OvRendering::Resources::Parsers::ParseEmbeddedAssetPath(p_path).has_value())
+        {
+            resourcePath = actions->GetResourcePath(p_path, false);
+        }
+    }
+
+    m_selectedAsset = resourcePath;
+    if (!m_locked)
+        _SetAssetTarget(resourcePath);
 }
 
 void OvEditor::Panels::Inspector::_SetTargets(const std::vector<Actor*>& targets)
 {
-    if (targets == m_targets) return;
+    if (targets == m_targets && m_targetAsset.empty()) return;
     _ClearTargets();
     if (targets.empty()) return;
     m_targets = targets;
@@ -268,6 +320,15 @@ void OvEditor::Panels::Inspector::_SetTargets(const std::vector<Actor*>& targets
     _Populate();
 }
 
+void OvEditor::Panels::Inspector::_SetAssetTarget(const std::string& p_resourcePath)
+{
+    if (p_resourcePath == m_targetAsset && m_targets.empty()) return;
+    _ClearTargets();
+    if (p_resourcePath.empty()) return;
+    m_targetAsset = p_resourcePath;
+    _PopulateAsset();
+}
+
 void OvEditor::Panels::Inspector::_Draw_Impl()
 {
     // Capture before any custom property control/button can mutate the scene.
@@ -279,7 +340,10 @@ void OvEditor::Panels::Inspector::_Draw_Impl()
 
 void OvEditor::Panels::Inspector::UnFocus()
 {
+    m_selectedAsset.clear();
     FocusActors({});
+    if (!m_locked && !m_targetAsset.empty())
+        _ClearTargets();
 }
 
 void OvEditor::Panels::Inspector::_ClearTargets()
@@ -288,7 +352,7 @@ void OvEditor::Panels::Inspector::_ClearTargets()
     m_focusCallbacks.Invalidate();
     _InvalidateView();
     m_refreshPending = false;
-	if (!m_targetActor)
+	if (!m_targetActor && m_targetAsset.empty())
 	{
 		return;
 	}
@@ -308,6 +372,8 @@ void OvEditor::Panels::Inspector::_ClearTargets()
 	m_content->RemoveAllWidgets();
 
 	m_targetActor.reset();
+    m_targetAsset.clear();
+    m_assetMetadata.reset();
     m_searchStatus->enabled = false;
 }
 
@@ -318,20 +384,34 @@ OvTools::Utils::OptRef<Actor> OvEditor::Panels::Inspector::GetTargetActor() cons
 
 void OvEditor::Panels::Inspector::SetLocked(bool locked)
 {
-    if (locked == m_locked || (locked && m_targets.empty())) return;
+    if (locked == m_locked || (locked && m_targets.empty() && m_targetAsset.empty())) return;
     m_locked = locked;
-    if (!locked) _SetTargets(m_selection);
+    if (!locked)
+    {
+        if (!m_selectedAsset.empty()) _SetAssetTarget(m_selectedAsset);
+        else _SetTargets(m_selection);
+    }
 }
 
 std::vector<uint64_t> OvEditor::Panels::Inspector::GetLockedTargetGUIDs() const
 {
     std::vector<uint64_t> result;
+    m_restorableLockedAsset = (m_locked && !m_targetAsset.empty()) ? m_targetAsset : std::string{};
     if (m_locked) for (auto* actor : m_targets) if (actor->IsAlive()) result.push_back(actor->GetGUID());
     return result;
 }
 
 void OvEditor::Panels::Inspector::RestoreLockedTargets(const std::vector<uint64_t>& guids)
 {
+    if (guids.empty() && !m_restorableLockedAsset.empty())
+    {
+        const auto asset = std::move(m_restorableLockedAsset);
+        m_restorableLockedAsset.clear();
+        _SetAssetTarget(asset);
+        m_locked = true;
+        return;
+    }
+    m_restorableLockedAsset.clear();
     std::vector<Actor*> targets;
     if (m_sceneManager && m_sceneManager->GetCurrentScene())
         for (auto guid : guids) if (auto* actor = m_sceneManager->GetCurrentScene()->FindActorByGUID(guid)) targets.push_back(actor);
@@ -453,10 +533,10 @@ void OvEditor::Panels::Inspector::_DrawToolbar()
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Next selection");
     ImGui::EndDisabled(); ImGui::SameLine(0,6*scale);
-    ImGui::BeginDisabled(m_targets.empty());
+    ImGui::BeginDisabled(m_targets.empty() && m_targetAsset.empty());
     if (ImGui::Button(m_locked ? "Locked" : "Lock",{64*scale,0})) SetLocked(!m_locked);
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip("Keep inspecting these entities while selecting others in the scene");
+        ImGui::SetTooltip("Keep inspecting these entities or assets while selecting others");
     ImGui::EndDisabled(); ImGui::SameLine(0,6*scale);
     char search[256]{}; std::copy_n(m_searchFilter.data(),std::min(m_searchFilter.size(),sizeof(search)-1),search);
     ImGui::SetNextItemWidth(std::max(70*scale,ImGui::GetContentRegionAvail().x-28*scale));
@@ -467,8 +547,15 @@ void OvEditor::Panels::Inspector::_DrawToolbar()
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Clear Inspector search");
     if (m_locked)
     {
-        ImGui::TextDisabled("Inspecting: %s",m_targetActor->GetName().c_str());
-        if (m_targets.size() > 1) { ImGui::SameLine(); ImGui::TextDisabled("(+%zu)",m_targets.size()-1); }
+        if (m_targetActor)
+        {
+            ImGui::TextDisabled("Inspecting: %s",m_targetActor->GetName().c_str());
+            if (m_targets.size() > 1) { ImGui::SameLine(); ImGui::TextDisabled("(+%zu)",m_targets.size()-1); }
+        }
+        else if (!m_targetAsset.empty())
+        {
+            ImGui::TextDisabled("Inspecting: %s",OvTools::Utils::PathParser::GetElementName(m_targetAsset).c_str());
+        }
     }
     ImGui::Separator(); ImGui::PopID(); ImGui::PopID();
 }
@@ -491,7 +578,7 @@ void OvEditor::Panels::Inspector::_ApplySearchFilter()
         section->expandForSearch = !terms.empty() && section->visible;
         matches += section->visible ? 1 : 0;
     }
-    m_searchStatus->enabled = !terms.empty() && !m_targets.empty();
+    m_searchStatus->enabled = !terms.empty() && (!m_targets.empty() || !m_targetAsset.empty());
     m_searchStatus->content = matches ? std::to_string(matches)+(matches == 1 ? " matching section" : " matching sections") : "No matching components or properties";
 }
 
@@ -989,6 +1076,448 @@ void OvEditor::Panels::Inspector::_DrawBehaviour(Behaviour& p_behaviour, int p_i
     InspectorBindings::Connect(roots, m_viewCallbacks.Ticket(),_PropertyContext());
 }
 
+void OvEditor::Panels::Inspector::_PopulateAsset()
+{
+    using EFileType = OvTools::Utils::PathParser::EFileType;
+    m_emptyState->enabled = false;
+    m_content->enabled = true;
+    auto ticket = m_viewCallbacks.Ticket();
+
+    const auto embedded = OvRendering::Resources::Parsers::ParseEmbeddedAssetPath(m_targetAsset);
+    const bool readOnly = m_targetAsset.starts_with(":") || embedded.has_value();
+    const std::string elementName = embedded ? embedded->assetName : OvTools::Utils::PathParser::GetElementName(m_targetAsset);
+    const EFileType fileType = OvTools::Utils::PathParser::GetFileType(elementName);
+    const std::string friendlyType = OvTools::Utils::PathParser::FileTypeToString(fileType);
+    std::string realPath;
+    if (auto* actions = OvCore::Global::ServiceLocator::TryGet<OvEditor::Core::EditorActions>(); actions && !embedded)
+        realPath = actions->GetRealPath(m_targetAsset);
+
+    const bool canPreviewInAssetView =
+        fileType == EFileType::MODEL || fileType == EFileType::TEXTURE || fileType == EFileType::MATERIAL;
+
+    m_content->CreateWidget<InspectorToolbar>([this, ticket, elementName, friendlyType, readOnly, canPreviewInAssetView]
+    {
+        if (ticket.expired()) return;
+        const float scale = OVUI_SCALE;
+        ImGui::PushID("InspectorAssetHeader");
+        if (auto* actions = OvCore::Global::ServiceLocator::TryGet<OvEditor::Core::EditorActions>())
+        {
+            if (auto* iconTex = actions->GetContext().editorResources->GetFileIcon(elementName))
+            {
+                OvUI::Internal::TextureID icon{ iconTex->RetainTexture() };
+                icon.RetainForCapture();
+                const ImVec2 pos = ImGui::GetCursorScreenPos();
+                const float iconSize = 32.0f * scale;
+                ImGui::GetWindowDrawList()->AddImage(icon.id, pos, { pos.x + iconSize, pos.y + iconSize }, { 0.0f, 1.0f }, { 1.0f, 0.0f });
+                ImGui::Dummy({ iconSize, iconSize });
+                ImGui::SameLine(0.0f, 8.0f * scale);
+            }
+        }
+        ImGui::BeginGroup();
+        ImGui::TextUnformatted(elementName.c_str());
+        ImGui::TextDisabled("%s Asset%s", friendlyType.c_str(), readOnly ? " (Read-Only)" : "");
+        ImGui::EndGroup();
+
+        const float openWidth = 54.0f * scale;
+        const float viewWidth = canPreviewInAssetView ? (82.0f * scale + 6.0f * scale) : 0.0f;
+        const float rightStart = ImGui::GetWindowContentRegionMax().x - openWidth - viewWidth;
+        if (rightStart > ImGui::GetCursorPosX() + 8.0f * scale)
+        {
+            ImGui::SameLine(rightStart);
+            if (canPreviewInAssetView)
+            {
+                if (ImGui::Button("Asset View", { 82.0f * scale, 0.0f })) PreviewAsset();
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Open in the 3D / 2D Asset View panel");
+                ImGui::SameLine(0.0f, 6.0f * scale);
+            }
+            if (ImGui::Button("Open", { openWidth, 0.0f }))
+                OvCore::Helpers::GUIHelpers::Open(m_targetAsset);
+        }
+        ImGui::PopID();
+    });
+    m_content->CreateWidget<Visual::Separator>();
+
+    if (!embedded && (fileType == EFileType::MODEL || fileType == EFileType::TEXTURE))
+    {
+        if (!realPath.empty())
+            m_assetMetadata = std::make_unique<OvTools::Filesystem::IniFile>(realPath + ".meta");
+        else
+            m_assetMetadata.reset();
+
+        if (m_assetMetadata)
+        {
+            auto& settingsGroup = m_content->CreateWidget<Layout::GroupCollapsable>("Import Settings");
+            settingsGroup.SetID("inspector_asset_import_settings");
+            m_sections.push_back(&settingsGroup);
+            auto& settingsColumns = settingsGroup.CreateWidget<Layout::Columns<2>>();
+            settingsColumns.SetID("inspector_asset_import_columns");
+            settingsColumns.widths[0] = 150 * OVUI_SCALE;
+            settingsColumns.disabled = readOnly;
+            _PopulateAssetSettings(settingsColumns, fileType);
+
+            settingsGroup.CreateWidget<InspectorToolbar>([this, ticket, readOnly]
+            {
+                if (ticket.expired()) return;
+                const float scale = OVUI_SCALE;
+                ImGui::PushID("InspectorAssetActions");
+                ImGui::BeginDisabled(readOnly);
+                if (ImGui::Button("Revert", { 64.0f * scale, 0.0f }))
+                    m_callbacks.defer([this, ticket] { if (!ticket.expired()) RevertAssetSettings(); });
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                    ImGui::SetTooltip("Reload saved import settings from disk");
+                ImGui::SameLine(0.0f, 6.0f * scale);
+                if (ImGui::Button("Reset", { 64.0f * scale, 0.0f }))
+                    m_callbacks.defer([this, ticket] { if (!ticket.expired()) ResetAssetSettings(); });
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                    ImGui::SetTooltip("Reset import settings to defaults");
+                ImGui::SameLine(0.0f, 6.0f * scale);
+                if (ImGui::Button("Apply", { 64.0f * scale, 0.0f }))
+                    m_callbacks.defer([this, ticket] { if (!ticket.expired()) ApplyAssetSettings(); });
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                    ImGui::SetTooltip("Save .meta settings and reimport the asset");
+                ImGui::EndDisabled();
+                ImGui::PopID();
+            });
+        }
+    }
+    else
+    {
+        m_assetMetadata.reset();
+    }
+
+    auto& infoGroup = m_content->CreateWidget<Layout::GroupCollapsable>("Asset Info");
+    infoGroup.SetID("inspector_asset_info");
+    m_sections.push_back(&infoGroup);
+    auto& infoCols = infoGroup.CreateWidget<Layout::Columns<2>>();
+    infoCols.SetID("inspector_asset_info_columns");
+    infoCols.widths[0] = 140 * OVUI_SCALE;
+    OvCore::Helpers::GUIDrawer::CreateTitle(infoCols, "Resource");
+    infoCols.CreateWidget<Texts::Text>(OvTools::Utils::PathParser::GetFriendlyPath(m_targetAsset));
+    OvCore::Helpers::GUIDrawer::CreateTitle(infoCols, "Type");
+    infoCols.CreateWidget<Texts::Text>(friendlyType);
+    if (!realPath.empty() && std::filesystem::exists(realPath))
+    {
+        OvCore::Helpers::GUIDrawer::CreateTitle(infoCols, "Path");
+        infoCols.CreateWidget<Texts::Text>(realPath);
+        OvCore::Helpers::GUIDrawer::CreateTitle(infoCols, "Size");
+        const auto [size, unit] = OvTools::Utils::SizeConverter::ConvertToOptimalUnit(
+            static_cast<float>(std::filesystem::file_size(realPath)),
+            OvTools::Utils::SizeConverter::ESizeUnit::BYTE);
+        infoCols.CreateWidget<Texts::Text>(std::format("{:.1f} {}", size, OvTools::Utils::SizeConverter::UnitToString(unit)));
+        OvCore::Helpers::GUIDrawer::CreateTitle(infoCols, "Metadata");
+        infoCols.CreateWidget<Texts::Text>(std::filesystem::exists(realPath + ".meta") ? "Yes" : "No");
+    }
+    if (fileType == EFileType::TEXTURE)
+    {
+        if (auto* tm = OvCore::Global::ServiceLocator::TryGet<OvCore::ResourceManagement::TextureManager>())
+            if (auto* tex = (*tm)[m_targetAsset])
+            {
+                const auto& desc = tex->GetTexture().GetDesc();
+                OvCore::Helpers::GUIDrawer::CreateTitle(infoCols, "Dimensions");
+                infoCols.CreateWidget<Texts::Text>(std::format("{} x {}", desc.width, desc.height));
+            }
+    }
+    else if (fileType == EFileType::MODEL)
+    {
+        if (auto* mm = OvCore::Global::ServiceLocator::TryGet<OvCore::ResourceManagement::ModelManager>())
+            if (auto* model = (*mm)[m_targetAsset])
+            {
+                OvCore::Helpers::GUIDrawer::CreateTitle(infoCols, "Meshes");
+                infoCols.CreateWidget<Texts::Text>(std::to_string(model->GetMeshes().size()));
+                OvCore::Helpers::GUIDrawer::CreateTitle(infoCols, "Material Slots");
+                infoCols.CreateWidget<Texts::Text>(std::to_string(model->GetMaterialNames().size()));
+            }
+    }
+    else if (fileType == EFileType::MATERIAL)
+    {
+        if (auto* matm = OvCore::Global::ServiceLocator::TryGet<OvCore::ResourceManagement::MaterialManager>())
+            if (auto* mat = (*matm)[m_targetAsset])
+            {
+                OvCore::Helpers::GUIDrawer::CreateTitle(infoCols, "Shader");
+                infoCols.CreateWidget<Texts::Text>(mat->GetShader() ? OvTools::Utils::PathParser::GetFriendlyPath(mat->GetShader()->path) : "None");
+            }
+    }
+
+    auto& previewGroup = m_content->CreateWidget<Layout::GroupCollapsable>("Preview");
+    previewGroup.SetID("inspector_asset_preview");
+    m_sections.push_back(&previewGroup);
+    previewGroup.CreateWidget<InspectorToolbar>([this, ticket, fileType, elementName, friendlyType]
+    {
+        if (ticket.expired()) return;
+        const float scale = OVUI_SCALE;
+        ImGui::PushID("InspectorAssetPreview");
+        const float width = std::max(120.0f * scale, ImGui::GetContentRegionAvail().x);
+        const float boxHeight = 180.0f * scale;
+        const ImVec2 boxMin = ImGui::GetCursorScreenPos();
+        const ImVec2 boxMax{ boxMin.x + width, boxMin.y + boxHeight };
+        auto* drawList = ImGui::GetWindowDrawList();
+        drawList->AddRectFilled(boxMin, boxMax, ImGui::GetColorU32(ImGuiCol_FrameBg), 4.0f * scale);
+        drawList->AddRect(boxMin, boxMax, ImGui::GetColorU32(ImGuiCol_Border), 4.0f * scale);
+
+        bool drewCustom = false;
+        if (fileType == EFileType::TEXTURE)
+        {
+            if (auto* tm = OvCore::Global::ServiceLocator::TryGet<OvCore::ResourceManagement::TextureManager>())
+                if (auto* tex = (*tm)[m_targetAsset])
+                {
+                    OvUI::Internal::TextureID tid{ tex->RetainTexture() };
+                    tid.RetainForCapture();
+                    const auto& desc = tex->GetTexture().GetDesc();
+                    const float aspect = (desc.width > 0 && desc.height > 0) ? static_cast<float>(desc.width) / static_cast<float>(desc.height) : 1.0f;
+                    const float maxW = width - 24.0f * scale;
+                    const float maxH = boxHeight - 32.0f * scale;
+                    ImVec2 imgSize{ maxW, maxH };
+                    if (imgSize.x / imgSize.y > aspect) imgSize.x = imgSize.y * aspect;
+                    else imgSize.y = imgSize.x / aspect;
+                    const ImVec2 center{ (boxMin.x + boxMax.x) * 0.5f, boxMin.y + (boxHeight - 18.0f * scale) * 0.5f };
+                    drawList->AddImage(tid.id, { center.x - imgSize.x * 0.5f, center.y - imgSize.y * 0.5f },
+                        { center.x + imgSize.x * 0.5f, center.y + imgSize.y * 0.5f }, { 0.0f, 1.0f }, { 1.0f, 0.0f });
+                    const std::string caption = std::format("{} ({}x{})", elementName, desc.width, desc.height);
+                    const float textW = ImGui::CalcTextSize(caption.c_str()).x;
+                    drawList->AddText({ boxMin.x + std::max(6.0f * scale, (width - textW) * 0.5f), boxMax.y - 20.0f * scale },
+                        ImGui::GetColorU32(ImGuiCol_TextDisabled), caption.c_str());
+                    drewCustom = true;
+                }
+        }
+        else if (fileType == EFileType::MODEL)
+        {
+            if (auto* mm = OvCore::Global::ServiceLocator::TryGet<OvCore::ResourceManagement::ModelManager>())
+                if (auto* model = (*mm)[m_targetAsset])
+                {
+                    ImGui::SetCursorScreenPos({ boxMin.x + 12.0f * scale, boxMin.y + 10.0f * scale });
+                    ImGui::BeginGroup();
+                    ImGui::Text("%s (%zu meshes)", elementName.c_str(), model->GetMeshes().size());
+                    ImGui::Spacing();
+                    const auto& mats = model->GetMaterialNames();
+                    for (size_t i = 0; i < std::min<size_t>(mats.size(), 5); ++i)
+                        ImGui::TextDisabled("Slot %zu: %s", i, mats[i].empty() ? "<unnamed>" : mats[i].c_str());
+                    if (mats.size() > 5)
+                        ImGui::TextDisabled("+%zu more material slots", mats.size() - 5);
+                    ImGui::EndGroup();
+                    drewCustom = true;
+                }
+        }
+        else if (fileType == EFileType::MATERIAL)
+        {
+            if (auto* matm = OvCore::Global::ServiceLocator::TryGet<OvCore::ResourceManagement::MaterialManager>())
+                if (auto* mat = (*matm)[m_targetAsset])
+                {
+                    ImGui::SetCursorScreenPos({ boxMin.x + 12.0f * scale, boxMin.y + 10.0f * scale });
+                    ImGui::BeginGroup();
+                    ImGui::Text("%s", elementName.c_str());
+                    ImGui::TextDisabled("Shader: %s", mat->GetShader() ? OvTools::Utils::PathParser::GetFriendlyPath(mat->GetShader()->path).c_str() : "None");
+                    ImGui::Spacing();
+                    ImGui::TextDisabled("Blendable: %s | Two-Sided: %s", mat->IsBlendable() ? "Yes" : "No", (!mat->HasBackfaceCulling() && !mat->HasFrontfaceCulling()) ? "Yes" : "No");
+                    ImGui::Spacing();
+                    if (ImGui::Button("Edit in Material Editor"))
+                        OvCore::Helpers::GUIHelpers::Open(m_targetAsset);
+                    ImGui::EndGroup();
+                    drewCustom = true;
+                }
+        }
+
+        if (!drewCustom)
+        {
+            if (auto* actions = OvCore::Global::ServiceLocator::TryGet<OvEditor::Core::EditorActions>())
+                if (auto* iconTex = actions->GetContext().editorResources->GetFileIcon(elementName))
+                {
+                    OvUI::Internal::TextureID tid{ iconTex->RetainTexture() };
+                    tid.RetainForCapture();
+                    const float iconSize = 64.0f * scale;
+                    const ImVec2 center{ (boxMin.x + boxMax.x) * 0.5f, boxMin.y + (boxHeight - 20.0f * scale) * 0.5f };
+                    drawList->AddImage(tid.id, { center.x - iconSize * 0.5f, center.y - iconSize * 0.5f },
+                        { center.x + iconSize * 0.5f, center.y + iconSize * 0.5f }, { 0.0f, 1.0f }, { 1.0f, 0.0f });
+                }
+            const std::string caption = elementName + " (" + friendlyType + ")";
+            const float textW = ImGui::CalcTextSize(caption.c_str()).x;
+            drawList->AddText({ boxMin.x + std::max(6.0f * scale, (width - textW) * 0.5f), boxMax.y - 20.0f * scale },
+                ImGui::GetColorU32(ImGuiCol_TextDisabled), caption.c_str());
+        }
+
+        ImGui::SetCursorScreenPos(boxMin);
+        ImGui::Dummy({ width, boxHeight });
+        ImGui::PopID();
+    });
+
+    _ApplySearchFilter();
+}
+
+void OvEditor::Panels::Inspector::_PopulateAssetSettings(
+    Layout::Columns<2>& p_columns,
+    OvTools::Utils::PathParser::EFileType p_fileType)
+{
+    if (!m_assetMetadata) return;
+    using EFileType = OvTools::Utils::PathParser::EFileType;
+    if (p_fileType == EFileType::MODEL)
+    {
+        static constexpr std::pair<const char*, bool> kModelFlags[] = {
+            {"GENERATE_EMBEDDED_ASSETS", true},
+            {"CALC_TANGENT_SPACE", true},
+            {"JOIN_IDENTICAL_VERTICES", true},
+            {"MAKE_LEFT_HANDED", false},
+            {"TRIANGULATE", true},
+            {"REMOVE_COMPONENT", false},
+            {"GEN_NORMALS", false},
+            {"GEN_SMOOTH_NORMALS", true},
+            {"SPLIT_LARGE_MESHES", false},
+            {"PRE_TRANSFORM_VERTICES", false},
+            {"LIMIT_BONE_WEIGHTS", true},
+            {"VALIDATE_DATA_STRUCTURE", false},
+            {"IMPROVE_CACHE_LOCALITY", true},
+            {"REMOVE_REDUNDANT_MATERIALS", false},
+            {"FIX_INFACING_NORMALS", false},
+            {"SORT_BY_PTYPE", false},
+            {"FIND_DEGENERATES", false},
+            {"FIND_INVALID_DATA", true},
+            {"GEN_UV_COORDS", true},
+            {"TRANSFORM_UV_COORDS", false},
+            {"FIND_INSTANCES", true},
+            {"OPTIMIZE_MESHES", true},
+            {"OPTIMIZE_GRAPH", true},
+            {"FLIP_UVS", false},
+            {"FLIP_WINDING_ORDER", false},
+            {"SPLIT_BY_BONE_COUNT", false},
+            {"DEBONE", false},
+            {"GLOBAL_SCALE", true},
+            {"EMBED_TEXTURES", false},
+            {"FORCE_GEN_NORMALS", false},
+            {"DROP_NORMALS", false},
+            {"GEN_BOUNDING_BOXES", false}
+        };
+        for (const auto& [key, defVal] : kModelFlags)
+        {
+            m_assetMetadata->Add(key, defVal);
+            const std::string settingKey = key;
+            OvCore::Helpers::GUIDrawer::DrawBoolean(p_columns, settingKey,
+                [this, settingKey] { return m_assetMetadata ? m_assetMetadata->Get<bool>(settingKey) : false; },
+                [this, settingKey](bool value) { if (m_assetMetadata) m_assetMetadata->Set<bool>(settingKey, value); });
+        }
+    }
+    else if (p_fileType == EFileType::TEXTURE)
+    {
+        using namespace OvRendering::Settings;
+        using namespace baregl::types;
+        const std::string kMinFilter = "MIN_FILTER";
+        const std::string kMagFilter = "MAG_FILTER";
+        const std::string kHorizontalWrap = "HORIZONTAL_WRAP";
+        const std::string kVerticalWrap = "VERTICAL_WRAP";
+        const std::string kEnableMipmapping = "ENABLE_MIPMAPPING";
+
+        m_assetMetadata->Add(kMinFilter, static_cast<int>(ETextureFilteringMode::LINEAR_MIPMAP_LINEAR));
+        m_assetMetadata->Add(kMagFilter, static_cast<int>(ETextureFilteringMode::LINEAR));
+        m_assetMetadata->Add(kHorizontalWrap, static_cast<int>(ETextureWrapMode::REPEAT));
+        m_assetMetadata->Add(kVerticalWrap, static_cast<int>(ETextureWrapMode::REPEAT));
+        m_assetMetadata->Add(kEnableMipmapping, true);
+
+        const auto filteringModes = std::map<int, std::string>{
+            {static_cast<int>(ETextureFilteringMode::NEAREST), "NEAREST"},
+            {static_cast<int>(ETextureFilteringMode::LINEAR), "LINEAR"},
+            {static_cast<int>(ETextureFilteringMode::NEAREST_MIPMAP_NEAREST), "NEAREST_MIPMAP_NEAREST"},
+            {static_cast<int>(ETextureFilteringMode::LINEAR_MIPMAP_LINEAR), "LINEAR_MIPMAP_LINEAR"},
+            {static_cast<int>(ETextureFilteringMode::LINEAR_MIPMAP_NEAREST), "LINEAR_MIPMAP_NEAREST"},
+            {static_cast<int>(ETextureFilteringMode::NEAREST_MIPMAP_LINEAR), "NEAREST_MIPMAP_LINEAR"}
+        };
+        const auto wrapModes = std::map<int, std::string>{
+            {static_cast<int>(ETextureWrapMode::REPEAT), "REPEAT"},
+            {static_cast<int>(ETextureWrapMode::CLAMP_TO_EDGE), "CLAMP_TO_EDGE"},
+            {static_cast<int>(ETextureWrapMode::CLAMP_TO_BORDER), "CLAMP_TO_BORDER"},
+            {static_cast<int>(ETextureWrapMode::MIRRORED_REPEAT), "MIRRORED_REPEAT"},
+            {static_cast<int>(ETextureWrapMode::MIRROR_CLAMP_TO_EDGE), "MIRROR_CLAMP_TO_EDGE"}
+        };
+
+        OvCore::Helpers::GUIDrawer::CreateTitle(p_columns, kMinFilter);
+        auto& minFilter = p_columns.CreateWidget<Selection::ComboBox>(m_assetMetadata->Get<int>(kMinFilter));
+        minFilter.choices = filteringModes;
+        minFilter.ValueChangedEvent += [this, kMinFilter](int choice) { if (m_assetMetadata) m_assetMetadata->Set(kMinFilter, choice); };
+
+        OvCore::Helpers::GUIDrawer::CreateTitle(p_columns, kMagFilter);
+        auto& magFilter = p_columns.CreateWidget<Selection::ComboBox>(m_assetMetadata->Get<int>(kMagFilter));
+        magFilter.choices = filteringModes;
+        magFilter.ValueChangedEvent += [this, kMagFilter](int choice) { if (m_assetMetadata) m_assetMetadata->Set(kMagFilter, choice); };
+
+        OvCore::Helpers::GUIDrawer::CreateTitle(p_columns, kHorizontalWrap);
+        auto& horizontalWrap = p_columns.CreateWidget<Selection::ComboBox>(m_assetMetadata->Get<int>(kHorizontalWrap));
+        horizontalWrap.choices = wrapModes;
+        horizontalWrap.ValueChangedEvent += [this, kHorizontalWrap](int choice) { if (m_assetMetadata) m_assetMetadata->Set(kHorizontalWrap, choice); };
+
+        OvCore::Helpers::GUIDrawer::CreateTitle(p_columns, kVerticalWrap);
+        auto& verticalWrap = p_columns.CreateWidget<Selection::ComboBox>(m_assetMetadata->Get<int>(kVerticalWrap));
+        verticalWrap.choices = wrapModes;
+        verticalWrap.ValueChangedEvent += [this, kVerticalWrap](int choice) { if (m_assetMetadata) m_assetMetadata->Set(kVerticalWrap, choice); };
+
+        OvCore::Helpers::GUIDrawer::DrawBoolean(p_columns, kEnableMipmapping,
+            [this, kEnableMipmapping] { return m_assetMetadata ? m_assetMetadata->Get<bool>(kEnableMipmapping) : true; },
+            [this, kEnableMipmapping](bool value) { if (m_assetMetadata) m_assetMetadata->Set<bool>(kEnableMipmapping, value); });
+    }
+}
+
+void OvEditor::Panels::Inspector::ApplyAssetSettings()
+{
+    if (m_targetAsset.empty() || !m_assetMetadata) return;
+    m_assetMetadata->Rewrite();
+    const auto fileType = OvTools::Utils::PathParser::GetFileType(m_targetAsset);
+    if (fileType == OvTools::Utils::PathParser::EFileType::MODEL)
+    {
+        if (auto* mm = OvCore::Global::ServiceLocator::TryGet<OvCore::ResourceManagement::ModelManager>())
+            if (mm->IsResourceRegistered(m_targetAsset))
+            {
+                mm->AResourceManager::ReloadResource(m_targetAsset);
+                if (auto* actions = OvCore::Global::ServiceLocator::TryGet<OvEditor::Core::EditorActions>())
+                    actions->GetPanelsManager().GetPanelAs<OvEditor::Panels::MaterialEditor>("Material Editor").Refresh();
+            }
+    }
+    else if (fileType == OvTools::Utils::PathParser::EFileType::TEXTURE)
+    {
+        if (auto* tm = OvCore::Global::ServiceLocator::TryGet<OvCore::ResourceManagement::TextureManager>())
+            if (tm->IsResourceRegistered(m_targetAsset))
+                tm->AResourceManager::ReloadResource(m_targetAsset);
+    }
+    Refresh();
+}
+
+void OvEditor::Panels::Inspector::RevertAssetSettings()
+{
+    if (m_targetAsset.empty()) return;
+    Refresh();
+}
+
+void OvEditor::Panels::Inspector::ResetAssetSettings()
+{
+    if (m_targetAsset.empty() || !m_assetMetadata) return;
+    m_assetMetadata->RemoveAll();
+    const auto fileType = OvTools::Utils::PathParser::GetFileType(m_targetAsset);
+    Layout::Columns<2> dummy;
+    _PopulateAssetSettings(dummy, fileType);
+    m_assetMetadata->Rewrite();
+    Refresh();
+}
+
+void OvEditor::Panels::Inspector::PreviewAsset()
+{
+    if (m_targetAsset.empty()) return;
+    auto* actions = OvCore::Global::ServiceLocator::TryGet<OvEditor::Core::EditorActions>();
+    if (!actions) return;
+    auto& assetView = actions->GetPanelsManager().GetPanelAs<OvEditor::Panels::AssetView>("Asset View");
+    const auto fileType = OvTools::Utils::PathParser::GetFileType(m_targetAsset);
+    if (fileType == OvTools::Utils::PathParser::EFileType::MODEL)
+    {
+        if (auto* resource = OVSERVICE(OvCore::ResourceManagement::ModelManager).GetResource(m_targetAsset))
+            assetView.SetResource(resource);
+    }
+    else if (fileType == OvTools::Utils::PathParser::EFileType::TEXTURE)
+    {
+        if (auto* resource = OVSERVICE(OvCore::ResourceManagement::TextureManager).GetResource(m_targetAsset))
+            assetView.SetResource(resource);
+    }
+    else if (fileType == OvTools::Utils::PathParser::EFileType::MATERIAL)
+    {
+        if (auto* resource = OVSERVICE(OvCore::ResourceManagement::MaterialManager).GetResource(m_targetAsset))
+            assetView.SetResource(resource);
+    }
+    assetView.Open();
+    assetView.Focus();
+}
+
 void OvEditor::Panels::Inspector::Refresh()
 {
     _InvalidateView();
@@ -1000,6 +1529,13 @@ void OvEditor::Panels::Inspector::Refresh()
         m_sections.clear();
 		_Populate();
 	}
+    else if (!m_targetAsset.empty())
+    {
+        m_content->RemoveAllWidgets();
+        m_batchControls.clear();
+        m_sections.clear();
+        _PopulateAsset();
+    }
 }
 
 void OvEditor::Panels::Inspector::_InvalidateView()
