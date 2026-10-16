@@ -720,6 +720,77 @@ int main(int argc, char** argv) try {
     btnImage->SetFillCenter(true);
     tick(2);
 
+    // Verify Filled Image support
+    btnImage->SetImageType(OvCore::ECS::Components::CUIImage::ImageType::Filled);
+    btnImage->SetFillMethod(OvCore::ECS::Components::CUIImage::FillMethod::Horizontal);
+    btnImage->SetFillOrigin(0); // Left
+    btnImage->SetFillAmount(0.5f);
+    inspectorPanel.Refresh();
+    tick(3);
+
+    Require(btnImage->GetImageType() == OvCore::ECS::Components::CUIImage::ImageType::Filled,
+        "CUIImage switches to Filled ImageType");
+    Require(hasWidgetText(inspectorPanel, "Fill Method") && hasWidgetText(inspectorPanel, "Fill Origin") &&
+        hasWidgetText(inspectorPanel, "Fill Amount"),
+        "Inspector dynamically exposes Fill Method, Fill Origin, and Fill Amount fields for Filled Image");
+
+    // Extract frame for Horizontal 50% fill
+    auto filledHFrame = OvCore::UI::ExtractFrame(*context.sceneManager.GetCurrentScene(), {float(viewW), float(viewH)}, 4, nullptr);
+    bool foundFilledHMesh = false;
+    for (const auto& m : filledHFrame.meshes)
+    {
+        if (m.actorGuid == buttonGUID)
+        {
+            foundFilledHMesh = true;
+            Require(m.vertices.size() == 4, "Horizontal Filled Image generates 4 vertices");
+            Require(m.indices.size() == 6, "Horizontal Filled Image generates 6 triangle indices");
+            break;
+        }
+    }
+    Require(foundFilledHMesh, "Horizontal Filled Image emits mesh during UI frame extraction");
+
+    // Test Radial 360 at 75% fill (3 quadrants = 12 vertices, 18 indices)
+    btnImage->SetFillMethod(OvCore::ECS::Components::CUIImage::FillMethod::Radial360);
+    btnImage->SetFillOrigin(0); // Bottom
+    btnImage->SetFillAmount(0.75f);
+    btnImage->SetFillClockwise(true);
+    inspectorPanel.Refresh();
+    tick(2);
+    Require(hasWidgetText(inspectorPanel, "Clockwise"), "Radial fill exposes Clockwise checkbox in Inspector");
+
+    auto filledRFrame = OvCore::UI::ExtractFrame(*context.sceneManager.GetCurrentScene(), {float(viewW), float(viewH)}, 5, nullptr);
+    bool foundFilledRMesh = false;
+    for (const auto& m : filledRFrame.meshes)
+    {
+        if (m.actorGuid == buttonGUID)
+        {
+            foundFilledRMesh = true;
+            Require(m.vertices.size() == 12, "Radial360 75% fill generates 12 vertices (3 quadrants * 4)");
+            Require(m.indices.size() == 18, "Radial360 75% fill generates 18 indices (3 quadrants * 6)");
+            break;
+        }
+    }
+    Require(foundFilledRMesh, "Radial360 Filled Image emits quadrant meshes during UI frame extraction");
+
+    // Test Fill Amount = 0 (empty, no mesh emitted)
+    btnImage->SetFillAmount(0.0f);
+    auto filledZeroFrame = OvCore::UI::ExtractFrame(*context.sceneManager.GetCurrentScene(), {float(viewW), float(viewH)}, 6, nullptr);
+    bool foundZeroMesh = false;
+    for (const auto& m : filledZeroFrame.meshes)
+    {
+        if (m.actorGuid == buttonGUID)
+        {
+            foundZeroMesh = true;
+            break;
+        }
+    }
+    Require(!foundZeroMesh, "Filled Image with 0 Fill Amount emits no meshes");
+
+    // Reset back to simple for workflow capture
+    btnImage->SetImageType(OvCore::ECS::Components::CUIImage::ImageType::Simple);
+    inspectorPanel.Refresh();
+    tick(2);
+
     capture("19-ugui-editor-workflow");
 
     std::error_code shellPrefabEc;

@@ -96,6 +96,136 @@ namespace OvCore::UI
             if (std::abs(std::abs(OvMaths::FQuaternion::DotProduct(transform.GetWorldRotation(), rotation)) - 1.0f) > 0.00001f)
                 transform.SetWorldRotation(rotation);
         }
+
+        void RadialCutCorner(std::array<float, 8>& data, float cosVal, float sinVal, bool invert, int corner)
+        {
+            const int i0 = corner;
+            const int i1 = (corner + 1) % 4;
+            const int i2 = (corner + 2) % 4;
+            const int i3 = (corner + 3) % 4;
+
+            auto setX = [](std::array<float, 8>& d, int c, float v) { d[c * 2] = v; };
+            auto setY = [](std::array<float, 8>& d, int c, float v) { d[c * 2 + 1] = v; };
+            auto getX = [](const std::array<float, 8>& d, int c) { return d[c * 2]; };
+            auto getY = [](const std::array<float, 8>& d, int c) { return d[c * 2 + 1]; };
+            auto lerp = [](float a, float b, float t) { return a + (b - a) * t; };
+
+            if ((corner & 1) == 1)
+            {
+                if (sinVal > cosVal)
+                {
+                    cosVal /= sinVal; sinVal = 1.0f;
+                    if (invert)
+                    {
+                        setX(data, i1, lerp(getX(data, i0), getX(data, i2), cosVal));
+                        setX(data, i2, getX(data, i1));
+                    }
+                }
+                else if (cosVal > sinVal)
+                {
+                    sinVal /= cosVal; cosVal = 1.0f;
+                    if (!invert)
+                    {
+                        setY(data, i2, lerp(getY(data, i0), getY(data, i2), sinVal));
+                        setY(data, i3, getY(data, i2));
+                    }
+                }
+                else
+                {
+                    cosVal = 1.0f; sinVal = 1.0f;
+                }
+                if (!invert) setX(data, i3, lerp(getX(data, i0), getX(data, i2), cosVal));
+                else setY(data, i1, lerp(getY(data, i0), getY(data, i2), sinVal));
+            }
+            else
+            {
+                if (cosVal > sinVal)
+                {
+                    sinVal /= cosVal; cosVal = 1.0f;
+                    if (!invert)
+                    {
+                        setY(data, i1, lerp(getY(data, i0), getY(data, i2), sinVal));
+                        setY(data, i2, getY(data, i1));
+                    }
+                }
+                else if (sinVal > cosVal)
+                {
+                    cosVal /= sinVal; sinVal = 1.0f;
+                    if (invert)
+                    {
+                        setX(data, i2, lerp(getX(data, i0), getX(data, i2), cosVal));
+                        setX(data, i3, getX(data, i2));
+                    }
+                }
+                else
+                {
+                    cosVal = 1.0f; sinVal = 1.0f;
+                }
+                if (invert) setY(data, i3, lerp(getY(data, i0), getY(data, i2), sinVal));
+                else setX(data, i1, lerp(getX(data, i0), getX(data, i2), cosVal));
+            }
+        }
+
+        bool RadialCut(std::array<float, 8>& xy, std::array<float, 8>& uv, float fill, bool invert, int corner)
+        {
+            if (fill < 0.001f) return false;
+            if ((corner & 1) == 1) invert = !invert;
+            if (!invert && fill > 0.999f) return true;
+            float angle = std::clamp(fill, 0.0f, 1.0f);
+            if (invert) angle = 1.0f - angle;
+            angle *= 90.0f * (3.14159265358979323846f / 180.0f);
+            const float cosVal = std::cos(angle);
+            const float sinVal = std::sin(angle);
+            RadialCutCorner(xy, cosVal, sinVal, invert, corner);
+            RadialCutCorner(uv, cosVal, sinVal, invert, corner);
+            return true;
+        }
+
+        void FillQuadrant(std::array<float, 8>& xy, std::array<float, 8>& uv,
+            const OvMaths::FVector4& v, const OvMaths::FVector4& outer,
+            float fx0, float fy0, float fx1, float fy1)
+        {
+            const float x0 = v.x + (v.z - v.x) * fx0, x1 = v.x + (v.z - v.x) * fx1;
+            const float y0 = v.y + (v.w - v.y) * fy0, y1 = v.y + (v.w - v.y) * fy1;
+            const float u0 = outer.x + (outer.z - outer.x) * fx0, u1 = outer.x + (outer.z - outer.x) * fx1;
+            const float w0 = outer.y + (outer.w - outer.y) * fy0, w1 = outer.y + (outer.w - outer.y) * fy1;
+            xy[0] = x0; xy[1] = y0; xy[2] = x0; xy[3] = y1; xy[4] = x1; xy[5] = y1; xy[6] = x1; xy[7] = y0;
+            uv[0] = u0; uv[1] = w0; uv[2] = u0; uv[3] = w1; uv[4] = u1; uv[5] = w1; uv[6] = u1; uv[7] = w0;
+        }
+
+        void AddFilledQuad(Mesh& output, const std::array<float, 8>& xy, const OvMaths::FVector4& color, const std::array<float, 8>& uv)
+        {
+            const uint32_t start = static_cast<uint32_t>(output.vertices.size());
+            output.vertices.reserve(output.vertices.size() + 4);
+            output.indices.reserve(output.indices.size() + 6);
+
+            ECS::Components::UIVertex vert{};
+            vert.color = color;
+
+            vert.position = {xy[0], xy[1], 0.0f};
+            vert.uv = {uv[0], uv[1]};
+            output.vertices.push_back(vert);
+
+            vert.position = {xy[2], xy[3], 0.0f};
+            vert.uv = {uv[2], uv[3]};
+            output.vertices.push_back(vert);
+
+            vert.position = {xy[4], xy[5], 0.0f};
+            vert.uv = {uv[4], uv[5]};
+            output.vertices.push_back(vert);
+
+            vert.position = {xy[6], xy[7], 0.0f};
+            vert.uv = {uv[6], uv[7]};
+            output.vertices.push_back(vert);
+
+            output.indices.push_back(start);
+            output.indices.push_back(start + 1);
+            output.indices.push_back(start + 2);
+
+            output.indices.push_back(start + 2);
+            output.indices.push_back(start + 3);
+            output.indices.push_back(start);
+        }
     }
 
     std::optional<OvMaths::FVector2> Frame::ProjectGraphic(uint64_t actorGuid, OvMaths::FVector2 screen) const
@@ -364,7 +494,8 @@ namespace OvCore::UI
                             { output.screenCorners = *projected; output.hasScreenCorners = true; }
                             frame.images.push_back(std::move(output));
                         }
-                        else
+                        else if (image->GetImageType() == ECS::Components::CUIImage::ImageType::Sliced ||
+                                 image->GetImageType() == ECS::Components::CUIImage::ImageType::Tiled)
                         {
                             const auto border = image->GetBorder();
                             float texW = 100.0f, texH = 100.0f;
@@ -493,6 +624,151 @@ namespace OvCore::UI
                                 }
 
                                 frame.meshes.push_back(std::move(output));
+                            }
+                        }
+                        else if (image->GetImageType() == ECS::Components::CUIImage::ImageType::Filled)
+                        {
+                            const float fillAmount = image->GetFillAmount();
+                            if (fillAmount >= 0.001f)
+                            {
+                                Mesh output;
+                                output.actorGuid = actor.GetGUID();
+                                output.sequence = sequence++;
+                                output.sortingOrder = state.order;
+                                output.renderMode = state.mode;
+                                output.clip = state.clip;
+                                output.canvasToWorld = state.canvasToWorld;
+                                output.texture = image->GetTexture() ? image->GetTexture()->RetainTexture() : nullptr;
+                                output.raycastTarget = state.blocks && image->IsRaycastTarget();
+                                output.interactable = state.interactable;
+
+                                if (state.mode == RenderMode::ScreenSpaceOverlay)
+                                {
+                                    const auto end = visible.min + visible.size;
+                                    output.screenCorners = {visible.min, {visible.min.x, end.y}, end, {end.x, visible.min.y}};
+                                    output.hasScreenCorners = true;
+                                }
+                                else if (const auto projected = ProjectRect(visible, state.canvasToWorld, renderCamera, size))
+                                {
+                                    output.screenCorners = *projected;
+                                    output.hasScreenCorners = true;
+                                }
+
+                                if (state.mode != RenderMode::ScreenSpaceOverlay && renderCamera)
+                                {
+                                    output.screenToCanvas = OvMaths::FMatrix4::Inverse(CameraProjection(*renderCamera, size) * CameraView(*renderCamera) * state.canvasToWorld);
+                                    output.cameraPosition = renderCamera->GetPosition();
+                                }
+
+                                OvMaths::FVector4 v{local.min.x, local.min.y, local.min.x + local.size.x, local.min.y + local.size.y};
+                                const OvMaths::FVector4 outer{0.0f, 0.0f, 1.0f, 1.0f};
+                                float tx0 = outer.x, ty0 = outer.y, tx1 = outer.z, ty1 = outer.w;
+                                const auto fillMethod = image->GetFillMethod();
+                                const int origin = image->GetFillOrigin();
+                                const bool clockwise = image->IsFillClockwise();
+
+                                if (fillMethod == ECS::Components::CUIImage::FillMethod::Horizontal ||
+                                    fillMethod == ECS::Components::CUIImage::FillMethod::Vertical)
+                                {
+                                    if (fillMethod == ECS::Components::CUIImage::FillMethod::Horizontal)
+                                    {
+                                        const float fill = (tx1 - tx0) * fillAmount;
+                                        if (origin == 1) // Right
+                                        {
+                                            v = {v.z - (v.z - v.x) * fillAmount, v.y, v.z, v.w};
+                                            tx0 = tx1 - fill;
+                                        }
+                                        else // Left
+                                        {
+                                            v = {v.x, v.y, v.x + (v.z - v.x) * fillAmount, v.w};
+                                            tx1 = tx0 + fill;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        const float fill = (ty1 - ty0) * fillAmount;
+                                        if (origin == 1) // Top
+                                        {
+                                            v = {v.x, v.w - (v.w - v.y) * fillAmount, v.z, v.w};
+                                            ty0 = ty1 - fill;
+                                        }
+                                        else // Bottom
+                                        {
+                                            v = {v.x, v.y, v.z, v.y + (v.w - v.y) * fillAmount};
+                                            ty1 = ty0 + fill;
+                                        }
+                                    }
+                                }
+
+                                std::array<float, 8> xy{
+                                    v.x, v.y,
+                                    v.x, v.w,
+                                    v.z, v.w,
+                                    v.z, v.y
+                                };
+                                std::array<float, 8> uv{
+                                    tx0, ty0,
+                                    tx0, ty1,
+                                    tx1, ty1,
+                                    tx1, ty0
+                                };
+
+                                if (fillAmount < 1.0f &&
+                                    fillMethod != ECS::Components::CUIImage::FillMethod::Horizontal &&
+                                    fillMethod != ECS::Components::CUIImage::FillMethod::Vertical)
+                                {
+                                    if (fillMethod == ECS::Components::CUIImage::FillMethod::Radial90)
+                                    {
+                                        if (RadialCut(xy, uv, fillAmount, clockwise, origin))
+                                            AddFilledQuad(output, xy, color, uv);
+                                    }
+                                    else if (fillMethod == ECS::Components::CUIImage::FillMethod::Radial180)
+                                    {
+                                        for (int side = 0; side < 2; ++side)
+                                        {
+                                            float fx0, fx1, fy0, fy1;
+                                            const int even = origin > 1 ? 1 : 0;
+                                            if (origin == 0 || origin == 2)
+                                            {
+                                                fy0 = 0.0f; fy1 = 1.0f;
+                                                if (side == even) { fx0 = 0.0f; fx1 = 0.5f; } else { fx0 = 0.5f; fx1 = 1.0f; }
+                                            }
+                                            else
+                                            {
+                                                fx0 = 0.0f; fx1 = 1.0f;
+                                                if (side == even) { fx0 = 0.0f; fx1 = 0.5f; } else { fx0 = 0.5f; fx1 = 1.0f; }
+                                            }
+                                            FillQuadrant(xy, uv, v, outer, fx0, fy0, fx1, fy1);
+                                            const float val = fillAmount * 2.0f - static_cast<float>(side);
+                                            if (RadialCut(xy, uv, std::clamp(val, 0.0f, 1.0f), clockwise, (side + origin + 3) % 4))
+                                                AddFilledQuad(output, xy, color, uv);
+                                        }
+                                    }
+                                    else // Radial360
+                                    {
+                                        for (int corner = 0; corner < 4; ++corner)
+                                        {
+                                            float fx0, fx1, fy0, fy1;
+                                            if (corner < 2) { fx0 = 0.0f; fx1 = 0.5f; } else { fx0 = 0.5f; fx1 = 1.0f; }
+                                            if (corner == 0 || corner == 3) { fy0 = 0.0f; fy1 = 0.5f; } else { fy0 = 0.5f; fy1 = 1.0f; }
+                                            FillQuadrant(xy, uv, v, outer, fx0, fy0, fx1, fy1);
+                                            const float val = clockwise
+                                                ? fillAmount * 4.0f - static_cast<float>((corner + origin) % 4)
+                                                : fillAmount * 4.0f - static_cast<float>(3 - ((corner + origin) % 4));
+                                            if (RadialCut(xy, uv, std::clamp(val, 0.0f, 1.0f), clockwise, (corner + 2) % 4))
+                                                AddFilledQuad(output, xy, color, uv);
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    AddFilledQuad(output, xy, color, uv);
+                                }
+
+                                if (!output.vertices.empty())
+                                {
+                                    frame.meshes.push_back(std::move(output));
+                                }
                             }
                         }
                     }

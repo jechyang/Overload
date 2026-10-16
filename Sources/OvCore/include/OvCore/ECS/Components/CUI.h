@@ -149,6 +149,27 @@ namespace OvCore::ECS::Components
         OV_PROPERTY(Serialize, Inspect, Name = "raycast_target", Setter = SetRaycastTarget, DisplayName = "Raycast Target", Order = 4)
         bool IsRaycastTarget() const { return m_raycastTarget; }
         void SetRaycastTarget(bool value) { m_raycastTarget = value; }
+
+        enum class FillMethod { Horizontal = 0, Vertical = 1, Radial90 = 2, Radial180 = 3, Radial360 = 4 };
+
+        OV_PROPERTY(Serialize, Inspect, Name = "fill_method", Setter = SetFillMethodInt, DisplayName = "Fill Method", Order = 6)
+        int GetFillMethodInt() const { return static_cast<int>(m_fillMethod); }
+        void SetFillMethodInt(int value) { m_fillMethod = static_cast<FillMethod>(std::clamp(value, 0, 4)); }
+        FillMethod GetFillMethod() const { return m_fillMethod; }
+        void SetFillMethod(FillMethod method) { m_fillMethod = method; }
+
+        OV_PROPERTY(Serialize, Inspect, Name = "fill_origin", Setter = SetFillOrigin, DisplayName = "Fill Origin", Order = 7)
+        int GetFillOrigin() const { return m_fillOrigin; }
+        void SetFillOrigin(int origin) { m_fillOrigin = origin; }
+
+        OV_PROPERTY(Serialize, Inspect, Name = "fill_amount", Setter = SetFillAmount, DisplayName = "Fill Amount", Order = 8, Step = 0.01, Min = 0.0, Max = 1.0)
+        float GetFillAmount() const { return m_fillAmount; }
+        void SetFillAmount(float amount) { m_fillAmount = std::clamp(amount, 0.0f, 1.0f); }
+
+        OV_PROPERTY(Serialize, Inspect, Name = "fill_clockwise", Setter = SetFillClockwise, DisplayName = "Clockwise", Order = 9)
+        bool IsFillClockwise() const { return m_fillClockwise; }
+        void SetFillClockwise(bool clockwise) { m_fillClockwise = clockwise; }
+
         void OnInspector(OvUI::Internal::WidgetContainer&) override;
     private:
         friend struct OvReflection::Access<CUIImage>;
@@ -162,6 +183,10 @@ namespace OvCore::ECS::Components
         OvMaths::FVector4 m_border{0, 0, 0, 0}; // Left, Bottom, Right, Top
         bool m_fillCenter = true;
         bool m_raycastTarget = true;
+        FillMethod m_fillMethod = FillMethod::Radial360;
+        int m_fillOrigin = 0;
+        float m_fillAmount = 1.0f;
+        bool m_fillClockwise = true;
     };
 
     struct UIVertex

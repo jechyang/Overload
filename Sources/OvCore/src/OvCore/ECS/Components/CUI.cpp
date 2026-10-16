@@ -205,6 +205,76 @@ void CUIImage::OnInspector(OvUI::Internal::WidgetContainer& root)
         GUIDrawer::DrawScalar<float>(root, "Border Right", [this] { return m_border.z; }, [this](float v) { m_border.z = std::max(0.0f, v); }, 1.0f);
         GUIDrawer::DrawScalar<float>(root, "Border Top", [this] { return m_border.w; }, [this](float v) { m_border.w = std::max(0.0f, v); }, 1.0f);
     }
+    else if (m_type == ImageType::Filled)
+    {
+        GUIDrawer::CreateTitle(root, "Fill Method");
+        auto& methodCombo = root.CreateWidget<OvUI::Widgets::Selection::ComboBox>(static_cast<int>(GetFillMethod()));
+        methodCombo.choices.emplace(0, "Horizontal");
+        methodCombo.choices.emplace(1, "Vertical");
+        methodCombo.choices.emplace(2, "Radial 90");
+        methodCombo.choices.emplace(3, "Radial 180");
+        methodCombo.choices.emplace(4, "Radial 360");
+        methodCombo.ValueChangedEvent += [this](int choice) {
+            SetFillMethod(static_cast<FillMethod>(choice));
+            m_fillOrigin = 0;
+            if (auto* rect = owner.GetComponent<CRectTransform>())
+                rect->LayoutChangedEvent.Invoke();
+        };
+
+        GUIDrawer::CreateTitle(root, "Fill Origin");
+        auto& originCombo = root.CreateWidget<OvUI::Widgets::Selection::ComboBox>(m_fillOrigin);
+        if (m_fillMethod == FillMethod::Horizontal)
+        {
+            originCombo.choices.emplace(0, "Left");
+            originCombo.choices.emplace(1, "Right");
+        }
+        else if (m_fillMethod == FillMethod::Vertical)
+        {
+            originCombo.choices.emplace(0, "Bottom");
+            originCombo.choices.emplace(1, "Top");
+        }
+        else if (m_fillMethod == FillMethod::Radial90)
+        {
+            originCombo.choices.emplace(0, "Bottom-Left");
+            originCombo.choices.emplace(1, "Top-Left");
+            originCombo.choices.emplace(2, "Top-Right");
+            originCombo.choices.emplace(3, "Bottom-Right");
+        }
+        else if (m_fillMethod == FillMethod::Radial180)
+        {
+            originCombo.choices.emplace(0, "Bottom");
+            originCombo.choices.emplace(1, "Left");
+            originCombo.choices.emplace(2, "Top");
+            originCombo.choices.emplace(3, "Right");
+        }
+        else // Radial360
+        {
+            originCombo.choices.emplace(0, "Bottom");
+            originCombo.choices.emplace(1, "Right");
+            originCombo.choices.emplace(2, "Top");
+            originCombo.choices.emplace(3, "Left");
+        }
+        originCombo.ValueChangedEvent += [this](int choice) {
+            SetFillOrigin(choice);
+            if (auto* rect = owner.GetComponent<CRectTransform>())
+                rect->LayoutChangedEvent.Invoke();
+        };
+
+        GUIDrawer::DrawScalar<float>(root, "Fill Amount", [this] { return m_fillAmount; }, [this](float v) {
+            SetFillAmount(v);
+            if (auto* rect = owner.GetComponent<CRectTransform>())
+                rect->LayoutChangedEvent.Invoke();
+        }, 0.01f);
+
+        if (m_fillMethod != FillMethod::Horizontal && m_fillMethod != FillMethod::Vertical)
+        {
+            GUIDrawer::DrawBoolean(root, "Clockwise", [this] { return m_fillClockwise; }, [this](bool v) {
+                SetFillClockwise(v);
+                if (auto* rect = owner.GetComponent<CRectTransform>())
+                    rect->LayoutChangedEvent.Invoke();
+            });
+        }
+    }
 }
 
 std::string CCanvasRenderer::GetName() { return "Canvas Renderer"; }

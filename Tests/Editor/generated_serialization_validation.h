@@ -31,7 +31,7 @@ static void ValidateGeneratedSerialization(OvEditor::Core::Context& context)
         {"CPostProcessStack", {"bloom_enabled", "bloom_intensity", "bloom_passes", "auto_exposure_enabled", "auto_exposure_center_weight_bias", "auto_exposure_luminance_min", "auto_exposure_luminance_max", "auto_exposure_exposure_compensation", "auto_exposure_progressive", "auto_exposure_speed_up", "auto_exposure_speed_down", "tonemapping_enabled", "tonemapping_exposure", "tonemapping_mode", "tonemapping_gamma_correction", "fxaa_enabled"}},
         {"CRectTransform", {"anchor_min", "anchor_max", "pivot", "anchored_position", "size_delta"}},
         {"CCanvas", {"render_mode", "plane_distance", "world_camera", "scale_factor", "sorting_order", "override_sorting"}},
-        {"CUIImage", {"color", "texture", "raycast_target", "image_type", "border", "fill_center"}},
+        {"CUIImage", {"color", "texture", "raycast_target", "image_type", "border", "fill_center", "fill_method", "fill_origin", "fill_amount", "fill_clockwise"}},
         {"CCanvasGroup", {"alpha", "interactable", "blocks_raycasts", "ignore_parent_groups", "enabled"}},
         {"CRectMask2D", {"enabled"}}
     };
