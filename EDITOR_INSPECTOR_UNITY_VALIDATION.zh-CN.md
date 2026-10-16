@@ -62,6 +62,21 @@
   - `GroupCollapsable` 头部支持 `checkable` 复选框，位置避开折叠箭头点击热区，支持多选混合态 `(Mixed)`。
   - 勾选变更高频手势自动接入 `EditorActions` 场景历史事务，支持完整的 Undo/Redo。
 
+### 7. Hierarchy 与 Viewport Unity 工作流对齐
+- **从 Project / 资源浏览器向 Hierarchy 拖拽资产（Model / Prefab / Material / Sound / Scene）**：
+  - 拖至 Hierarchy 空白处或场景根节点行：在场景根级别实例化，3D 模型以文件名自动命名并装配渲染组件，Prefab 自动绑定预制体引用并高亮；Scene 文件直接加载。
+  - 拖至 Hierarchy 现有实体节点上：自动建立父子层级关系并选中新实例。
+  - 拖拽 Material 至包含 `CMaterialRenderer` 的实体节点：自动为该实体赋予材质。
+  - 拖拽 Sound 音频至实体节点：自动配置或添加 `CAudioSource` 并赋值音效资源。
+- **Hierarchy 实体右键上下文菜单（Unity 布局对齐）**：
+  - 新增顶级高频菜单项 `Create Empty Child`（快捷键 `Alt+Shift+N`），在选中实体下立即创建空子物体并进入重命名。
+  - 右键空白处提供 `Create Empty`（快捷键 `Ctrl+Shift+N`）。
+  - 右键菜单增加与 Unity 完全一致的分隔线与快捷键提示（`Ctrl+C`、`Ctrl+V`、`Ctrl+D`、`F2`、`Delete`）。
+- **全局快捷键与聚焦联动**：
+  - 当 Hierarchy 或 SceneView 获得焦点时，按键盘 `F` 键即可在 SceneView 视口中将摄像机平滑居中聚焦于选中的实体（无需鼠标悬停在视口上）。
+  - 支持 `Alt+Shift+N`（创建子物体）与 `Ctrl+Shift+N`（创建根物体）。
+  - 修复 `MenuBar` 快捷键判断，避免 `Ctrl+Shift+N` 误触 `New Scene`。
+
 ## 实际验证
 
 ```powershell
@@ -69,11 +84,12 @@ node Tests/Editor/run-shell-validation.mjs
 node Tests/Editor/run-panel-validation.mjs
 ```
 
-- `node Tests/Editor/run-shell-validation.mjs`：**77 项检查全部通过**，在真实 OpenGL 上下文中生成实机截图（位于 `Build/EditorUnity/ShellLabOutput`）：
+- `node Tests/Editor/run-shell-validation.mjs`：**85 项检查全部通过**，在真实 OpenGL 上下文中生成实机截图（位于 `Build/EditorUnity/ShellLabOutput`）：
   - `12-inspector-tag-dropdown.png`：Inspector 顶部 `<` / `>` 选择历史按钮与展开的 Tag 下拉列表（含 `Untagged`、内置 Tag、自定义 Tag 与 `Add Tag...`）；
   - `13-project-settings-tags.png`：`Project Settings -> Tags` 自定义 Tag 管理界面；
   - `14-inspector-component-menu.png`：组件右键/`...` 菜单（含 `Paste component as new` 与 `Remove component`）；
   - `15-inspector-asset-preview.png`：单击 `Project` 纹理资源后，`Inspector` 展示头部、`Import Settings`、`Asset Info` 与底部 `Preview` 纹理预览；
   - `16-inspector-prefab-row.png`：选中 Prefab 实例时，`Inspector` 头部展示 `Prefab`（`Select` | `Revert` | `Apply`）操作栏与 `Identity & Prefab` 源引用；
-  - `17-inspector-component-checkbox.png`：Inspector 组件头部独立启用复选框（`Transform` 保护不提供复选框，`Point Light` 显示禁用 `[ ]`，`Camera` 显示启用 `[✓]`，画面联动更新）。
-- `node Tests/Editor/run-panel-validation.mjs`：`default` 与 `render-thread` 双模式全部通过（覆盖 `Tests/Editor/inspector_workflow_validation.h` 中 I1–I8 全部状态机、撤销重做、锁定、组件独立启用/禁用、多选混合及生命周期回归断言）。
+  - `17-inspector-component-checkbox.png`：Inspector 组件头部独立启用复选框（`Transform` 保护不提供复选框，`Point Light` 显示禁用 `[ ]`，`Camera` 显示启用 `[✓]`，画面联动更新）；
+  - `18-hierarchy-workflow.png`：Hierarchy 拖拽资源实例化（根级 Prefab、模型自动命名、拖到父实体生成子级模型与子级 Prefab、Create Empty Child 及全局 `F` 视口聚焦）。
+- `node Tests/Editor/run-panel-validation.mjs`：`default` 与 `render-thread` 双模式全部通过。

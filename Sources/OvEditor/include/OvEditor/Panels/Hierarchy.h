@@ -89,6 +89,13 @@ namespace OvEditor::Panels
 		*/
 		void AddActorByInstance(OvCore::ECS::Actor& p_actor);
 
+		/**
+		* Handle dropping an asset file onto hierarchy (either root if p_parent is null, or as child of p_parent).
+		* @param p_path
+		* @param p_parent
+		*/
+		void HandleFileDrop(const std::string& p_path, OvCore::ECS::Actor* p_parent = nullptr);
+
 	public:
 		OvTools::Eventing::Event<OvCore::ECS::Actor&> ActorSelectedEvent;
 		OvTools::Eventing::Event<OvCore::ECS::Actor&> ActorUnselectedEvent;

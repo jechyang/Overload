@@ -1,6 +1,7 @@
 // Verification host for the Unity-style editor shell: production Editor, panels,
 // layouts and frame submission; isolated profile, hidden window, back-buffer captures.
 #include <OvCore/ECS/Components/CPointLight.h>
+#include <OvCore/ECS/Components/CMaterialRenderer.h>
 #include <OvCore/Resources/Material.h>
 #include <OvCore/SceneSystem/Scene.h>
 #include <OvEditor/Core/Editor.h>
@@ -376,6 +377,63 @@ int main(int argc, char** argv) try {
     Require(actions.Undo() &&
         context.sceneManager.GetCurrentScene()->FindActorByGUID(renameGUID)->GetComponent<OvCore::ECS::Components::CPointLight>()->IsSelfEnabled(),
         "Undo after clicking component checkbox re-enables the Point Light component");
+
+    // 18: Hierarchy & Viewport Workflow Parity
+    // Verify asset drag-and-drop into Hierarchy (Model, Prefab, Material) at root and onto parents.
+    hierarchyPanel.Focus(); tick(2);
+
+    // Drop Model at root
+    hierarchyPanel.HandleFileDrop(":Models\\Sphere.fbx", nullptr);
+    tick(3);
+    auto* rootSphere = actions.IsAnyActorSelected() ? &actions.GetSelectedActor() : nullptr;
+    Require(rootSphere != nullptr && rootSphere->GetName() == "Sphere" && rootSphere->GetParent() == nullptr &&
+        rootSphere->GetComponent<OvCore::ECS::Components::CModelRenderer>() != nullptr,
+        "dropping a 3D model on Hierarchy root creates an entity named after the model with CModelRenderer");
+
+    // Drop Model onto parent actor
+    hierarchyPanel.HandleFileDrop(":Models\\Cube.fbx", rootSphere);
+    tick(3);
+    auto* childCube = actions.IsAnyActorSelected() ? &actions.GetSelectedActor() : nullptr;
+    Require(childCube != nullptr && childCube->GetName() == "Cube" && childCube->GetParent() == rootSphere &&
+        childCube->GetComponent<OvCore::ECS::Components::CModelRenderer>() != nullptr,
+        "dropping a 3D model on an entity creates it as a child of that entity");
+
+    // Drop Prefab at root
+    hierarchyPanel.HandleFileDrop(shellPrefabPath.string(), nullptr);
+    tick(3);
+    auto* rootPrefab = actions.IsAnyActorSelected() ? &actions.GetSelectedActor() : nullptr;
+    Require(rootPrefab != nullptr && rootPrefab->GetParent() == nullptr && rootPrefab->HasPrefabSource(),
+        "dropping a prefab on Hierarchy root instantiates the prefab at root level");
+
+    // Drop Prefab onto parent actor
+    hierarchyPanel.HandleFileDrop(shellPrefabPath.string(), rootSphere);
+    tick(3);
+    auto* childPrefab = actions.IsAnyActorSelected() ? &actions.GetSelectedActor() : nullptr;
+    Require(childPrefab != nullptr && childPrefab->GetParent() == rootSphere && childPrefab->HasPrefabSource(),
+        "dropping a prefab on an entity instantiates the prefab as a child of that entity");
+
+    // Drop Material onto entity with CMaterialRenderer
+    hierarchyPanel.HandleFileDrop(":Materials\\Default.ovmat", rootSphere);
+    tick(3);
+    auto* matRenderer = rootSphere->GetComponent<OvCore::ECS::Components::CMaterialRenderer>();
+    Require(matRenderer != nullptr && matRenderer->GetMaterialAtIndex(0) != nullptr,
+        "dropping a material onto an entity assigns it to the entity's CMaterialRenderer");
+
+    // Create Empty Child
+    auto& emptyChild = actions.CreateEmptyActor(true, rootSphere, "");
+    tick(3);
+    Require(emptyChild.GetParent() == rootSphere && actions.IsActorSelected(emptyChild),
+        "Create Empty Child creates an empty child under the target entity and selects it");
+
+    // Frame Selection (F) from Hierarchy
+    auto& sceneViewPanel = panels.GetPanelAs<OvEditor::Panels::SceneView>("Scene View");
+    actions.SelectActor(*rootSphere);
+    hierarchyPanel.Focus(); tick(2);
+    sceneViewPanel.FrameSelection();
+    tick(3);
+    Require(actions.IsActorSelected(*rootSphere), "Frame Selection focuses on the selected entity");
+
+    capture("18-hierarchy-workflow");
 
     std::error_code shellPrefabEc;
     std::filesystem::remove(shellPrefabPath, shellPrefabEc);

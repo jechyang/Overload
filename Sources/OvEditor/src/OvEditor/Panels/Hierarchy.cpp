@@ -43,6 +43,8 @@
 #include <OvCore/ECS/Components/CPhysicalCapsule.h>
 #include <OvCore/ECS/Components/CAudioSource.h>
 #include <OvCore/ECS/Components/CAudioListener.h>
+#include <OvCore/ECS/Components/CMaterialRenderer.h>
+#include <OvCore/ECS/Components/CModelRenderer.h>
 
 #include <OvUI/Plugins/ContextualMenu.h>
 #include <OvWindowing/Dialogs/MessageBox.h>
@@ -110,7 +112,18 @@ public:
 				}
 			};
 
-			auto& copyButton = CreateWidget<OvUI::Widgets::Menu::MenuItem>("Copy");
+			auto& createChildButton = CreateWidget<OvUI::Widgets::Menu::MenuItem>("Create Empty Child", "Alt+Shift+N");
+			createChildButton.ClickedEvent += [this]
+			{
+				if (auto* target = GetTargetActor())
+				{
+					EDITOR_EXEC(CreateEmptyActor(true, target, ""));
+				}
+			};
+
+			CreateWidget<OvUI::Widgets::Visual::Separator>();
+
+			auto& copyButton = CreateWidget<OvUI::Widgets::Menu::MenuItem>("Copy", "Ctrl+C");
 			copyButton.ClickedEvent += [this]
 			{
 				if (auto* target = GetTargetActor())
@@ -119,7 +132,7 @@ public:
 				}
 			};
 
-			auto& duplicateButton = CreateWidget<OvUI::Widgets::Menu::MenuItem>("Duplicate");
+			auto& duplicateButton = CreateWidget<OvUI::Widgets::Menu::MenuItem>("Duplicate", "Ctrl+D");
 			duplicateButton.ClickedEvent += [this]
 			{
 				if (auto* target = GetTargetActor())
@@ -139,7 +152,7 @@ public:
 				}
 			};
 
-			auto& pasteButton = CreateWidget<OvUI::Widgets::Menu::MenuItem>("Paste");
+			auto& pasteButton = CreateWidget<OvUI::Widgets::Menu::MenuItem>("Paste", "Ctrl+V");
 			pasteButton.ClickedEvent += [this]
 			{
 				if (auto* target = GetTargetActor())
@@ -155,6 +168,8 @@ public:
 				}
 			};
 			
+			CreateWidget<OvUI::Widgets::Visual::Separator>();
+
 			auto& saveAsPrefabButton = CreateWidget<OvUI::Widgets::Menu::MenuItem>("Save as Prefab...");
 			saveAsPrefabButton.ClickedEvent += [this]
 			{
@@ -214,7 +229,9 @@ public:
 				}
 			};
 
-			auto& deleteButton = CreateWidget<OvUI::Widgets::Menu::MenuItem>("Delete");
+			CreateWidget<OvUI::Widgets::Visual::Separator>();
+
+			auto& deleteButton = CreateWidget<OvUI::Widgets::Menu::MenuItem>("Delete", "Delete");
 			deleteButton.ClickedEvent += [this]
 			{
 				if (auto* target = GetTargetActor())
@@ -230,14 +247,24 @@ public:
 			{
 				if (GetTargetActor() && m_rename) m_rename();
 			};
+
+			CreateWidget<OvUI::Widgets::Visual::Separator>();
 		}
 		else
 		{
-			auto& pasteButton = CreateWidget<OvUI::Widgets::Menu::MenuItem>("Paste");
+			auto& createEmptyButton = CreateWidget<OvUI::Widgets::Menu::MenuItem>("Create Empty", "Ctrl+Shift+N");
+			createEmptyButton.ClickedEvent += [this]
+			{
+				EDITOR_EXEC(CreateEmptyActor(true, nullptr, ""));
+			};
+
+			auto& pasteButton = CreateWidget<OvUI::Widgets::Menu::MenuItem>("Paste", "Ctrl+V");
 			pasteButton.ClickedEvent += [this]
 			{
 				EDITOR_EXEC(DelayAction(EDITOR_BIND(PasteActor, nullptr), 0));
 			};
+
+			CreateWidget<OvUI::Widgets::Visual::Separator>();
 		}
 
 		auto& createActor = CreateWidget<OvUI::Widgets::Menu::MenuList>("Create...");
@@ -362,6 +389,13 @@ OvEditor::Panels::Hierarchy::Hierarchy
 		if (auto found = m_widgetActorLink.find(p_element.first);
 			found != m_widgetActorLink.end() && found->second == p_element.second && p_element.first->IsAlive())
 			EDITOR_EXEC(ReparentSelection(*p_element.first, nullptr));
+	};
+
+	auto& windowFileDDTarget = AddPlugin<OvUI::Plugins::DDTarget<std::pair<std::string, OvUI::Widgets::Layout::Group*>>>("File");
+	windowFileDDTarget.showYellowRect = false;
+	windowFileDDTarget.DataReceivedEvent += [this](auto p_data)
+	{
+		HandleFileDrop(p_data.first, nullptr);
 	};
 
 	AddPlugin<ActorContextualMenu>(nullptr);
@@ -603,7 +637,7 @@ void OvEditor::Panels::Hierarchy::DrawSceneRow()
 	if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !source.empty())
 		ImGui::SetTooltip("%s", source.c_str());
 
-	// Dropping an entity on the scene row moves it to the root.
+	// Dropping an entity or file on the scene row moves/places it at the root.
 	if (ImGui::BeginDragDropTarget())
 	{
 		if (const auto* payload = ImGui::AcceptDragDropPayload("Actor"))
@@ -611,6 +645,11 @@ void OvEditor::Panels::Hierarchy::DrawSceneRow()
 			const auto element = *static_cast<const std::pair<OvCore::ECS::Actor*, OvUI::Widgets::Layout::TreeNode*>*>(payload->Data);
 			if (auto found = m_widgetActorLink.find(element.first); found != m_widgetActorLink.end() && found->second == element.second && element.first->IsAlive())
 				EDITOR_EXEC(ReparentSelection(*element.first, nullptr));
+		}
+		if (const auto* filePayload = ImGui::AcceptDragDropPayload("File"))
+		{
+			const auto* data = static_cast<const std::pair<std::string, OvUI::Widgets::Layout::Group*>*>(filePayload->Data);
+			HandleFileDrop(data->first, nullptr);
 		}
 		ImGui::EndDragDropTarget();
 	}
@@ -741,6 +780,10 @@ void OvEditor::Panels::Hierarchy::AddActorByInstance(OvCore::ECS::Actor & p_acto
 
 		EDITOR_EXEC(ReparentSelection(*p_element.first, &p_actor));
 	};
+	textSelectable.AddPlugin<OvUI::Plugins::DDTarget<std::pair<std::string, OvUI::Widgets::Layout::Group*>>>("File").DataReceivedEvent += [this, &p_actor](auto p_data)
+	{
+		HandleFileDrop(p_data.first, &p_actor);
+	};
 	auto& dispatcher = textSelectable.AddPlugin<OvUI::Plugins::DataDispatcher<std::string>>();
 
 	OvCore::ECS::Actor* targetPtr = &p_actor;
@@ -759,4 +802,84 @@ void OvEditor::Panels::Hierarchy::AddActorByInstance(OvCore::ECS::Actor & p_acto
 
 	textSelectable.ClickedEvent += [this, &p_actor] { SelectActorFromClick(p_actor, ImGui::GetIO().KeyCtrl, ImGui::GetIO().KeyShift); };
 	textSelectable.DoubleClickedEvent += EDITOR_BIND(MoveToTarget, std::ref(p_actor));
+}
+
+void OvEditor::Panels::Hierarchy::HandleFileDrop(const std::string& p_path, OvCore::ECS::Actor* p_parent)
+{
+	using namespace OvTools::Utils;
+	using enum PathParser::EFileType;
+
+	auto* currentScene = m_sceneManager.GetCurrentScene();
+	if (!currentScene)
+		return;
+
+	OvCore::ECS::Actor* validParent = nullptr;
+	if (p_parent && p_parent->IsAlive() && p_parent->GetScene() == currentScene)
+	{
+		validParent = p_parent;
+	}
+
+	switch (PathParser::GetFileType(p_path))
+	{
+	case SCENE:
+		EDITOR_EXEC(DelayAction([p_path] { EDITOR_EXEC(OpenScene(p_path)); }, 0));
+		break;
+
+	case MODEL:
+	{
+		auto& actor = EDITOR_EXEC(CreateActorWithModel(p_path, true, validParent));
+		EDITOR_EXEC(SelectActor(actor));
+		break;
+	}
+
+	case PREFAB:
+	{
+		if (auto* actor = EDITOR_EXEC(InstantiatePrefab(p_path, validParent)))
+		{
+			EDITOR_EXEC(SelectActor(*actor));
+		}
+		break;
+	}
+
+	case MATERIAL:
+	{
+		if (validParent)
+		{
+			if (auto materialRenderer = validParent->GetComponent<OvCore::ECS::Components::CMaterialRenderer>())
+			{
+				const auto resourcePath = EDITOR_EXEC(GetResourcePath(p_path));
+				if (const auto material = EDITOR_CONTEXT(materialManager)[resourcePath])
+				{
+					EDITOR_EXEC(BeginSceneEdit("Assign material"));
+					materialRenderer->SetMaterialAtIndex(0, *material);
+				}
+			}
+		}
+		break;
+	}
+
+	case SOUND:
+	{
+		const auto resourcePath = EDITOR_EXEC(GetResourcePath(p_path));
+		if (auto* sound = EDITOR_CONTEXT(soundManager)[resourcePath])
+		{
+			EDITOR_EXEC(BeginSceneEdit("Assign sound"));
+			if (!validParent)
+			{
+				auto& actor = EDITOR_EXEC(CreateEmptyActor(true, nullptr, std::filesystem::path(p_path).stem().string()));
+				actor.AddComponent<OvCore::ECS::Components::CAudioSource>().SetSound(sound);
+			}
+			else
+			{
+				auto* audio = validParent->GetComponent<OvCore::ECS::Components::CAudioSource>();
+				if (!audio) audio = &validParent->AddComponent<OvCore::ECS::Components::CAudioSource>();
+				audio->SetSound(sound);
+			}
+		}
+		break;
+	}
+
+	default:
+		break;
+	}
 }

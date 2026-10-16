@@ -91,7 +91,7 @@ void OvEditor::Panels::MenuBar::HandleShortcuts(float p_deltaTime)
 	const bool shift = IsDown(input, EKey::KEY_LEFT_SHIFT, EKey::KEY_RIGHT_SHIFT);
 	const bool alt = IsDown(input, EKey::KEY_LEFT_ALT, EKey::KEY_RIGHT_ALT);
 
-	if (input.IsKeyPressed(EKey::KEY_N)) Deferred([] { EDITOR_EXEC(NewScene()); })();
+	if (!shift && !alt && input.IsKeyPressed(EKey::KEY_N)) Deferred([] { EDITOR_EXEC(NewScene()); })();
 	if (input.IsKeyPressed(EKey::KEY_O)) Deferred([] { EDITOR_EXEC(OpenScene()); })();
 	if (input.IsKeyPressed(EKey::KEY_S))
 	{
@@ -199,7 +199,7 @@ void OvEditor::Panels::MenuBar::CreateGameObjectMenu()
 	auto& menu = CreateWidget<MenuList>("GameObject");
 	Utils::ActorCreationMenu::GenerateActorCreationMenu(menu);
 
-	auto& emptyChild = menu.CreateWidget<MenuItem>("Create Empty Child");
+	auto& emptyChild = menu.CreateWidget<MenuItem>("Create Empty Child", "Alt+Shift+N");
 	emptyChild.ClickedEvent += [] {
 		if (EDITOR_EXEC(IsAnyActorSelected())) EDITOR_EXEC(CreateEmptyActor(true, &EDITOR_EXEC(GetSelectedActor())));
 	};

@@ -309,8 +309,9 @@ namespace OvEditor::Core
 		/**
 		* Instantiate a prefab file in the current scene
 		* @param p_path
+		* @param p_parent
 		*/
-		OvCore::ECS::Actor* InstantiatePrefab(const std::string& p_path);
+		OvCore::ECS::Actor* InstantiatePrefab(const std::string& p_path, OvCore::ECS::Actor* p_parent = nullptr);
 
 		/**
 		* Apply the current actor hierarchy state to its prefab source.

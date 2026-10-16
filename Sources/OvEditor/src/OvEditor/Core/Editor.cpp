@@ -294,6 +294,8 @@ void OvEditor::Core::Editor::HandleGlobalShortcuts()
     using namespace OvWindowing::Inputs;
     const bool ctrl = input.GetKeyState(EKey::KEY_LEFT_CONTROL) == EKeyState::KEY_DOWN || input.GetKeyState(EKey::KEY_RIGHT_CONTROL) == EKeyState::KEY_DOWN;
     const bool shift = input.GetKeyState(EKey::KEY_LEFT_SHIFT) == EKeyState::KEY_DOWN || input.GetKeyState(EKey::KEY_RIGHT_SHIFT) == EKeyState::KEY_DOWN;
+    const bool alt = input.GetKeyState(EKey::KEY_LEFT_ALT) == EKeyState::KEY_DOWN || input.GetKeyState(EKey::KEY_RIGHT_ALT) == EKeyState::KEY_DOWN;
+
     if (ctrl && input.IsKeyPressed(EKey::KEY_Z)) { if (shift) m_editorActions.Redo(); else m_editorActions.Undo(); return; }
     if (ctrl && input.IsKeyPressed(EKey::KEY_Y)) { m_editorActions.Redo(); return; }
 	auto& sceneView = EDITOR_PANEL(SceneView, "Scene View");
@@ -301,36 +303,51 @@ void OvEditor::Core::Editor::HandleGlobalShortcuts()
 	const bool isSceneViewFocused = sceneView.IsFocused();
 	const bool isHierarchyFocused = hierarchy.IsFocused();
 
-	// If the [Del] key is pressed while an actor is selected and the Scene View or Hierarchy is focused
-	if (m_context.inputManager->IsKeyPressed(OvWindowing::Inputs::EKey::KEY_DELETE) && EDITOR_EXEC(IsAnyActorSelected()) && (isSceneViewFocused || isHierarchyFocused))
+	if (isSceneViewFocused || isHierarchyFocused)
 	{
-		EDITOR_EXEC(DestroySelectedActors());
-	}
-
-	const bool isControlPressed =
-		m_context.inputManager->GetKeyState(OvWindowing::Inputs::EKey::KEY_LEFT_CONTROL) == OvWindowing::Inputs::EKeyState::KEY_DOWN ||
-		m_context.inputManager->GetKeyState(OvWindowing::Inputs::EKey::KEY_RIGHT_CONTROL) == OvWindowing::Inputs::EKeyState::KEY_DOWN;
-
-	if (isControlPressed && (isSceneViewFocused || isHierarchyFocused))
-	{
-        if (input.IsKeyPressed(EKey::KEY_D)) EDITOR_EXEC(DuplicateSelectedActors());
-        if (input.IsKeyPressed(EKey::KEY_A))
-            if (auto* scene = m_context.sceneManager.GetCurrentScene()) EDITOR_EXEC(SetSelection(scene->GetActors()));
-		if (m_context.inputManager->IsKeyPressed(OvWindowing::Inputs::EKey::KEY_C) && EDITOR_EXEC(IsAnyActorSelected()))
+		// F: Frame Selection in Scene View
+		if (!ctrl && !shift && !alt && input.IsKeyPressed(EKey::KEY_F) && EDITOR_EXEC(IsAnyActorSelected()))
 		{
-			EDITOR_EXEC(CopyActor(EDITOR_EXEC(GetSelectedActor())));
+			sceneView.FrameSelection();
 		}
 
-		if (m_context.inputManager->IsKeyPressed(OvWindowing::Inputs::EKey::KEY_V))
+		// Alt+Shift+N: Create Empty Child
+		if (alt && shift && !ctrl && input.IsKeyPressed(EKey::KEY_N) && EDITOR_EXEC(IsAnyActorSelected()))
 		{
-			OvCore::ECS::Actor* parent = nullptr;
+			EDITOR_EXEC(CreateEmptyActor(true, &EDITOR_EXEC(GetSelectedActor())));
+		}
 
-			if (EDITOR_EXEC(IsAnyActorSelected()))
+		// Ctrl+Shift+N: Create Empty (at root)
+		if (ctrl && shift && !alt && input.IsKeyPressed(EKey::KEY_N))
+		{
+			EDITOR_EXEC(CreateEmptyActor(true, nullptr));
+		}
+
+		// If the [Del] key is pressed while an actor is selected and the Scene View or Hierarchy is focused
+		if (input.IsKeyPressed(EKey::KEY_DELETE) && EDITOR_EXEC(IsAnyActorSelected()))
+		{
+			EDITOR_EXEC(DestroySelectedActors());
+		}
+
+		if (ctrl && !shift && !alt)
+		{
+			if (input.IsKeyPressed(EKey::KEY_D)) EDITOR_EXEC(DuplicateSelectedActors());
+			if (input.IsKeyPressed(EKey::KEY_A))
+				if (auto* scene = m_context.sceneManager.GetCurrentScene()) EDITOR_EXEC(SetSelection(scene->GetActors()));
+			if (input.IsKeyPressed(EKey::KEY_C) && EDITOR_EXEC(IsAnyActorSelected()))
 			{
-				parent = &EDITOR_EXEC(GetSelectedActor());
+				EDITOR_EXEC(CopyActor(EDITOR_EXEC(GetSelectedActor())));
 			}
 
-			EDITOR_EXEC(PasteActor(parent));
+			if (input.IsKeyPressed(EKey::KEY_V))
+			{
+				OvCore::ECS::Actor* parent = nullptr;
+				if (EDITOR_EXEC(IsAnyActorSelected()))
+				{
+					parent = &EDITOR_EXEC(GetSelectedActor());
+				}
+				EDITOR_EXEC(PasteActor(parent));
+			}
 		}
 	}
 }

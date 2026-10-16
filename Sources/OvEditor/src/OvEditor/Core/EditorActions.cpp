@@ -1418,7 +1418,8 @@ OvCore::ECS::Actor & OvEditor::Core::EditorActions::CreateEmptyActor(bool p_focu
 
 OvCore::ECS::Actor & OvEditor::Core::EditorActions::CreateActorWithModel(const std::string& p_path, bool p_focusOnCreation, OvCore::ECS::Actor* p_parent, const std::string& p_name)
 {
-	auto& instance = CreateEmptyActor(false, p_parent, p_name);
+	const std::string actorName = p_name.empty() ? std::filesystem::path(p_path).stem().string() : p_name;
+	auto& instance = CreateEmptyActor(false, p_parent, actorName);
 
 	auto& modelRenderer = instance.AddComponent<OvCore::ECS::Components::CModelRenderer>();
 
@@ -1529,7 +1530,7 @@ void OvEditor::Core::EditorActions::SaveActorAsPrefab(OvCore::ECS::Actor& p_acto
 	OVLOG_INFO("Prefab saved to: " + p_path);
 }
 
-OvCore::ECS::Actor* OvEditor::Core::EditorActions::InstantiatePrefab(const std::string& p_path)
+OvCore::ECS::Actor* OvEditor::Core::EditorActions::InstantiatePrefab(const std::string& p_path, OvCore::ECS::Actor* p_parent)
 {
     BeginSceneEdit("Instantiate prefab");
 	auto* currentScene = m_context.sceneManager.GetCurrentScene();
@@ -1538,7 +1539,16 @@ OvCore::ECS::Actor* OvEditor::Core::EditorActions::InstantiatePrefab(const std::
 
 	const std::filesystem::path realPath = GetRealPath(p_path);
 	const bool isEnginePrefab = !p_path.empty() && p_path.front() == ':';
-	return currentScene->InstantiatePrefab(GetResourcePath(realPath.string(), isEnginePrefab));
+	const std::string resourcePath = GetResourcePath(realPath.string(), isEnginePrefab);
+
+	if (p_parent)
+	{
+		return currentScene->InstantiatePrefab(resourcePath, *p_parent);
+	}
+	else
+	{
+		return currentScene->InstantiatePrefab(resourcePath);
+	}
 }
 
 bool OvEditor::Core::EditorActions::ApplyActorToPrefab(OvCore::ECS::Actor& p_actor)

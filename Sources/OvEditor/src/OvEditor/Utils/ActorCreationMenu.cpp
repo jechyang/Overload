@@ -205,13 +205,8 @@ namespace
 						return;
 					}
 
-					if (auto* actor = EDITOR_EXEC(InstantiatePrefab(p_prefabPath)); actor)
+					if (auto* actor = EDITOR_EXEC(InstantiatePrefab(p_prefabPath, ResolveAliveParent(p_parent))); actor)
 					{
-						if (auto* parent = ResolveAliveParent(p_parent); parent)
-						{
-							actor->SetParent(*parent);
-						}
-
 						EDITOR_EXEC(SelectActor(*actor));
 
 						if (p_onItemClicked.has_value())
