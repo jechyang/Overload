@@ -48,6 +48,7 @@ namespace OvEditor::Panels
 		OvUI::Internal::TextureID m_moveIcon;
 		OvUI::Internal::TextureID m_rotateIcon;
 		OvUI::Internal::TextureID m_scaleIcon;
+		OvUI::Internal::TextureID m_rectIcon;
 		OvUI::Internal::TextureID m_playIcon;
 		OvUI::Internal::TextureID m_pauseIcon;
 		OvUI::Internal::TextureID m_nextIcon;

@@ -57,6 +57,7 @@ OvEditor::Panels::Toolbar::Toolbar
 	m_moveIcon(LoadIcon("Move")),
 	m_rotateIcon(LoadIcon("Rotate")),
 	m_scaleIcon(LoadIcon("Scale")),
+	m_rectIcon(LoadIcon("Rect")),
 	m_playIcon(LoadIcon("Play")),
 	m_pauseIcon(LoadIcon("Pause")),
 	m_nextIcon(LoadIcon("Next")),
@@ -107,6 +108,9 @@ void OvEditor::Panels::Toolbar::DrawTools()
 	ImGui::SameLine(0, spacing);
 	if (DrawIconButton("##ToolScale", m_scaleIcon, operation == EGizmoOperation::SCALE, "Scale Tool (R)"))
 		EDITOR_EXEC(SetGizmoOperation(EGizmoOperation::SCALE));
+	ImGui::SameLine(0, spacing);
+	if (DrawIconButton("##ToolRect", m_rectIcon, operation == EGizmoOperation::RECT, "Rect Tool (T)"))
+		EDITOR_EXEC(SetGizmoOperation(EGizmoOperation::RECT));
 	ImGui::SameLine(0, GroupSpacing());
 
 	// Tool handle settings, as in Unity's "Pivot | Center" and "Local | Global" toggles.

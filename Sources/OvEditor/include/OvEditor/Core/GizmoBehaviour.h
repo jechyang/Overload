@@ -18,7 +18,8 @@ namespace OvEditor::Core
 	{
 		TRANSLATE,
 		ROTATE,
-		SCALE
+		SCALE,
+		RECT
 	};
 
 	/* Handle gizmo behaviours */
@@ -139,6 +140,7 @@ namespace OvEditor::Core
 		* @param p_viewSize
 		*/
 		void ApplyScale(const OvMaths::FMatrix4& p_viewMatrix, const OvMaths::FMatrix4& p_projectionMatrix, const OvMaths::FVector3& p_cameraPosition, const OvMaths::FVector2& p_viewSize);
+		void ApplyRect(const OvMaths::FMatrix4& p_viewMatrix, const OvMaths::FMatrix4& p_projectionMatrix, const OvMaths::FVector3& p_cameraPosition, const OvMaths::FVector2& p_viewSize);
 
 	private:
         std::optional<SnapSettings> m_snapSettings;

@@ -10,6 +10,7 @@
 #include "OvEditor/Core/GizmoBehaviour.h"
 #include "OvEditor/Core/EditorActions.h"
 #include "OvEditor/Settings/EditorSettings.h"
+#include <OvCore/ECS/Components/CUI.h>
 
 namespace {
     struct MouseRay { OvMaths::FVector3 origin, direction; };
@@ -243,6 +244,40 @@ void OvEditor::Core::GizmoBehaviour::ApplyScale(const OvMaths::FMatrix4& view, c
     m_target->transform.SetWorldPosition(m_frame.position + m_frame.rotation * offset);
 }
 
+void OvEditor::Core::GizmoBehaviour::ApplyRect(const OvMaths::FMatrix4& p_viewMatrix, const OvMaths::FMatrix4& p_projectionMatrix,
+    const OvMaths::FVector3& p_cameraPosition, const OvMaths::FVector2& p_viewSize)
+{
+    if (!m_target) return;
+    if (auto* rect = m_target->GetComponent<OvCore::ECS::Components::CRectTransform>())
+    {
+        const auto direction = GetScreenDirection(p_viewMatrix, p_projectionMatrix, p_viewSize);
+        float delta = OvMaths::FVector2::Dot(m_currentMouse - m_originMouse, direction);
+        if (IsSnappedBehaviourEnabled())
+            delta = GizmoMath::Snap(delta, m_snapSettings ? m_snapSettings->translation : Settings::EditorSettings::TranslationSnapUnit.Get());
+
+        if (m_direction == EDirection::X)
+        {
+            auto sizeDelta = rect->GetSizeDelta();
+            sizeDelta.x = std::max(10.0f, sizeDelta.x + delta);
+            rect->SetSizeDelta(sizeDelta);
+        }
+        else if (m_direction == EDirection::Y)
+        {
+            auto sizeDelta = rect->GetSizeDelta();
+            sizeDelta.y = std::max(10.0f, sizeDelta.y + delta);
+            rect->SetSizeDelta(sizeDelta);
+        }
+        else
+        {
+            ApplyTranslation(p_viewMatrix, p_projectionMatrix, p_cameraPosition, p_viewSize);
+        }
+    }
+    else
+    {
+        ApplyTranslation(p_viewMatrix, p_projectionMatrix, p_cameraPosition, p_viewSize);
+    }
+}
+
 void OvEditor::Core::GizmoBehaviour::ApplyOperation(const OvMaths::FMatrix4& p_viewMatrix, const OvMaths::FMatrix4& p_projectionMatrix, const OvMaths::FVector3& p_cameraPosition, const OvMaths::FVector2& p_viewSize, std::optional<SnapSettings> p_snapping)
 {
     if (!m_target || p_viewSize.x <= 0 || p_viewSize.y <= 0) return;
@@ -260,6 +295,10 @@ void OvEditor::Core::GizmoBehaviour::ApplyOperation(const OvMaths::FMatrix4& p_v
 
 	case EGizmoOperation::SCALE:
 		ApplyScale(p_viewMatrix, p_projectionMatrix, p_cameraPosition, p_viewSize);
+		break;
+
+	case EGizmoOperation::RECT:
+		ApplyRect(p_viewMatrix, p_projectionMatrix, p_cameraPosition, p_viewSize);
 		break;
 	}
 }

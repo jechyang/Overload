@@ -141,6 +141,11 @@ void OvEditor::Panels::SceneView::Update(float p_deltaTime)
 		{
 			SetGizmoOperation(Core::EGizmoOperation::SCALE);
 		}
+
+		if (EDITOR_CONTEXT(inputManager)->IsKeyPressed(EKey::KEY_T))
+		{
+			SetGizmoOperation(Core::EGizmoOperation::RECT);
+		}
         const auto& input = *EDITOR_CONTEXT(inputManager);
         const bool reverse = input.GetKeyState(EKey::KEY_LEFT_CONTROL) == EKeyState::KEY_DOWN || input.GetKeyState(EKey::KEY_RIGHT_CONTROL) == EKeyState::KEY_DOWN;
         if (input.IsKeyPressed(EKey::KEY_2)) Set2D(!Is2D());

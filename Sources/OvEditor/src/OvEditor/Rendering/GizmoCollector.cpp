@@ -51,6 +51,7 @@ std::string GetCollectedArrowModelName(OvEditor::Core::EGizmoOperation p_operati
 		case EGizmoOperation::TRANSLATE: return "Arrow_Translate";
 		case EGizmoOperation::ROTATE: return "Arrow_Rotate";
 		case EGizmoOperation::SCALE: return "Arrow_Scale";
+		case EGizmoOperation::RECT: return "Arrow_Translate";
 	}
 }
 

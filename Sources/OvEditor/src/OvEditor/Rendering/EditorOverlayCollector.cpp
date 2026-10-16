@@ -28,6 +28,7 @@
 #include <OvEditor/Rendering/GizmoCollector.h>
 #include <OvEditor/Rendering/OutlineCollector.h>
 #include <OvEditor/Core/GizmoMath.h>
+#include <OvEditor/Core/SelectionBounds.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <OvEditor/Settings/EditorSettings.h>
@@ -355,6 +356,69 @@ public:
 			}
 		}
 	}
+
+	    void DrawRectGizmo(OvCore::ECS::Actor& selectedActor, std::optional<OvEditor::Core::GizmoBehaviour::EDirection> highlightedDirection)
+    {
+        auto pso = m_collector.CreatePipelineState();
+        pso.depthTest = false;
+        const auto& view = m_collector.GetView();
+        const float scale = OVUI_SCALE;
+
+        std::array<OvMaths::FVector3, 4> worldCorners;
+        bool hasCorners = false;
+
+        if (auto* rect = selectedActor.GetComponent<OvCore::ECS::Components::CRectTransform>())
+        {
+            const auto corners = rect->GetLocalCorners();
+            const auto worldMatrix = selectedActor.transform.GetWorldMatrix();
+            for (size_t i = 0; i < 4; ++i)
+            {
+                const auto p = worldMatrix * OvMaths::FVector4{corners[i].x, corners[i].y, 0.0f, 1.0f};
+                worldCorners[i] = {p.x, p.y, p.z};
+            }
+            hasCorners = true;
+        }
+        else
+        {
+            const auto bounds = OvEditor::Core::SelectionBounds::From({&selectedActor});
+            if (bounds.valid)
+            {
+                const auto c = bounds.Center();
+                const auto r = bounds.Radius();
+                worldCorners[0] = {c.x - r, c.y - r, c.z};
+                worldCorners[1] = {c.x + r, c.y - r, c.z};
+                worldCorners[2] = {c.x + r, c.y + r, c.z};
+                worldCorners[3] = {c.x - r, c.y + r, c.z};
+                hasCorners = true;
+            }
+        }
+
+        if (hasCorners)
+        {
+            const OvMaths::FVector3 lineColor{0.2f, 0.65f, 1.0f};
+            for (size_t i = 0; i < 4; ++i)
+            {
+                m_debugShapeFeature.DrawLine(pso, worldCorners[i], worldCorners[(i + 1) % 4], lineColor, 2.0f * scale, false);
+            }
+
+            for (size_t i = 0; i < 4; ++i)
+            {
+                const float radius = OvEditor::Core::GizmoMath::WorldSize(worldCorners[i], view.view, view.projection, float(view.input.height), 7.0f * scale);
+                m_debugShapeFeature.DrawSphere(pso, worldCorners[i], OvMaths::FQuaternion::Identity, radius, {1.0f, 1.0f, 1.0f}, 1.5f, false);
+            }
+
+            for (size_t i = 0; i < 4; ++i)
+            {
+                const auto mid = (worldCorners[i] + worldCorners[(i + 1) % 4]) * 0.5f;
+                const float radius = OvEditor::Core::GizmoMath::WorldSize(mid, view.view, view.projection, float(view.input.height), 5.0f * scale);
+                m_debugShapeFeature.DrawSphere(pso, mid, OvMaths::FQuaternion::Identity, radius, {0.6f, 0.85f, 1.0f}, 1.5f, false);
+            }
+
+            const auto pivotWorld = selectedActor.transform.GetWorldPosition();
+            const float pivotRadius = OvEditor::Core::GizmoMath::WorldSize(pivotWorld, view.view, view.projection, float(view.input.height), 5.5f * scale);
+            m_debugShapeFeature.DrawSphere(pso, pivotWorld, OvMaths::FQuaternion::Identity, pivotRadius, {0.1f, 0.5f, 1.0f}, 2.0f, false);
+        }
+    }
 
 	void DrawActorDebugElements(OvCore::ECS::Actor& p_actor, const OvEditor::Rendering::EditorOverlayRequest& request)
 	{

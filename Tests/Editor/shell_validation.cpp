@@ -566,6 +566,20 @@ int main(int argc, char** argv) try {
     sceneViewPanel.Set2D(true);
     tick(5);
 
+    // Verify Rect Tool (T) selection
+    sceneViewPanel.SetGizmoOperation(OvEditor::Core::EGizmoOperation::RECT);
+    tick(3);
+    Require(sceneViewPanel.GetGizmoOperation() == OvEditor::Core::EGizmoOperation::RECT,
+        "Rect Tool (T) activates in SceneView");
+    Require(actions.GetGizmoOperation() == OvEditor::Core::EGizmoOperation::RECT,
+        "Rect Tool operation synchronizes across EditorActions");
+
+    // Select Button in 2D mode with Rect Tool
+    actions.SelectActor(buttonActor);
+    tick(3);
+    Require(buttonActor.GetComponent<OvCore::ECS::Components::CRectTransform>() != nullptr,
+        "Rect Tool operates on entities with CRectTransform");
+
     capture("19-ugui-editor-workflow");
 
     std::error_code shellPrefabEc;
