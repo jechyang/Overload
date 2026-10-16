@@ -126,7 +126,10 @@ static void ValidateSceneDisplay(OvEditor::Core::Context& context, OvEditor::Cor
     for (size_t p=0;p<fallbackPixels.size();p+=4) { if (fallbackPixels[p+1] > 220 && fallbackPixels[p] < 20) ++fallbackGreen; if (fallbackPixels[p] > 220 && fallbackPixels[p+1] < 20) ++fallbackRed; }
     Require(!custom.HasPass("UNLIT_PASS") && fallbackGreen == green && fallbackRed == 0,
         "custom shader preview fallback preserves diffuse textures and alpha clipping");
-    auto fallback = view.ExtractView(); const auto& fallbackMesh = fallback.frame->GetViews().back()->GetMeshes().front();
+    auto fallback = view.ExtractView();
+    const auto mainView = std::find_if(fallback.frame->GetViews().begin(), fallback.frame->GetViews().end(),
+        [&](const auto& v) { return v->GetView().id == fallback.request->viewId; });
+    const auto& fallbackMesh = (mainView != fallback.frame->GetViews().end() ? *mainView : fallback.frame->GetViews().front())->GetMeshes().front();
     Require(fallbackMesh.transparent && fallbackMesh.state.blendable && !fallbackMesh.state.depthWriting && custom.HasFeature("ALPHA_CLIPPING"),
         "custom preview fallback preserves source render state without modifying its features");
     cube.GetComponent<CMaterialRenderer>()->FillWithMaterial(material);
@@ -158,7 +161,11 @@ static void ValidateSceneDisplay(OvEditor::Core::Context& context, OvEditor::Cor
     auto& probeActor = scene.CreateActor("Reflection probe"); probeActor.AddComponent<CReflectionProbe>(); probeActor.transform.SetWorldPosition({0,2,0});
     OvEditor::Rendering::EditorOverlayCollector overlays;
     const auto state = context.driver->CreatePipelineState();
-    const auto renderView = OvRendering::Core::ViewPreparer::BuildView(view.ExtractView().frame->GetViews().back()->GetView());
+    auto overlayExtracted = view.ExtractView();
+    const auto overlayMainView = std::find_if(overlayExtracted.frame->GetViews().begin(), overlayExtracted.frame->GetViews().end(),
+        [&](const auto& v) { return v->GetView().id == overlayExtracted.request->viewId; });
+    const auto renderView = OvRendering::Core::ViewPreparer::BuildView(
+        (overlayMainView != overlayExtracted.frame->GetViews().end() ? *overlayMainView : overlayExtracted.frame->GetViews().front())->GetView());
     auto batches = [&] { auto c = overlays.Extract(scene,overlay,renderView,state,view.GetOutputTarget()); c.Seal(); execute(c); return overlays.GetFrameInfo().batchCount; };
     overlay.debugObjects = true; overlay.lightIcons = overlay.cameraIcons = overlay.reflectionIcons = false;
     overlay.colliders = overlay.cameraFrustums = false;
@@ -192,7 +199,9 @@ static void ValidateSceneDisplay(OvEditor::Core::Context& context, OvEditor::Cor
     EditorSettings::CameraPreviewEnabled = true; actions.SelectActor(shot);
     shot.transform.SetWorldPosition({0,0,8}); shot.transform.SetWorldRotation(FQuaternion::LookAt({0,0,-1},FVector3::Up)); camera.SetFar(100);
     auto& game = EDITOR_PANEL(OvEditor::Panels::GameView,"Game View"); game.Open();
+    game.dockable = false; game.autoSize = false; game.SetPosition({0,0}); game.SetSize({700,650});
     game.SetPreviewMode(OvEditor::Panels::GameView::PreviewMode::HD);
+    canvas.AddPanel(game); draw(); draw();
     view.SetDisplayMode(DisplayMode::WIREFRAME);
     auto frame = editor.RecordRenderFrame(.016f);
     auto submit = [&](auto& driver) { frame.Submit(driver); frame.Wait(); };
@@ -204,6 +213,7 @@ static void ValidateSceneDisplay(OvEditor::Core::Context& context, OvEditor::Cor
         "Game View and camera preview retain normal rendering and post-processing");
     Require(read(game.GetOutputTarget()) == read(preview->GetOutputTarget()),"Game View and camera preview pixels match while Scene uses Wireframe");
     actions.UnselectActor(); EditorSettings::CameraPreviewEnabled = false;
+    canvas.RemovePanel(game);
 
     auto& io = ImGui::GetIO(); const auto flags = io.BackendFlags;
     io.BackendFlags &= ~ImGuiBackendFlags_HasMouseHoveredViewport;

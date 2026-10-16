@@ -178,12 +178,29 @@ namespace
     }
     AComponent* FindComponent(Actor& actor, const std::string& type)
     {
-        for (auto& component : actor.GetComponents()) if (component->GetTypeName() == type) return component.get();
+        auto normalize = [](std::string_view s) -> std::string_view {
+            if (s.starts_with("class ")) return s.substr(6);
+            if (s.starts_with("struct ")) return s.substr(7);
+            return s;
+        };
+        const auto cleanType = normalize(type);
+        for (auto& component : actor.GetComponents())
+        {
+            if (component->GetTypeName() == type || normalize(component->GetTypeName()) == cleanType)
+                return component.get();
+        }
         return nullptr;
+    }
+    Actor* FindPrefabInstanceRoot(Actor* actor)
+    {
+        while (actor && !actor->HasPrefabSource())
+            actor = actor->GetParent();
+        return actor;
     }
     std::string ComponentXML(AComponent& component)
     {
         tinyxml2::XMLDocument doc; auto* data = doc.NewElement("data"); doc.InsertEndChild(data);
+        if (!component.IsSelfEnabled()) data->SetAttribute("enabled", false);
         component.OnSerialize(doc,data); tinyxml2::XMLPrinter printer(nullptr,true); doc.Print(&printer);
         return printer.CStr();
     }
@@ -519,6 +536,46 @@ void OvEditor::Panels::Inspector::ClearSelectionHistory()
     m_selectionHistoryIndex = 0;
 }
 
+bool OvEditor::Panels::Inspector::CanEditPrefabInstance() const
+{
+    return m_targets.size() == 1 && m_targetActor.has_value() && m_targetActor->IsAlive() &&
+        FindPrefabInstanceRoot(&m_targetActor.value()) != nullptr;
+}
+
+bool OvEditor::Panels::Inspector::SelectPrefabAsset()
+{
+    if (!CanEditPrefabInstance()) return false;
+    auto* root = FindPrefabInstanceRoot(&m_targetActor.value());
+    if (!root || root->GetPrefabSource().empty()) return false;
+    FocusAsset(root->GetPrefabSource());
+    return true;
+}
+
+bool OvEditor::Panels::Inspector::RevertPrefabInstance()
+{
+    if (!CanEditPrefabInstance()) return false;
+    auto* actions = OvCore::Global::ServiceLocator::TryGet<OvEditor::Core::EditorActions>();
+    if (!actions) return false;
+    actions->CommitSceneEdit(true);
+    if (!actions->RevertActorToPrefab(m_targetActor.value())) return false;
+    if (m_sceneManager && m_sceneManager->GetCurrentScene())
+        m_sceneManager->GetCurrentScene()->CollectGarbages();
+    Refresh();
+    actions->CommitSceneEdit(true);
+    return true;
+}
+
+bool OvEditor::Panels::Inspector::ApplyPrefabInstance()
+{
+    if (!CanEditPrefabInstance()) return false;
+    auto* actions = OvCore::Global::ServiceLocator::TryGet<OvEditor::Core::EditorActions>();
+    if (!actions) return false;
+    actions->CommitSceneEdit(true);
+    if (!actions->ApplyActorToPrefab(m_targetActor.value())) return false;
+    Refresh();
+    return true;
+}
+
 void OvEditor::Panels::Inspector::_DrawToolbar()
 {
     const float scale = OVUI_SCALE;
@@ -608,11 +665,18 @@ bool OvEditor::Panels::Inspector::_ApplyComponentValues(const std::string& type,
         targets.push_back(component);
     }
     tinyxml2::XMLDocument doc;
-    if (doc.Parse(xml.c_str()) != tinyxml2::XML_SUCCESS || !doc.FirstChildElement("data")) return false;
+    auto* data = doc.Parse(xml.c_str()) == tinyxml2::XML_SUCCESS ? doc.FirstChildElement("data") : nullptr;
+    if (!data) return false;
+    bool enabled = true;
+    data->QueryBoolAttribute("enabled", &enabled);
     EDITOR_EXEC(CommitSceneEdit(true)); EDITOR_EXEC(BeginSceneEdit(label));
     // Deserialize on the existing instances so native component references and
     // actor identity/parenting survive the operation. Scene history owns undo.
-    for (auto* component : targets) component->OnDeserialize(doc,doc.FirstChildElement("data"));
+    for (auto* component : targets)
+    {
+        component->SetEnabled(enabled);
+        component->OnDeserialize(doc,data);
+    }
     _QueueRefresh(); EDITOR_EXEC(CommitSceneEdit(true)); return true;
 }
 
@@ -641,13 +705,20 @@ bool OvEditor::Panels::Inspector::PasteComponentAsNew()
 {
     if (!CanPasteComponentAsNew()) return false;
     tinyxml2::XMLDocument doc;
-    if (doc.Parse(m_clipboardXML.c_str()) != tinyxml2::XML_SUCCESS || !doc.FirstChildElement("data")) return false;
+    auto* data = doc.Parse(m_clipboardXML.c_str()) == tinyxml2::XML_SUCCESS ? doc.FirstChildElement("data") : nullptr;
+    if (!data) return false;
+    bool enabled = true;
+    data->QueryBoolAttribute("enabled", &enabled);
     const auto* description = GetComponentRegistry().Find(m_clipboardType);
     EDITOR_EXEC(CommitSceneEdit(true)); EDITOR_EXEC(BeginSceneEdit("Paste component as new"));
     for (auto* actor : m_targets)
     {
         description->AddComponent(*actor);
-        if (auto* component = FindComponent(*actor,m_clipboardType)) component->OnDeserialize(doc,doc.FirstChildElement("data"));
+        if (auto* component = FindComponent(*actor,m_clipboardType))
+        {
+            component->SetEnabled(enabled);
+            component->OnDeserialize(doc,data);
+        }
     }
     _QueueRefresh(); EDITOR_EXEC(CommitSceneEdit(true)); return true;
 }
@@ -657,8 +728,10 @@ bool OvEditor::Panels::Inspector::RemoveComponents(const std::string& type)
     if (m_targets.empty()) return false;
     EDITOR_EXEC(BeginSceneEdit("Remove component"));
     for (auto* actor : m_targets)
-        for (const auto& component : actor->GetComponents())
-            if (component->GetTypeName() == type) { actor->RemoveComponent(*component); break; }
+    {
+        if (auto* component = FindComponent(*actor, type))
+            actor->RemoveComponent(*component);
+    }
     return true;
 }
 
@@ -753,6 +826,43 @@ void OvEditor::Panels::Inspector::_PopulateActorInfo()
     InspectorBindings::Connect(roots, ticket,_PropertyContext(&actorDefaults));
     if (m_targets.size() > 1) return;
 
+    if (CanEditPrefabInstance())
+    {
+        auto* prefabRoot = FindPrefabInstanceRoot(&m_targetActor.value());
+        const std::string prefabSource = prefabRoot ? prefabRoot->GetPrefabSource() : std::string{};
+        const bool isSubActor = prefabRoot && prefabRoot != &m_targetActor.value();
+        auto& prefabCols = m_content->CreateWidget<Layout::Columns<2>>();
+        prefabCols.SetID("inspector_prefab_row");
+        prefabCols.widths[0] = 140 * OVUI_SCALE;
+        OvCore::Helpers::GUIDrawer::CreateTitle(prefabCols, "Prefab");
+        prefabCols.GetWidgets().back().first->tooltip =
+            prefabSource + (isSubActor ? " (Child of Prefab Instance)" : "");
+        prefabCols.CreateWidget<InspectorToolbar>([this, ticket, prefabSource]
+        {
+            if (ticket.expired()) return;
+            const float scale = OVUI_SCALE;
+            ImGui::PushID("InspectorPrefabRow");
+            const float avail = std::max(90.0f * scale, ImGui::GetContentRegionAvail().x);
+            const float spacing = 4.0f * scale;
+            const float btnW = (avail - spacing * 2.0f) / 3.0f;
+            if (ImGui::Button("Select##PrefabSelect", { btnW, 0.0f }))
+                m_callbacks.defer([this, ticket] { if (!ticket.expired()) SelectPrefabAsset(); });
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Inspect the source Prefab asset (%s)", prefabSource.c_str());
+            ImGui::SameLine(0.0f, spacing);
+            if (ImGui::Button("Revert##PrefabRevert", { btnW, 0.0f }))
+                m_callbacks.defer([this, ticket] { if (!ticket.expired()) RevertPrefabInstance(); });
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Revert this Prefab instance to the saved Prefab asset");
+            ImGui::SameLine(0.0f, spacing);
+            if (ImGui::Button("Apply##PrefabApply", { btnW, 0.0f }))
+                m_callbacks.defer([this, ticket] { if (!ticket.expired()) ApplyPrefabInstance(); });
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Apply overrides from this Prefab instance to the Prefab asset");
+            ImGui::PopID();
+        });
+    }
+
 	auto& identity = m_content->CreateWidget<Layout::GroupCollapsable>("Identity & Prefab");
     m_sections.push_back(&identity);
 	identity.SetID("inspector_identity");
@@ -769,7 +879,12 @@ void OvEditor::Panels::Inspector::_PopulateActorInfo()
 	auto& prefabSourceField = OvCore::Helpers::GUIDrawer::DrawAsset(
 		identityColumns,
 		"Prefab Source",
-		[this, ticket] { return ticket.expired() ? std::string{} : m_targetActor->GetPrefabSource(); },
+		[this, ticket] {
+			if (ticket.expired() || !m_targetActor) return std::string{};
+			if (auto* root = FindPrefabInstanceRoot(&m_targetActor.value()))
+				return root->GetPrefabSource();
+			return m_targetActor->GetPrefabSource();
+		},
 		[](const std::string&) {},
 		OvTools::Utils::PathParser::EFileType::PREFAB
 	);
@@ -959,6 +1074,42 @@ void OvEditor::Panels::Inspector::_DrawComponent(AComponent& p_component, int p_
 
 	if (!isTransform)
 	{
+		const std::string compType = p_component.GetTypeName();
+		const auto ticket = m_viewCallbacks.Ticket();
+		header.checkable = true;
+		header.checked = p_component.IsSelfEnabled();
+		header.checkedGatherer = [this, compType, ticket] {
+			if (ticket.expired() || !m_targetActor || !m_targetActor->IsAlive()) return false;
+			auto* comp = FindComponent(m_targetActor.value(), compType);
+			return comp && comp->IsSelfEnabled();
+		};
+		header.mixedGatherer = [this, compType, ticket] {
+			if (ticket.expired() || m_targets.size() <= 1) return false;
+			auto* first = FindComponent(*m_targets[0], compType);
+			if (!first) return false;
+			const bool state = first->IsSelfEnabled();
+			for (size_t i = 1; i < m_targets.size(); ++i)
+			{
+				auto* c = FindComponent(*m_targets[i], compType);
+				if (c && c->IsSelfEnabled() != state) return true;
+			}
+			return false;
+		};
+		header.checkedProvider = [this, compType, ticket](bool enabled) {
+			if (ticket.expired() || m_targets.empty()) return;
+			EDITOR_EXEC(CommitSceneEdit(true));
+			EDITOR_EXEC(BeginSceneEdit("Toggle component"));
+			for (auto* actor : m_targets)
+			{
+				if (actor && actor->IsAlive())
+				{
+					if (auto* comp = FindComponent(*actor, compType))
+						comp->SetEnabled(enabled);
+				}
+			}
+			EDITOR_EXEC(CommitSceneEdit(true));
+		};
+
 		header.reorderable = m_targets.size() == 1;
 		header.canMoveUp = (p_index > 1);
 		header.canMoveDown = (p_index < p_total - 1);
@@ -1025,6 +1176,43 @@ void OvEditor::Panels::Inspector::_DrawBehaviour(Behaviour& p_behaviour, int p_i
     m_sections.push_back(&header);
 	header.SetID("inspector_behaviour_" + identity.Key());
 	if (identity.backend == "csharp") header.tooltip = identity.type + "\n" + identity.assembly;
+	{
+		const auto scriptIdentity = p_behaviour.Identity();
+		const auto ticket = m_viewCallbacks.Ticket();
+		header.checkable = true;
+		header.checked = p_behaviour.IsSelfEnabled();
+		header.checkedGatherer = [this, scriptIdentity, ticket] {
+			if (ticket.expired() || !m_targetActor || !m_targetActor->IsAlive()) return false;
+			auto* b = m_targetActor->GetBehaviour(scriptIdentity);
+			return b && b->IsSelfEnabled();
+		};
+		header.mixedGatherer = [this, scriptIdentity, ticket] {
+			if (ticket.expired() || m_targets.size() <= 1) return false;
+			auto* first = m_targets[0]->GetBehaviour(scriptIdentity);
+			if (!first) return false;
+			const bool state = first->IsSelfEnabled();
+			for (size_t i = 1; i < m_targets.size(); ++i)
+			{
+				auto* b = m_targets[i]->GetBehaviour(scriptIdentity);
+				if (b && b->IsSelfEnabled() != state) return true;
+			}
+			return false;
+		};
+		header.checkedProvider = [this, scriptIdentity, ticket](bool enabled) {
+			if (ticket.expired() || m_targets.empty()) return;
+			EDITOR_EXEC(CommitSceneEdit(true));
+			EDITOR_EXEC(BeginSceneEdit("Toggle script"));
+			for (auto* actor : m_targets)
+			{
+				if (actor && actor->IsAlive())
+				{
+					if (auto* b = actor->GetBehaviour(scriptIdentity))
+						b->SetEnabled(enabled);
+				}
+			}
+			EDITOR_EXEC(CommitSceneEdit(true));
+		};
+	}
 	header.closable = true;
 	header.CloseEvent += [this, &p_behaviour, ticket = m_viewCallbacks.Ticket()] {
         if (ticket.expired()) return;
@@ -1237,11 +1425,35 @@ void OvEditor::Panels::Inspector::_PopulateAsset()
                 infoCols.CreateWidget<Texts::Text>(mat->GetShader() ? OvTools::Utils::PathParser::GetFriendlyPath(mat->GetShader()->path) : "None");
             }
     }
+    size_t prefabActorCount = 0;
+    std::string prefabRootName;
+    if (fileType == EFileType::PREFAB && !realPath.empty() && std::filesystem::exists(realPath))
+    {
+        tinyxml2::XMLDocument doc;
+        if (doc.LoadFile(realPath.c_str()) == tinyxml2::XML_SUCCESS)
+            if (auto* rootNode = doc.FirstChildElement("root"))
+                if (auto* prefabNode = rootNode->FirstChildElement("prefab"))
+                    if (auto* actorsNode = prefabNode->FirstChildElement("actors"))
+                        for (auto* actorNode = actorsNode->FirstChildElement("actor"); actorNode; actorNode = actorNode->NextSiblingElement("actor"))
+                        {
+                            ++prefabActorCount;
+                            if (prefabRootName.empty())
+                                if (auto* nameNode = actorNode->FirstChildElement("name"); nameNode && nameNode->GetText())
+                                    prefabRootName = nameNode->GetText();
+                        }
+        if (prefabActorCount > 0)
+        {
+            OvCore::Helpers::GUIDrawer::CreateTitle(infoCols, "Root Entity");
+            infoCols.CreateWidget<Texts::Text>(prefabRootName.empty() ? "<unnamed>" : prefabRootName);
+            OvCore::Helpers::GUIDrawer::CreateTitle(infoCols, "Entities");
+            infoCols.CreateWidget<Texts::Text>(std::to_string(prefabActorCount));
+        }
+    }
 
     auto& previewGroup = m_content->CreateWidget<Layout::GroupCollapsable>("Preview");
     previewGroup.SetID("inspector_asset_preview");
     m_sections.push_back(&previewGroup);
-    previewGroup.CreateWidget<InspectorToolbar>([this, ticket, fileType, elementName, friendlyType]
+    previewGroup.CreateWidget<InspectorToolbar>([this, ticket, fileType, elementName, friendlyType, prefabActorCount, prefabRootName]
     {
         if (ticket.expired()) return;
         const float scale = OVUI_SCALE;
@@ -1314,6 +1526,29 @@ void OvEditor::Panels::Inspector::_PopulateAsset()
                     ImGui::EndGroup();
                     drewCustom = true;
                 }
+        }
+        else if (fileType == EFileType::PREFAB && prefabActorCount > 0)
+        {
+            ImGui::SetCursorScreenPos({ boxMin.x + 12.0f * scale, boxMin.y + 10.0f * scale });
+            ImGui::BeginGroup();
+            ImGui::Text("%s", elementName.c_str());
+            ImGui::TextDisabled("Root Entity: %s (%zu %s)",
+                prefabRootName.empty() ? "<unnamed>" : prefabRootName.c_str(),
+                prefabActorCount,
+                prefabActorCount == 1 ? "entity" : "entities");
+            ImGui::Spacing();
+            if (ImGui::Button("Instantiate in Scene"))
+            {
+                const std::string targetPath = m_targetAsset;
+                m_callbacks.defer([targetPath]
+                {
+                    if (auto* actions = OvCore::Global::ServiceLocator::TryGet<OvEditor::Core::EditorActions>())
+                        if (auto* instance = actions->InstantiatePrefab(targetPath))
+                            actions->SelectActor(*instance);
+                });
+            }
+            ImGui::EndGroup();
+            drewCustom = true;
         }
 
         if (!drewCustom)

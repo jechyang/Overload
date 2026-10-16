@@ -119,25 +119,25 @@ float OvCore::ECS::Components::CAudioSource::GetAttenuationThreshold() const
 
 void OvCore::ECS::Components::CAudioSource::Play()
 {
-	if (owner.IsActive() && m_sound)
+	if (IsEnabled() && m_sound)
 		m_audioSource.Play(*m_sound);
 }
 
 void OvCore::ECS::Components::CAudioSource::Pause()
 {
-	if (owner.IsActive())
+	if (IsEnabled())
 		m_audioSource.Pause();
 }
 
 void OvCore::ECS::Components::CAudioSource::Resume()
 {
-	if (owner.IsActive())
+	if (IsEnabled())
 		m_audioSource.Resume();
 }
 
 void OvCore::ECS::Components::CAudioSource::Stop()
 {
-	if (owner.IsActive())
+	if (IsEnabled())
 		m_audioSource.Stop();
 }
 

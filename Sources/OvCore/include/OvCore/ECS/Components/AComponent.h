@@ -133,8 +133,12 @@ namespace OvCore::ECS::Components
 	public:
 		ECS::Actor& owner;
         std::weak_ptr<const bool> InspectorTicket() const { return m_inspectorCallbacks.Ticket(); }
+        bool IsSelfEnabled() const { return m_enabled; }
+        bool IsEnabled() const;
+        void SetEnabled(bool p_enabled);
     private:
         friend class ECS::Actor;
+        bool m_enabled = true;
         OvTools::Utils::CallbackScope m_inspectorCallbacks;
 	};
 

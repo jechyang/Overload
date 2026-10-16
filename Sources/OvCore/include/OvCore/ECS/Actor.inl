@@ -23,8 +23,11 @@ namespace OvCore::ECS
 			if (m_playing && !m_sleeping && IsActive())
 			{
 				reinterpret_cast<OvCore::ECS::Components::AComponent&>(instance).OnAwake();
-				reinterpret_cast<OvCore::ECS::Components::AComponent&>(instance).OnEnable();
-				reinterpret_cast<OvCore::ECS::Components::AComponent&>(instance).OnStart();
+				if (reinterpret_cast<OvCore::ECS::Components::AComponent&>(instance).IsSelfEnabled())
+				{
+					reinterpret_cast<OvCore::ECS::Components::AComponent&>(instance).OnEnable();
+					reinterpret_cast<OvCore::ECS::Components::AComponent&>(instance).OnStart();
+				}
 			}
 			return instance;
 		}

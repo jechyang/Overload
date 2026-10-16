@@ -1524,6 +1524,7 @@ void OvEditor::Core::EditorActions::SaveActorAsPrefab(OvCore::ECS::Actor& p_acto
 
 	const std::string prefabSourcePath = GetResourcePath(p_path);
 	OvCore::SceneSystem::PrefabOperations::SetRootPrefabSourceAndNormalizeChildren(p_actor, prefabSourcePath);
+	m_panelsManager.GetPanelAs<Panels::Inspector>("Inspector").Refresh();
 
 	OVLOG_INFO("Prefab saved to: " + p_path);
 }
@@ -1679,6 +1680,7 @@ bool OvEditor::Core::EditorActions::RevertActorToPrefab(OvCore::ECS::Actor& p_ac
 
 	prefabTemplateRoot->MarkAsDestroy();
 	SelectActor(*prefabInstanceRoot);
+	m_panelsManager.GetPanelAs<Panels::Inspector>("Inspector").Refresh();
 
 	return true;
 }

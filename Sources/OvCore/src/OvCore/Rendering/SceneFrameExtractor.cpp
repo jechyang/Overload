@@ -88,7 +88,7 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
     for (auto* component : main.scene.GetFastAccessComponents().lights)
     {
         auto& light = component->GetData();
-        if (!component->owner.IsActive() || !light.castShadows || light.type != Settings::ELightType::DIRECTIONAL) continue;
+        if (!component->IsEnabled() || !light.castShadows || light.type != Settings::ELightType::DIRECTIONAL) continue;
         if (!request.generateShadows) continue;
         // This is the owner resource-preparation boundary; no worker calls it.
         auto camera = main.camera;
@@ -118,7 +118,7 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
     std::vector<Data::ReflectionProbeInput> probes;
     for (auto* probe : main.scene.GetFastAccessComponents().reflectionProbes)
     {
-        if (!probe->owner.IsActive()) continue;
+        if (!probe->IsEnabled()) continue;
         if (frame->m_commands.UseHistory(probe->m_captureHistory))
         {
             probe->m_framebuffers.Reset(); probe->m_cubemapIterator.Reset();
@@ -175,7 +175,7 @@ std::unique_ptr<SceneFrame> SceneFrameExtractor::Extract(const SceneFrameRequest
     }
     std::optional<PostProcess::PostProcessSnapshot> settings;
     if (main.applyPostProcess) for (const auto* stack : main.scene.GetFastAccessComponents().postProcessStacks)
-        if (stack && stack->owner.IsActive()) { settings = PostProcess::PostProcessSnapshot::Capture(stack->GetStack()); break; }
+        if (stack && stack->IsEnabled()) { settings = PostProcess::PostProcessSnapshot::Capture(stack->GetStack()); break; }
     if (settings)
     {
         if (!request.postProcess || !request.postProcessTarget || !request.target)

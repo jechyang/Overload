@@ -209,7 +209,6 @@ int wmain(int argc, wchar_t** argv)
         ValidateHistory(context, actions, hierarchy, inspector, draw);
         ValidateEditorInput(context, editor, actions, inspector, draw);
         ValidateViewport(context, actions);
-        ValidateGamePreview(context, editor, actions);
         ValidateSceneDisplay(context, editor, actions);
         ui.SetCanvas(canvas);
         ValidateInspectorWorkflow(context, actions, hierarchy, inspector, draw);

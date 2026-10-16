@@ -37,7 +37,7 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
             throw std::invalid_argument("Auxiliary stages require an exclusive view");
     const auto& components = p_request.scene.GetFastAccessComponents();
     const auto anyActive = [](const auto& list) {
-        return std::any_of(list.begin(), list.end(), [](const auto* c) { return c->owner.IsActive(); });
+        return std::any_of(list.begin(), list.end(), [](const auto* c) { return c->IsEnabled(); });
     };
     if ((!p_planned && anyActive(components.reflectionProbes)) || (!p_planned && anyActive(components.postProcessStacks)))
         throw std::invalid_argument("ExtractScene: reflection/post-processing require ExtractFrame");
@@ -70,7 +70,7 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
     // relative groups preserving the old address order. Never sort snapshot addresses.
     for (auto* component : components.lights)
     {
-        if (!component->owner.IsActive()) continue;
+        if (!component->IsEnabled()) continue;
         const auto& light = component->GetData();
         if (light.castShadows && !p_request.shadow.map && !p_planned && !shadow && !capture)
             throw std::invalid_argument("ExtractScene: shadow receiver requires an imported map or ExtractFrame");
@@ -104,9 +104,9 @@ std::shared_ptr<const Data::RenderSceneSnapshot> Rendering::SceneRenderExtractor
         for (const auto* renderer : components.modelRenderers)
         {
             const auto& owner = renderer->owner;
-            if (!owner.IsActive() || !renderer->GetModel()) continue;
+            if (!renderer->IsEnabled() || !renderer->GetModel()) continue;
             const auto* materials = owner.GetComponent<ECS::Components::CMaterialRenderer>();
-            if (!materials) continue;
+            if (!materials || !materials->IsEnabled()) continue;
             const auto* skin = owner.GetComponent<ECS::Components::CSkinnedMeshRenderer>();
             const bool hasSkin = Rendering::SkinningUtils::IsSkinningActive(skin);
             const auto& transform = owner.transform.GetFTransform();

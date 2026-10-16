@@ -50,10 +50,18 @@ namespace OvUI::Widgets::Layout
 		bool reorderable = false;
 		bool canMoveUp = true;
 		bool canMoveDown = true;
+		bool checkable = false;
+		bool checked = true;
+		std::function<bool()> checkedGatherer;
+		std::function<bool()> mixedGatherer;
+		std::function<void(bool)> checkedProvider;
+		ImVec2 checkboxMin{0.f, 0.f};
+		ImVec2 checkboxMax{0.f, 0.f};
 		std::vector<HeaderAction> actions;
 		OvTools::Eventing::Event<> CloseEvent;
 		OvTools::Eventing::Event<> OpenEvent;
 		OvTools::Eventing::Event<> MoveUpEvent;
 		OvTools::Eventing::Event<> MoveDownEvent;
+		OvTools::Eventing::Event<bool> CheckChangedEvent;
 	};
 }

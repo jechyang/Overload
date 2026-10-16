@@ -94,6 +94,10 @@ namespace OvEditor::Panels
         bool SelectBack();
         bool SelectForward();
         void ClearSelectionHistory();
+        bool CanEditPrefabInstance() const;
+        bool SelectPrefabAsset();
+        bool RevertPrefabInstance();
+        bool ApplyPrefabInstance();
 
 		/**
 		* Clear scene selection; locked inspection targets are retained.

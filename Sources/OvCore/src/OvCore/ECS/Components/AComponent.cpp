@@ -9,6 +9,8 @@
 #include <OvCore/ECS/ComponentRegistry.h>
 #include <OvCore/Helpers/ReflectionProperties.h>
 #include <OvCore/Helpers/ReflectionDrawer.h>
+#include <OvCore/ECS/Components/CTransform.h>
+#include <OvCore/Scripting/DispatchScope.h>
 #include <stdexcept>
 
 OvCore::ECS::Components::AComponent::AComponent(ECS::Actor& p_owner) : owner(p_owner)
@@ -42,11 +44,37 @@ void OvCore::ECS::Components::AComponent::OnInspector(OvUI::Internal::WidgetCont
     Helpers::ReflectionProperties::DrawComponent(root, *this).Require();
 }
 
+bool OvCore::ECS::Components::AComponent::IsEnabled() const
+{
+    return m_enabled && owner.IsActive();
+}
+
+void OvCore::ECS::Components::AComponent::SetEnabled(bool p_enabled)
+{
+    if (dynamic_cast<CTransform*>(this))
+        return;
+
+    if (m_enabled == p_enabled)
+        return;
+
+    m_enabled = p_enabled;
+
+    if (!owner.IsSleeping() && owner.IsActive())
+    {
+        Scripting::DispatchScope scope;
+        if (m_enabled)
+            OnEnable();
+        else
+            OnDisable();
+        Scripting::DispatchScope::Flush();
+    }
+}
+
 OvCore::ECS::Components::AComponent::~AComponent()
 {
 	if (owner.IsActive())
 	{
-		OnDisable();
+		if (m_enabled) OnDisable();
 		OnDestroy();
 	}
 }

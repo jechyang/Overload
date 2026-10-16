@@ -203,6 +203,7 @@ namespace OvCore::ECS
 		* @param p_sleeping
 		*/
 		void SetSleeping(bool p_sleeping);
+		bool IsSleeping() const { return m_sleeping; }
 
 		/**
 		* Called when the scene start or when the actor gets enabled for the first time during play mode

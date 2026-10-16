@@ -317,17 +317,17 @@ void OvCore::ECS::Actor::OnStart()
 {
     if (m_started) return;
     m_started = true;
-    Dispatch([&](auto& component) { component.OnStart(); }, true);
+    Dispatch([&](auto& component) { if (component.IsSelfEnabled()) component.OnStart(); }, true);
 }
 
 void OvCore::ECS::Actor::OnEnable()
 {
-    Dispatch([&](auto& component) { component.OnEnable(); }, true);
+    Dispatch([&](auto& component) { if (component.IsSelfEnabled()) component.OnEnable(); }, true);
 }
 
 void OvCore::ECS::Actor::OnDisable()
 {
-    Dispatch([&](auto& component) { component.OnDisable(); }, false);
+    Dispatch([&](auto& component) { if (component.IsSelfEnabled()) component.OnDisable(); }, false);
 }
 
 void OvCore::ECS::Actor::OnDestroy()
@@ -337,47 +337,47 @@ void OvCore::ECS::Actor::OnDestroy()
 
 void OvCore::ECS::Actor::OnUpdate(float p_deltaTime)
 {
-    Dispatch([&](auto& component) { component.OnUpdate(p_deltaTime); }, true);
+    Dispatch([&](auto& component) { if (component.IsSelfEnabled()) component.OnUpdate(p_deltaTime); }, true);
 }
 
 void OvCore::ECS::Actor::OnFixedUpdate(float p_deltaTime)
 {
-    Dispatch([&](auto& component) { component.OnFixedUpdate(p_deltaTime); }, true);
+    Dispatch([&](auto& component) { if (component.IsSelfEnabled()) component.OnFixedUpdate(p_deltaTime); }, true);
 }
 
 void OvCore::ECS::Actor::OnLateUpdate(float p_deltaTime)
 {
-    Dispatch([&](auto& component) { component.OnLateUpdate(p_deltaTime); }, true);
+    Dispatch([&](auto& component) { if (component.IsSelfEnabled()) component.OnLateUpdate(p_deltaTime); }, true);
 }
 
 void OvCore::ECS::Actor::OnCollisionEnter(Components::CPhysicalObject& p_otherObject)
 {
-    Dispatch([&](auto& component) { component.OnCollisionEnter(p_otherObject); }, true);
+    Dispatch([&](auto& component) { if (component.IsSelfEnabled()) component.OnCollisionEnter(p_otherObject); }, true);
 }
 
 void OvCore::ECS::Actor::OnCollisionStay(Components::CPhysicalObject& p_otherObject)
 {
-    Dispatch([&](auto& component) { component.OnCollisionStay(p_otherObject); }, true);
+    Dispatch([&](auto& component) { if (component.IsSelfEnabled()) component.OnCollisionStay(p_otherObject); }, true);
 }
 
 void OvCore::ECS::Actor::OnCollisionExit(Components::CPhysicalObject& p_otherObject)
 {
-    Dispatch([&](auto& component) { component.OnCollisionExit(p_otherObject); }, true);
+    Dispatch([&](auto& component) { if (component.IsSelfEnabled()) component.OnCollisionExit(p_otherObject); }, true);
 }
 
 void OvCore::ECS::Actor::OnTriggerEnter(Components::CPhysicalObject& p_otherObject)
 {
-    Dispatch([&](auto& component) { component.OnTriggerEnter(p_otherObject); }, true);
+    Dispatch([&](auto& component) { if (component.IsSelfEnabled()) component.OnTriggerEnter(p_otherObject); }, true);
 }
 
 void OvCore::ECS::Actor::OnTriggerStay(Components::CPhysicalObject& p_otherObject)
 {
-    Dispatch([&](auto& component) { component.OnTriggerStay(p_otherObject); }, true);
+    Dispatch([&](auto& component) { if (component.IsSelfEnabled()) component.OnTriggerStay(p_otherObject); }, true);
 }
 
 void OvCore::ECS::Actor::OnTriggerExit(Components::CPhysicalObject& p_otherObject)
 {
-    Dispatch([&](auto& component) { component.OnTriggerExit(p_otherObject); }, true);
+    Dispatch([&](auto& component) { if (component.IsSelfEnabled()) component.OnTriggerExit(p_otherObject); }, true);
 }
 
 bool OvCore::ECS::Actor::RemoveComponent(OvCore::ECS::Components::AComponent& p_component)
@@ -433,6 +433,7 @@ OvCore::ECS::Components::Behaviour& OvCore::ECS::Actor::AddBehaviourRecord(const
             for (auto event : {&Components::Behaviour::OnAwake, &Components::Behaviour::OnEnable, &Components::Behaviour::OnStart}) {
                 auto* current = GetBehaviour(canonical);
                 if (!current || m_pendingBehaviours.contains(current->Identity().Key()) || !CanRunScripts() || !IsActive()) break;
+                if (event != &Components::Behaviour::OnAwake && !current->IsSelfEnabled()) continue;
                 { Scripting::DispatchScope scope; (current->*event)(); }
                 Scripting::DispatchScope::Flush();
             }
@@ -535,8 +536,11 @@ bool OvCore::ECS::Actor::RenameBehaviour(const std::string& p_previousName, cons
 	if (m_playing && !m_sleeping && IsActive())
 	{
 		newInstance.OnAwake();
-		newInstance.OnEnable();
-		newInstance.OnStart();
+		if (newInstance.IsSelfEnabled())
+		{
+			newInstance.OnEnable();
+			newInstance.OnStart();
+		}
 	}
 	return true;
 }
@@ -594,6 +598,10 @@ void OvCore::ECS::Actor::OnSerialize(tinyxml2::XMLDocument & p_doc, tinyxml2::XM
 
 		/* Component type */
 		OvCore::Helpers::Serializer::SerializeString(p_doc, componentNode, "type", component->GetTypeName());
+		if (!component->IsSelfEnabled())
+		{
+			OvCore::Helpers::Serializer::SerializeBoolean(p_doc, componentNode, "enabled", false);
+		}
 
 		/* Data node (Will be passed to the component) */
 		tinyxml2::XMLElement* data = p_doc.NewElement("data");
@@ -659,6 +667,9 @@ void OvCore::ECS::Actor::OnDeserialize(tinyxml2::XMLDocument & p_doc, tinyxml2::
 				auto* component = descriptor && data ? descriptor->DeserializeComponent(*this) : nullptr;
 				if (component)
 				{
+					bool enabled = true;
+					OvCore::Helpers::Serializer::DeserializeBoolean(p_doc, currentComponent, "enabled", enabled);
+					component->SetEnabled(enabled);
 					component->OnDeserialize(p_doc, data);
 				}
 				else

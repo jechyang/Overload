@@ -222,7 +222,7 @@ void OvCore::SceneSystem::Scene::Update(float p_deltaTime, OvTools::Jobs::JobSys
 				return nullptr;
 			}
 		}
-		return skin && skin->CanBatchUpdate() ? skin : nullptr;
+		return skin && skin->IsEnabled() && skin->CanBatchUpdate() ? skin : nullptr;
 	};
 
 	ActorUpdateSnapshot snapshot(m_actors);
@@ -535,7 +535,7 @@ OvCore::ECS::Components::CCamera* OvCore::SceneSystem::Scene::FindMainCamera() c
 {
 	for (OvCore::ECS::Components::CCamera* camera : m_fastAccessComponents.cameras)
 	{
-		if (camera->owner.IsActive())
+		if (camera->IsEnabled())
 		{
 			return camera;
 		}

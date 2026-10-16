@@ -346,6 +346,12 @@ void OvCore::ECS::Components::Behaviour::ApplyStoredProperties()
 void OvCore::ECS::Components::Behaviour::DeserializeRecord(tinyxml2::XMLDocument& doc, tinyxml2::XMLElement* record)
 {
 	tinyxml2::XMLPrinter printer(nullptr,true); record->Accept(&printer); m_rawRecord = printer.CStr();
+	bool enabled = true;
+	if (const auto* enabledNode = record->FirstChildElement("enabled"))
+		enabledNode->QueryBoolText(&enabled);
+	else if (record->Attribute("enabled"))
+		record->QueryBoolAttribute("enabled", &enabled);
+	SetEnabled(enabled);
 	OnDeserialize(doc, record->FirstChildElement("data"));
 }
 
@@ -357,6 +363,14 @@ void OvCore::ECS::Components::Behaviour::SerializeRecord(tinyxml2::XMLDocument& 
 		record = original.RootElement()->DeepClone(&doc)->ToElement();
 	else record = doc.NewElement("behaviour");
 	parent->InsertEndChild(record);
+	if (auto* enabledNode = record->FirstChildElement("enabled"))
+		record->DeleteChild(enabledNode);
+	if (!IsSelfEnabled())
+	{
+		auto* enabledNode = doc.NewElement("enabled");
+		enabledNode->SetText(false);
+		record->InsertEndChild(enabledNode);
+	}
 	// Missing records preserve their complete identity, attributes and data. Resolve
 	// aliases only with a validated catalogue; never persist session-local tokens.
 	const auto status = Status();

@@ -1,5 +1,6 @@
 // Verification host for the Unity-style editor shell: production Editor, panels,
 // layouts and frame submission; isolated profile, hidden window, back-buffer captures.
+#include <OvCore/ECS/Components/CPointLight.h>
 #include <OvCore/Resources/Material.h>
 #include <OvCore/SceneSystem/Scene.h>
 #include <OvEditor/Core/Editor.h>
@@ -323,6 +324,62 @@ int main(int argc, char** argv) try {
     Require(!inspectorPanel.GetTargetAsset().empty() && !inspectorPanel.GetTargetActor().has_value(),
         "clicking a texture in Project inspects the asset in Inspector");
     capture("15-inspector-asset-preview");
+
+    // I6: Selecting a Prefab instance in Hierarchy/Scene exposes the Unity-style Prefab (Select / Revert / Apply) bar in Inspector.
+    auto* prefabTarget = context.sceneManager.GetCurrentScene()->FindActorByGUID(renameGUID);
+    Require(prefabTarget != nullptr, "found target entity for prefab row validation");
+    const auto shellPrefabPath = std::filesystem::path(context.projectAssetsPath) / "HeroLamp.ovprefab";
+    actions.SaveActorAsPrefab(*prefabTarget, shellPrefabPath.string());
+    actions.SelectActor(*prefabTarget);
+    inspectorPanel.Focus();
+    tick(3);
+    Require(inspectorPanel.CanEditPrefabInstance(), "Inspector recognizes saved entity as a prefab instance");
+    std::function<void(OvUI::Internal::WidgetContainer&, bool)> setIdentityExpanded = [&](OvUI::Internal::WidgetContainer& root, bool expanded) {
+        for (auto [w, mode] : root.GetWidgets()) {
+            if (auto* g = dynamic_cast<OvUI::Widgets::Layout::GroupCollapsable*>(w); g && g->name == "Identity & Prefab") g->expandForSearch = expanded;
+            if (auto* c = dynamic_cast<OvUI::Internal::WidgetContainer*>(w)) setIdentityExpanded(*c, expanded);
+        }
+    };
+    setIdentityExpanded(inspectorPanel, true);
+    tick(3);
+    capture("16-inspector-prefab-row");
+    setIdentityExpanded(inspectorPanel, false);
+    // I8: Component header enable checkbox click + Undo/Redo + visual capture.
+    prefabTarget->AddComponent<OvCore::ECS::Components::CCamera>();
+    inspectorPanel.Refresh();
+    tick(3);
+    lightHeader = nullptr;
+    OvUI::Widgets::Layout::GroupCollapsable* cameraHeader = nullptr;
+    std::function<void(OvUI::Internal::WidgetContainer&)> findCompHeaders = [&](OvUI::Internal::WidgetContainer& root) {
+        for (auto [w, mode] : root.GetWidgets()) {
+            if (auto* g = dynamic_cast<OvUI::Widgets::Layout::GroupCollapsable*>(w)) {
+                if (g->name == "Point Light") lightHeader = g;
+                if (g->name == "Camera") cameraHeader = g;
+            }
+            if (auto* c = dynamic_cast<OvUI::Internal::WidgetContainer*>(w)) findCompHeaders(*c);
+        }
+    };
+    findCompHeaders(inspectorPanel);
+    Require(lightHeader != nullptr && cameraHeader != nullptr && lightHeader->checkable && cameraHeader->checkable,
+        "Point Light and Camera headers expose enable checkboxes in Inspector");
+    tick(2);
+    Require(lightHeader->checkboxMax.x > lightHeader->checkboxMin.x, "Point Light checkbox rect is populated");
+    const ImVec2 lightCheckboxPos{
+        (lightHeader->checkboxMin.x + lightHeader->checkboxMax.x) * 0.5f,
+        (lightHeader->checkboxMin.y + lightHeader->checkboxMax.y) * 0.5f
+    };
+    clickOnce(lightCheckboxPos); tick(3);
+    Require(!context.sceneManager.GetCurrentScene()->FindActorByGUID(renameGUID)->GetComponent<OvCore::ECS::Components::CPointLight>()->IsSelfEnabled() &&
+        context.sceneManager.GetCurrentScene()->FindActorByGUID(renameGUID)->GetComponent<OvCore::ECS::Components::CCamera>()->IsSelfEnabled(),
+        "clicking the Point Light header checkbox unchecks and disables the Point Light component");
+    capture("17-inspector-component-checkbox");
+    Require(actions.Undo() &&
+        context.sceneManager.GetCurrentScene()->FindActorByGUID(renameGUID)->GetComponent<OvCore::ECS::Components::CPointLight>()->IsSelfEnabled(),
+        "Undo after clicking component checkbox re-enables the Point Light component");
+
+    std::error_code shellPrefabEc;
+    std::filesystem::remove(shellPrefabPath, shellPrefabEc);
+
     ImGui_ImplGlfw_CursorEnterCallback(context.window->GetGlfwWindow(), false);
 
     std::cout << passed << " checks passed\n";

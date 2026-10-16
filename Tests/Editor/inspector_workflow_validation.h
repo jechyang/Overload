@@ -347,5 +347,86 @@ template<class Draw> static void ValidateInspectorWorkflow(OvEditor::Core::Conte
         inspector.GetTargetAsset().empty(),
         "re-selecting the same scene entity switches Inspector back from asset to entity");
 
+    // Prefab Instance Row: Select / Revert / Apply & Prefab Asset Preview (I6)
+    Require(!inspector.CanEditPrefabInstance(),"regular scene entity is not a prefab instance");
+    auto* prefabActor = scene()->FindActorByGUID(histCID);
+    prefabActor->AddComponent<CPointLight>().SetIntensity(4.0f);
+    auto& prefabChild = actions.CreateEmptyActor(false,prefabActor,"PrefabChild");
+    const auto prefabChildID = prefabChild.GetGUID();
+    const auto prefabFile = context.projectAssetsPath / "__inspector_prefab_test.ovprefab";
+    actions.SaveActorAsPrefab(*prefabActor,prefabFile.string()); draw(); draw();
+    Require(inspector.CanEditPrefabInstance(),"SaveActorAsPrefab marks the entity as an editable prefab instance in Inspector");
+    actions.SelectActor(*scene()->FindActorByGUID(prefabChildID)); draw(); draw();
+    Require(inspector.CanEditPrefabInstance(),"child of a prefab instance also exposes prefab instance actions in Inspector");
+    actions.SelectActor(*scene()->FindActorByGUID(histCID)); draw(); draw();
+    scene()->FindActorByGUID(histCID)->GetComponent<CPointLight>()->SetIntensity(12.0f);
+    Require(inspector.RevertPrefabInstance() &&
+        scene()->FindActorByGUID(histCID)->GetComponent<CPointLight>()->GetIntensity() == 4.0f,
+        "RevertPrefabInstance restores component values from the saved .ovprefab file");
+    scene()->FindActorByGUID(histCID)->GetComponent<CPointLight>()->SetIntensity(9.5f);
+    Require(inspector.ApplyPrefabInstance(),"ApplyPrefabInstance writes instance overrides back to the .ovprefab file");
+    scene()->FindActorByGUID(histCID)->GetComponent<CPointLight>()->SetIntensity(1.0f);
+    Require(inspector.RevertPrefabInstance() &&
+        scene()->FindActorByGUID(histCID)->GetComponent<CPointLight>()->GetIntensity() == 9.5f,
+        "RevertPrefabInstance after ApplyPrefabInstance restores the newly applied prefab values");
+    Require(inspector.SelectPrefabAsset() && !inspector.GetTargetActor().has_value() &&
+        inspector.GetTargetAsset() == "__inspector_prefab_test.ovprefab" &&
+        header("Asset Info").visible && header("Preview").visible,
+        "SelectPrefabAsset focuses the .ovprefab asset in Inspector with Asset Info and Preview");
+    std::error_code ec;
+    std::filesystem::remove(prefabFile,ec);
+
+    // Component & Behaviour Enable Checkbox (I8)
+    context.sceneManager.LoadEmptyScene(); draw(); draw();
+    auto& chkActorA = actions.CreateEmptyActor(false,nullptr,"ChkA");
+    auto& chkActorB = actions.CreateEmptyActor(false,nullptr,"ChkB");
+    const auto chkAID = chkActorA.GetGUID(), chkBID = chkActorB.GetGUID();
+    chkActorA.AddComponent<CPointLight>().SetIntensity(3.0f);
+    chkActorA.AddComponent<CCamera>();
+    chkActorA.AddBehaviour("missing_test.lua");
+    chkActorB.AddComponent<CPointLight>().SetIntensity(6.0f);
+    chkActorA.transform.SetEnabled(false);
+    Require(chkActorA.transform.IsSelfEnabled() && chkActorA.transform.IsEnabled(),
+        "CTransform cannot be disabled via SetEnabled(false)");
+    actions.SelectActor(chkActorA); draw(); draw();
+    Require(!header("Transform").checkable && header("Point Light").checkable && header("Camera").checkable &&
+        header("missing_test").checkable,
+        "Transform header is not checkable while component and script headers expose enable checkboxes");
+    Require(header("Point Light").checkedGatherer() && !header("Point Light").mixedGatherer(),
+        "Point Light header checkbox reflects initial enabled state");
+    Require(scene()->FindMainCamera() == chkActorA.GetComponent<CCamera>(),
+        "enabled CCamera is returned by Scene::FindMainCamera");
+    header("Camera").checkedProvider(false); draw();
+    Require(!scene()->FindActorByGUID(chkAID)->GetComponent<CCamera>()->IsSelfEnabled() &&
+        !scene()->FindActorByGUID(chkAID)->GetComponent<CCamera>()->IsEnabled() &&
+        scene()->FindMainCamera() == nullptr,
+        "unchecking Camera header checkbox disables CCamera and excludes it from FindMainCamera");
+    Require(actions.Undo() && scene()->FindActorByGUID(chkAID)->GetComponent<CCamera>()->IsSelfEnabled() &&
+        scene()->FindMainCamera() != nullptr,
+        "Undo restores component enabled state");
+    Require(actions.Redo() && !scene()->FindActorByGUID(chkAID)->GetComponent<CCamera>()->IsSelfEnabled(),
+        "Redo reapplies component disabled state");
+    header("Point Light").checkedProvider(false); draw();
+    Require(!scene()->FindActorByGUID(chkAID)->GetComponent<CPointLight>()->IsSelfEnabled(),
+        "unchecking Point Light header checkbox disables CPointLight");
+    Require(inspector.ResetComponentValues("OvCore::ECS::Components::CPointLight") &&
+        scene()->FindActorByGUID(chkAID)->GetComponent<CPointLight>()->IsSelfEnabled(),
+        "ResetComponentValues re-enables a disabled component to its default enabled state");
+    // Multi-edit mixed & batch component enable state
+    scene()->FindActorByGUID(chkAID)->GetComponent<CPointLight>()->SetEnabled(false);
+    scene()->FindActorByGUID(chkBID)->GetComponent<CPointLight>()->SetEnabled(true);
+    inspector.FocusActors({scene()->FindActorByGUID(chkAID),scene()->FindActorByGUID(chkBID)}); draw(); draw();
+    Require(header("Point Light").checkable && header("Point Light").mixedGatherer(),
+        "multi-select component header reports mixed enabled state when targets differ");
+    header("Point Light").checkedProvider(false); draw();
+    Require(!scene()->FindActorByGUID(chkAID)->GetComponent<CPointLight>()->IsSelfEnabled() &&
+        !scene()->FindActorByGUID(chkBID)->GetComponent<CPointLight>()->IsSelfEnabled() &&
+        !header("Point Light").mixedGatherer(),
+        "toggling multi-select component checkbox applies enabled state to all selected targets");
+    Require(actions.Undo() &&
+        !scene()->FindActorByGUID(chkAID)->GetComponent<CPointLight>()->IsSelfEnabled() &&
+        scene()->FindActorByGUID(chkBID)->GetComponent<CPointLight>()->IsSelfEnabled(),
+        "Undo restores multi-select component enable states");
+
     context.sceneManager.LoadEmptyScene(); draw(); draw();
 }

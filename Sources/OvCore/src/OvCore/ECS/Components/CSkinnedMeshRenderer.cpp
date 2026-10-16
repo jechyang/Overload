@@ -742,7 +742,7 @@ bool OvCore::ECS::Components::CSkinnedMeshRenderer::CanBatchUpdate() const
 
 bool OvCore::ECS::Components::CSkinnedMeshRenderer::PrepareUpdate(float p_deltaTime)
 {
-	if (!owner.IsActive())
+	if (!IsEnabled())
 	{
 		return false;
 	}

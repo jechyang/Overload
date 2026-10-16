@@ -21,7 +21,7 @@ OvUI::Widgets::Layout::GroupCollapsable::GroupCollapsable(const std::string & p_
 void OvUI::Widgets::Layout::GroupCollapsable::_Draw_Impl()
 {
 	bool previouslyOpened = opened;
-    const auto label = name + "###" + m_widgetID;
+    const auto label = (checkable ? ("      " + name) : name) + "###" + m_widgetID;
     auto* storage = ImGui::GetStateStorage();
     const auto id = ImGui::GetID(label.c_str());
     const int previousExpansion = storage->GetInt(id,defaultExpanded ? 1 : 0);
@@ -36,8 +36,10 @@ void OvUI::Widgets::Layout::GroupCollapsable::_Draw_Impl()
 		ImGui::PushStyleColor(ImGuiCol_HeaderHovered, Internal::Converter::ToImVec4(style.CollapsingHeaderHovered));
 		ImGui::PushStyleColor(ImGuiCol_HeaderActive, Internal::Converter::ToImVec4(style.CollapsingHeaderActive));
 	}
-	bool isOpen = ImGui::CollapsingHeader(label.c_str(), closable ? &opened : nullptr,
-		defaultExpanded ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None);
+	ImGuiTreeNodeFlags headerFlags = defaultExpanded ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None;
+	if (checkable || reorderable || !actions.empty() || contextMenu)
+		headerFlags |= ImGuiTreeNodeFlags_AllowOverlap;
+	bool isOpen = ImGui::CollapsingHeader(label.c_str(), closable ? &opened : nullptr, headerFlags);
 	if (style.distinctCollapsingHeader) ImGui::PopStyleColor(3);
     if (expandForSearch) storage->SetInt(id,previousExpansion);
     const ImVec2 headerMin = ImGui::GetItemRectMin();
@@ -52,11 +54,39 @@ void OvUI::Widgets::Layout::GroupCollapsable::_Draw_Impl()
 
 	EndDisableOverride(); // Early end disable override group so that children are not affected
 
-	if (reorderable || !actions.empty() || contextMenu)
+	if (checkable || reorderable || !actions.empty() || contextMenu)
 	{
 		const float bSize = headerMax.y - headerMin.y;
 		const float rightEdge = (closable ? (headerMax.x - bSize) : headerMax.x) - (contextMenu ? bSize : 0);
 		const ImVec2 savedCursor = ImGui::GetCursorPos();
+
+		if (checkable)
+		{
+			if (checkedGatherer)
+				checked = checkedGatherer();
+			const bool isMixed = mixedGatherer && mixedGatherer();
+			const float chkPadY = std::max(1.0f, ImGui::GetStyle().FramePadding.y - 2.0f);
+			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{chkPadY, chkPadY});
+			const float chkSize = ImGui::GetFrameHeight();
+			const float outerExtend = std::floor(ImGui::GetStyle().WindowPadding.x * 0.5f);
+			const float chkX = headerMin.x + outerExtend + ImGui::GetFontSize() + ImGui::GetStyle().FramePadding.x * 3.0f;
+			ImGui::SetCursorScreenPos({chkX, headerMin.y + std::floor((bSize - chkSize) * 0.5f)});
+			if (isMixed)
+				ImGui::PushItemFlag(ImGuiItemFlags_MixedValue, true);
+			bool value = checked;
+			if (ImGui::Checkbox(("##chk" + m_widgetID).c_str(), &value))
+			{
+				checked = isMixed ? true : value;
+				if (checkedProvider)
+					checkedProvider(checked);
+				CheckChangedEvent.Invoke(checked);
+			}
+			checkboxMin = ImGui::GetItemRectMin();
+			checkboxMax = ImGui::GetItemRectMax();
+			if (isMixed)
+				ImGui::PopItemFlag();
+			ImGui::PopStyleVar();
+		}
 
 		// Keep original vertical padding so arrow buttons fill the header height exactly
 		const float padY = ImGui::GetStyle().FramePadding.y;
