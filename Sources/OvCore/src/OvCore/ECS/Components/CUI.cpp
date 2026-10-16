@@ -184,6 +184,27 @@ void CUIImage::OnInspector(OvUI::Internal::WidgetContainer& root)
         auto* asset = m_texture ? m_texture : GUIHelpers::GetEmptyTexture();
         return asset ? OvUI::Internal::TextureID(asset->RetainTexture()) : OvUI::Internal::TextureID{};
     });
+
+    GUIDrawer::CreateTitle(root, "Image Type");
+    auto& typeCombo = root.CreateWidget<OvUI::Widgets::Selection::ComboBox>(static_cast<int>(GetImageType()));
+    typeCombo.choices.emplace(0, "Simple");
+    typeCombo.choices.emplace(1, "Sliced");
+    typeCombo.choices.emplace(2, "Tiled");
+    typeCombo.choices.emplace(3, "Filled");
+    typeCombo.ValueChangedEvent += [this](int choice) {
+        SetImageType(static_cast<ImageType>(choice));
+        if (auto* rect = owner.GetComponent<CRectTransform>())
+            rect->LayoutChangedEvent.Invoke();
+    };
+
+    if (m_type == ImageType::Sliced || m_type == ImageType::Tiled)
+    {
+        GUIDrawer::DrawBoolean(root, "Fill Center", [this] { return m_fillCenter; }, [this](bool v) { m_fillCenter = v; });
+        GUIDrawer::DrawScalar<float>(root, "Border Left", [this] { return m_border.x; }, [this](float v) { m_border.x = std::max(0.0f, v); }, 1.0f);
+        GUIDrawer::DrawScalar<float>(root, "Border Bottom", [this] { return m_border.y; }, [this](float v) { m_border.y = std::max(0.0f, v); }, 1.0f);
+        GUIDrawer::DrawScalar<float>(root, "Border Right", [this] { return m_border.z; }, [this](float v) { m_border.z = std::max(0.0f, v); }, 1.0f);
+        GUIDrawer::DrawScalar<float>(root, "Border Top", [this] { return m_border.w; }, [this](float v) { m_border.w = std::max(0.0f, v); }, 1.0f);
+    }
 }
 
 std::string CCanvasRenderer::GetName() { return "Canvas Renderer"; }

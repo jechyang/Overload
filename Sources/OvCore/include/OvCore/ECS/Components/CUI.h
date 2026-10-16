@@ -121,6 +121,8 @@ namespace OvCore::ECS::Components
     class OV_TYPE(Component, Factory = AddComponent, Alias = "class OvCore::ECS::Components::CUIImage", DisplayName = "UI Image", Order = 32) CUIImage : public AComponent
     {
     public:
+        enum class ImageType { Simple = 0, Sliced = 1, Tiled = 2, Filled = 3 };
+
         explicit CUIImage(Actor& actor);
         std::string GetName() override;
         std::string GetTypeName() override;
@@ -129,18 +131,36 @@ namespace OvCore::ECS::Components
         void SetColor(OvMaths::FVector4 value);
         OvRendering::Resources::Texture* GetTexture() const { return m_texture; }
         void SetTexture(OvRendering::Resources::Texture* value) { m_texture = value; m_texturePath.clear(); }
-        OV_PROPERTY(Serialize, Inspect, Name = "raycast_target", Setter = SetRaycastTarget, DisplayName = "Raycast Target", Order = 2)
+
+        OV_PROPERTY(Serialize, Inspect, Name = "image_type", Setter = SetImageTypeInt, DisplayName = "Image Type", Order = 1)
+        int GetImageTypeInt() const { return static_cast<int>(m_type); }
+        void SetImageTypeInt(int value) { m_type = static_cast<ImageType>(std::clamp(value, 0, 3)); }
+        ImageType GetImageType() const { return m_type; }
+        void SetImageType(ImageType type) { m_type = type; }
+
+        OV_PROPERTY(Serialize, Inspect, Name = "border", Setter = SetBorder, DisplayName = "Border", Order = 2)
+        OvMaths::FVector4 GetBorder() const { return m_border; }
+        void SetBorder(OvMaths::FVector4 value) { m_border = value; }
+
+        OV_PROPERTY(Serialize, Inspect, Name = "fill_center", Setter = SetFillCenter, DisplayName = "Fill Center", Order = 3)
+        bool IsFillCenter() const { return m_fillCenter; }
+        void SetFillCenter(bool value) { m_fillCenter = value; }
+
+        OV_PROPERTY(Serialize, Inspect, Name = "raycast_target", Setter = SetRaycastTarget, DisplayName = "Raycast Target", Order = 4)
         bool IsRaycastTarget() const { return m_raycastTarget; }
         void SetRaycastTarget(bool value) { m_raycastTarget = value; }
         void OnInspector(OvUI::Internal::WidgetContainer&) override;
     private:
         friend struct OvReflection::Access<CUIImage>;
-        OV_PROPERTY(Serialize, Name = "texture", Setter = SetSerializedTexture, Order = 1)
+        OV_PROPERTY(Serialize, Name = "texture", Setter = SetSerializedTexture, Order = 5)
         Resources::ResourceReference<OvRendering::Resources::Texture> GetSerializedTexture() const;
         void SetSerializedTexture(const Resources::ResourceReference<OvRendering::Resources::Texture>& value);
         std::string m_texturePath;
         OvMaths::FVector4 m_color{1, 1, 1, 1};
         OvRendering::Resources::Texture* m_texture = nullptr; // Resource manager owns the asset.
+        ImageType m_type = ImageType::Simple;
+        OvMaths::FVector4 m_border{0, 0, 0, 0}; // Left, Bottom, Right, Top
+        bool m_fillCenter = true;
         bool m_raycastTarget = true;
     };
 

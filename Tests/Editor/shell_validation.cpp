@@ -612,6 +612,58 @@ int main(int argc, char** argv) try {
     Require(actions.IsAnyActorSelected() && actions.GetSelectedActor().GetGUID() == buttonActor.GetGUID(),
         "Direct SceneView mouse picking selects UI Button on Canvas");
 
+    // Verify 9-Sliced Image support
+    auto* btnImage = buttonActor.GetComponent<OvCore::ECS::Components::CUIImage>();
+    Require(btnImage != nullptr, "Button has CUIImage");
+    Require(btnImage->GetImageType() == OvCore::ECS::Components::CUIImage::ImageType::Simple,
+        "Image defaults to Simple ImageType");
+
+    // Configure 9-slice on Button Image
+    btnImage->SetImageType(OvCore::ECS::Components::CUIImage::ImageType::Sliced);
+    btnImage->SetBorder({12.0f, 10.0f, 12.0f, 10.0f});
+    btnImage->SetFillCenter(true);
+    inspectorPanel.Refresh();
+    tick(3);
+
+    Require(btnImage->GetImageType() == OvCore::ECS::Components::CUIImage::ImageType::Sliced,
+        "CUIImage switches to Sliced ImageType");
+    Require(hasWidgetText(inspectorPanel, "Border Left") && hasWidgetText(inspectorPanel, "Border Top") &&
+        hasWidgetText(inspectorPanel, "Fill Center"),
+        "Inspector dynamically exposes 9-slice Border and Fill Center fields for Sliced Image");
+
+    // Extract frame to verify 9-slice mesh generation (16 vertices, 54 indices)
+    auto slicedFrame = OvCore::UI::ExtractFrame(*context.sceneManager.GetCurrentScene(), {float(viewW), float(viewH)}, 2, nullptr);
+    bool foundSlicedMesh = false;
+    for (const auto& m : slicedFrame.meshes)
+    {
+        if (m.actorGuid == buttonActor.GetGUID())
+        {
+            foundSlicedMesh = true;
+            Require(m.vertices.size() == 16, "9-Sliced Image generates 16 grid vertices");
+            Require(m.indices.size() == 54, "9-Sliced Image generates 54 triangle indices (9 quads * 6)");
+            break;
+        }
+    }
+    Require(foundSlicedMesh, "9-Sliced Image emits sliced mesh during UI frame extraction");
+
+    // Test fill center = false (omits center patch: 8 quads * 6 = 48 indices)
+    btnImage->SetFillCenter(false);
+    auto slicedNoCenterFrame = OvCore::UI::ExtractFrame(*context.sceneManager.GetCurrentScene(), {float(viewW), float(viewH)}, 3, nullptr);
+    bool foundNoCenterMesh = false;
+    for (const auto& m : slicedNoCenterFrame.meshes)
+    {
+        if (m.actorGuid == buttonActor.GetGUID())
+        {
+            foundNoCenterMesh = true;
+            Require(m.indices.size() == 48, "9-Sliced Image with Fill Center off omits center quad (48 indices)");
+            break;
+        }
+    }
+    Require(foundNoCenterMesh, "9-Sliced Image with Fill Center off generates hollow frame");
+
+    btnImage->SetFillCenter(true);
+    tick(2);
+
     capture("19-ugui-editor-workflow");
 
     std::error_code shellPrefabEc;

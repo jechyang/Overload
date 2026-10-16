@@ -5,6 +5,7 @@
 #include <OvCore/ECS/Components/CCamera.h>
 #include <OvCore/SceneSystem/Scene.h>
 #include <OvCore/ResourceManagement/TextureManager.h>
+#include <OvCore/ResourceManagement/MaterialManager.h>
 #include <OvRendering/Resources/Texture.h>
 #include <OvRendering/Entities/Camera.h>
 #include <algorithm>
@@ -346,20 +347,154 @@ namespace OvCore::UI
                     // Alpha zero still participates in raycasts, as an invisible blocker.
                     if (!visible.Empty())
                     {
-                        Image output;
-                        output.actorGuid = actor.GetGUID(); output.sequence = sequence++; output.sortingOrder = state.order; output.renderMode = state.mode;
-                        output.rect = local; output.visibleRect = visible; output.canvasToWorld = state.canvasToWorld; output.color = color;
-                        output.texture = image->GetTexture() ? image->GetTexture()->RetainTexture() : nullptr;
-                        output.raycastTarget = state.blocks && image->IsRaycastTarget(); output.interactable = state.interactable;
-                        if (state.mode == RenderMode::ScreenSpaceOverlay)
+                        if (image->GetImageType() == ECS::Components::CUIImage::ImageType::Simple)
                         {
-                            const auto end = visible.min + visible.size;
-                            output.screenCorners = {visible.min, {visible.min.x, end.y}, end, {end.x, visible.min.y}};
-                            output.hasScreenCorners = true;
+                            Image output;
+                            output.actorGuid = actor.GetGUID(); output.sequence = sequence++; output.sortingOrder = state.order; output.renderMode = state.mode;
+                            output.rect = local; output.visibleRect = visible; output.canvasToWorld = state.canvasToWorld; output.color = color;
+                            output.texture = image->GetTexture() ? image->GetTexture()->RetainTexture() : nullptr;
+                            output.raycastTarget = state.blocks && image->IsRaycastTarget(); output.interactable = state.interactable;
+                            if (state.mode == RenderMode::ScreenSpaceOverlay)
+                            {
+                                const auto end = visible.min + visible.size;
+                                output.screenCorners = {visible.min, {visible.min.x, end.y}, end, {end.x, visible.min.y}};
+                                output.hasScreenCorners = true;
+                            }
+                            else if (const auto projected = ProjectRect(visible, state.canvasToWorld, renderCamera, size))
+                            { output.screenCorners = *projected; output.hasScreenCorners = true; }
+                            frame.images.push_back(std::move(output));
                         }
-                        else if (const auto projected = ProjectRect(visible, state.canvasToWorld, renderCamera, size))
-                        { output.screenCorners = *projected; output.hasScreenCorners = true; }
-                        frame.images.push_back(std::move(output));
+                        else
+                        {
+                            const auto border = image->GetBorder();
+                            float texW = 100.0f, texH = 100.0f;
+                            if (auto* tex = image->GetTexture())
+                            {
+                                const auto& desc = tex->GetTexture().GetDesc();
+                                if (desc.width > 0) texW = float(desc.width);
+                                if (desc.height > 0) texH = float(desc.height);
+                            }
+
+                            const float borderScale = (state.mode == RenderMode::ScreenSpaceOverlay) ? state.scale : 1.0f;
+                            float borderL = border.x * borderScale;
+                            float borderB = border.y * borderScale;
+                            float borderR = border.z * borderScale;
+                            float borderT = border.w * borderScale;
+
+                            const float rectW = local.size.x;
+                            const float rectH = local.size.y;
+                            if (rectW > 0.0f && rectH > 0.0f)
+                            {
+                                if (borderL + borderR > rectW && (borderL + borderR) > 0.0f)
+                                {
+                                    const float factor = rectW / (borderL + borderR);
+                                    borderL *= factor;
+                                    borderR *= factor;
+                                }
+                                if (borderB + borderT > rectH && (borderB + borderT) > 0.0f)
+                                {
+                                    const float factor = rectH / (borderB + borderT);
+                                    borderB *= factor;
+                                    borderT *= factor;
+                                }
+
+                                const std::array<float, 4> x = {
+                                    local.min.x,
+                                    local.min.x + borderL,
+                                    local.min.x + rectW - borderR,
+                                    local.min.x + rectW
+                                };
+
+                                const std::array<float, 4> y = {
+                                    local.min.y,
+                                    local.min.y + borderB,
+                                    local.min.y + rectH - borderT,
+                                    local.min.y + rectH
+                                };
+
+                                const std::array<float, 4> u = {
+                                    0.0f,
+                                    std::clamp(border.x / texW, 0.0f, 1.0f),
+                                    std::clamp(1.0f - (border.z / texW), 0.0f, 1.0f),
+                                    1.0f
+                                };
+
+                                const std::array<float, 4> v = {
+                                    0.0f,
+                                    std::clamp(border.y / texH, 0.0f, 1.0f),
+                                    std::clamp(1.0f - (border.w / texH), 0.0f, 1.0f),
+                                    1.0f
+                                };
+
+                                Mesh output;
+                                output.actorGuid = actor.GetGUID();
+                                output.sequence = sequence++;
+                                output.sortingOrder = state.order;
+                                output.renderMode = state.mode;
+                                output.clip = state.clip;
+                                output.canvasToWorld = state.canvasToWorld;
+                                output.texture = image->GetTexture() ? image->GetTexture()->RetainTexture() : nullptr;
+                                output.raycastTarget = state.blocks && image->IsRaycastTarget();
+                                output.interactable = state.interactable;
+
+                                if (state.mode == RenderMode::ScreenSpaceOverlay)
+                                {
+                                    const auto end = visible.min + visible.size;
+                                    output.screenCorners = {visible.min, {visible.min.x, end.y}, end, {end.x, visible.min.y}};
+                                    output.hasScreenCorners = true;
+                                }
+                                else if (const auto projected = ProjectRect(visible, state.canvasToWorld, renderCamera, size))
+                                {
+                                    output.screenCorners = *projected;
+                                    output.hasScreenCorners = true;
+                                }
+
+                                if (state.mode != RenderMode::ScreenSpaceOverlay && renderCamera)
+                                {
+                                    output.screenToCanvas = OvMaths::FMatrix4::Inverse(CameraProjection(*renderCamera, size) * CameraView(*renderCamera) * state.canvasToWorld);
+                                    output.cameraPosition = renderCamera->GetPosition();
+                                }
+
+                                output.vertices.reserve(16);
+                                for (int j = 0; j < 4; ++j)
+                                {
+                                    for (int i = 0; i < 4; ++i)
+                                    {
+                                        ECS::Components::UIVertex vert{};
+                                        vert.position = {x[i], y[j], 0.0f};
+                                        vert.uv = {u[i], v[j]};
+                                        vert.color = color;
+                                        output.vertices.push_back(vert);
+                                    }
+                                }
+
+                                const bool fillCenter = image->IsFillCenter();
+                                output.indices.reserve(54);
+                                for (int j = 0; j < 3; ++j)
+                                {
+                                    for (int i = 0; i < 3; ++i)
+                                    {
+                                        if (i == 1 && j == 1 && !fillCenter)
+                                            continue;
+
+                                        const uint32_t v0 = static_cast<uint32_t>(j * 4 + i);
+                                        const uint32_t v1 = static_cast<uint32_t>(j * 4 + (i + 1));
+                                        const uint32_t v2 = static_cast<uint32_t>((j + 1) * 4 + (i + 1));
+                                        const uint32_t v3 = static_cast<uint32_t>((j + 1) * 4 + i);
+
+                                        output.indices.push_back(v0);
+                                        output.indices.push_back(v1);
+                                        output.indices.push_back(v2);
+
+                                        output.indices.push_back(v0);
+                                        output.indices.push_back(v2);
+                                        output.indices.push_back(v3);
+                                    }
+                                }
+
+                                frame.meshes.push_back(std::move(output));
+                            }
+                        }
                     }
                 }
                 if (auto* renderer = actor.GetComponent<CCanvasRenderer>(); renderer && state.drawable && !renderer->IsCulled() &&
@@ -414,6 +549,11 @@ namespace OvCore::UI
                             for (const auto& slot : source) {
                                 MaterialSlot batch;
                                 batch.materialPath = slot.materialPath; batch.fontPage = slot.fontPage;
+                                // Resolve authored UI materials during Main-thread extraction, before
+                                // RenderResources takes immutable shader/property snapshots.
+                                if (!batch.materialPath.empty())
+                                    if (auto* manager = Global::ServiceLocator::TryGet<ResourceManagement::MaterialManager>())
+                                        manager->GetResource(batch.materialPath);
                                 batch.firstIndex = slot.explicitRange ? slot.firstIndex : 0;
                                 batch.indexCount = slot.explicitRange ? slot.indexCount : static_cast<uint32_t>(output.indices.size());
                                 if (batch.firstIndex > output.indices.size() || batch.indexCount > output.indices.size()-batch.firstIndex)
