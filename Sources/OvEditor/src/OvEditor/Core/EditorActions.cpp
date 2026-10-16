@@ -29,6 +29,8 @@
 #include <OvCore/ECS/Components/CPhysicalBox.h>
 #include <OvCore/ECS/Components/CPhysicalCapsule.h>
 #include <OvCore/ECS/Components/CPhysicalSphere.h>
+#include <OvCore/ECS/Components/CUI.h>
+#include <OvCore/Scripting/ScriptEngine.h>
 #include <OvCore/Resources/Loaders/MaterialLoader.h>
 
 #include <OvCore/Helpers/GUIDrawer.h>
@@ -1444,6 +1446,424 @@ OvCore::ECS::Actor & OvEditor::Core::EditorActions::CreateActorWithModel(const s
 		SelectActor(instance);
 
 	return instance;
+}
+
+namespace
+{
+	void TryAttachUIBehaviour(OvCore::ECS::Actor& actor, OvCore::Scripting::ScriptEngine* scriptEngine, const std::string& typeName)
+	{
+		if (!scriptEngine) return;
+		for (const auto& identity : scriptEngine->CSharpTypes())
+		{
+			if (identity.type == typeName)
+			{
+				actor.AddBehaviour(identity);
+				break;
+			}
+		}
+	}
+}
+
+OvCore::ECS::Actor& OvEditor::Core::EditorActions::CreateCanvas(bool p_focusOnCreation, OvCore::ECS::Actor* p_parent)
+{
+	auto& instance = CreateEmptyActor(false, p_parent, "Canvas");
+	instance.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+
+	instance.AddComponent<OvCore::ECS::Components::CCanvas>();
+	if (auto* rect = instance.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		rect->SetAnchorMin({ 0.0f, 0.0f });
+		rect->SetAnchorMax({ 0.0f, 0.0f });
+		rect->SetPivot({ 0.5f, 0.5f });
+		rect->SetSizeDelta({ 1920.0f, 1080.0f });
+		rect->SetAnchoredPosition({ 0.0f, 0.0f });
+	}
+
+	auto* scriptEngine = m_context.scriptEngine.get();
+	TryAttachUIBehaviour(instance, scriptEngine, "Overload.UI.CanvasScaler");
+	TryAttachUIBehaviour(instance, scriptEngine, "Overload.UI.GraphicRaycaster");
+
+	CreateUIEventSystem(false);
+
+	if (p_focusOnCreation)
+		SelectActor(instance);
+
+	return instance;
+}
+
+OvCore::ECS::Actor* OvEditor::Core::EditorActions::FindOrCreateCanvas(OvCore::ECS::Actor* p_parent)
+{
+	for (auto* current = p_parent; current; current = current->GetParent())
+	{
+		if (current->GetComponent<OvCore::ECS::Components::CCanvas>())
+		{
+			return p_parent;
+		}
+	}
+
+	auto* currentScene = m_context.sceneManager.GetCurrentScene();
+	if (currentScene)
+	{
+		for (auto* actor : currentScene->GetActors())
+		{
+			if (actor && actor->GetComponent<OvCore::ECS::Components::CCanvas>())
+			{
+				return actor;
+			}
+		}
+	}
+
+	return &CreateCanvas(false, nullptr);
+}
+
+OvCore::ECS::Actor& OvEditor::Core::EditorActions::CreateUIPanel(bool p_focusOnCreation, OvCore::ECS::Actor* p_parent)
+{
+	auto* parent = FindOrCreateCanvas(p_parent);
+	auto& instance = CreateEmptyActor(false, parent, "Panel");
+	instance.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+
+	instance.AddComponent<OvCore::ECS::Components::CUIImage>();
+	instance.AddComponent<OvCore::ECS::Components::CCanvasRenderer>();
+
+	if (auto* image = instance.GetComponent<OvCore::ECS::Components::CUIImage>())
+	{
+		image->SetColor({ 0.2f, 0.2f, 0.2f, 0.8f });
+	}
+
+	if (auto* rect = instance.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		rect->SetAnchorMin({ 0.0f, 0.0f });
+		rect->SetAnchorMax({ 1.0f, 1.0f });
+		rect->SetOffsetMin({ 0.0f, 0.0f });
+		rect->SetOffsetMax({ 0.0f, 0.0f });
+		rect->SetPivot({ 0.5f, 0.5f });
+	}
+
+	TryAttachUIBehaviour(instance, m_context.scriptEngine.get(), "Overload.UI.Image");
+
+	if (p_focusOnCreation)
+		SelectActor(instance);
+
+	return instance;
+}
+
+OvCore::ECS::Actor& OvEditor::Core::EditorActions::CreateUIImage(bool p_focusOnCreation, OvCore::ECS::Actor* p_parent)
+{
+	auto* parent = FindOrCreateCanvas(p_parent);
+	auto& instance = CreateEmptyActor(false, parent, "Image");
+	instance.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+
+	instance.AddComponent<OvCore::ECS::Components::CUIImage>();
+	instance.AddComponent<OvCore::ECS::Components::CCanvasRenderer>();
+
+	if (auto* image = instance.GetComponent<OvCore::ECS::Components::CUIImage>())
+	{
+		image->SetColor({ 1.0f, 1.0f, 1.0f, 1.0f });
+	}
+
+	if (auto* rect = instance.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		rect->SetAnchorMin({ 0.5f, 0.5f });
+		rect->SetAnchorMax({ 0.5f, 0.5f });
+		rect->SetPivot({ 0.5f, 0.5f });
+		rect->SetSizeDelta({ 100.0f, 100.0f });
+		rect->SetAnchoredPosition({ 0.0f, 0.0f });
+	}
+
+	TryAttachUIBehaviour(instance, m_context.scriptEngine.get(), "Overload.UI.Image");
+
+	if (p_focusOnCreation)
+		SelectActor(instance);
+
+	return instance;
+}
+
+OvCore::ECS::Actor& OvEditor::Core::EditorActions::CreateUIText(bool p_focusOnCreation, OvCore::ECS::Actor* p_parent)
+{
+	auto* parent = FindOrCreateCanvas(p_parent);
+	auto& instance = CreateEmptyActor(false, parent, "Text");
+	instance.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+
+	instance.AddComponent<OvCore::ECS::Components::CRectTransform>();
+	instance.AddComponent<OvCore::ECS::Components::CCanvasRenderer>();
+
+	if (auto* rect = instance.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		rect->SetAnchorMin({ 0.5f, 0.5f });
+		rect->SetAnchorMax({ 0.5f, 0.5f });
+		rect->SetPivot({ 0.5f, 0.5f });
+		rect->SetSizeDelta({ 160.0f, 30.0f });
+		rect->SetAnchoredPosition({ 0.0f, 0.0f });
+	}
+
+	TryAttachUIBehaviour(instance, m_context.scriptEngine.get(), "Overload.UI.Text");
+
+	if (p_focusOnCreation)
+		SelectActor(instance);
+
+	return instance;
+}
+
+OvCore::ECS::Actor& OvEditor::Core::EditorActions::CreateUIButton(bool p_focusOnCreation, OvCore::ECS::Actor* p_parent)
+{
+	auto* parent = FindOrCreateCanvas(p_parent);
+	auto& instance = CreateEmptyActor(false, parent, "Button");
+	instance.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+
+	instance.AddComponent<OvCore::ECS::Components::CUIImage>();
+	instance.AddComponent<OvCore::ECS::Components::CCanvasRenderer>();
+
+	if (auto* image = instance.GetComponent<OvCore::ECS::Components::CUIImage>())
+	{
+		image->SetColor({ 1.0f, 1.0f, 1.0f, 1.0f });
+	}
+
+	if (auto* rect = instance.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		rect->SetAnchorMin({ 0.5f, 0.5f });
+		rect->SetAnchorMax({ 0.5f, 0.5f });
+		rect->SetPivot({ 0.5f, 0.5f });
+		rect->SetSizeDelta({ 160.0f, 30.0f });
+		rect->SetAnchoredPosition({ 0.0f, 0.0f });
+	}
+
+	TryAttachUIBehaviour(instance, m_context.scriptEngine.get(), "Overload.UI.Button");
+
+	auto& textChild = CreateEmptyActor(false, &instance, "Text");
+	textChild.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+	textChild.AddComponent<OvCore::ECS::Components::CRectTransform>();
+	textChild.AddComponent<OvCore::ECS::Components::CCanvasRenderer>();
+
+	if (auto* textRect = textChild.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		textRect->SetAnchorMin({ 0.0f, 0.0f });
+		textRect->SetAnchorMax({ 1.0f, 1.0f });
+		textRect->SetOffsetMin({ 0.0f, 0.0f });
+		textRect->SetOffsetMax({ 0.0f, 0.0f });
+		textRect->SetPivot({ 0.5f, 0.5f });
+	}
+
+	TryAttachUIBehaviour(textChild, m_context.scriptEngine.get(), "Overload.UI.Text");
+
+	if (p_focusOnCreation)
+		SelectActor(instance);
+
+	return instance;
+}
+
+OvCore::ECS::Actor& OvEditor::Core::EditorActions::CreateUIToggle(bool p_focusOnCreation, OvCore::ECS::Actor* p_parent)
+{
+	auto* parent = FindOrCreateCanvas(p_parent);
+	auto& instance = CreateEmptyActor(false, parent, "Toggle");
+	instance.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+
+	instance.AddComponent<OvCore::ECS::Components::CRectTransform>();
+	instance.AddComponent<OvCore::ECS::Components::CCanvasRenderer>();
+
+	if (auto* rect = instance.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		rect->SetAnchorMin({ 0.5f, 0.5f });
+		rect->SetAnchorMax({ 0.5f, 0.5f });
+		rect->SetPivot({ 0.5f, 0.5f });
+		rect->SetSizeDelta({ 160.0f, 24.0f });
+		rect->SetAnchoredPosition({ 0.0f, 0.0f });
+	}
+
+	auto& bg = CreateEmptyActor(false, &instance, "Background");
+	bg.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+	bg.AddComponent<OvCore::ECS::Components::CUIImage>();
+	bg.AddComponent<OvCore::ECS::Components::CCanvasRenderer>();
+	if (auto* bgRect = bg.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		bgRect->SetAnchorMin({ 0.0f, 0.5f });
+		bgRect->SetAnchorMax({ 0.0f, 0.5f });
+		bgRect->SetPivot({ 0.5f, 0.5f });
+		bgRect->SetSizeDelta({ 20.0f, 20.0f });
+		bgRect->SetAnchoredPosition({ 10.0f, 0.0f });
+	}
+
+	auto& checkmark = CreateEmptyActor(false, &bg, "Checkmark");
+	checkmark.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+	checkmark.AddComponent<OvCore::ECS::Components::CUIImage>();
+	checkmark.AddComponent<OvCore::ECS::Components::CCanvasRenderer>();
+	if (auto* checkImg = checkmark.GetComponent<OvCore::ECS::Components::CUIImage>())
+	{
+		checkImg->SetColor({ 0.15f, 0.6f, 0.25f, 1.0f });
+	}
+	if (auto* checkRect = checkmark.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		checkRect->SetAnchorMin({ 0.5f, 0.5f });
+		checkRect->SetAnchorMax({ 0.5f, 0.5f });
+		checkRect->SetPivot({ 0.5f, 0.5f });
+		checkRect->SetSizeDelta({ 12.0f, 12.0f });
+		checkRect->SetAnchoredPosition({ 0.0f, 0.0f });
+	}
+
+	auto& label = CreateEmptyActor(false, &instance, "Label");
+	label.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+	label.AddComponent<OvCore::ECS::Components::CRectTransform>();
+	label.AddComponent<OvCore::ECS::Components::CCanvasRenderer>();
+	if (auto* labelRect = label.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		labelRect->SetAnchorMin({ 0.0f, 0.0f });
+		labelRect->SetAnchorMax({ 1.0f, 1.0f });
+		labelRect->SetOffsetMin({ 26.0f, 0.0f });
+		labelRect->SetOffsetMax({ 0.0f, 0.0f });
+		labelRect->SetPivot({ 0.5f, 0.5f });
+	}
+
+	auto* scriptEngine = m_context.scriptEngine.get();
+	TryAttachUIBehaviour(instance, scriptEngine, "Overload.UI.Toggle");
+	TryAttachUIBehaviour(label, scriptEngine, "Overload.UI.Text");
+
+	if (p_focusOnCreation)
+		SelectActor(instance);
+
+	return instance;
+}
+
+OvCore::ECS::Actor& OvEditor::Core::EditorActions::CreateUISlider(bool p_focusOnCreation, OvCore::ECS::Actor* p_parent)
+{
+	auto* parent = FindOrCreateCanvas(p_parent);
+	auto& instance = CreateEmptyActor(false, parent, "Slider");
+	instance.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+
+	instance.AddComponent<OvCore::ECS::Components::CUIImage>();
+	instance.AddComponent<OvCore::ECS::Components::CCanvasRenderer>();
+	if (auto* img = instance.GetComponent<OvCore::ECS::Components::CUIImage>())
+	{
+		img->SetColor({ 0.2f, 0.2f, 0.2f, 1.0f });
+	}
+	if (auto* rect = instance.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		rect->SetAnchorMin({ 0.5f, 0.5f });
+		rect->SetAnchorMax({ 0.5f, 0.5f });
+		rect->SetPivot({ 0.5f, 0.5f });
+		rect->SetSizeDelta({ 160.0f, 20.0f });
+		rect->SetAnchoredPosition({ 0.0f, 0.0f });
+	}
+
+	auto& fill = CreateEmptyActor(false, &instance, "Fill");
+	fill.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+	fill.AddComponent<OvCore::ECS::Components::CUIImage>();
+	fill.AddComponent<OvCore::ECS::Components::CCanvasRenderer>();
+	if (auto* fillImg = fill.GetComponent<OvCore::ECS::Components::CUIImage>())
+	{
+		fillImg->SetColor({ 0.3f, 0.65f, 1.0f, 1.0f });
+	}
+	if (auto* fillRect = fill.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		fillRect->SetAnchorMin({ 0.0f, 0.0f });
+		fillRect->SetAnchorMax({ 0.5f, 1.0f });
+		fillRect->SetOffsetMin({ 0.0f, 0.0f });
+		fillRect->SetOffsetMax({ 0.0f, 0.0f });
+		fillRect->SetPivot({ 0.5f, 0.5f });
+	}
+
+	auto& handle = CreateEmptyActor(false, &instance, "Handle");
+	handle.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+	handle.AddComponent<OvCore::ECS::Components::CUIImage>();
+	handle.AddComponent<OvCore::ECS::Components::CCanvasRenderer>();
+	if (auto* handleRect = handle.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		handleRect->SetAnchorMin({ 0.5f, 0.5f });
+		handleRect->SetAnchorMax({ 0.5f, 0.5f });
+		handleRect->SetPivot({ 0.5f, 0.5f });
+		handleRect->SetSizeDelta({ 16.0f, 24.0f });
+		handleRect->SetAnchoredPosition({ 0.0f, 0.0f });
+	}
+
+	TryAttachUIBehaviour(instance, m_context.scriptEngine.get(), "Overload.UI.Slider");
+
+	if (p_focusOnCreation)
+		SelectActor(instance);
+
+	return instance;
+}
+
+OvCore::ECS::Actor& OvEditor::Core::EditorActions::CreateUIScrollView(bool p_focusOnCreation, OvCore::ECS::Actor* p_parent)
+{
+	auto* parent = FindOrCreateCanvas(p_parent);
+	auto& instance = CreateEmptyActor(false, parent, "Scroll View");
+	instance.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+
+	instance.AddComponent<OvCore::ECS::Components::CUIImage>();
+	instance.AddComponent<OvCore::ECS::Components::CCanvasRenderer>();
+	if (auto* img = instance.GetComponent<OvCore::ECS::Components::CUIImage>())
+	{
+		img->SetColor({ 0.18f, 0.18f, 0.18f, 1.0f });
+	}
+	if (auto* rect = instance.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		rect->SetAnchorMin({ 0.5f, 0.5f });
+		rect->SetAnchorMax({ 0.5f, 0.5f });
+		rect->SetPivot({ 0.5f, 0.5f });
+		rect->SetSizeDelta({ 200.0f, 200.0f });
+		rect->SetAnchoredPosition({ 0.0f, 0.0f });
+	}
+
+	auto& viewport = CreateEmptyActor(false, &instance, "Viewport");
+	viewport.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+	viewport.AddComponent<OvCore::ECS::Components::CRectTransform>();
+	viewport.AddComponent<OvCore::ECS::Components::CRectMask2D>();
+	if (auto* vpRect = viewport.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		vpRect->SetAnchorMin({ 0.0f, 0.0f });
+		vpRect->SetAnchorMax({ 1.0f, 1.0f });
+		vpRect->SetOffsetMin({ 0.0f, 0.0f });
+		vpRect->SetOffsetMax({ 0.0f, 0.0f });
+		vpRect->SetPivot({ 0.0f, 1.0f });
+	}
+
+	auto& content = CreateEmptyActor(false, &viewport, "Content");
+	content.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+	content.AddComponent<OvCore::ECS::Components::CRectTransform>();
+	if (auto* contentRect = content.GetComponent<OvCore::ECS::Components::CRectTransform>())
+	{
+		contentRect->SetAnchorMin({ 0.0f, 1.0f });
+		contentRect->SetAnchorMax({ 1.0f, 1.0f });
+		contentRect->SetPivot({ 0.0f, 1.0f });
+		contentRect->SetSizeDelta({ 0.0f, 300.0f });
+		contentRect->SetAnchoredPosition({ 0.0f, 0.0f });
+	}
+
+	TryAttachUIBehaviour(instance, m_context.scriptEngine.get(), "Overload.UI.ScrollRect");
+
+	if (p_focusOnCreation)
+		SelectActor(instance);
+
+	return instance;
+}
+
+OvCore::ECS::Actor& OvEditor::Core::EditorActions::CreateUIEventSystem(bool p_focusOnCreation)
+{
+	auto* currentScene = m_context.sceneManager.GetCurrentScene();
+	if (currentScene)
+	{
+		for (auto* actor : currentScene->GetActors())
+		{
+			if (actor && actor->GetName() == "EventSystem")
+			{
+				if (p_focusOnCreation)
+					SelectActor(*actor);
+				return *actor;
+			}
+		}
+	}
+
+	auto& eventSystem = CreateEmptyActor(false, nullptr, "EventSystem");
+	eventSystem.transform.SetLocalPosition(OvMaths::FVector3::Zero);
+
+	auto* scriptEngine = m_context.scriptEngine.get();
+	TryAttachUIBehaviour(eventSystem, scriptEngine, "Overload.EventSystems.EventSystem");
+	TryAttachUIBehaviour(eventSystem, scriptEngine, "UIGallery.EventSystemRoot");
+	TryAttachUIBehaviour(eventSystem, scriptEngine, "Overload.EventSystems.StandaloneInputModule");
+	TryAttachUIBehaviour(eventSystem, scriptEngine, "UIGallery.InputModule");
+
+	if (p_focusOnCreation)
+		SelectActor(eventSystem);
+
+	return eventSystem;
 }
 
 bool OvEditor::Core::EditorActions::DestroyActor(OvCore::ECS::Actor & p_actor)

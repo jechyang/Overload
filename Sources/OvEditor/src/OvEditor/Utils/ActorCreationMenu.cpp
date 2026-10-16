@@ -242,6 +242,7 @@ void OvEditor::Utils::ActorCreationMenu::GenerateActorCreationMenu(OvUI::Widgets
 	auto& physicals = p_menuList.CreateWidget<MenuList>("Physicals");
 	auto& lights = p_menuList.CreateWidget<MenuList>("Lights");
 	auto& audio = p_menuList.CreateWidget<MenuList>("Audio");
+	auto& ui = p_menuList.CreateWidget<MenuList>("UI");
 	auto& others = p_menuList.CreateWidget<MenuList>("Others");
 
 	primitives.CreateWidget<MenuItem>("Cube").ClickedEvent += ActorWithModelComponentCreationHandler(p_parent, "Cube", p_onItemClicked);
@@ -264,6 +265,42 @@ void OvEditor::Utils::ActorCreationMenu::GenerateActorCreationMenu(OvUI::Widgets
 	lights.CreateWidget<MenuItem>("Ambient Sphere").ClickedEvent += ActorWithComponentCreationHandler<CAmbientSphereLight>(p_parent, p_onItemClicked);
 	audio.CreateWidget<MenuItem>("Audio Source").ClickedEvent += ActorWithComponentCreationHandler<CAudioSource>(p_parent, p_onItemClicked);
 	audio.CreateWidget<MenuItem>("Audio Listener").ClickedEvent += ActorWithComponentCreationHandler<CAudioListener>(p_parent, p_onItemClicked);
+	ui.CreateWidget<MenuItem>("Canvas").ClickedEvent += [p_parent, p_onItemClicked] {
+		EDITOR_EXEC(CreateCanvas(true, ResolveAliveParent(p_parent)));
+		if (p_onItemClicked.has_value()) p_onItemClicked.value()();
+	};
+	ui.CreateWidget<MenuItem>("Panel").ClickedEvent += [p_parent, p_onItemClicked] {
+		EDITOR_EXEC(CreateUIPanel(true, ResolveAliveParent(p_parent)));
+		if (p_onItemClicked.has_value()) p_onItemClicked.value()();
+	};
+	ui.CreateWidget<MenuItem>("Image").ClickedEvent += [p_parent, p_onItemClicked] {
+		EDITOR_EXEC(CreateUIImage(true, ResolveAliveParent(p_parent)));
+		if (p_onItemClicked.has_value()) p_onItemClicked.value()();
+	};
+	ui.CreateWidget<MenuItem>("Text").ClickedEvent += [p_parent, p_onItemClicked] {
+		EDITOR_EXEC(CreateUIText(true, ResolveAliveParent(p_parent)));
+		if (p_onItemClicked.has_value()) p_onItemClicked.value()();
+	};
+	ui.CreateWidget<MenuItem>("Button").ClickedEvent += [p_parent, p_onItemClicked] {
+		EDITOR_EXEC(CreateUIButton(true, ResolveAliveParent(p_parent)));
+		if (p_onItemClicked.has_value()) p_onItemClicked.value()();
+	};
+	ui.CreateWidget<MenuItem>("Toggle").ClickedEvent += [p_parent, p_onItemClicked] {
+		EDITOR_EXEC(CreateUIToggle(true, ResolveAliveParent(p_parent)));
+		if (p_onItemClicked.has_value()) p_onItemClicked.value()();
+	};
+	ui.CreateWidget<MenuItem>("Slider").ClickedEvent += [p_parent, p_onItemClicked] {
+		EDITOR_EXEC(CreateUISlider(true, ResolveAliveParent(p_parent)));
+		if (p_onItemClicked.has_value()) p_onItemClicked.value()();
+	};
+	ui.CreateWidget<MenuItem>("Scroll View").ClickedEvent += [p_parent, p_onItemClicked] {
+		EDITOR_EXEC(CreateUIScrollView(true, ResolveAliveParent(p_parent)));
+		if (p_onItemClicked.has_value()) p_onItemClicked.value()();
+	};
+	ui.CreateWidget<MenuItem>("Event System").ClickedEvent += [p_onItemClicked] {
+		EDITOR_EXEC(CreateUIEventSystem(true));
+		if (p_onItemClicked.has_value()) p_onItemClicked.value()();
+	};
 	others.CreateWidget<MenuItem>("Camera").ClickedEvent += ActorWithComponentCreationHandler<CCamera>(p_parent, p_onItemClicked);
 	others.CreateWidget<MenuItem>("Post Process Stack").ClickedEvent += ActorWithComponentCreationHandler<CPostProcessStack>(p_parent, p_onItemClicked);
 	others.CreateWidget<MenuItem>("Reflection Probe").ClickedEvent += ActorWithComponentCreationHandler<CReflectionProbe>(p_parent, p_onItemClicked);

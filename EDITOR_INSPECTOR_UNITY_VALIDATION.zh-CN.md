@@ -77,6 +77,28 @@
   - 支持 `Alt+Shift+N`（创建子物体）与 `Ctrl+Shift+N`（创建根物体）。
   - 修复 `MenuBar` 快捷键判断，避免 `Ctrl+Shift+N` 误触 `New Scene`。
 
+### 8. UGUI 原生创作工作流与编辑器深度集成对标 Unity
+- **Hierarchy / MenuBar 完整 UI 类别菜单**：
+  - 在 Hierarchy 右键上下文菜单、Hierarchy 顶部 `+` 创建下拉菜单、主菜单栏 `GameObject` 菜单中新增 **`UI`** 分类，包含 9 项标准控件：
+    - `Canvas`
+    - `Panel`
+    - `Image`
+    - `Text`
+    - `Button`
+    - `Toggle`
+    - `Slider`
+    - `Scroll View`
+    - `Event System`
+- **智能 Canvas 自动挂载与 EventSystem 伴生机制（Unity 行为对齐）**：
+  - 创建任何 UI 元素（Panel、Image、Text、Button 等）时，系统自动检查当前选中实体是否在 Canvas 层级下。
+  - 若未选中实体或选中非 UI 实体，系统自动寻找场景中现有的根 Canvas；若场景中无 Canvas，则自动创建带有 `CCanvas` 与 `CRectTransform` 的 `Canvas` 实体及伴生 `EventSystem` 实体，并将新 UI 元素置于其下。
+  - UI 元素本地空间坐标强制校准为 `(0, 0, 0)` 并配置预设 Anchor、Pivot 与 SizeDelta，避免因 3D 相机生成偏移飞出画板。
+- **Inspector RectTransform 保护机制（Unity 行为对齐）**：
+  - `CRectTransform` 作为 2D UI 空间变换核心基准，在 Inspector 中与 `CTransform` 享受同等保护：不显示启用勾选框（non-checkable），不允许单独关闭/移除（non-closable），右键菜单不显示 `Remove component`。
+- **2D UI 视口平滑聚焦（`F` / FrameSelection）**：
+  - 扩展 `SelectionBounds::From`，支持提取 `CRectTransform::GetLocalCorners()` 并经由世界矩阵变换投影至世界包围球/包围盒。
+  - 选中 Canvas 或任意 2D UI 元素后按 `F` 键，视口相机平滑聚焦至该 UI 矩形的中心与实际尺寸，告别空点聚焦。
+
 ## 实际验证
 
 ```powershell
@@ -84,12 +106,14 @@ node Tests/Editor/run-shell-validation.mjs
 node Tests/Editor/run-panel-validation.mjs
 ```
 
-- `node Tests/Editor/run-shell-validation.mjs`：**85 项检查全部通过**，在真实 OpenGL 上下文中生成实机截图（位于 `Build/EditorUnity/ShellLabOutput`）：
+- `node Tests/Editor/run-shell-validation.mjs`：**93 项检查全部通过**，在真实 OpenGL 上下文中生成实机截图（位于 `Build/EditorUnity/ShellLabOutput`）：
   - `12-inspector-tag-dropdown.png`：Inspector 顶部 `<` / `>` 选择历史按钮与展开的 Tag 下拉列表（含 `Untagged`、内置 Tag、自定义 Tag 与 `Add Tag...`）；
   - `13-project-settings-tags.png`：`Project Settings -> Tags` 自定义 Tag 管理界面；
   - `14-inspector-component-menu.png`：组件右键/`...` 菜单（含 `Paste component as new` 与 `Remove component`）；
   - `15-inspector-asset-preview.png`：单击 `Project` 纹理资源后，`Inspector` 展示头部、`Import Settings`、`Asset Info` 与底部 `Preview` 纹理预览；
   - `16-inspector-prefab-row.png`：选中 Prefab 实例时，`Inspector` 头部展示 `Prefab`（`Select` | `Revert` | `Apply`）操作栏与 `Identity & Prefab` 源引用；
   - `17-inspector-component-checkbox.png`：Inspector 组件头部独立启用复选框（`Transform` 保护不提供复选框，`Point Light` 显示禁用 `[ ]`，`Camera` 显示启用 `[✓]`，画面联动更新）；
-  - `18-hierarchy-workflow.png`：Hierarchy 拖拽资源实例化（根级 Prefab、模型自动命名、拖到父实体生成子级模型与子级 Prefab、Create Empty Child 及全局 `F` 视口聚焦）。
+  - `18-hierarchy-workflow.png`：Hierarchy 拖拽资源实例化（根级 Prefab、模型自动命名、拖到父实体生成子级模型与子级 Prefab、Create Empty Child 及全局 `F` 视口聚焦）；
+  - `19-ugui-editor-workflow.png`：UGUI 自动 Canvas 挂载与全套 UI 控件创建（Canvas、Panel、Button、Text、Toggle、Slider、Scroll View）、Inspector 中 `Rect Transform` 保护（无勾选框/不可移除）以及视口 `F` 键 2D UI 矩形自适应聚焦。
 - `node Tests/Editor/run-panel-validation.mjs`：`default` 与 `render-thread` 双模式全部通过。
+

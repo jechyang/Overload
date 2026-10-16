@@ -278,6 +278,74 @@ namespace OvEditor::Core
 		OvCore::ECS::Actor&	CreateActorWithModel(const std::string& p_path, bool p_focusOnCreation = true, OvCore::ECS::Actor* p_parent = nullptr, const std::string& p_name = "");
 
 		/**
+		* Create a Canvas actor with CCanvas and CRectTransform. Also ensures an EventSystem exists.
+		* @param p_focusOnCreation
+		* @param p_parent
+		*/
+		OvCore::ECS::Actor& CreateCanvas(bool p_focusOnCreation = true, OvCore::ECS::Actor* p_parent = nullptr);
+
+		/**
+		* Find an existing canvas in the hierarchy of p_parent or scene root, or create one if none exists.
+		* @param p_parent
+		*/
+		OvCore::ECS::Actor* FindOrCreateCanvas(OvCore::ECS::Actor* p_parent = nullptr);
+
+		/**
+		* Create a UI Panel with CUIImage and CRectTransform stretched to parent.
+		* @param p_focusOnCreation
+		* @param p_parent
+		*/
+		OvCore::ECS::Actor& CreateUIPanel(bool p_focusOnCreation = true, OvCore::ECS::Actor* p_parent = nullptr);
+
+		/**
+		* Create a UI Image with CUIImage and CRectTransform.
+		* @param p_focusOnCreation
+		* @param p_parent
+		*/
+		OvCore::ECS::Actor& CreateUIImage(bool p_focusOnCreation = true, OvCore::ECS::Actor* p_parent = nullptr);
+
+		/**
+		* Create a UI Text with CRectTransform, CCanvasRenderer, and C# Text behaviour when available.
+		* @param p_focusOnCreation
+		* @param p_parent
+		*/
+		OvCore::ECS::Actor& CreateUIText(bool p_focusOnCreation = true, OvCore::ECS::Actor* p_parent = nullptr);
+
+		/**
+		* Create a UI Button with CUIImage, CRectTransform, C# Button behaviour, and child Text.
+		* @param p_focusOnCreation
+		* @param p_parent
+		*/
+		OvCore::ECS::Actor& CreateUIButton(bool p_focusOnCreation = true, OvCore::ECS::Actor* p_parent = nullptr);
+
+		/**
+		* Create a UI Toggle with Background, Checkmark, Label, and C# Toggle behaviour when available.
+		* @param p_focusOnCreation
+		* @param p_parent
+		*/
+		OvCore::ECS::Actor& CreateUIToggle(bool p_focusOnCreation = true, OvCore::ECS::Actor* p_parent = nullptr);
+
+		/**
+		* Create a UI Slider with Background, Fill Area, Handle, and C# Slider behaviour when available.
+		* @param p_focusOnCreation
+		* @param p_parent
+		*/
+		OvCore::ECS::Actor& CreateUISlider(bool p_focusOnCreation = true, OvCore::ECS::Actor* p_parent = nullptr);
+
+		/**
+		* Create a UI Scroll View with Viewport, Mask, Content, and C# ScrollRect behaviour when available.
+		* @param p_focusOnCreation
+		* @param p_parent
+		*/
+		OvCore::ECS::Actor& CreateUIScrollView(bool p_focusOnCreation = true, OvCore::ECS::Actor* p_parent = nullptr);
+
+		/**
+		* Ensure an EventSystem exists in the scene, or create one.
+		* @param p_focusOnCreation
+		*/
+		OvCore::ECS::Actor& CreateUIEventSystem(bool p_focusOnCreation = true);
+
+		/**
 		* Destroy an actor from his scene
 		* @param p_focusOnCreation
 		* @param p_parent

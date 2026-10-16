@@ -4,6 +4,7 @@
 #include <OvCore/ECS/Components/CPhysicalBox.h>
 #include <OvCore/ECS/Components/CPhysicalSphere.h>
 #include <OvCore/ECS/Components/CPhysicalCapsule.h>
+#include <OvCore/ECS/Components/CUI.h>
 #include <algorithm>
 #include <cmath>
 #include <unordered_set>
@@ -52,6 +53,15 @@ namespace OvEditor::Core
                 if (auto* box = actor->GetComponent<CPhysicalBox>()) bounds.Include(position,OvMaths::FVector3::Length(box->GetSize()) * factor);
                 if (auto* sphere = actor->GetComponent<CPhysicalSphere>()) bounds.Include(position,sphere->GetRadius() * factor);
                 if (auto* capsule = actor->GetComponent<CPhysicalCapsule>()) bounds.Include(position,(capsule->GetHeight() + capsule->GetRadius()) * factor);
+                if (auto* rect = actor->GetComponent<CRectTransform>())
+                {
+                    const auto worldMatrix = actor->transform.GetWorldMatrix();
+                    for (const auto& corner : rect->GetLocalCorners())
+                    {
+                        const auto p = worldMatrix * OvMaths::FVector4{corner.x, corner.y, 0.f, 1.f};
+                        bounds.Include({p.x, p.y, p.z}, 0.f);
+                    }
+                }
                 for (auto* child : actor->GetChildren()) pending.push_back(child);
             }
             return bounds;

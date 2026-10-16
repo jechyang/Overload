@@ -13,6 +13,7 @@
 #include <tinyxml2.h>
 
 #include <OvCore/ECS/Components/CTransform.h>
+#include <OvCore/ECS/Components/CUI.h>
 #include <OvCore/ECS/ComponentRegistry.h>
 #include <OvCore/Helpers/GUIDrawer.h>
 #include <OvCore/Helpers/ManagedFieldInput.h>
@@ -1064,15 +1065,17 @@ void OvEditor::Panels::Inspector::_DrawComponent(AComponent& p_component, int p_
 	auto& header = m_content->CreateWidget<Layout::GroupCollapsable>(p_component.GetName());
     m_sections.push_back(&header);
 	const bool isTransform = dynamic_cast<CTransform*>(&p_component) != nullptr;
-    _AttachComponentMenu(header,p_component.GetTypeName(),!isTransform);
+	const bool isRectTransform = dynamic_cast<OvCore::ECS::Components::CRectTransform*>(&p_component) != nullptr;
+	const bool isSpatialTransform = isTransform || isRectTransform;
+    _AttachComponentMenu(header,p_component.GetTypeName(),!isSpatialTransform);
 	header.SetID("inspector_component_" + p_component.GetName());
-	header.closable = !isTransform;
+	header.closable = !isSpatialTransform;
 	header.CloseEvent += [this, &p_component, ticket = m_viewCallbacks.Ticket()] {
         if (ticket.expired()) return;
         RemoveComponents(p_component.GetTypeName());
 	};
 
-	if (!isTransform)
+	if (!isSpatialTransform)
 	{
 		const std::string compType = p_component.GetTypeName();
 		const auto ticket = m_viewCallbacks.Ticket();

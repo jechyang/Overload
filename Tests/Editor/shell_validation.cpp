@@ -2,9 +2,11 @@
 // layouts and frame submission; isolated profile, hidden window, back-buffer captures.
 #include <OvCore/ECS/Components/CPointLight.h>
 #include <OvCore/ECS/Components/CMaterialRenderer.h>
+#include <OvCore/ECS/Components/CUI.h>
 #include <OvCore/Resources/Material.h>
 #include <OvCore/SceneSystem/Scene.h>
 #include <OvEditor/Core/Editor.h>
+#include <OvEditor/Core/SelectionBounds.h>
 #include <OvDebug/Logger.h>
 #include <OvEditor/Panels/AssetBrowser.h>
 #include <OvEditor/Panels/Console.h>
@@ -434,6 +436,74 @@ int main(int argc, char** argv) try {
     Require(actions.IsActorSelected(*rootSphere), "Frame Selection focuses on the selected entity");
 
     capture("18-hierarchy-workflow");
+
+    // 19: UGUI Authoring & Editor Workflow Integration Parity
+    // Verify creation of Canvas, EventSystem, UI Panel, Button, Text, Slider, Toggle, Scroll View,
+    // intelligent Canvas auto-parenting, RectTransform inspector non-closable/non-checkable, and 2D bounds framing.
+
+    // Create Canvas at root
+    auto& canvasActor = actions.CreateCanvas(true, nullptr);
+    tick(3);
+    Require(canvasActor.GetName() == "Canvas" && canvasActor.GetComponent<OvCore::ECS::Components::CCanvas>() != nullptr &&
+        canvasActor.GetComponent<OvCore::ECS::Components::CRectTransform>() != nullptr,
+        "CreateCanvas creates a Canvas actor with CCanvas and CRectTransform");
+
+    auto* eventSystemActor = context.sceneManager.GetCurrentScene()->FindActorByName("EventSystem");
+    Require(eventSystemActor != nullptr, "CreateCanvas automatically instantiates an EventSystem actor if none exists");
+
+    // Clear selection, then create UI Panel without parent -> should auto-parent to canvasActor
+    actions.UnselectActor();
+    tick(2);
+    auto& panelActor = actions.CreateUIPanel(true, nullptr);
+    tick(3);
+    Require(panelActor.GetParent() == &canvasActor && panelActor.GetComponent<OvCore::ECS::Components::CUIImage>() != nullptr &&
+        panelActor.GetComponent<OvCore::ECS::Components::CRectTransform>() != nullptr,
+        "CreateUIPanel auto-parents to existing Canvas when created without selection");
+
+    // Create Button -> should auto-parent to canvasActor or selected UI entity, has child Text
+    auto& buttonActor = actions.CreateUIButton(true, &canvasActor);
+    tick(3);
+    Require(buttonActor.GetParent() == &canvasActor && buttonActor.GetComponent<OvCore::ECS::Components::CUIImage>() != nullptr &&
+        buttonActor.GetChildren().size() == 1 && buttonActor.GetChildren()[0]->GetName() == "Text",
+        "CreateUIButton creates a Button with CUIImage and child Text under Canvas");
+
+    // Create Text, Toggle, Slider, Scroll View
+    auto& textActor = actions.CreateUIText(true, &canvasActor);
+    auto& toggleActor = actions.CreateUIToggle(true, &canvasActor);
+    auto& sliderActor = actions.CreateUISlider(true, &canvasActor);
+    auto& scrollViewActor = actions.CreateUIScrollView(true, &canvasActor);
+    tick(3);
+    Require(textActor.GetParent() == &canvasActor && toggleActor.GetParent() == &canvasActor &&
+        sliderActor.GetParent() == &canvasActor && scrollViewActor.GetParent() == &canvasActor,
+        "UI elements (Text, Toggle, Slider, Scroll View) are properly created and parented under Canvas");
+
+    // Verify Inspector parity: select canvasActor, inspect Rect Transform header
+    actions.SelectActor(canvasActor);
+    inspectorPanel.Focus();
+    inspectorPanel.Refresh();
+    tick(3);
+    OvUI::Widgets::Layout::GroupCollapsable* rectTransformHeader = nullptr;
+    std::function<void(OvUI::Internal::WidgetContainer&)> findRectHeader = [&](OvUI::Internal::WidgetContainer& root) {
+        for (auto [w, mode] : root.GetWidgets()) {
+            if (auto* g = dynamic_cast<OvUI::Widgets::Layout::GroupCollapsable*>(w)) {
+                if (g->name == "Rect Transform") rectTransformHeader = g;
+            }
+            if (auto* c = dynamic_cast<OvUI::Internal::WidgetContainer*>(w)) findRectHeader(*c);
+        }
+    };
+    findRectHeader(inspectorPanel);
+    Require(rectTransformHeader != nullptr && !rectTransformHeader->closable && !rectTransformHeader->checkable,
+        "Rect Transform in Inspector is non-closable and non-checkable matching Transform and Unity parity");
+
+    // Verify 2D bounds framing
+    auto uiBounds = OvEditor::Core::SelectionBounds::From({&canvasActor});
+    Require(uiBounds.valid && uiBounds.Radius() > 100.0f,
+        "SelectionBounds::From accurately calculates 2D bounds for Canvas and UI elements via CRectTransform local corners");
+
+    sceneViewPanel.FrameSelection();
+    tick(3);
+
+    capture("19-ugui-editor-workflow");
 
     std::error_code shellPrefabEc;
     std::filesystem::remove(shellPrefabPath, shellPrefabEc);
