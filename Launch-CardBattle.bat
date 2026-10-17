@@ -1,10 +1,13 @@
 @echo off
 set "PROJECT=%~dp0Examples\CardBattle\CardBattle.local.ovproject"
 
-if not exist "%PROJECT%" (
-    echo Building CardBattle project first...
-    node "%~dp0Examples\CardBattle\build.mjs" "C:/Users/Administrator/AppData/Local/Programs/Python/Python312/python.exe"
+:: Clean any stale locks before launching
+for /r "%~dp0Examples\CardBattle\.overload\csharp" %%F in (writer.lock) do (
+    if exist "%%F" del /f /q "%%F" >nul 2>&1
 )
+
+echo Building / verifying CardBattle project...
+node "%~dp0Examples\CardBattle\build.mjs" "C:/Users/Administrator/AppData/Local/Programs/Python/Python312/python.exe"
 
 if exist "%~dp0Build\Debug\OvEditor.exe" (
     cd /d "%~dp0Build\Debug"

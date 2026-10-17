@@ -60,7 +60,16 @@ OvEditor::Core::Editor::Editor(Context& p_context) :
     m_productFrontend.GetResourcePool()->SetFrameReserve(m_context.renderThread?2:1);
 	SetupUI();
 
-	m_context.sceneManager.LoadDefaultScene();
+	const std::string startScene = m_context.projectSettings.GetOrDefault<std::string>("start_scene", "");
+	if (startScene.empty() || !m_context.sceneManager.LoadScene(startScene, false))
+	{
+		m_context.sceneManager.LoadDefaultScene();
+	}
+	else
+	{
+		OVLOG_INFO("Loaded start scene: " + m_context.sceneManager.GetCurrentSceneSourcePath());
+		m_panelsManager.GetPanelAs<OvEditor::Panels::SceneView>("Scene View").Focus();
+	}
     if (m_context.renderThread) SetFrameSubmissionEnabled(true);
 }
 

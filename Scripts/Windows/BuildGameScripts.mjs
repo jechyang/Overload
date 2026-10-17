@@ -42,10 +42,28 @@ async function lock(file) {
     try { const fd=fs.openSync(file,'wx'); fs.writeFileSync(fd,String(process.pid)); return () => {fs.closeSync(fd);fs.unlinkSync(file);}; }
     catch(e) {
       if(e.code!=='EEXIST'||Date.now()>until) throw Error('Build lock unavailable: '+file);
-      // Do not race another waiter by deleting a stale lock. Keep crash evidence;
-      // after confirming all editors/builds are closed, the user can retire it.
-      let pid;try{pid=Number(fs.readFileSync(file,'utf8'));}catch{}
-      if(pid>0)try{process.kill(pid,0);}catch(dead){if(dead.code==='ESRCH')throw Error('Previous build exited without releasing '+file+'; close other builds and move this stale lock aside.');}
+      let pid;
+      try { pid = Number(fs.readFileSync(file, 'utf8')); } catch {}
+      if (pid > 0) {
+        try {
+          process.kill(pid, 0);
+        } catch (dead) {
+          if (dead.code === 'ESRCH') {
+            console.warn('Recovering from stale build lock held by terminated process ' + pid + ': ' + file);
+            try { fs.unlinkSync(file); } catch {}
+            continue;
+          }
+        }
+      } else {
+        try {
+          const stat = fs.statSync(file);
+          if (Date.now() - stat.mtimeMs > 5000) {
+            console.warn('Recovering from corrupt/empty stale build lock: ' + file);
+            try { fs.unlinkSync(file); } catch {}
+            continue;
+          }
+        } catch {}
+      }
     }
     await new Promise(r=>setTimeout(r,200));
   }
