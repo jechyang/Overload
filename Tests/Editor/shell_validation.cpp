@@ -138,20 +138,44 @@ int main(int argc, char** argv) try {
     Require(context.sceneManager.GetCurrentSceneSourcePath() == savedPath, "saving another scene keeps the open scene's path");
     Require(actions.ConfirmDiscardSceneChanges(), "an unmodified scene is replaced without a prompt");
 
-    // Play mode: tint, toolbar state, and restoration on stop.
-    actions.StartPlaying();
+    // Play mode via Toolbar mouse clicks: Play, Pause, Resume, Stop
+    auto& io = ImGui::GetIO();
+    io.BackendFlags &= ~ImGuiBackendFlags_HasMouseHoveredViewport;
+    ImGui_ImplGlfw_CursorEnterCallback(context.window->GetGlfwWindow(), true); io.AddFocusEvent(true);
+    const auto clickOnce = [&](ImVec2 p) { io.AddMousePosEvent(p.x, p.y); tick(1); io.AddMouseButtonEvent(0, true); tick(1); io.AddMouseButtonEvent(0, false); tick(1); };
+
+    auto* toolbarWin = window("Toolbar");
+    Require(toolbarWin != nullptr, "Toolbar window exists");
+    const float tbSpacing = OVUI_SCALE;
+    const float tbBtnSize = 26.0f * OVUI_SCALE;
+    const float tbControlsWidth = 3.0f * tbBtnSize + 2.0f * tbSpacing;
+    const float playBtnX = toolbarWin->Pos.x + (toolbarWin->Size.x - tbControlsWidth) * 0.5f + tbBtnSize * 0.5f;
+    const float playBtnY = toolbarWin->Pos.y + toolbarWin->Size.y * 0.5f;
+    const float pauseBtnX = playBtnX + tbBtnSize + tbSpacing;
+
+    // Click Play button on toolbar
+    clickOnce({ playBtnX, playBtnY });
     tick(6);
+    Require(actions.GetCurrentEditorMode() == OvEditor::Core::EditorActions::EEditorMode::PLAY, "clicking toolbar Play button starts play mode");
     const auto tint = OvUI::Styling::Style::Get().backgroundTint;
     Require(tint.r < 1.0f || tint.g < 1.0f || tint.b < 1.0f, "play mode tints the editor");
     capture("3-play-mode");
-    actions.TogglePause();
-    Require(actions.GetCurrentEditorMode() == OvEditor::Core::EditorActions::EEditorMode::PAUSE, "pause toggles while playing");
-    actions.TogglePause();
-    Require(actions.GetCurrentEditorMode() == OvEditor::Core::EditorActions::EEditorMode::PLAY, "pause toggles back to playing");
-    actions.TogglePlay();
+
+    // Click Pause button on toolbar
+    clickOnce({ pauseBtnX, playBtnY });
     tick(3);
+    Require(actions.GetCurrentEditorMode() == OvEditor::Core::EditorActions::EEditorMode::PAUSE, "clicking toolbar Pause button pauses game");
+
+    // Click Pause button again to resume
+    clickOnce({ pauseBtnX, playBtnY });
+    tick(3);
+    Require(actions.GetCurrentEditorMode() == OvEditor::Core::EditorActions::EEditorMode::PLAY, "clicking toolbar Pause button resumes game");
+
+    // Click Stop button (same Play button slot) on toolbar
+    clickOnce({ playBtnX, playBtnY });
+    tick(4);
     const auto restored = OvUI::Styling::Style::Get().backgroundTint;
-    Require(actions.GetCurrentEditorMode() == OvEditor::Core::EditorActions::EEditorMode::EDIT, "play toggles back to edit mode");
+    Require(actions.GetCurrentEditorMode() == OvEditor::Core::EditorActions::EEditorMode::EDIT, "clicking toolbar Stop button returns to edit mode");
     Require(restored.r == 1.0f && restored.g == 1.0f && restored.b == 1.0f, "stopping clears the tint");
     Require(!actions.IsSceneModified(), "play mode changes do not mark the scene modified");
 
@@ -218,12 +242,7 @@ int main(int argc, char** argv) try {
     Require(content && tree && tree->Pos.x < content->Pos.x, "Project shows a folder tree left of the content area");
     Require(tree->Size.x > 180.0f * OVUI_SCALE, "folder tree recovers its width after the narrow 2 by 3 layout");
     Require(browser.GetCurrentFolder() == std::filesystem::path(context.projectAssetsPath).lexically_normal(), "Project opens on the Assets folder");
-
-    auto& io = ImGui::GetIO();
-    io.BackendFlags &= ~ImGuiBackendFlags_HasMouseHoveredViewport;
-    ImGui_ImplGlfw_CursorEnterCallback(context.window->GetGlfwWindow(), true); io.AddFocusEvent(true);
     const ImVec2 firstTile{ content->DC.CursorStartPos.x + 4.0f * OVUI_SCALE + 36.0f * OVUI_SCALE, content->DC.CursorStartPos.y + 40.0f * OVUI_SCALE };
-    const auto clickOnce = [&](ImVec2 p) { io.AddMousePosEvent(p.x, p.y); tick(1); io.AddMouseButtonEvent(0, true); tick(1); io.AddMouseButtonEvent(0, false); tick(1); };
     io.AddMousePosEvent(firstTile.x, firstTile.y); tick(2);
     io.AddMouseButtonEvent(0, true); tick(1); io.AddMouseButtonEvent(0, false); tick(1);
     io.AddMouseButtonEvent(0, true); tick(1); io.AddMouseButtonEvent(0, false); tick(3);

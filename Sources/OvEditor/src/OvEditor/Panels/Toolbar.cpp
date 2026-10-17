@@ -39,7 +39,7 @@ namespace
 			ImGui::PushStyleColor(ImGuiCol_ButtonActive, accent);
 		}
 
-		const bool clicked = ImGui::Button(p_label, { p_width, ButtonSize() });
+		const bool clicked = ImGui::ButtonEx(p_label, { p_width, ButtonSize() }, ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_NoFocus);
 
 		if (p_active) ImGui::PopStyleColor(3);
 		if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("%s", p_tooltip);
@@ -83,7 +83,8 @@ bool OvEditor::Panels::Toolbar::DrawIconButton(const char* p_id, const OvUI::Int
 	p_icon.RetainForCapture();
 	const bool clicked = ImGui::ImageButtonEx(
 		ImGui::GetID(p_id), p_icon.id, { IconSize(), IconSize() },
-		{ 0.f, 1.f }, { 1.f, 0.f }, { 0.f, 0.f, 0.f, 0.f }, { 1.f, 1.f, 1.f, 1.f }
+		{ 0.f, 1.f }, { 1.f, 0.f }, { 0.f, 0.f, 0.f, 0.f }, { 1.f, 1.f, 1.f, 1.f },
+		ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_NoFocus
 	);
 
 	if (p_active) ImGui::PopStyleColor(3);
@@ -170,7 +171,7 @@ void OvEditor::Panels::Toolbar::DrawRightControls()
 	ImGui::SameLine(0, GroupSpacing());
 
 	ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, { 0.0f, 0.5f });
-	const bool openLayouts = ImGui::Button("Layout##Layouts", { layoutWidth, ButtonSize() });
+	const bool openLayouts = ImGui::ButtonEx("Layout##Layouts", { layoutWidth, ButtonSize() }, ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_NoFocus);
 	ImGui::PopStyleVar();
 
 	const ImVec2 min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
@@ -209,20 +210,28 @@ void OvEditor::Panels::Toolbar::_Draw_Impl()
 	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_TabHovered));
 	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::GetStyleColorVec4(ImGuiCol_FrameBgActive));
 
-	constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoSavedSettings;
+	constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNavFocus;
 	if (ImGui::BeginViewportSideBar(windowName.c_str(), ImGui::GetMainViewport(), ImGuiDir_Up, ButtonSize() + 2.0f * verticalPadding, flags))
 	{
 		const bool focused = ImGui::IsWindowFocused();
+		const auto modeBefore = EDITOR_EXEC(GetCurrentEditorMode());
 
 		DrawTools();
 		DrawPlayControls();
 		DrawRightControls();
 
+		const auto modeAfter = EDITOR_EXEC(GetCurrentEditorMode());
+		if (modeAfter != modeBefore)
+		{
+			// Play/Stop/Pause already set the appropriate window focus (e.g. Game View on play, Scene View on stop)
+			m_restoreFocus = ImGui::GetCurrentContext()->NavWindow;
+		}
+
 		const ImVec2 min = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
 		ImGui::GetWindowDrawList()->AddLine({ min.x, min.y + size.y - 1.0f }, { min.x + size.x, min.y + size.y - 1.0f }, ImGui::GetColorU32(ImGuiCol_Border));
 
 		const bool menuOpen = ImGui::IsPopupOpen("##LayoutMenu");
-		if (focused && !menuOpen && m_restoreFocus && m_restoreFocus->WasActive)
+		if (focused && !menuOpen && !ImGui::IsAnyItemActive() && !ImGui::IsMouseDown(ImGuiMouseButton_Left) && m_restoreFocus && m_restoreFocus->WasActive)
 			ImGui::FocusWindow(m_restoreFocus);
 	}
 	ImGui::End();

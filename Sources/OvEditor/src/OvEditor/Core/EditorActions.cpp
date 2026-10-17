@@ -1316,6 +1316,10 @@ void OvEditor::Core::EditorActions::StartPlaying()
 			m_context.sceneManager.GetCurrentScene()->Play();
 			SetEditorMode(EEditorMode::PLAY);
 		}
+		else
+		{
+			OVLOG_ERROR("Cannot start playing: script engine has compilation errors!");
+		}
 	}
 	else
 	{
