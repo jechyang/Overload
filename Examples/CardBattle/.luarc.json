@@ -1,5 +1,5 @@
 {
-  "workspace.library": ["H:\overload\Overload\Build\CardBattleValidation\Smoke\Runtime\Data\Engine"],
+  "workspace.library": ["H:\overload\Overload\Build\Debug\Data\Engine"],
   "runtime.version": "Lua 5.4",
   "runtime.builtin": {
     "basic": "enable",
